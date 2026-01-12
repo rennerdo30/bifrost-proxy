@@ -1,3 +1,4 @@
+import { useState, useRef } from 'react'
 import { ArrayInput } from '../ArrayInput'
 
 interface WireGuardBackendFormProps {
@@ -5,7 +6,105 @@ interface WireGuardBackendFormProps {
   onChange: (config: Record<string, unknown>) => void
 }
 
+interface ParsedWireGuardConfig {
+  privateKey: string
+  address: string[]
+  dns: string[]
+  mtu?: number
+  peer: {
+    publicKey: string
+    presharedKey?: string
+    endpoint: string
+    allowedIPs: string[]
+    persistentKeepalive?: number
+  }
+}
+
+// Parse WireGuard config file format
+function parseWireGuardConfig(content: string): ParsedWireGuardConfig | null {
+  const config: ParsedWireGuardConfig = {
+    privateKey: '',
+    address: [],
+    dns: [],
+    peer: {
+      publicKey: '',
+      endpoint: '',
+      allowedIPs: [],
+    },
+  }
+
+  let currentSection = ''
+  const lines = content.split('\n')
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim()
+
+    // Skip empty lines and comments
+    if (!line || line.startsWith('#')) continue
+
+    // Check for section headers
+    if (line.startsWith('[') && line.endsWith(']')) {
+      currentSection = line.slice(1, -1).toLowerCase()
+      continue
+    }
+
+    // Parse key = value
+    const eqIndex = line.indexOf('=')
+    if (eqIndex === -1) continue
+
+    const key = line.slice(0, eqIndex).trim().toLowerCase()
+    const value = line.slice(eqIndex + 1).trim()
+
+    if (currentSection === 'interface') {
+      switch (key) {
+        case 'privatekey':
+          config.privateKey = value
+          break
+        case 'address':
+          config.address = value.split(',').map((s) => s.trim())
+          break
+        case 'dns':
+          config.dns = value.split(',').map((s) => s.trim())
+          break
+        case 'mtu':
+          config.mtu = parseInt(value, 10) || undefined
+          break
+      }
+    } else if (currentSection === 'peer') {
+      switch (key) {
+        case 'publickey':
+          config.peer.publicKey = value
+          break
+        case 'presharedkey':
+          config.peer.presharedKey = value
+          break
+        case 'endpoint':
+          config.peer.endpoint = value
+          break
+        case 'allowedips':
+          config.peer.allowedIPs = value.split(',').map((s) => s.trim())
+          break
+        case 'persistentkeepalive':
+          config.peer.persistentKeepalive = parseInt(value, 10) || undefined
+          break
+      }
+    }
+  }
+
+  // Validate required fields
+  if (!config.privateKey || !config.peer.publicKey) {
+    return null
+  }
+
+  return config
+}
+
 export function WireGuardBackendForm({ config, onChange }: WireGuardBackendFormProps) {
+  const [showImport, setShowImport] = useState(false)
+  const [configText, setConfigText] = useState('')
+  const [parseError, setParseError] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
   const peer = (config.peer as Record<string, unknown>) || {}
 
   const update = (field: string, value: unknown) => {
@@ -16,11 +115,129 @@ export function WireGuardBackendForm({ config, onChange }: WireGuardBackendFormP
     onChange({ ...config, peer: { ...peer, [field]: value } })
   }
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const content = event.target?.result as string
+      setConfigText(content)
+      applyConfig(content)
+    }
+    reader.readAsText(file)
+  }
+
+  const applyConfig = (content: string) => {
+    setParseError(null)
+    const parsed = parseWireGuardConfig(content)
+
+    if (!parsed) {
+      setParseError('Invalid WireGuard configuration. Make sure it contains [Interface] and [Peer] sections with required fields.')
+      return
+    }
+
+    // Apply parsed config to form
+    onChange({
+      ...config,
+      private_key: parsed.privateKey,
+      address: parsed.address.join(', '),
+      dns: parsed.dns,
+      mtu: parsed.mtu,
+      peer: {
+        public_key: parsed.peer.publicKey,
+        preshared_key: parsed.peer.presharedKey,
+        endpoint: parsed.peer.endpoint,
+        allowed_ips: parsed.peer.allowedIPs,
+        persistent_keepalive: parsed.peer.persistentKeepalive,
+      },
+    })
+
+    setShowImport(false)
+    setConfigText('')
+  }
+
   return (
     <div className="space-y-6">
-      <p className="text-sm text-bifrost-muted">
-        Route traffic through a WireGuard VPN tunnel.
-      </p>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-bifrost-muted">
+          Route traffic through a WireGuard VPN tunnel.
+        </p>
+        <button
+          type="button"
+          onClick={() => setShowImport(!showImport)}
+          className="btn btn-secondary text-sm"
+        >
+          {showImport ? 'Hide Import' : 'Import Config'}
+        </button>
+      </div>
+
+      {/* Import Section */}
+      {showImport && (
+        <div className="bg-bifrost-bg-tertiary rounded-lg p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold text-white">Import WireGuard Configuration</h4>
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".conf,.txt"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="btn btn-secondary text-sm"
+            >
+              Upload File
+            </button>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">
+              Or paste your WireGuard config below:
+            </label>
+            <textarea
+              value={configText}
+              onChange={(e) => setConfigText(e.target.value)}
+              placeholder={`[Interface]
+PrivateKey = your_private_key_here
+Address = 10.0.0.2/24
+DNS = 1.1.1.1
+
+[Peer]
+PublicKey = server_public_key_here
+Endpoint = vpn.example.com:51820
+AllowedIPs = 0.0.0.0/0`}
+              rows={10}
+              className="input font-mono text-xs"
+            />
+          </div>
+          {parseError && (
+            <p className="text-sm text-red-400">{parseError}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setShowImport(false)
+                setConfigText('')
+                setParseError(null)
+              }}
+              className="btn btn-secondary text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => applyConfig(configText)}
+              disabled={!configText.trim()}
+              className="btn btn-primary text-sm"
+            >
+              Apply Config
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Interface Settings */}
       <div>

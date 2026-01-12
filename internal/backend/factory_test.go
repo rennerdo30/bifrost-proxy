@@ -205,6 +205,26 @@ func TestFactory_Create_OpenVPN(t *testing.T) {
 	assert.Equal(t, "openvpn", backend.Type())
 }
 
+func TestFactory_Create_OpenVPN_WithInlineConfig(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-ovpn-inline",
+		Type:    "openvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"config_content": "client\ndev tun\nremote vpn.example.com 1194\n",
+			"username":       "myuser",
+			"password":       "mypass",
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-ovpn-inline", backend.Name())
+	assert.Equal(t, "openvpn", backend.Type())
+}
+
 func TestFactory_Create_OpenVPN_MissingConfigFile(t *testing.T) {
 	f := NewFactory()
 
@@ -218,6 +238,7 @@ func TestFactory_Create_OpenVPN_MissingConfigFile(t *testing.T) {
 	_, err := f.Create(cfg)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "config_file")
+	assert.Contains(t, err.Error(), "config_content")
 }
 
 func TestFactory_Create_InvalidType(t *testing.T) {

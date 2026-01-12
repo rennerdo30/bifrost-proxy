@@ -16,17 +16,19 @@ import (
 
 // OpenVPNBackend provides connections through an OpenVPN tunnel.
 type OpenVPNBackend struct {
-	name        string
-	config      OpenVPNConfig
-	cmd         *exec.Cmd
-	mgmtConn    net.Conn
-	localAddr   string
-	startTime   time.Time
-	healthy     atomic.Bool
-	stats       openvpnStats
-	mu          sync.RWMutex
-	running     bool
-	stopChan    chan struct{}
+	name          string
+	config        OpenVPNConfig
+	cmd           *exec.Cmd
+	mgmtConn      net.Conn
+	localAddr     string
+	startTime     time.Time
+	healthy       atomic.Bool
+	stats         openvpnStats
+	mu            sync.RWMutex
+	running       bool
+	stopChan      chan struct{}
+	tempConfigFile string // Temporary config file created from ConfigContent
+	tempAuthFile   string // Temporary auth file created from Username/Password
 }
 
 type openvpnStats struct {
@@ -42,13 +44,16 @@ type openvpnStats struct {
 
 // OpenVPNConfig holds configuration for an OpenVPN backend.
 type OpenVPNConfig struct {
-	Name           string   `yaml:"name"`
-	ConfigFile     string   `yaml:"config_file"`       // Path to .ovpn file
-	AuthFile       string   `yaml:"auth_file"`         // Path to auth credentials file
-	ManagementAddr string   `yaml:"management_addr"`   // Management interface address
-	ManagementPort int      `yaml:"management_port"`   // Management interface port
-	Binary         string   `yaml:"binary"`            // Path to openvpn binary
-	ExtraArgs      []string `yaml:"extra_args"`        // Extra command line arguments
+	Name           string        `yaml:"name"`
+	ConfigFile     string        `yaml:"config_file"`       // Path to .ovpn file
+	ConfigContent  string        `yaml:"config_content"`    // Inline OpenVPN config content (alternative to ConfigFile)
+	AuthFile       string        `yaml:"auth_file"`         // Path to auth credentials file
+	Username       string        `yaml:"username"`          // Inline username (alternative to AuthFile)
+	Password       string        `yaml:"password"`          // Inline password (alternative to AuthFile)
+	ManagementAddr string        `yaml:"management_addr"`   // Management interface address
+	ManagementPort int           `yaml:"management_port"`   // Management interface port
+	Binary         string        `yaml:"binary"`            // Path to openvpn binary
+	ExtraArgs      []string      `yaml:"extra_args"`        // Extra command line arguments
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
 }
 
@@ -149,28 +154,75 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 		return nil
 	}
 
+	// Determine config file path
+	configFile := b.config.ConfigFile
+	if b.config.ConfigContent != "" {
+		// Create temp config file from inline content
+		tmpFile, err := os.CreateTemp("", "bifrost-ovpn-*.conf")
+		if err != nil {
+			return NewBackendError(b.name, "create temp config", err)
+		}
+		if _, err := tmpFile.WriteString(b.config.ConfigContent); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			return NewBackendError(b.name, "write temp config", err)
+		}
+		tmpFile.Close()
+		configFile = tmpFile.Name()
+		b.tempConfigFile = configFile
+	}
+
 	// Verify config file exists
-	if _, err := os.Stat(b.config.ConfigFile); err != nil {
+	if _, err := os.Stat(configFile); err != nil {
 		return NewBackendError(b.name, "config file", err)
+	}
+
+	// Determine auth file path
+	authFile := b.config.AuthFile
+	if b.config.Username != "" && b.config.Password != "" {
+		// Create temp auth file from inline credentials
+		tmpFile, err := os.CreateTemp("", "bifrost-ovpn-auth-*")
+		if err != nil {
+			return NewBackendError(b.name, "create temp auth", err)
+		}
+		content := fmt.Sprintf("%s\n%s\n", b.config.Username, b.config.Password)
+		if _, err := tmpFile.WriteString(content); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			return NewBackendError(b.name, "write temp auth", err)
+		}
+		if err := tmpFile.Chmod(0600); err != nil {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+			return NewBackendError(b.name, "chmod temp auth", err)
+		}
+		tmpFile.Close()
+		authFile = tmpFile.Name()
+		b.tempAuthFile = authFile
 	}
 
 	// Build command arguments
 	args := []string{
-		"--config", b.config.ConfigFile,
+		"--config", configFile,
 		"--management", b.config.ManagementAddr, fmt.Sprintf("%d", b.config.ManagementPort),
 		"--management-query-passwords",
 		"--daemon",
 	}
 
-	if b.config.AuthFile != "" {
-		args = append(args, "--auth-user-pass", b.config.AuthFile)
+	if authFile != "" {
+		args = append(args, "--auth-user-pass", authFile)
 	}
 
 	args = append(args, b.config.ExtraArgs...)
 
 	// Start OpenVPN process
 	b.cmd = exec.CommandContext(ctx, b.config.Binary, args...)
-	b.cmd.Dir = filepath.Dir(b.config.ConfigFile)
+	// Set working directory to config file location (for relative paths in config)
+	if b.config.ConfigFile != "" {
+		b.cmd.Dir = filepath.Dir(b.config.ConfigFile)
+	} else if b.tempConfigFile != "" {
+		b.cmd.Dir = filepath.Dir(b.tempConfigFile)
+	}
 
 	if err := b.cmd.Start(); err != nil {
 		return NewBackendError(b.name, "start openvpn", err)
@@ -315,6 +367,16 @@ func (b *OpenVPNBackend) Stop(ctx context.Context) error {
 	b.running = false
 	b.healthy.Store(false)
 	b.stopChan = make(chan struct{})
+
+	// Clean up temp files
+	if b.tempConfigFile != "" {
+		os.Remove(b.tempConfigFile)
+		b.tempConfigFile = ""
+	}
+	if b.tempAuthFile != "" {
+		os.Remove(b.tempAuthFile)
+		b.tempAuthFile = ""
+	}
 
 	return nil
 }

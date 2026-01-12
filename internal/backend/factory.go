@@ -173,14 +173,28 @@ func (f *Factory) createOpenVPN(cfg config.BackendConfig) (Backend, error) {
 		Name: cfg.Name,
 	}
 
-	if v, ok := cfg.Config["config_file"].(string); ok {
+	// Config can be provided via file path OR inline content
+	if v, ok := cfg.Config["config_file"].(string); ok && v != "" {
 		ovpnCfg.ConfigFile = v
-	} else {
-		return nil, fmt.Errorf("openvpn backend requires 'config_file' config")
+	}
+	if v, ok := cfg.Config["config_content"].(string); ok && v != "" {
+		ovpnCfg.ConfigContent = v
 	}
 
+	// Require either config_file or config_content
+	if ovpnCfg.ConfigFile == "" && ovpnCfg.ConfigContent == "" {
+		return nil, fmt.Errorf("openvpn backend requires 'config_file' or 'config_content' config")
+	}
+
+	// Auth can be provided via file path OR inline credentials
 	if v, ok := cfg.Config["auth_file"].(string); ok {
 		ovpnCfg.AuthFile = v
+	}
+	if v, ok := cfg.Config["username"].(string); ok {
+		ovpnCfg.Username = v
+	}
+	if v, ok := cfg.Config["password"].(string); ok {
+		ovpnCfg.Password = v
 	}
 
 	if v, ok := cfg.Config["binary"].(string); ok {
