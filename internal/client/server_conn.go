@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -94,9 +95,12 @@ func (s *ServerConnection) connectHTTP(ctx context.Context, target string) (net.
 	}
 
 	// Send CONNECT request
+	// For CONNECT, the URL must be set with the target as the host
 	req := &http.Request{
 		Method: "CONNECT",
-		URL:    nil,
+		URL: &url.URL{
+			Host: target,
+		},
 		Host:   target,
 		Header: make(http.Header),
 	}
