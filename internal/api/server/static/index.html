@@ -90,6 +90,72 @@
             font-size: 14px;
         }
         .refresh-btn:hover { background: #2563eb; }
+        /* Form styles for config generator */
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 14px; color: #94a3b8; margin-bottom: 6px; }
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: #e2e8f0;
+            font-size: 14px;
+        }
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .config-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        @media (max-width: 900px) { .config-layout { grid-template-columns: 1fr; } }
+        .config-preview {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            overflow-x: auto;
+            white-space: pre;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .btn-group { display: flex; gap: 8px; margin-top: 16px; }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-secondary { background: #334155; color: #e2e8f0; }
+        .btn-secondary:hover { background: #475569; }
+        .route-item {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+        .route-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+        .route-header span { font-weight: 500; }
+        .btn-sm {
+            padding: 4px 8px;
+            font-size: 12px;
+            background: #7f1d1d;
+            color: #fca5a5;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .btn-sm:hover { background: #991b1b; }
+        .success-msg { color: #86efac; font-size: 14px; margin-left: 12px; }
     </style>
 </head>
 <body>
@@ -111,6 +177,7 @@
             <button class="active" onclick="showTab('dashboard')">Dashboard</button>
             <button onclick="showTab('backends')">Backends</button>
             <button onclick="showTab('stats')">Statistics</button>
+            <button onclick="showTab('config-generator')">Config Generator</button>
         </nav>
 
         <div id="dashboard" class="tab-content active">
@@ -176,6 +243,107 @@
                 <div class="card">
                     <h3>Bytes Received</h3>
                     <div class="value" id="bytes-received">-</div>
+                </div>
+            </div>
+        </div>
+
+        <div id="config-generator" class="tab-content">
+            <div class="section">
+                <h2 class="section-title">Client Configuration Generator</h2>
+                <p style="color: #94a3b8; margin-bottom: 20px;">Generate a client configuration file to connect to this server.</p>
+
+                <div class="config-layout">
+                    <div class="card">
+                        <h3 style="margin-bottom: 16px;">Server Connection</h3>
+                        <div class="form-group">
+                            <label>Server Address</label>
+                            <input type="text" id="cfg-server-address" placeholder="proxy.example.com:8080" oninput="updateConfigPreview()">
+                        </div>
+                        <div class="form-group">
+                            <label>Protocol</label>
+                            <select id="cfg-protocol" onchange="updateConfigPreview()">
+                                <option value="http">HTTP</option>
+                                <option value="socks5">SOCKS5</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Username (optional)</label>
+                                <input type="text" id="cfg-username" placeholder="username" oninput="updateConfigPreview()">
+                            </div>
+                            <div class="form-group">
+                                <label>Password (optional)</label>
+                                <input type="password" id="cfg-password" placeholder="password" oninput="updateConfigPreview()">
+                            </div>
+                        </div>
+
+                        <h3 style="margin: 24px 0 16px;">Local Proxy Settings</h3>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>HTTP Listen</label>
+                                <input type="text" id="cfg-http-listen" value="127.0.0.1:3128" oninput="updateConfigPreview()">
+                            </div>
+                            <div class="form-group">
+                                <label>SOCKS5 Listen</label>
+                                <input type="text" id="cfg-socks5-listen" value="127.0.0.1:1081" oninput="updateConfigPreview()">
+                            </div>
+                        </div>
+
+                        <h3 style="margin: 24px 0 16px;">Routing Rules</h3>
+                        <div id="routes-container">
+                            <div class="route-item" data-route-id="0">
+                                <div class="route-header">
+                                    <span>Route: Local Traffic</span>
+                                    <button class="btn-sm" onclick="removeRoute(0)">Remove</button>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label>Domains (comma-separated)</label>
+                                        <input type="text" class="route-domains" value="localhost, 127.0.0.1, *.local" oninput="updateConfigPreview()">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label>Action</label>
+                                        <select class="route-action" onchange="updateConfigPreview()">
+                                            <option value="direct">Direct</option>
+                                            <option value="server">Through Server</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="route-item" data-route-id="1">
+                                <div class="route-header">
+                                    <span>Route: Default</span>
+                                    <button class="btn-sm" onclick="removeRoute(1)">Remove</button>
+                                </div>
+                                <div class="form-row">
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label>Domains (comma-separated)</label>
+                                        <input type="text" class="route-domains" value="*" oninput="updateConfigPreview()">
+                                    </div>
+                                    <div class="form-group" style="margin-bottom: 0;">
+                                        <label>Action</label>
+                                        <select class="route-action" onchange="updateConfigPreview()">
+                                            <option value="direct">Direct</option>
+                                            <option value="server" selected>Through Server</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="addRoute()" style="margin-top: 8px;">+ Add Route</button>
+                    </div>
+
+                    <div>
+                        <div class="card">
+                            <h3 style="margin-bottom: 16px;">Configuration Preview</h3>
+                            <div class="config-preview" id="config-preview">Loading...</div>
+                            <div class="btn-group">
+                                <button class="btn btn-primary" onclick="downloadConfig()">Download YAML</button>
+                                <button class="btn btn-secondary" onclick="copyConfig()">Copy to Clipboard</button>
+                                <span id="copy-success" class="success-msg" style="display: none;">Copied!</span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -280,6 +448,188 @@
         // Initial load and refresh
         refreshData();
         refreshInterval = setInterval(refreshData, 5000);
+
+        // Config Generator functions
+        let routeIdCounter = 2;
+
+        function getRoutes() {
+            const routes = [];
+            const routeItems = document.querySelectorAll('.route-item');
+            let priority = 100;
+            routeItems.forEach(item => {
+                const domains = item.querySelector('.route-domains').value
+                    .split(',')
+                    .map(d => d.trim())
+                    .filter(d => d);
+                const action = item.querySelector('.route-action').value;
+                if (domains.length > 0) {
+                    routes.push({ domains, action, priority });
+                    priority -= 10;
+                }
+            });
+            return routes;
+        }
+
+        function generateConfigYAML() {
+            const serverAddr = document.getElementById('cfg-server-address').value || 'proxy.example.com:8080';
+            const protocol = document.getElementById('cfg-protocol').value;
+            const username = document.getElementById('cfg-username').value;
+            const password = document.getElementById('cfg-password').value;
+            const httpListen = document.getElementById('cfg-http-listen').value;
+            const socks5Listen = document.getElementById('cfg-socks5-listen').value;
+            const routes = getRoutes();
+
+            let yaml = `# Bifrost Client Configuration
+# Generated from server dashboard
+
+# Local proxy listeners
+proxy:
+  http:
+    listen: "${httpListen}"
+    read_timeout: 30s
+    write_timeout: 30s
+    idle_timeout: 60s
+  socks5:
+    listen: "${socks5Listen}"
+
+# Server connection
+server:
+  address: "${serverAddr}"
+  protocol: ${protocol}`;
+
+            if (username) {
+                yaml += `\n  username: "${username}"`;
+            }
+            if (password) {
+                yaml += `\n  password: "${password}"`;
+            }
+
+            yaml += `
+  timeout: 30s
+  retry_count: 3
+  retry_delay: 1s
+
+# Routing rules
+routes:`;
+
+            routes.forEach((route, idx) => {
+                yaml += `
+  - name: route-${idx + 1}
+    domains:`;
+                route.domains.forEach(d => {
+                    yaml += `\n      - "${d}"`;
+                });
+                yaml += `
+    action: ${route.action}
+    priority: ${route.priority}`;
+            });
+
+            yaml += `
+
+# Debug settings
+debug:
+  enabled: true
+  max_entries: 1000
+  capture_body: false
+
+# Logging
+logging:
+  level: info
+  format: text
+  output: stdout
+
+# Web UI
+web_ui:
+  enabled: true
+  listen: "127.0.0.1:3129"
+
+# REST API
+api:
+  enabled: true
+  listen: "127.0.0.1:3130"
+
+# System tray
+tray:
+  enabled: true
+  start_minimized: false
+`;
+
+            return yaml;
+        }
+
+        function updateConfigPreview() {
+            const yaml = generateConfigYAML();
+            document.getElementById('config-preview').textContent = yaml;
+        }
+
+        function downloadConfig() {
+            const yaml = generateConfigYAML();
+            const blob = new Blob([yaml], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'client-config.yaml';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function copyConfig() {
+            const yaml = generateConfigYAML();
+            navigator.clipboard.writeText(yaml).then(() => {
+                const msg = document.getElementById('copy-success');
+                msg.style.display = 'inline';
+                setTimeout(() => { msg.style.display = 'none'; }, 2000);
+            });
+        }
+
+        function addRoute() {
+            const container = document.getElementById('routes-container');
+            const routeId = routeIdCounter++;
+            const routeHtml = `
+                <div class="route-item" data-route-id="${routeId}">
+                    <div class="route-header">
+                        <span>Route: New Rule</span>
+                        <button class="btn-sm" onclick="removeRoute(${routeId})">Remove</button>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Domains (comma-separated)</label>
+                            <input type="text" class="route-domains" value="" placeholder="*.example.com" oninput="updateConfigPreview()">
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label>Action</label>
+                            <select class="route-action" onchange="updateConfigPreview()">
+                                <option value="direct">Direct</option>
+                                <option value="server">Through Server</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.insertAdjacentHTML('beforeend', routeHtml);
+            updateConfigPreview();
+        }
+
+        function removeRoute(routeId) {
+            const item = document.querySelector(`.route-item[data-route-id="${routeId}"]`);
+            if (item) {
+                item.remove();
+                updateConfigPreview();
+            }
+        }
+
+        // Auto-populate server address from current location
+        function initConfigGenerator() {
+            const host = window.location.hostname;
+            const port = window.location.port || '8080';
+            document.getElementById('cfg-server-address').value = `${host}:${port}`;
+            updateConfigPreview();
+        }
+
+        // Initialize config generator on load
+        initConfigGenerator();
     </script>
 </body>
 </html>
