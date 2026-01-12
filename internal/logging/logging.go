@@ -13,10 +13,10 @@ import (
 
 // Config holds logging configuration.
 type Config struct {
-	Level      string `yaml:"level"`       // debug, info, warn, error
-	Format     string `yaml:"format"`      // json, text
-	Output     string `yaml:"output"`      // stdout, stderr, or file path
-	TimeFormat string `yaml:"time_format"` // time format string
+	Level      string `yaml:"level" json:"level"`             // debug, info, warn, error
+	Format     string `yaml:"format" json:"format"`           // json, text
+	Output     string `yaml:"output" json:"output"`           // stdout, stderr, or file path
+	TimeFormat string `yaml:"time_format" json:"time_format"` // time format string
 }
 
 // DefaultConfig returns the default logging configuration.

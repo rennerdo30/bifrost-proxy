@@ -116,15 +116,49 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 }
 
 func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
-	switch cfg.Mode {
+	// Check if using new multi-provider configuration
+	if len(cfg.Providers) > 0 {
+		return createChainAuthenticator(cfg.Providers)
+	}
+
+	// Legacy single-mode configuration
+	return createSingleAuthenticator(cfg.Mode, cfg.Native, cfg.System, cfg.LDAP, cfg.OAuth)
+}
+
+func createChainAuthenticator(providers []config.AuthProvider) (auth.Authenticator, error) {
+	chain := auth.NewChainAuthenticator()
+
+	for _, p := range providers {
+		if !p.Enabled {
+			continue
+		}
+
+		authenticator, err := createSingleAuthenticator(p.Type, p.Native, p.System, p.LDAP, p.OAuth)
+		if err != nil {
+			return nil, fmt.Errorf("create provider %q: %w", p.Name, err)
+		}
+
+		chain.AddAuthenticator(p.Name, p.Priority, authenticator)
+	}
+
+	if chain.Count() == 0 {
+		// No enabled providers, return NoneAuthenticator
+		return auth.NewNoneAuthenticator(), nil
+	}
+
+	return chain, nil
+}
+
+func createSingleAuthenticator(mode string, native *config.NativeAuth, system *config.SystemAuth, ldap *config.LDAPAuth, oauth *config.OAuthAuth) (auth.Authenticator, error) {
+	switch mode {
 	case "none", "":
 		return auth.NewNoneAuthenticator(), nil
 	case "native":
-		if cfg.Native == nil {
+		if native == nil {
 			return nil, fmt.Errorf("native auth config required")
 		}
 		nativeCfg := auth.NativeConfig{}
-		for _, u := range cfg.Native.Users {
+		for _, u := range native.Users {
 			nativeCfg.Users = append(nativeCfg.Users, auth.NativeUserConfig{
 				Username:     u.Username,
 				PasswordHash: u.PasswordHash,
@@ -132,41 +166,41 @@ func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 		}
 		return auth.NewNativeAuthenticator(nativeCfg), nil
 	case "ldap":
-		if cfg.LDAP == nil {
+		if ldap == nil {
 			return nil, fmt.Errorf("ldap auth config required")
 		}
 		return auth.NewLDAPAuthenticator(auth.LDAPConfig{
-			URL:                cfg.LDAP.URL,
-			BaseDN:             cfg.LDAP.BaseDN,
-			BindDN:             cfg.LDAP.BindDN,
-			BindPassword:       cfg.LDAP.BindPassword,
-			UserFilter:         cfg.LDAP.UserFilter,
-			GroupFilter:        cfg.LDAP.GroupFilter,
-			RequireGroup:       cfg.LDAP.RequireGroup,
-			TLS:                cfg.LDAP.TLS,
-			InsecureSkipVerify: cfg.LDAP.InsecureSkipVerify,
+			URL:                ldap.URL,
+			BaseDN:             ldap.BaseDN,
+			BindDN:             ldap.BindDN,
+			BindPassword:       ldap.BindPassword,
+			UserFilter:         ldap.UserFilter,
+			GroupFilter:        ldap.GroupFilter,
+			RequireGroup:       ldap.RequireGroup,
+			TLS:                ldap.TLS,
+			InsecureSkipVerify: ldap.InsecureSkipVerify,
 		})
 	case "oauth":
-		if cfg.OAuth == nil {
+		if oauth == nil {
 			return nil, fmt.Errorf("oauth auth config required")
 		}
 		return auth.NewOAuthAuthenticator(auth.OAuthConfig{
-			Provider:     cfg.OAuth.Provider,
-			ClientID:     cfg.OAuth.ClientID,
-			ClientSecret: cfg.OAuth.ClientSecret,
-			IssuerURL:    cfg.OAuth.IssuerURL,
-			Scopes:       cfg.OAuth.Scopes,
+			Provider:     oauth.Provider,
+			ClientID:     oauth.ClientID,
+			ClientSecret: oauth.ClientSecret,
+			IssuerURL:    oauth.IssuerURL,
+			Scopes:       oauth.Scopes,
 		})
 	case "system":
 		systemCfg := auth.SystemConfig{}
-		if cfg.System != nil {
-			systemCfg.Service = cfg.System.Service
-			systemCfg.AllowedUsers = cfg.System.AllowedUsers
-			systemCfg.AllowedGroups = cfg.System.AllowedGroups
+		if system != nil {
+			systemCfg.Service = system.Service
+			systemCfg.AllowedUsers = system.AllowedUsers
+			systemCfg.AllowedGroups = system.AllowedGroups
 		}
 		return auth.NewSystemAuthenticator(systemCfg)
 	default:
-		return nil, fmt.Errorf("unknown auth mode: %s", cfg.Mode)
+		return nil, fmt.Errorf("unknown auth mode: %s", mode)
 	}
 }
 
@@ -561,7 +595,7 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
 		GetBackend:   s.getBackend,
 		Authenticate: s.authenticate,
-		AuthRequired: s.config.Auth.Mode != "none" && s.config.Auth.Mode != "",
+		AuthRequired: s.isAuthRequired(),
 		DialTimeout:  30 * time.Second,
 		OnConnect:    s.onConnect,
 		OnError:      s.onError,
@@ -614,6 +648,21 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 // getBackend returns a backend for a domain.
 func (s *Server) getBackend(domain, clientIP string) backend.Backend {
 	return s.router.GetBackendForDomain(domain, clientIP)
+}
+
+// isAuthRequired checks if authentication is required based on config.
+func (s *Server) isAuthRequired() bool {
+	// If using new multi-provider configuration
+	if len(s.config.Auth.Providers) > 0 {
+		for _, p := range s.config.Auth.Providers {
+			if p.Enabled && p.Type != "none" {
+				return true
+			}
+		}
+		return false
+	}
+	// Legacy single-mode configuration
+	return s.config.Auth.Mode != "none" && s.config.Auth.Mode != ""
 }
 
 // authenticate validates credentials.

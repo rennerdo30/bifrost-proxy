@@ -15,15 +15,22 @@ export interface StatusResponse {
 }
 
 export interface DebugEntry {
-  id: number
+  id: string
   timestamp: string
-  method: string
+  type: string
   host: string
-  path: string
-  status_code: number
+  method?: string
+  path?: string
+  protocol: string
+  status_code?: number
   duration_ms: number
-  route: 'server' | 'direct'
+  bytes_sent: number
+  bytes_received: number
+  action: 'server' | 'direct'
+  client_addr: string
   error?: string
+  request_headers?: Record<string, string>
+  response_headers?: Record<string, string>
 }
 
 export interface Route {

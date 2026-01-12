@@ -1,5 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { ServerConfig } from '../../api/types'
+import { ServerSection } from './sections/ServerSection'
+import { BackendsSection } from './sections/BackendsSection'
+import { RoutesSection } from './sections/RoutesSection'
+import { AuthSection } from './sections/AuthSection'
+import { RateLimitSection } from './sections/RateLimitSection'
+import { AccessLogSection } from './sections/AccessLogSection'
+import { MetricsSection } from './sections/MetricsSection'
+import { LoggingSection } from './sections/LoggingSection'
+import { WebUISection } from './sections/WebUISection'
+import { APISection } from './sections/APISection'
+import { HealthCheckSection } from './sections/HealthCheckSection'
 
 interface ConfigEditorProps {
   config: ServerConfig | undefined
@@ -8,51 +19,60 @@ interface ConfigEditorProps {
   onReload: () => Promise<void>
 }
 
-interface SectionProps {
-  title: string
-  description: string
-  hotReload?: boolean
-  children: React.ReactNode
-  defaultOpen?: boolean
+// Default config values for initialization
+const defaultServer = {
+  http: { listen: ':8080' },
+  socks5: { listen: ':1080' },
 }
 
-function Section({ title, description, hotReload, children, defaultOpen = false }: SectionProps) {
-  const [isOpen, setIsOpen] = useState(defaultOpen)
+const defaultAuth = { mode: 'none' as const }
 
-  return (
-    <div className="border border-bifrost-border rounded-lg overflow-hidden">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 bg-bifrost-card hover:bg-bifrost-card-hover transition-colors"
-      >
-        <div className="flex items-center gap-3">
-          <svg
-            className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth={2}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-          </svg>
-          <div className="text-left">
-            <h4 className="font-medium text-white">{title}</h4>
-            <p className="text-xs text-bifrost-muted">{description}</p>
-          </div>
-        </div>
-        {hotReload !== undefined && (
-          <span className={`badge ${hotReload ? 'badge-success' : 'badge-warning'}`}>
-            {hotReload ? 'Hot Reload' : 'Restart Required'}
-          </span>
-        )}
-      </button>
-      {isOpen && (
-        <div className="p-4 bg-bifrost-bg/50 border-t border-bifrost-border">
-          {children}
-        </div>
-      )}
-    </div>
-  )
+const defaultRateLimit = {
+  enabled: false,
+  requests_per_second: 100,
+  burst_size: 200,
+  per_ip: true,
+  per_user: false,
+}
+
+const defaultAccessLog = {
+  enabled: true,
+  format: 'json' as const,
+  output: 'stdout',
+}
+
+const defaultMetrics = {
+  enabled: true,
+  listen: ':9090',
+  path: '/metrics',
+}
+
+const defaultLogging = {
+  level: 'info' as const,
+  format: 'text' as const,
+}
+
+const defaultWebUI = {
+  enabled: false,
+  listen: ':8081',
+}
+
+const defaultAPI = {
+  enabled: true,
+  listen: ':8082',
+}
+
+const defaultConfig: ServerConfig = {
+  server: defaultServer,
+  backends: [],
+  routes: [],
+  auth: defaultAuth,
+  rate_limit: defaultRateLimit,
+  access_log: defaultAccessLog,
+  metrics: defaultMetrics,
+  logging: defaultLogging,
+  web_ui: defaultWebUI,
+  api: defaultAPI,
 }
 
 export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEditorProps) {
@@ -60,16 +80,32 @@ export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEdit
   const [createBackup, setCreateBackup] = useState(true)
   const [editedConfig, setEditedConfig] = useState<ServerConfig | null>(null)
 
-  const currentConfig = editedConfig || config
+  // Initialize editedConfig when config loads
+  useEffect(() => {
+    if (config && !editedConfig) {
+      setEditedConfig({ ...defaultConfig, ...config })
+    }
+  }, [config, editedConfig])
+
+  const currentConfig = editedConfig || config || defaultConfig
+  const hasChanges = !!editedConfig
 
   const handleSave = async () => {
     if (!currentConfig) return
     setIsSaving(true)
     try {
       await onSave(currentConfig, createBackup)
+      setEditedConfig(null) // Reset edited state after successful save
     } finally {
       setIsSaving(false)
     }
+  }
+
+  const updateConfig = (partial: Partial<ServerConfig>) => {
+    setEditedConfig((prev) => ({
+      ...(prev || config || defaultConfig),
+      ...partial,
+    }))
   }
 
   if (isLoading) {
@@ -93,262 +129,133 @@ export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEdit
     )
   }
 
+  const availableBackends = currentConfig.backends?.map((b) => b.name) || []
+
   return (
     <div className="space-y-4">
-      {/* Server Settings */}
-      <Section
-        title="Server Settings"
-        description="HTTP and SOCKS5 listener configuration"
-        hotReload={false}
-        defaultOpen
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Info Banner */}
+      <div className="p-4 bg-bifrost-accent/10 border border-bifrost-accent/30 rounded-lg">
+        <div className="flex items-start gap-3">
+          <svg className="w-5 h-5 text-bifrost-accent mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           <div>
-            <label className="label">HTTP Listen Address</label>
-            <input
-              type="text"
-              className="input"
-              value={currentConfig?.server?.http_listen || ':8080'}
-              onChange={(e) =>
-                setEditedConfig({
-                  ...currentConfig,
-                  server: { ...currentConfig?.server, http_listen: e.target.value },
-                })
-              }
-              placeholder=":8080"
-            />
-          </div>
-          <div>
-            <label className="label">SOCKS5 Listen Address</label>
-            <input
-              type="text"
-              className="input"
-              value={currentConfig?.server?.socks5_listen || ':1080'}
-              onChange={(e) =>
-                setEditedConfig({
-                  ...currentConfig,
-                  server: { ...currentConfig?.server, socks5_listen: e.target.value },
-                })
-              }
-              placeholder=":1080"
-            />
-          </div>
-          <div>
-            <label className="label">Connect Timeout</label>
-            <input
-              type="text"
-              className="input"
-              value={currentConfig?.server?.connect_timeout || '10s'}
-              onChange={(e) =>
-                setEditedConfig({
-                  ...currentConfig,
-                  server: { ...currentConfig?.server, connect_timeout: e.target.value },
-                })
-              }
-              placeholder="10s"
-            />
-          </div>
-          <div>
-            <label className="label">Idle Timeout</label>
-            <input
-              type="text"
-              className="input"
-              value={currentConfig?.server?.idle_timeout || '60s'}
-              onChange={(e) =>
-                setEditedConfig({
-                  ...currentConfig,
-                  server: { ...currentConfig?.server, idle_timeout: e.target.value },
-                })
-              }
-              placeholder="60s"
-            />
+            <p className="text-sm text-gray-300">
+              <span className="badge badge-success text-xs mr-2">Hot Reload</span>
+              sections can be applied without restart.
+              <span className="badge badge-warning text-xs mx-2">Restart Required</span>
+              sections need a server restart.
+            </p>
           </div>
         </div>
-      </Section>
+      </div>
+
+      {/* Server Settings */}
+      <ServerSection
+        config={currentConfig.server || defaultServer}
+        onChange={(server) => updateConfig({ server })}
+      />
 
       {/* Backends */}
-      <Section
-        title="Backends"
-        description="Proxy backend connections"
-        hotReload={false}
-      >
-        <div className="space-y-3">
-          {currentConfig?.backends?.map((backend, index) => (
-            <div
-              key={index}
-              className="p-3 bg-bifrost-card rounded-lg border border-bifrost-border"
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className="font-medium text-white">{backend.name}</span>
-                <span className="badge badge-info">{backend.type}</span>
-              </div>
-              {backend.address && (
-                <p className="text-sm text-bifrost-muted">Address: {backend.address}</p>
-              )}
-            </div>
-          )) || <p className="text-bifrost-muted">No backends configured</p>}
-        </div>
-      </Section>
+      <BackendsSection
+        backends={currentConfig.backends || []}
+        onChange={(backends) => updateConfig({ backends })}
+      />
 
       {/* Routes */}
-      <Section
-        title="Routes"
-        description="Domain routing rules"
-        hotReload={true}
-      >
-        <div className="space-y-2">
-          {currentConfig?.routes?.map((route, index) => (
-            <div
-              key={index}
-              className="flex items-center justify-between p-2 bg-bifrost-card rounded"
-            >
-              <code className="text-sm text-gray-300">{route.pattern}</code>
-              <span className="text-sm text-bifrost-accent">{route.backend}</span>
-            </div>
-          )) || <p className="text-bifrost-muted">No routes configured</p>}
-        </div>
-      </Section>
+      <RoutesSection
+        routes={currentConfig.routes || []}
+        availableBackends={availableBackends}
+        onChange={(routes) => updateConfig({ routes })}
+      />
+
+      {/* Authentication */}
+      <AuthSection
+        config={currentConfig.auth || defaultAuth}
+        onChange={(auth) => updateConfig({ auth })}
+      />
 
       {/* Rate Limiting */}
-      <Section
-        title="Rate Limiting"
-        description="Request rate limiting settings"
-        hotReload={true}
-      >
-        <div className="space-y-4">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={currentConfig?.rate_limit?.enabled || false}
-              onChange={(e) =>
-                setEditedConfig({
-                  ...currentConfig,
-                  rate_limit: { ...currentConfig?.rate_limit, enabled: e.target.checked },
-                })
-              }
-              className="rounded border-bifrost-border bg-bifrost-bg"
-            />
-            <span className="text-gray-300">Enable rate limiting</span>
-          </label>
-          {currentConfig?.rate_limit?.enabled && (
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="label">Requests per Second</label>
-                <input
-                  type="number"
-                  className="input"
-                  value={currentConfig?.rate_limit?.requests_per_second || 100}
-                  onChange={(e) =>
-                    setEditedConfig({
-                      ...currentConfig,
-                      rate_limit: {
-                        ...currentConfig?.rate_limit,
-                        enabled: true,
-                        requests_per_second: Number(e.target.value),
-                      },
-                    })
-                  }
-                />
-              </div>
-              <div>
-                <label className="label">Burst</label>
-                <input
-                  type="number"
-                  className="input"
-                  value={currentConfig?.rate_limit?.burst || 50}
-                  onChange={(e) =>
-                    setEditedConfig({
-                      ...currentConfig,
-                      rate_limit: {
-                        ...currentConfig?.rate_limit,
-                        enabled: true,
-                        burst: Number(e.target.value),
-                      },
-                    })
-                  }
-                />
-              </div>
-            </div>
-          )}
-        </div>
-      </Section>
+      <RateLimitSection
+        config={currentConfig.rate_limit || defaultRateLimit}
+        onChange={(rate_limit) => updateConfig({ rate_limit })}
+      />
 
-      {/* Logging */}
-      <Section
-        title="Logging"
-        description="Log level and format"
-        hotReload={false}
-      >
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="label">Log Level</label>
-            <select
-              className="select"
-              value={currentConfig?.logging?.level || 'info'}
-              onChange={(e) =>
-                setEditedConfig({
-                  ...currentConfig,
-                  logging: {
-                    ...currentConfig?.logging,
-                    level: e.target.value as 'debug' | 'info' | 'warn' | 'error',
-                  },
-                })
-              }
-            >
-              <option value="debug">Debug</option>
-              <option value="info">Info</option>
-              <option value="warn">Warning</option>
-              <option value="error">Error</option>
-            </select>
-          </div>
-          <div>
-            <label className="label">Log Format</label>
-            <select
-              className="select"
-              value={currentConfig?.logging?.format || 'text'}
-              onChange={(e) =>
-                setEditedConfig({
-                  ...currentConfig,
-                  logging: {
-                    ...currentConfig?.logging,
-                    level: currentConfig?.logging?.level || 'info',
-                    format: e.target.value as 'text' | 'json',
-                  },
-                })
-              }
-            >
-              <option value="text">Text</option>
-              <option value="json">JSON</option>
-            </select>
-          </div>
-        </div>
-      </Section>
+      {/* Access Logging */}
+      <AccessLogSection
+        config={currentConfig.access_log || defaultAccessLog}
+        onChange={(access_log) => updateConfig({ access_log })}
+      />
+
+      {/* Prometheus Metrics */}
+      <MetricsSection
+        config={currentConfig.metrics || defaultMetrics}
+        onChange={(metrics) => updateConfig({ metrics })}
+      />
+
+      {/* Application Logging */}
+      <LoggingSection
+        config={currentConfig.logging || defaultLogging}
+        onChange={(logging) => updateConfig({ logging })}
+      />
+
+      {/* Web UI */}
+      <WebUISection
+        config={currentConfig.web_ui || defaultWebUI}
+        onChange={(web_ui) => updateConfig({ web_ui })}
+      />
+
+      {/* REST API */}
+      <APISection
+        config={currentConfig.api || defaultAPI}
+        onChange={(api) => updateConfig({ api })}
+      />
+
+      {/* Global Health Checks */}
+      <HealthCheckSection
+        config={currentConfig.health_check}
+        onChange={(health_check) => updateConfig({ health_check })}
+      />
 
       {/* Actions */}
-      <div className="flex items-center justify-between pt-4 border-t border-bifrost-border">
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={createBackup}
-            onChange={(e) => setCreateBackup(e.target.checked)}
-            className="rounded border-bifrost-border bg-bifrost-bg"
-          />
-          <span className="text-sm text-gray-400">Create backup before saving</span>
-        </label>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onReload}
-            className="btn btn-secondary"
-          >
-            Reload Config
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={isSaving || !editedConfig}
-            className="btn btn-primary"
-          >
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </button>
+      <div className="card">
+        <div className="flex items-center justify-between">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={createBackup}
+              onChange={(e) => setCreateBackup(e.target.checked)}
+              className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
+            />
+            <span className="text-sm text-gray-400">Create backup before saving</span>
+          </label>
+          <div className="flex items-center gap-3">
+            <button onClick={onReload} className="btn btn-secondary">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              Reload Config
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={isSaving || !hasChanges}
+              className="btn btn-primary"
+            >
+              {isSaving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                  </svg>
+                  Save Changes
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

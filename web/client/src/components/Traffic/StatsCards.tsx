@@ -35,9 +35,9 @@ function StatCard({ label, value, color, delay }: StatCardProps) {
 
 export function StatsCards({ entries }: StatsCardsProps) {
   const total = entries.length
-  const viaServer = entries.filter(e => e.route === 'server').length
-  const direct = entries.filter(e => e.route === 'direct').length
-  const errors = entries.filter(e => e.error || (e.status_code >= 400)).length
+  const viaServer = entries.filter(e => e.action === 'server').length
+  const direct = entries.filter(e => e.action === 'direct').length
+  const errors = entries.filter(e => e.error || (typeof e.status_code === 'number' && e.status_code >= 400)).length
 
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

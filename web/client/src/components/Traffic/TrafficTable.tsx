@@ -64,22 +64,22 @@ export function TrafficTable({ entries }: TrafficTableProps) {
                   {formatTime(entry.timestamp)}
                 </td>
                 <td className="table-cell">
-                  <span className={`font-mono font-medium ${methodColors[entry.method] || 'text-gray-400'}`}>
-                    {entry.method}
+                  <span className={`font-mono font-medium ${methodColors[entry.method || ''] || 'text-gray-400'}`}>
+                    {entry.method || entry.type || '—'}
                   </span>
                 </td>
                 <td className="table-cell font-mono text-xs max-w-[200px] truncate" title={entry.host}>
                   {entry.host}
                 </td>
-                <td className="table-cell font-mono text-xs max-w-[250px] truncate text-bifrost-muted" title={entry.path}>
-                  {entry.path}
+                <td className="table-cell font-mono text-xs max-w-[250px] truncate text-bifrost-muted" title={entry.path || ''}>
+                  {entry.path || '—'}
                 </td>
                 <td className="table-cell">
                   <span className={`badge ${
-                    entry.status_code >= 500 ? 'badge-error' :
-                    entry.status_code >= 400 ? 'badge-warning' :
-                    entry.status_code >= 300 ? 'badge-info' :
-                    'badge-success'
+                    (entry.status_code ?? 0) >= 500 ? 'badge-error' :
+                    (entry.status_code ?? 0) >= 400 ? 'badge-warning' :
+                    (entry.status_code ?? 0) >= 300 ? 'badge-info' :
+                    entry.status_code ? 'badge-success' : 'bg-bifrost-muted/20 text-bifrost-muted'
                   }`}>
                     {entry.status_code || '—'}
                   </span>
@@ -88,8 +88,8 @@ export function TrafficTable({ entries }: TrafficTableProps) {
                   {formatDuration(entry.duration_ms)}
                 </td>
                 <td className="table-cell">
-                  <span className={`badge ${entry.route === 'server' ? 'badge-server' : 'badge-direct'}`}>
-                    {entry.route}
+                  <span className={`badge ${entry.action === 'server' ? 'badge-server' : 'badge-direct'}`}>
+                    {entry.action}
                   </span>
                 </td>
               </tr>

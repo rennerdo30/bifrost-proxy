@@ -526,6 +526,9 @@ All PRs must pass:
 3. `golangci-lint run` - No linting errors
 4. `go mod tidy && git diff --exit-code` - Dependencies clean
 5. Security scan (e.g., `govulncheck`)
+6. `make docker-build` - Docker images build successfully
+
+**IMPORTANT: Always verify Docker builds work before committing!** Changes to web UI, Makefile, or build processes can break Docker builds even if local builds succeed. Run `make docker-build` or `make docker-rebuild` to verify.
 
 ## Git Commit Guidelines
 

@@ -8,7 +8,7 @@ export function Traffic() {
   const [filter, setFilter] = useState('')
   const queryClient = useQueryClient()
 
-  const { data: entries = [], isLoading } = useQuery({
+  const { data: entries = [], isLoading, isError, error } = useQuery({
     queryKey: ['entries'],
     queryFn: () => api.getEntries(100),
     refetchInterval: 3000,
@@ -22,7 +22,7 @@ export function Traffic() {
   const filteredEntries = filter
     ? entries.filter(e =>
         e.host.toLowerCase().includes(filter.toLowerCase()) ||
-        e.path.toLowerCase().includes(filter.toLowerCase())
+        (e.path || '').toLowerCase().includes(filter.toLowerCase())
       )
     : entries
 
@@ -52,7 +52,15 @@ export function Traffic() {
         </button>
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <div className="card text-center py-12 border-bifrost-error/30">
+          <svg className="w-12 h-12 mx-auto text-bifrost-error mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+          <p className="text-bifrost-error">Failed to load traffic data</p>
+          <p className="text-sm text-bifrost-muted mt-1">{error instanceof Error ? error.message : 'Unknown error'}</p>
+        </div>
+      ) : isLoading ? (
         <div className="card text-center py-12">
           <div className="animate-spin w-8 h-8 border-2 border-bifrost-accent border-t-transparent rounded-full mx-auto" />
           <p className="text-bifrost-muted mt-4">Loading traffic data...</p>

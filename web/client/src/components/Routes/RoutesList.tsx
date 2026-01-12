@@ -30,7 +30,7 @@ export function RoutesList({ routes }: RoutesListProps) {
           </thead>
           <tbody className="divide-y divide-bifrost-border">
             {routes.map((route, idx) => (
-              <tr key={idx} className="hover:bg-bifrost-card-hover transition-colors">
+              <tr key={`${route.name}-${route.priority}-${idx}`} className="hover:bg-bifrost-card-hover transition-colors">
                 <td className="table-cell">
                   <span className="badge badge-info">{route.priority}</span>
                 </td>

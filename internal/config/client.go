@@ -9,56 +9,56 @@ import (
 
 // ClientConfig is the main configuration for the Bifrost client.
 type ClientConfig struct {
-	Proxy   ClientProxySettings `yaml:"proxy"`
-	Server  ServerConnection    `yaml:"server"`
-	Routes  []ClientRouteConfig `yaml:"routes"`
-	Debug   DebugConfig         `yaml:"debug"`
-	Logging logging.Config      `yaml:"logging"`
-	WebUI   WebUIConfig         `yaml:"web_ui"`
-	API     APIConfig           `yaml:"api"`
-	Tray    TrayConfig          `yaml:"tray"`
+	Proxy   ClientProxySettings `yaml:"proxy" json:"proxy"`
+	Server  ServerConnection    `yaml:"server" json:"server"`
+	Routes  []ClientRouteConfig `yaml:"routes" json:"routes"`
+	Debug   DebugConfig         `yaml:"debug" json:"debug"`
+	Logging logging.Config      `yaml:"logging" json:"logging"`
+	WebUI   WebUIConfig         `yaml:"web_ui" json:"web_ui"`
+	API     APIConfig           `yaml:"api" json:"api"`
+	Tray    TrayConfig          `yaml:"tray" json:"tray"`
 }
 
 // ClientProxySettings contains client proxy listener settings.
 type ClientProxySettings struct {
-	HTTP   ListenerConfig `yaml:"http"`
-	SOCKS5 ListenerConfig `yaml:"socks5"`
+	HTTP   ListenerConfig `yaml:"http" json:"http"`
+	SOCKS5 ListenerConfig `yaml:"socks5" json:"socks5"`
 }
 
 // ServerConnection contains settings for connecting to the Bifrost server.
 type ServerConnection struct {
-	Address     string    `yaml:"address"`
-	Protocol    string    `yaml:"protocol"` // http, socks5
-	TLS         *TLSConfig `yaml:"tls,omitempty"`
-	Username    string    `yaml:"username,omitempty"`
-	Password    string    `yaml:"password,omitempty"`
-	Timeout     Duration  `yaml:"timeout"`
-	RetryCount  int       `yaml:"retry_count"`
-	RetryDelay  Duration  `yaml:"retry_delay"`
-	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty"`
+	Address     string             `yaml:"address" json:"address"`
+	Protocol    string             `yaml:"protocol" json:"protocol"` // http, socks5
+	TLS         *TLSConfig         `yaml:"tls,omitempty" json:"tls,omitempty"`
+	Username    string             `yaml:"username,omitempty" json:"username,omitempty"`
+	Password    string             `yaml:"password,omitempty" json:"password,omitempty"`
+	Timeout     Duration           `yaml:"timeout" json:"timeout"`
+	RetryCount  int                `yaml:"retry_count" json:"retry_count"`
+	RetryDelay  Duration           `yaml:"retry_delay" json:"retry_delay"`
+	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty" json:"health_check,omitempty"`
 }
 
 // ClientRouteConfig describes a client routing rule.
 type ClientRouteConfig struct {
-	Name     string   `yaml:"name,omitempty"`
-	Domains  []string `yaml:"domains"`
-	Action   string   `yaml:"action"` // server, direct
-	Priority int      `yaml:"priority"`
+	Name     string   `yaml:"name,omitempty" json:"name,omitempty"`
+	Domains  []string `yaml:"domains" json:"domains"`
+	Action   string   `yaml:"action" json:"action"` // server, direct
+	Priority int      `yaml:"priority" json:"priority"`
 }
 
 // DebugConfig contains traffic debugging settings.
 type DebugConfig struct {
-	Enabled      bool     `yaml:"enabled"`
-	MaxEntries   int      `yaml:"max_entries"`
-	CaptureBody  bool     `yaml:"capture_body"`
-	MaxBodySize  int      `yaml:"max_body_size"`
-	FilterDomains []string `yaml:"filter_domains,omitempty"`
+	Enabled       bool     `yaml:"enabled" json:"enabled"`
+	MaxEntries    int      `yaml:"max_entries" json:"max_entries"`
+	CaptureBody   bool     `yaml:"capture_body" json:"capture_body"`
+	MaxBodySize   int      `yaml:"max_body_size" json:"max_body_size"`
+	FilterDomains []string `yaml:"filter_domains,omitempty" json:"filter_domains,omitempty"`
 }
 
 // TrayConfig contains system tray settings.
 type TrayConfig struct {
-	Enabled bool `yaml:"enabled"`
-	StartMinimized bool `yaml:"start_minimized"`
+	Enabled        bool `yaml:"enabled" json:"enabled"`
+	StartMinimized bool `yaml:"start_minimized" json:"start_minimized"`
 }
 
 // DefaultClientConfig returns a client configuration with sensible defaults.

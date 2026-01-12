@@ -85,80 +85,236 @@ export interface RequestLogStats {
   top_hosts: Array<{ host: string; count: number }>
 }
 
-// Configuration types
-export interface ServerSettings {
-  http_listen?: string
-  socks5_listen?: string
-  connect_timeout?: string
+// ============================================
+// Configuration Types (Full Structure)
+// ============================================
+
+// TLS Configuration
+export interface TLSConfig {
+  enabled: boolean
+  cert_file: string
+  key_file: string
+}
+
+// Listener Configuration
+export interface ListenerConfig {
+  listen: string
+  tls?: TLSConfig
+  read_timeout?: string
+  write_timeout?: string
   idle_timeout?: string
 }
 
+// Server Settings
+export interface ServerSettings {
+  http: ListenerConfig
+  socks5: ListenerConfig
+  graceful_period?: string
+}
+
+// Health Check Configuration
+export interface HealthCheckConfig {
+  type: 'tcp' | 'http' | 'ping'
+  interval: string
+  timeout: string
+  target?: string
+  path?: string
+}
+
+// Backend Configuration
 export interface BackendConfig {
   name: string
-  type: string
-  address?: string
+  type: 'direct' | 'wireguard' | 'openvpn' | 'http_proxy' | 'socks5_proxy'
+  enabled: boolean
+  priority: number
+  weight: number
+  config?: Record<string, unknown>
+  health_check?: HealthCheckConfig
+}
+
+// Backend type-specific configs
+export interface WireGuardPeerConfig {
+  public_key: string
+  endpoint: string
+  preshared_key?: string
+  allowed_ips: string[]
+  persistent_keepalive?: number
+}
+
+export interface WireGuardBackendConfig {
+  private_key: string
+  address: string
+  dns?: string[]
+  mtu?: number
+  peer: WireGuardPeerConfig
+}
+
+export interface OpenVPNBackendConfig {
+  config_file: string
+  auth_file?: string
+  binary?: string
+  management_addr?: string
+  management_port?: number
+  connect_timeout?: string
+  extra_args?: string[]
+}
+
+export interface ProxyBackendConfig {
+  address: string
   username?: string
   password?: string
-  priority?: number
-  weight?: number
-  config_path?: string
-  interface_name?: string
+  connect_timeout?: string
 }
 
+export interface DirectBackendConfig {
+  connect_timeout?: string
+  keep_alive?: string
+  local_addr?: string
+}
+
+// Route Configuration
 export interface RouteConfig {
-  pattern: string
-  backend: string
-  priority?: number
+  name?: string
+  domains: string[]
+  backend?: string
+  backends?: string[]
+  priority: number
+  load_balance?: 'round_robin' | 'least_conn' | 'ip_hash' | 'weighted'
 }
 
+// Native User
+export interface NativeUser {
+  username: string
+  password_hash: string
+}
+
+// Native Authentication
+export interface NativeAuth {
+  users: NativeUser[]
+}
+
+// System Authentication (PAM)
+export interface SystemAuth {
+  service?: string
+  allowed_users?: string[]
+  allowed_groups?: string[]
+}
+
+// LDAP Authentication
+export interface LDAPAuth {
+  url: string
+  base_dn: string
+  bind_dn: string
+  bind_password: string
+  user_filter: string
+  group_filter?: string
+  require_group?: string
+  tls: boolean
+  insecure_skip_verify: boolean
+}
+
+// OAuth Authentication
+export interface OAuthAuth {
+  provider: string
+  client_id: string
+  client_secret: string
+  issuer_url: string
+  redirect_url: string
+  scopes: string[]
+}
+
+// Auth Provider (for multiple auth backends)
+export interface AuthProvider {
+  name: string
+  type: 'none' | 'native' | 'system' | 'ldap' | 'oauth'
+  enabled: boolean
+  priority: number
+  native?: NativeAuth
+  system?: SystemAuth
+  ldap?: LDAPAuth
+  oauth?: OAuthAuth
+}
+
+// Auth Configuration
 export interface AuthConfig {
-  mode: 'none' | 'basic' | 'file'
-  users?: Record<string, string>
-  file?: string
+  // Legacy single-mode (backwards compatible)
+  mode?: 'none' | 'native' | 'system' | 'ldap' | 'oauth'
+  native?: NativeAuth
+  system?: SystemAuth
+  ldap?: LDAPAuth
+  oauth?: OAuthAuth
+  // New multi-provider configuration
+  providers?: AuthProvider[]
 }
 
+// Bandwidth Configuration
+export interface BandwidthConfig {
+  enabled: boolean
+  upload: string
+  download: string
+}
+
+// Rate Limit Configuration
 export interface RateLimitConfig {
   enabled: boolean
-  requests_per_second?: number
-  burst?: number
-  per_ip?: boolean
+  requests_per_second: number
+  burst_size: number
+  per_ip: boolean
+  per_user: boolean
+  bandwidth?: BandwidthConfig
 }
 
+// Access Log Configuration
 export interface AccessLogConfig {
   enabled: boolean
-  format?: string
-  output?: string
-  file?: string
+  format: 'json' | 'apache'
+  output: string
 }
 
+// Metrics Configuration
 export interface MetricsConfig {
   enabled: boolean
-  listen?: string
+  listen: string
+  path: string
 }
 
+// Logging Configuration
 export interface LoggingConfig {
   level: 'debug' | 'info' | 'warn' | 'error'
-  format?: 'text' | 'json'
+  format: 'text' | 'json'
+  output?: string
+  time_format?: string
 }
 
+// Web UI Configuration
+export interface WebUIConfig {
+  enabled: boolean
+  listen: string
+  base_path?: string
+}
+
+// API Configuration
 export interface APIConfig {
   enabled: boolean
-  listen?: string
+  listen: string
   token?: string
   enable_request_log?: boolean
   request_log_size?: number
 }
 
+// Full Server Configuration
 export interface ServerConfig {
-  server?: ServerSettings
-  backends?: BackendConfig[]
-  routes?: RouteConfig[]
-  auth?: AuthConfig
-  rate_limit?: RateLimitConfig
-  access_log?: AccessLogConfig
-  metrics?: MetricsConfig
-  logging?: LoggingConfig
-  api?: APIConfig
+  server: ServerSettings
+  backends: BackendConfig[]
+  routes: RouteConfig[]
+  auth: AuthConfig
+  rate_limit: RateLimitConfig
+  access_log: AccessLogConfig
+  metrics: MetricsConfig
+  logging: LoggingConfig
+  web_ui: WebUIConfig
+  api: APIConfig
+  health_check?: HealthCheckConfig
 }
 
 // Config metadata
