@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -130,8 +131,11 @@ func TestHealthManager(t *testing.T) {
 	})
 
 	var lastResult Result
+	var mu sync.Mutex
 	mgr.Register("test", checker, 100*time.Millisecond, func(name string, result Result) {
+		mu.Lock()
 		lastResult = result
+		mu.Unlock()
 	})
 
 	// Start manager
@@ -148,7 +152,10 @@ func TestHealthManager(t *testing.T) {
 	assert.True(t, result.Healthy)
 
 	// Callback should have been called
-	assert.True(t, lastResult.Healthy)
+	mu.Lock()
+	lastResultHealthy := lastResult.Healthy
+	mu.Unlock()
+	assert.True(t, lastResultHealthy)
 
 	// Manager should report healthy
 	assert.True(t, mgr.IsHealthy())
