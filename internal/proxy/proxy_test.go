@@ -112,3 +112,143 @@ func TestHTTPHandler_CONNECT(t *testing.T) {
 	assert.False(t, connectCalled, "OnConnect should not be called without a CONNECT request")
 	// Full CONNECT test would require more setup
 }
+
+func TestCopyStats_TotalBytes(t *testing.T) {
+	stats := CopyStats{
+		BytesSent:     1024,
+		BytesReceived: 2048,
+		Duration:      time.Second,
+	}
+
+	assert.Equal(t, int64(3072), stats.TotalBytes())
+}
+
+func TestCopyStats_Throughput(t *testing.T) {
+	stats := CopyStats{
+		BytesSent:     1000,
+		BytesReceived: 2000,
+		Duration:      time.Second,
+	}
+
+	// 3000 bytes / 1 second = 3000 bytes/second
+	assert.Equal(t, float64(3000), stats.Throughput())
+}
+
+func TestCopyStats_Throughput_ZeroDuration(t *testing.T) {
+	stats := CopyStats{
+		BytesSent:     1000,
+		BytesReceived: 2000,
+		Duration:      0,
+	}
+
+	assert.Equal(t, float64(0), stats.Throughput())
+}
+
+func TestCopyBidirectionalWithStats(t *testing.T) {
+	client1, server1 := net.Pipe()
+	client2, server2 := net.Pipe()
+
+	defer client1.Close()
+	defer client2.Close()
+
+	done := make(chan CopyStats)
+	go func() {
+		stats := CopyBidirectionalWithStats(context.Background(), server1, server2)
+		done <- stats
+	}()
+
+	// Write data and close
+	testData := []byte("test data")
+	go func() {
+		client1.Write(testData)
+		time.Sleep(10 * time.Millisecond)
+		client1.Close()
+	}()
+
+	// Read data
+	go func() {
+		buf := make([]byte, 100)
+		client2.Read(buf)
+		time.Sleep(10 * time.Millisecond)
+		client2.Close()
+	}()
+
+	select {
+	case stats := <-done:
+		assert.NotNil(t, stats)
+		assert.True(t, stats.Duration > 0)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for copy")
+	}
+}
+
+func TestHTTPHandlerConfig_Struct(t *testing.T) {
+	var connectCalled bool
+	var errorCalled bool
+
+	cfg := HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		DialTimeout: 10 * time.Second,
+		OnConnect: func(ctx context.Context, conn net.Conn, host string, be backend.Backend) {
+			connectCalled = true
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled = true
+		},
+	}
+
+	assert.NotNil(t, cfg.GetBackend)
+	assert.Equal(t, 10*time.Second, cfg.DialTimeout)
+	assert.NotNil(t, cfg.OnConnect)
+	assert.NotNil(t, cfg.OnError)
+
+	// Test callbacks
+	cfg.OnConnect(context.Background(), nil, "test", nil)
+	cfg.OnError(context.Background(), nil, "test", nil)
+	assert.True(t, connectCalled)
+	assert.True(t, errorCalled)
+}
+
+func TestNewHTTPHandler(t *testing.T) {
+	cfg := HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+	}
+
+	handler := NewHTTPHandler(cfg)
+	assert.NotNil(t, handler)
+}
+
+func TestCopyBidirectional_ContextCanceled(t *testing.T) {
+	client1, server1 := net.Pipe()
+	client2, server2 := net.Pipe()
+
+	defer client1.Close()
+	defer client2.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	done := make(chan struct{})
+	go func() {
+		CopyBidirectional(ctx, server1, server2)
+		close(done)
+	}()
+
+	// Cancel context after brief delay
+	time.Sleep(10 * time.Millisecond)
+	cancel()
+
+	// Close connections to unblock
+	server1.Close()
+	server2.Close()
+
+	select {
+	case <-done:
+		// Expected
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for cancellation")
+	}
+}
