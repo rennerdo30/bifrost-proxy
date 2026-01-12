@@ -39,6 +39,12 @@ web/server/node_modules/
 web/client/dist/
 web/client/node_modules/
 
+# Embedded static assets (rebuilt by `make build`)
+internal/api/server/static/*
+internal/api/client/static/*
+!internal/api/server/static/.gitkeep
+!internal/api/client/static/.gitkeep
+
 # TypeScript build artifacts
 *.tsbuildinfo
 *.d.ts
