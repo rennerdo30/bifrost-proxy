@@ -55,3 +55,6 @@ go.work
 go.work.sum
 job-logs.txt
 *.out
+
+# Documentation build
+site/

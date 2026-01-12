@@ -176,6 +176,21 @@ web-dev-client:
 	@echo "Starting Vite dev server for client UI..."
 	@cd web/client && npm run dev
 
+# Documentation
+.PHONY: docs docs-serve docs-build
+
+docs-serve:
+	@echo "Starting documentation server..."
+	@pip install mkdocs-material mkdocs-minify-plugin -q 2>/dev/null || pip install mkdocs-material mkdocs-minify-plugin
+	@mkdocs serve
+
+docs-build:
+	@echo "Building documentation..."
+	@pip install mkdocs-material mkdocs-minify-plugin -q 2>/dev/null || pip install mkdocs-material mkdocs-minify-plugin
+	@mkdocs build --strict
+
+docs: docs-serve
+
 # Help
 .PHONY: help
 
@@ -205,6 +220,11 @@ help:
 	@echo "  make docker-status        - Show docker-compose service status"
 	@echo "  make docker-rebuild       - Rebuild and start services (--build)"
 	@echo "  make docker-rebuild-clean - Rebuild without cache and start"
+	@echo ""
+	@echo "Documentation:"
+	@echo "  make docs           - Start local docs server (alias for docs-serve)"
+	@echo "  make docs-serve     - Start MkDocs development server"
+	@echo "  make docs-build     - Build static documentation site"
 	@echo ""
 	@echo "Other:"
 	@echo "  make web-sync       - Sync web UI files to embedded directories"
