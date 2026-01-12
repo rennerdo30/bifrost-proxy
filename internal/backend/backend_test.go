@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ type mockConn struct {
 	readBuf  *bytes.Buffer
 	writeBuf *bytes.Buffer
 	closed   bool
+	mu       sync.Mutex
 }
 
 func newMockConn(readData []byte) *mockConn {
@@ -27,6 +29,8 @@ func newMockConn(readData []byte) *mockConn {
 }
 
 func (m *mockConn) Read(b []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
 		return 0, io.EOF
 	}
@@ -34,6 +38,8 @@ func (m *mockConn) Read(b []byte) (int, error) {
 }
 
 func (m *mockConn) Write(b []byte) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closed {
 		return 0, io.ErrClosedPipe
 	}
@@ -41,6 +47,8 @@ func (m *mockConn) Write(b []byte) (int, error) {
 }
 
 func (m *mockConn) Close() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.closed = true
 	return nil
 }

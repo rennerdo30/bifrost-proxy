@@ -87,26 +87,32 @@ func (c *TrackedConn) Close() error {
 
 // CopyBidirectional copies data between two connections in both directions.
 func CopyBidirectional(ctx context.Context, conn1, conn2 io.ReadWriteCloser) (sent, received int64, err error) {
-	errCh := make(chan error, 2)
-	var sentBytes, receivedBytes int64
+	type copyResult struct {
+		n   int64
+		err error
+	}
+	sentCh := make(chan copyResult, 1)
+	receivedCh := make(chan copyResult, 1)
 
 	// Copy conn1 -> conn2
 	go func() {
 		n, copyErr := io.Copy(conn2, conn1)
-		sentBytes = n
-		errCh <- copyErr
+		sentCh <- copyResult{n, copyErr}
 	}()
 
 	// Copy conn2 -> conn1
 	go func() {
 		n, copyErr := io.Copy(conn1, conn2)
-		receivedBytes = n
-		errCh <- copyErr
+		receivedCh <- copyResult{n, copyErr}
 	}()
 
 	// Wait for either copy to finish or context cancellation
+	var sentResult, receivedResult copyResult
 	select {
-	case err = <-errCh:
+	case sentResult = <-sentCh:
+		err = sentResult.err
+	case receivedResult = <-receivedCh:
+		err = receivedResult.err
 	case <-ctx.Done():
 		err = ctx.Err()
 	}
@@ -115,8 +121,11 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 io.ReadWriteCloser) (se
 	conn1.Close()
 	conn2.Close()
 
-	// Wait for the second copy to finish
-	<-errCh
+	// Wait for the other copy to finish
+	select {
+	case sentResult = <-sentCh:
+	case receivedResult = <-receivedCh:
+	}
 
-	return sentBytes, receivedBytes, err
+	return sentResult.n, receivedResult.n, err
 }
