@@ -1,0 +1,626 @@
+// Package server provides the Bifrost server implementation.
+package server
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/accesslog"
+	apiserver "github.com/rennerdo30/bifrost-proxy/internal/api/server"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/config"
+	"github.com/rennerdo30/bifrost-proxy/internal/health"
+	"github.com/rennerdo30/bifrost-proxy/internal/logging"
+	"github.com/rennerdo30/bifrost-proxy/internal/metrics"
+	"github.com/rennerdo30/bifrost-proxy/internal/proxy"
+	"github.com/rennerdo30/bifrost-proxy/internal/ratelimit"
+	"github.com/rennerdo30/bifrost-proxy/internal/router"
+	"github.com/rennerdo30/bifrost-proxy/internal/util"
+)
+
+// Server is the main Bifrost server.
+type Server struct {
+	config           *config.ServerConfig
+	configPath       string // Path to config file for hot reload
+	backends         *backend.Manager
+	router           *router.ServerRouter
+	authenticator    auth.Authenticator
+	rateLimiter      *ratelimit.KeyedLimiter
+	healthManager    *health.Manager
+	metrics          *metrics.Metrics
+	metricsCollector *metrics.Collector
+	accessLogger     accesslog.Logger
+
+	httpListener   net.Listener
+	socks5Listener net.Listener
+	metricsServer  *http.Server
+	apiServer      *http.Server
+	wsHub          *apiserver.WebSocketHub
+
+	running bool
+	mu      sync.RWMutex
+	wg      sync.WaitGroup
+	done    chan struct{}
+}
+
+// New creates a new Bifrost server.
+func New(cfg *config.ServerConfig) (*Server, error) {
+	// Initialize logging
+	if err := logging.Setup(cfg.Logging); err != nil {
+		return nil, fmt.Errorf("setup logging: %w", err)
+	}
+
+	// Create backends
+	factory := backend.NewFactory()
+	backends, err := factory.CreateAll(cfg.Backends)
+	if err != nil {
+		return nil, fmt.Errorf("create backends: %w", err)
+	}
+
+	// Create router
+	r := router.NewServerRouter(backends)
+	if err := r.LoadRoutes(cfg.Routes); err != nil {
+		return nil, fmt.Errorf("load routes: %w", err)
+	}
+
+	// Create authenticator
+	authenticator, err := createAuthenticator(cfg.Auth)
+	if err != nil {
+		return nil, fmt.Errorf("create authenticator: %w", err)
+	}
+
+	// Create rate limiter
+	var rateLimiter *ratelimit.KeyedLimiter
+	if cfg.RateLimit.Enabled {
+		rateLimiter = ratelimit.NewKeyedLimiter(ratelimit.Config{
+			RequestsPerSecond: cfg.RateLimit.RequestsPerSecond,
+			BurstSize:         cfg.RateLimit.BurstSize,
+		})
+	}
+
+	// Create health manager
+	healthManager := health.NewManager()
+
+	// Create metrics
+	m := metrics.New()
+	collector := metrics.NewCollector(m, backends)
+
+	// Create access logger
+	accessLogger, err := accesslog.New(accesslog.Config{
+		Enabled: cfg.AccessLog.Enabled,
+		Format:  cfg.AccessLog.Format,
+		Output:  cfg.AccessLog.Output,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create access logger: %w", err)
+	}
+
+	return &Server{
+		config:           cfg,
+		backends:         backends,
+		router:           r,
+		authenticator:    authenticator,
+		rateLimiter:      rateLimiter,
+		healthManager:    healthManager,
+		metrics:          m,
+		metricsCollector: collector,
+		accessLogger:     accessLogger,
+		done:             make(chan struct{}),
+	}, nil
+}
+
+func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
+	switch cfg.Mode {
+	case "none", "":
+		return auth.NewNoneAuthenticator(), nil
+	case "native":
+		if cfg.Native == nil {
+			return nil, fmt.Errorf("native auth config required")
+		}
+		nativeCfg := auth.NativeConfig{}
+		for _, u := range cfg.Native.Users {
+			nativeCfg.Users = append(nativeCfg.Users, auth.NativeUserConfig{
+				Username:     u.Username,
+				PasswordHash: u.PasswordHash,
+			})
+		}
+		return auth.NewNativeAuthenticator(nativeCfg), nil
+	case "ldap":
+		if cfg.LDAP == nil {
+			return nil, fmt.Errorf("ldap auth config required")
+		}
+		return auth.NewLDAPAuthenticator(auth.LDAPConfig{
+			URL:                cfg.LDAP.URL,
+			BaseDN:             cfg.LDAP.BaseDN,
+			BindDN:             cfg.LDAP.BindDN,
+			BindPassword:       cfg.LDAP.BindPassword,
+			UserFilter:         cfg.LDAP.UserFilter,
+			GroupFilter:        cfg.LDAP.GroupFilter,
+			RequireGroup:       cfg.LDAP.RequireGroup,
+			TLS:                cfg.LDAP.TLS,
+			InsecureSkipVerify: cfg.LDAP.InsecureSkipVerify,
+		})
+	case "oauth":
+		if cfg.OAuth == nil {
+			return nil, fmt.Errorf("oauth auth config required")
+		}
+		return auth.NewOAuthAuthenticator(auth.OAuthConfig{
+			Provider:     cfg.OAuth.Provider,
+			ClientID:     cfg.OAuth.ClientID,
+			ClientSecret: cfg.OAuth.ClientSecret,
+			IssuerURL:    cfg.OAuth.IssuerURL,
+			Scopes:       cfg.OAuth.Scopes,
+		})
+	case "system":
+		systemCfg := auth.SystemConfig{}
+		if cfg.System != nil {
+			systemCfg.Service = cfg.System.Service
+			systemCfg.AllowedUsers = cfg.System.AllowedUsers
+			systemCfg.AllowedGroups = cfg.System.AllowedGroups
+		}
+		return auth.NewSystemAuthenticator(systemCfg)
+	default:
+		return nil, fmt.Errorf("unknown auth mode: %s", cfg.Mode)
+	}
+}
+
+// Start starts the server.
+func (s *Server) Start(ctx context.Context) error {
+	s.mu.Lock()
+	if s.running {
+		s.mu.Unlock()
+		return nil
+	}
+	s.running = true
+	s.mu.Unlock()
+
+	logging.Info("Starting Bifrost server")
+
+	// Start backends
+	if err := s.backends.StartAll(ctx); err != nil {
+		return fmt.Errorf("start backends: %w", err)
+	}
+
+	// Start health manager
+	if err := s.healthManager.Start(ctx); err != nil {
+		return fmt.Errorf("start health manager: %w", err)
+	}
+
+	// Start metrics collector
+	s.metricsCollector.Start()
+
+	// Start HTTP proxy listener
+	if s.config.Server.HTTP.Listen != "" {
+		listener, err := net.Listen("tcp", s.config.Server.HTTP.Listen)
+		if err != nil {
+			return fmt.Errorf("listen HTTP: %w", err)
+		}
+		s.httpListener = listener
+		logging.Info("HTTP proxy listening", "address", s.config.Server.HTTP.Listen)
+
+		s.wg.Add(1)
+		go s.serveHTTP(ctx)
+	}
+
+	// Start SOCKS5 listener
+	if s.config.Server.SOCKS5.Listen != "" {
+		listener, err := net.Listen("tcp", s.config.Server.SOCKS5.Listen)
+		if err != nil {
+			return fmt.Errorf("listen SOCKS5: %w", err)
+		}
+		s.socks5Listener = listener
+		logging.Info("SOCKS5 proxy listening", "address", s.config.Server.SOCKS5.Listen)
+
+		s.wg.Add(1)
+		go s.serveSOCKS5(ctx)
+	}
+
+	// Start metrics server
+	if s.config.Metrics.Enabled {
+		mux := http.NewServeMux()
+		path := s.config.Metrics.Path
+		if path == "" {
+			path = "/metrics"
+		}
+		mux.Handle(path, s.metrics.Handler())
+
+		s.metricsServer = &http.Server{
+			Addr:    s.config.Metrics.Listen,
+			Handler: mux,
+		}
+
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			logging.Info("Metrics server listening", "address", s.config.Metrics.Listen)
+			if err := s.metricsServer.ListenAndServe(); err != http.ErrServerClosed {
+				logging.Error("Metrics server error", "error", err)
+			}
+		}()
+	}
+
+	// Start API/Web UI server
+	if s.config.API.Enabled {
+		// Create API
+		api := apiserver.New(apiserver.Config{
+			Backends:      s.backends,
+			HealthManager: s.healthManager,
+			Token:         s.config.API.Token,
+			GetConfig:     s.GetSanitizedConfig,
+			ReloadConfig:  s.ReloadConfig,
+		})
+
+		// Create WebSocket hub
+		s.wsHub = apiserver.NewWebSocketHub()
+		go s.wsHub.Run()
+
+		// Get the router and add WebSocket routes
+		handler := api.RouterWithWebSocket(s.wsHub)
+
+		s.apiServer = &http.Server{
+			Addr:    s.config.API.Listen,
+			Handler: handler,
+		}
+
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			logging.Info("API/Web UI server listening", "address", s.config.API.Listen)
+			if err := s.apiServer.ListenAndServe(); err != http.ErrServerClosed {
+				logging.Error("API server error", "error", err)
+			}
+		}()
+	}
+
+	logging.Info("Bifrost server started")
+	return nil
+}
+
+// Stop gracefully stops the server.
+func (s *Server) Stop(ctx context.Context) error {
+	s.mu.Lock()
+	if !s.running {
+		s.mu.Unlock()
+		return nil
+	}
+	s.running = false
+	close(s.done)
+	s.mu.Unlock()
+
+	logging.Info("Stopping Bifrost server")
+
+	// Close listeners to stop accepting new connections
+	if s.httpListener != nil {
+		s.httpListener.Close()
+	}
+	if s.socks5Listener != nil {
+		s.socks5Listener.Close()
+	}
+
+	// Stop metrics server
+	if s.metricsServer != nil {
+		s.metricsServer.Shutdown(ctx)
+	}
+
+	// Stop API server
+	if s.apiServer != nil {
+		s.apiServer.Shutdown(ctx)
+	}
+
+	// Wait for connections with grace period
+	gracePeriod := s.config.Server.GracefulPeriod.Duration()
+	if gracePeriod == 0 {
+		gracePeriod = 30 * time.Second
+	}
+
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(gracePeriod):
+		logging.Warn("Grace period exceeded, forcing shutdown")
+	}
+
+	// Stop health manager
+	s.healthManager.Stop()
+
+	// Stop metrics collector
+	s.metricsCollector.Stop()
+
+	// Stop backends
+	if err := s.backends.StopAll(ctx); err != nil {
+		logging.Error("Error stopping backends", "error", err)
+	}
+
+	// Close access logger
+	s.accessLogger.Close()
+
+	// Close rate limiter
+	if s.rateLimiter != nil {
+		s.rateLimiter.Close()
+	}
+
+	logging.Info("Bifrost server stopped")
+	return nil
+}
+
+// GetSanitizedConfig returns the current config with secrets redacted.
+func (s *Server) GetSanitizedConfig() interface{} {
+	// Create a sanitized copy of the config
+	sanitized := map[string]interface{}{
+		"server": map[string]interface{}{
+			"http": map[string]interface{}{
+				"listen":        s.config.Server.HTTP.Listen,
+				"read_timeout":  time.Duration(s.config.Server.HTTP.ReadTimeout).String(),
+				"write_timeout": time.Duration(s.config.Server.HTTP.WriteTimeout).String(),
+			},
+			"socks5": map[string]interface{}{
+				"listen": s.config.Server.SOCKS5.Listen,
+			},
+			"graceful_period": time.Duration(s.config.Server.GracefulPeriod).String(),
+		},
+		"auth": map[string]interface{}{
+			"mode": s.config.Auth.Mode,
+		},
+		"rate_limit": map[string]interface{}{
+			"enabled":             s.config.RateLimit.Enabled,
+			"requests_per_second": s.config.RateLimit.RequestsPerSecond,
+			"burst_size":          s.config.RateLimit.BurstSize,
+		},
+		"metrics": map[string]interface{}{
+			"enabled": s.config.Metrics.Enabled,
+			"listen":  s.config.Metrics.Listen,
+			"path":    s.config.Metrics.Path,
+		},
+		"api": map[string]interface{}{
+			"enabled": s.config.API.Enabled,
+			"listen":  s.config.API.Listen,
+		},
+		"backends_count": len(s.config.Backends),
+		"routes_count":   len(s.config.Routes),
+	}
+
+	// Add backend names (not full config)
+	backendNames := make([]string, 0, len(s.config.Backends))
+	for _, b := range s.config.Backends {
+		backendNames = append(backendNames, b.Name)
+	}
+	sanitized["backend_names"] = backendNames
+
+	return sanitized
+}
+
+// SetConfigPath sets the config file path for hot reload support.
+func (s *Server) SetConfigPath(path string) {
+	s.configPath = path
+}
+
+// ReloadConfig reloads the configuration from the config file.
+// This implementation safely reloads routes and rate limits.
+// Backend changes require a full restart.
+func (s *Server) ReloadConfig() error {
+	logging.Info("Reloading configuration")
+
+	if s.configPath == "" {
+		return fmt.Errorf("config path not set - cannot reload")
+	}
+
+	// Parse new config
+	newCfg := config.DefaultServerConfig()
+	if err := config.LoadAndValidate(s.configPath, &newCfg); err != nil {
+		logging.Error("Failed to reload config: %v", err)
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Track what was reloaded
+	reloaded := []string{}
+
+	// Reload routes (safe to do)
+	if err := s.router.LoadRoutes(newCfg.Routes); err != nil {
+		logging.Error("Failed to reload routes: %v", err)
+		return fmt.Errorf("reload routes: %w", err)
+	}
+	reloaded = append(reloaded, "routes")
+	logging.Info("Reloaded %d routes", len(newCfg.Routes))
+
+	// Update rate limiter settings if changed
+	if newCfg.RateLimit.Enabled && s.rateLimiter != nil {
+		s.rateLimiter.UpdateConfig(ratelimit.Config{
+			RequestsPerSecond: newCfg.RateLimit.RequestsPerSecond,
+			BurstSize:         newCfg.RateLimit.BurstSize,
+		})
+		reloaded = append(reloaded, "rate_limits")
+		logging.Info("Reloaded rate limits: %.2f req/s, burst %d",
+			newCfg.RateLimit.RequestsPerSecond, newCfg.RateLimit.BurstSize)
+	}
+
+	// Update config reference (for sanitized config endpoint)
+	s.config.Routes = newCfg.Routes
+	s.config.RateLimit = newCfg.RateLimit
+
+	// Broadcast reload event via WebSocket
+	if s.wsHub != nil {
+		s.wsHub.Broadcast(apiserver.EventConfigReload, map[string]interface{}{
+			"status":   "success",
+			"reloaded": reloaded,
+		})
+	}
+
+	logging.Info("Configuration reloaded successfully: %v", reloaded)
+	return nil
+}
+
+// serveHTTP handles HTTP proxy connections.
+func (s *Server) serveHTTP(ctx context.Context) {
+	defer s.wg.Done()
+
+	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
+		GetBackend:  s.getBackend,
+		DialTimeout: s.config.Server.HTTP.ReadTimeout.Duration(),
+		OnConnect:   s.onConnect,
+		OnError:     s.onError,
+	})
+
+	for {
+		conn, err := s.httpListener.Accept()
+		if err != nil {
+			select {
+			case <-s.done:
+				return
+			default:
+				logging.Error("HTTP accept error", "error", err)
+				continue
+			}
+		}
+
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.handleHTTPConn(ctx, conn, handler)
+		}()
+	}
+}
+
+// handleHTTPConn handles a single HTTP connection.
+func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *proxy.HTTPHandler) {
+	// Add request ID
+	ctx = util.WithRequestID(ctx, generateRequestID())
+
+	// Rate limiting
+	if s.rateLimiter != nil {
+		clientIP := conn.RemoteAddr().(*net.TCPAddr).IP.String()
+		if !s.rateLimiter.Allow(clientIP) {
+			s.metricsCollector.RecordRateLimit("ip")
+			conn.Write([]byte("HTTP/1.1 429 Too Many Requests\r\n\r\n"))
+			conn.Close()
+			return
+		}
+	}
+
+	// Track connection metrics
+	startTime := time.Now()
+	done := s.metricsCollector.RecordConnection("http", "")
+
+	handler.ServeConn(ctx, conn)
+
+	done(time.Since(startTime))
+}
+
+// serveSOCKS5 handles SOCKS5 proxy connections.
+func (s *Server) serveSOCKS5(ctx context.Context) {
+	defer s.wg.Done()
+
+	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
+		GetBackend:   s.getBackend,
+		Authenticate: s.authenticate,
+		AuthRequired: s.config.Auth.Mode != "none" && s.config.Auth.Mode != "",
+		DialTimeout:  30 * time.Second,
+		OnConnect:    s.onConnect,
+		OnError:      s.onError,
+	})
+
+	for {
+		conn, err := s.socks5Listener.Accept()
+		if err != nil {
+			select {
+			case <-s.done:
+				return
+			default:
+				logging.Error("SOCKS5 accept error", "error", err)
+				continue
+			}
+		}
+
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.handleSOCKS5Conn(ctx, conn, handler)
+		}()
+	}
+}
+
+// handleSOCKS5Conn handles a single SOCKS5 connection.
+func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *proxy.SOCKS5Handler) {
+	// Add request ID
+	ctx = util.WithRequestID(ctx, generateRequestID())
+
+	// Rate limiting
+	if s.rateLimiter != nil {
+		clientIP := conn.RemoteAddr().(*net.TCPAddr).IP.String()
+		if !s.rateLimiter.Allow(clientIP) {
+			s.metricsCollector.RecordRateLimit("ip")
+			conn.Close()
+			return
+		}
+	}
+
+	// Track connection metrics
+	startTime := time.Now()
+	done := s.metricsCollector.RecordConnection("socks5", "")
+
+	handler.ServeConn(ctx, conn)
+
+	done(time.Since(startTime))
+}
+
+// getBackend returns a backend for a domain.
+func (s *Server) getBackend(domain, clientIP string) backend.Backend {
+	return s.router.GetBackendForDomain(domain, clientIP)
+}
+
+// authenticate validates credentials.
+func (s *Server) authenticate(username, password string) bool {
+	_, err := s.authenticator.Authenticate(context.Background(), username, password)
+	if err != nil {
+		s.metricsCollector.RecordAuthAttempt(s.authenticator.Type(), false, "invalid_credentials")
+		return false
+	}
+	s.metricsCollector.RecordAuthAttempt(s.authenticator.Type(), true, "")
+	return true
+}
+
+// onConnect is called when a connection is established.
+func (s *Server) onConnect(ctx context.Context, conn net.Conn, host string, be backend.Backend) {
+	logging.DebugContext(ctx, "Connection established",
+		"host", host,
+		"backend", be.Name(),
+		"client", conn.RemoteAddr().String(),
+	)
+}
+
+// onError is called when an error occurs.
+func (s *Server) onError(ctx context.Context, conn net.Conn, host string, err error) {
+	backendName := util.GetBackend(ctx)
+	if backendName != "" {
+		s.metricsCollector.RecordBackendError(backendName, "connection")
+	}
+
+	logging.ErrorContext(ctx, "Connection error",
+		"host", host,
+		"error", err,
+		"client", conn.RemoteAddr().String(),
+	)
+}
+
+// Running returns whether the server is running.
+func (s *Server) Running() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.running
+}
+
+func generateRequestID() string {
+	return fmt.Sprintf("%d", time.Now().UnixNano())
+}

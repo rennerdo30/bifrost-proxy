@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Bridge arch - yellow/warning -->
+  <path d="M 4 22 Q 16 6 28 22"
+        stroke="#ffc107"
+        stroke-width="3"
+        fill="none"
+        stroke-linecap="round"/>
+
+  <!-- Nodes - yellow -->
+  <circle cx="4" cy="22" r="3" fill="#ffc107"/>
+  <circle cx="28" cy="22" r="3" fill="#ffc107"/>
+  <circle cx="16" cy="10" r="4" fill="#ffc107"/>
+</svg>

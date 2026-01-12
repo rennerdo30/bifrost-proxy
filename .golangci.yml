@@ -1,0 +1,52 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - staticcheck
+    - unused
+    - gosec
+    - bodyclose
+    - noctx
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - unparam
+    - prealloc
+    - exportloopref
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+  govet:
+    check-shadowing: true
+
+  gosec:
+    excludes:
+      - G104  # Audit errors not checked (we use errcheck)
+
+  goimports:
+    local-prefixes: github.com/bifrost-proxy/bifrost
+
+  misspell:
+    locale: US
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+    - path: internal/version/version\.go
+      linters:
+        - gochecknoglobals
+
+  max-issues-per-linter: 0
+  max-same-issues: 0

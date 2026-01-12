@@ -1,0 +1,13 @@
+{
+  "name": "bifrost-server-ui",
+  "version": "1.0.0",
+  "description": "Bifrost Proxy Server Web UI",
+  "scripts": {
+    "build": "mkdir -p ../../internal/api/server/static && cp src/index.html ../../internal/api/server/static/index.html",
+    "dev": "echo 'No dev server - open src/index.html directly'",
+    "clean": "rm -rf ../../internal/api/server/static"
+  },
+  "keywords": ["bifrost", "proxy", "dashboard"],
+  "author": "rennerdo30",
+  "license": "MIT"
+}

@@ -1,0 +1,178 @@
+# Configuration Guide
+
+Bifrost uses YAML configuration files. Environment variables can be used with `${VAR_NAME}` syntax.
+
+## Server Configuration
+
+### Full Example
+
+```yaml
+server:
+  http:
+    listen: ":8080"
+    read_timeout: "30s"
+    write_timeout: "30s"
+    idle_timeout: "60s"
+    tls:
+      enabled: false
+      cert_file: "/path/to/cert.pem"
+      key_file: "/path/to/key.pem"
+  socks5:
+    listen: ":1080"
+  graceful_period: "30s"
+
+backends:
+  - name: direct
+    type: direct
+    enabled: true
+    priority: 10
+
+  - name: wireguard
+    type: wireguard
+    enabled: true
+    priority: 20
+    config:
+      private_key: "${WG_PRIVATE_KEY}"
+      address: "10.0.0.2/24"
+      dns: ["1.1.1.1"]
+      mtu: 1420
+      peer:
+        public_key: "${WG_PEER_PUBLIC_KEY}"
+        endpoint: "vpn.example.com:51820"
+        allowed_ips: ["0.0.0.0/0"]
+        persistent_keepalive: 25
+
+routes:
+  - domains: ["*.internal.com"]
+    backend: wireguard
+    priority: 100
+  - domains: ["*"]
+    backend: direct
+    priority: 1
+
+auth:
+  mode: native
+  native:
+    users:
+      - username: admin
+        password_hash: "$2a$10$..."
+
+rate_limit:
+  enabled: true
+  requests_per_second: 100
+  burst_size: 200
+  per_ip: true
+
+access_log:
+  enabled: true
+  format: json
+  output: "/var/log/bifrost/access.log"
+
+metrics:
+  enabled: true
+  listen: ":9090"
+  path: "/metrics"
+
+logging:
+  level: info
+  format: json
+  output: stdout
+```
+
+### Server Settings
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `server.http.listen` | string | `:8080` | HTTP proxy listen address |
+| `server.socks5.listen` | string | `:1080` | SOCKS5 proxy listen address |
+| `server.graceful_period` | duration | `30s` | Graceful shutdown period |
+
+### Backend Types
+
+- `direct` - Direct connection
+- `wireguard` - WireGuard tunnel
+- `openvpn` - OpenVPN tunnel
+- `http_proxy` - Upstream HTTP proxy
+- `socks5_proxy` - Upstream SOCKS5 proxy
+
+### Route Configuration
+
+Routes match domains to backends. Higher priority routes are evaluated first.
+
+```yaml
+routes:
+  - name: "internal"           # Optional name
+    domains:                   # Domain patterns
+      - "*.internal.com"
+      - "internal.com"
+    backend: wireguard         # Backend name
+    priority: 100              # Higher = evaluated first
+```
+
+Pattern formats:
+- `example.com` - Exact match
+- `*.example.com` - Wildcard subdomain
+- `.example.com` - Suffix match (matches domain and all subdomains)
+- `*` - Match all
+
+## Client Configuration
+
+### Full Example
+
+```yaml
+proxy:
+  http:
+    listen: "127.0.0.1:3128"
+  socks5:
+    listen: "127.0.0.1:1081"
+
+server:
+  address: "proxy.example.com:8080"
+  protocol: http
+  username: "${PROXY_USER}"
+  password: "${PROXY_PASS}"
+  timeout: "30s"
+  retry_count: 3
+  retry_delay: "1s"
+
+routes:
+  - domains: ["localhost", "127.0.0.1", "*.local"]
+    action: direct
+    priority: 100
+  - domains: ["*"]
+    action: server
+    priority: 1
+
+debug:
+  enabled: true
+  max_entries: 1000
+  capture_body: false
+
+web_ui:
+  enabled: true
+  listen: "127.0.0.1:3129"
+
+tray:
+  enabled: true
+  start_minimized: false
+```
+
+### Client Route Actions
+
+- `server` - Route through Bifrost server
+- `direct` - Connect directly
+
+## Environment Variables
+
+Use `${VAR_NAME}` syntax for environment variable expansion:
+
+```yaml
+server:
+  http:
+    listen: ":${HTTP_PORT:-8080}"  # With default
+auth:
+  native:
+    users:
+      - username: admin
+        password_hash: "${ADMIN_PASSWORD_HASH}"
+```

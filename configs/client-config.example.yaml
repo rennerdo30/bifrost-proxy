@@ -1,0 +1,74 @@
+# Bifrost Client Configuration Example
+
+# Local proxy settings
+proxy:
+  http:
+    listen: "127.0.0.1:3128"
+    read_timeout: "30s"
+    write_timeout: "30s"
+    idle_timeout: "60s"
+  socks5:
+    listen: "127.0.0.1:1081"
+
+# Bifrost server connection
+server:
+  address: "proxy.example.com:8080"
+  protocol: http  # http, socks5
+  # username: "user"
+  # password: "pass"
+  timeout: "30s"
+  retry_count: 3
+  retry_delay: "1s"
+
+# Client-side routing rules
+routes:
+  # Direct connection for local addresses
+  - domains:
+      - "localhost"
+      - "127.0.0.1"
+      - "*.local"
+    action: direct
+    priority: 100
+
+  # Direct connection for specific domains
+  - domains:
+      - "*.example.com"
+    action: direct
+    priority: 50
+
+  # Everything else through the server
+  - domains:
+      - "*"
+    action: server
+    priority: 1
+
+# Traffic debugging
+debug:
+  enabled: true
+  max_entries: 1000
+  capture_body: false
+  max_body_size: 65536  # 64KB
+  # filter_domains:
+  #   - "*.example.com"
+
+# Application logging
+logging:
+  level: info
+  format: text
+  output: stdout
+
+# Web UI (local dashboard)
+web_ui:
+  enabled: true
+  listen: "127.0.0.1:3129"
+
+# REST API
+api:
+  enabled: true
+  listen: "127.0.0.1:3130"
+  # token: "your-api-token"
+
+# System tray
+tray:
+  enabled: true
+  start_minimized: false

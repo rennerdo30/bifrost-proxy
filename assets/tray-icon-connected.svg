@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <defs>
+    <linearGradient id="trayGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#4ECDC4"/>
+      <stop offset="100%" style="stop-color:#44CF9C"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Bridge arch -->
+  <path d="M 4 22 Q 16 6 28 22"
+        stroke="url(#trayGradient)"
+        stroke-width="3"
+        fill="none"
+        stroke-linecap="round"/>
+
+  <!-- Nodes -->
+  <circle cx="4" cy="22" r="3" fill="#4ECDC4"/>
+  <circle cx="28" cy="22" r="3" fill="#44CF9C"/>
+  <circle cx="16" cy="10" r="4" fill="#4ECDC4"/>
+</svg>

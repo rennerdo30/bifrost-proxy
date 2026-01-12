@@ -1,0 +1,92 @@
+project_name: bifrost
+
+before:
+  hooks:
+    - go mod tidy
+    # Sync web UI files before building
+    - mkdir -p internal/api/server/static
+    - mkdir -p internal/api/client/static
+    - cp web/server/src/index.html internal/api/server/static/index.html
+    - cp web/client/src/index.html internal/api/client/static/index.html
+
+builds:
+  - id: bifrost-server
+    main: ./cmd/server
+    binary: bifrost-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.Version={{.Version}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime={{.Date}}
+
+  - id: bifrost-client
+    main: ./cmd/client
+    binary: bifrost-client
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.Version={{.Version}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime={{.Date}}
+
+archives:
+  - id: default
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - configs/*.example.yaml
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: rennerdo30
+    name: bifrost-proxy
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"

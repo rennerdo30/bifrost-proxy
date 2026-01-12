@@ -1,0 +1,35 @@
+[Unit]
+Description=Bifrost Proxy Server
+Documentation=https://github.com/bifrost-proxy/bifrost
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bifrost
+Group=bifrost
+
+ExecStart=/usr/local/bin/bifrost-server -c /etc/bifrost/server-config.yaml
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=5
+
+# Security
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/log/bifrost
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bifrost-server
+
+[Install]
+WantedBy=multi-user.target

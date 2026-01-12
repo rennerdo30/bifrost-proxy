@@ -1,0 +1,130 @@
+# Bifrost Server Configuration Example
+
+server:
+  http:
+    listen: ":8080"
+    read_timeout: "30s"
+    write_timeout: "30s"
+    idle_timeout: "60s"
+  socks5:
+    listen: ":1080"
+  graceful_period: "30s"
+
+# Backend definitions
+backends:
+  # Direct connection (no tunnel)
+  - name: direct
+    type: direct
+    enabled: true
+    priority: 10
+
+  # WireGuard tunnel example
+  # - name: wg-tunnel
+  #   type: wireguard
+  #   enabled: true
+  #   priority: 20
+  #   config:
+  #     private_key: "YOUR_PRIVATE_KEY_BASE64"
+  #     address: "10.0.0.2/24"
+  #     dns:
+  #       - "1.1.1.1"
+  #     mtu: 1420
+  #     peer:
+  #       public_key: "PEER_PUBLIC_KEY_BASE64"
+  #       endpoint: "vpn.example.com:51820"
+  #       allowed_ips:
+  #         - "0.0.0.0/0"
+  #       persistent_keepalive: 25
+
+  # HTTP proxy upstream example
+  # - name: upstream-proxy
+  #   type: http_proxy
+  #   enabled: true
+  #   config:
+  #     address: "proxy.example.com:8080"
+  #     username: "user"
+  #     password: "pass"
+
+  # SOCKS5 proxy upstream example
+  # - name: socks-proxy
+  #   type: socks5_proxy
+  #   enabled: true
+  #   config:
+  #     address: "socks.example.com:1080"
+
+# Routing rules
+routes:
+  # Route specific domains through WireGuard
+  # - domains:
+  #     - "*.internal.company.com"
+  #     - "internal.company.com"
+  #   backend: wg-tunnel
+  #   priority: 100
+
+  # Default route - direct connection
+  - domains:
+      - "*"
+    backend: direct
+    priority: 1
+
+# Authentication
+auth:
+  mode: none  # none, native, system, ldap, oauth
+
+  # Native authentication example
+  # mode: native
+  # native:
+  #   users:
+  #     - username: admin
+  #       password_hash: "$2a$10$..."  # bcrypt hash
+
+  # LDAP authentication example
+  # mode: ldap
+  # ldap:
+  #   url: "ldap://ldap.example.com:389"
+  #   base_dn: "dc=example,dc=com"
+  #   bind_dn: "cn=admin,dc=example,dc=com"
+  #   bind_password: "secret"
+  #   user_filter: "(uid=%s)"
+  #   tls: false
+
+# Rate limiting
+rate_limit:
+  enabled: false
+  requests_per_second: 100
+  burst_size: 200
+  per_ip: true
+  per_user: false
+  # bandwidth:
+  #   enabled: false
+  #   upload: "10Mbps"
+  #   download: "100Mbps"
+
+# Access logging
+access_log:
+  enabled: true
+  format: json  # json, apache
+  output: stdout  # stdout, stderr, or file path
+
+# Prometheus metrics
+metrics:
+  enabled: true
+  listen: ":9090"
+  path: "/metrics"
+
+# Application logging
+logging:
+  level: info  # debug, info, warn, error
+  format: text  # json, text
+  output: stdout
+
+# Web UI (management interface)
+web_ui:
+  enabled: false
+  listen: ":8081"
+
+# REST API
+api:
+  enabled: true
+  listen: ":8082"
+  # token: "your-api-token"  # Optional API authentication

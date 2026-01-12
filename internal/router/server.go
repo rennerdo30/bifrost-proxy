@@ -1,0 +1,61 @@
+package router
+
+import (
+	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/config"
+	"github.com/rennerdo30/bifrost-proxy/internal/matcher"
+)
+
+// ServerRouter handles routing for the Bifrost server.
+type ServerRouter struct {
+	*Router
+}
+
+// NewServerRouter creates a new server router.
+func NewServerRouter(backendManager *backend.Manager) *ServerRouter {
+	return &ServerRouter{
+		Router: New(backendManager),
+	}
+}
+
+// LoadRoutes loads routes from configuration.
+func (r *ServerRouter) LoadRoutes(routes []config.RouteConfig) error {
+	r.Clear()
+
+	for i, routeCfg := range routes {
+		route := &Route{
+			Name:        routeCfg.Name,
+			Matcher:     matcher.New(routeCfg.Domains),
+			Backend:     routeCfg.Backend,
+			Backends:    routeCfg.Backends,
+			LoadBalance: routeCfg.LoadBalance,
+			Priority:    routeCfg.Priority,
+		}
+
+		// Use index as default name if not provided
+		if route.Name == "" {
+			route.Name = routeCfg.Backend
+			if route.Name == "" && len(routeCfg.Backends) > 0 {
+				route.Name = routeCfg.Backends[0]
+			}
+		}
+
+		// Default priority based on order if not specified
+		if route.Priority == 0 {
+			route.Priority = len(routes) - i
+		}
+
+		r.AddRoute(route)
+	}
+
+	return nil
+}
+
+// GetBackendForDomain returns the appropriate backend for a domain.
+func (r *ServerRouter) GetBackendForDomain(domain, clientIP string) backend.Backend {
+	result := r.Match(domain)
+	if !result.Matched {
+		return nil
+	}
+	return r.SelectBackend(result, clientIP)
+}

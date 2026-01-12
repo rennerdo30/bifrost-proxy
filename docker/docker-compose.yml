@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  bifrost-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: bifrost-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"   # HTTP proxy
+      - "1080:1080"   # SOCKS5 proxy
+      - "9090:9090"   # Metrics
+      - "8081:8081"   # Web UI
+      - "8082:8082"   # API
+    volumes:
+      - ./server-config.yaml:/app/config.yaml:ro
+      - bifrost-logs:/var/log/bifrost
+    environment:
+      - TZ=UTC
+    networks:
+      - bifrost-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  bifrost-client:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.client
+    container_name: bifrost-client
+    restart: unless-stopped
+    ports:
+      - "3128:3128"   # HTTP proxy
+      - "1081:1081"   # SOCKS5 proxy
+      - "3129:3129"   # Web UI
+      - "3130:3130"   # API
+    volumes:
+      - ./client-config.yaml:/app/config.yaml:ro
+    environment:
+      - TZ=UTC
+    depends_on:
+      - bifrost-server
+    networks:
+      - bifrost-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3130/api/v1/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: bifrost-prometheus
+    restart: unless-stopped
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - bifrost-network
+
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: bifrost-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - bifrost-network
+
+volumes:
+  bifrost-logs:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  bifrost-network:
+    driver: bridge
