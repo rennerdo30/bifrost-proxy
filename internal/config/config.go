@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -64,4 +65,21 @@ func LoadAndValidate(path string, v any) error {
 		return err
 	}
 	return ValidateConfig(v)
+}
+
+// Backup creates a timestamped backup of the config file.
+func Backup(path string) (string, error) {
+	timestamp := time.Now().Format("20060102-150405")
+	backupPath := fmt.Sprintf("%s.backup.%s", path, timestamp)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to read config: %w", err)
+	}
+
+	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+		return "", fmt.Errorf("failed to write backup: %w", err)
+	}
+
+	return backupPath, nil
 }

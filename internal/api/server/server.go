@@ -4,6 +4,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -11,6 +12,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/health"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
 )
@@ -21,27 +23,74 @@ type API struct {
 	healthManager *health.Manager
 	token         string
 	getConfig     func() interface{}
+	getFullConfig func() *config.ServerConfig
 	reloadConfig  func() error
+	saveConfig    func(*config.ServerConfig) error
+	configPath    string
+	wsHub         *WebSocketHub
+	pacGenerator  *PACGenerator
+	requestLog    *RequestLog
 }
 
 // Config holds API configuration.
 type Config struct {
-	Backends      *backend.Manager
-	HealthManager *health.Manager
-	Token         string
-	GetConfig     func() interface{}     // Returns sanitized config
-	ReloadConfig  func() error           // Triggers config reload
+	Backends         *backend.Manager
+	HealthManager    *health.Manager
+	Token            string
+	GetConfig        func() interface{}               // Returns sanitized config
+	GetFullConfig    func() *config.ServerConfig      // Returns full config for editing
+	ReloadConfig     func() error                     // Triggers config reload
+	SaveConfig       func(*config.ServerConfig) error // Saves config to file
+	ConfigPath       string                           // Path to config file
+	ProxyHost        string                           // Proxy host for PAC file
+	ProxyPort        string                           // HTTP proxy port for PAC file
+	SOCKS5Port       string                           // SOCKS5 port for PAC file
+	EnableRequestLog bool                             // Enable request logging
+	RequestLogSize   int                              // Max requests to keep
 }
 
 // New creates a new API server.
 func New(cfg Config) *API {
+	// Default ports if not specified
+	proxyPort := cfg.ProxyPort
+	if proxyPort == "" {
+		proxyPort = "8080"
+	}
+	socks5Port := cfg.SOCKS5Port
+	if socks5Port == "" {
+		socks5Port = "1080"
+	}
+
+	// Create PAC generator
+	var pacGen *PACGenerator
+	if cfg.GetFullConfig != nil {
+		pacGen = NewPACGenerator(cfg.GetFullConfig, cfg.ProxyHost, proxyPort, socks5Port)
+	}
+
+	// Create request log
+	requestLogSize := cfg.RequestLogSize
+	if requestLogSize <= 0 {
+		requestLogSize = 1000
+	}
+	requestLog := NewRequestLog(requestLogSize, cfg.EnableRequestLog)
+
 	return &API{
 		backends:      cfg.Backends,
 		healthManager: cfg.HealthManager,
 		token:         cfg.Token,
 		getConfig:     cfg.GetConfig,
+		getFullConfig: cfg.GetFullConfig,
 		reloadConfig:  cfg.ReloadConfig,
+		saveConfig:    cfg.SaveConfig,
+		configPath:    cfg.ConfigPath,
+		pacGenerator:  pacGen,
+		requestLog:    requestLog,
 	}
+}
+
+// RequestLog returns the request log for adding entries.
+func (a *API) RequestLog() *RequestLog {
+	return a.requestLog
 }
 
 // Router returns the HTTP router for the API.
@@ -76,6 +125,10 @@ func (a *API) Router() http.Handler {
 	// Config routes
 	r.Route("/api/v1/config", func(r chi.Router) {
 		r.Get("/", a.handleGetConfig)
+		r.Get("/full", a.handleGetFullConfig)
+		r.Get("/meta", a.handleGetConfigMeta)
+		r.Put("/", a.handleSaveConfig)
+		r.Post("/validate", a.handleValidateConfig)
 		r.Post("/reload", a.handleReloadConfig)
 	})
 
@@ -84,6 +137,9 @@ func (a *API) Router() http.Handler {
 
 // RouterWithWebSocket returns a router with WebSocket and static file support.
 func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
+	// Store the hub reference for broadcasting events
+	a.wsHub = hub
+
 	r := chi.NewRouter()
 
 	// Middleware
@@ -108,9 +164,16 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 		r.Handle("/api/v1/ws", websocket.Handler(hub.ServeWS))
 	}
 
+	// PAC file routes (no auth required for browser auto-config)
+	if a.pacGenerator != nil {
+		r.Get("/proxy.pac", a.pacGenerator.HandlePAC)
+		r.Get("/wpad.dat", a.pacGenerator.HandlePAC)
+	}
+
 	// Static files for Web UI (no auth)
-	r.Handle("/", StaticHandler())
-	r.Handle("/*", StaticHandler())
+	staticHandler := StaticHandler()
+	r.Get("/", staticHandler.ServeHTTP)
+	r.NotFound(staticHandler.ServeHTTP)
 
 	return r
 }
@@ -130,7 +193,18 @@ func (a *API) addAPIRoutes(r chi.Router) {
 
 	r.Route("/api/v1/config", func(r chi.Router) {
 		r.Get("/", a.handleGetConfig)
+		r.Get("/full", a.handleGetFullConfig)
+		r.Get("/meta", a.handleGetConfigMeta)
+		r.Put("/", a.handleSaveConfig)
+		r.Post("/validate", a.handleValidateConfig)
 		r.Post("/reload", a.handleReloadConfig)
+	})
+
+	// Request log routes
+	r.Route("/api/v1/requests", func(r chi.Router) {
+		r.Get("/", a.handleGetRequests)
+		r.Get("/stats", a.handleGetRequestStats)
+		r.Delete("/", a.handleClearRequests)
 	})
 }
 
@@ -303,4 +377,59 @@ func (a *API) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+// handleGetRequests returns recent request log entries.
+func (a *API) handleGetRequests(w http.ResponseWriter, r *http.Request) {
+	if a.requestLog == nil || !a.requestLog.IsEnabled() {
+		a.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"enabled":  false,
+			"message":  "Request logging is disabled",
+			"requests": []RequestLogEntry{},
+		})
+		return
+	}
+
+	// Parse query params
+	limitStr := r.URL.Query().Get("limit")
+	sinceStr := r.URL.Query().Get("since")
+
+	var entries []RequestLogEntry
+	if sinceStr != "" {
+		sinceID, _ := strconv.ParseInt(sinceStr, 10, 64)
+		entries = a.requestLog.GetSince(sinceID)
+	} else if limitStr != "" {
+		limit, _ := strconv.Atoi(limitStr)
+		entries = a.requestLog.GetRecent(limit)
+	} else {
+		entries = a.requestLog.GetRecent(100) // Default to last 100
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"enabled":  true,
+		"requests": entries,
+	})
+}
+
+// handleGetRequestStats returns request log statistics.
+func (a *API) handleGetRequestStats(w http.ResponseWriter, r *http.Request) {
+	if a.requestLog == nil {
+		a.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"enabled": false,
+		})
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, a.requestLog.Stats())
+}
+
+// handleClearRequests clears the request log.
+func (a *API) handleClearRequests(w http.ResponseWriter, r *http.Request) {
+	if a.requestLog != nil {
+		a.requestLog.Clear()
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Request log cleared",
+	})
 }

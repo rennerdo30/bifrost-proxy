@@ -157,9 +157,11 @@ type WebUIConfig struct {
 
 // APIConfig contains REST API settings.
 type APIConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	Listen  string `yaml:"listen"`
-	Token   string `yaml:"token"`
+	Enabled        bool   `yaml:"enabled"`
+	Listen         string `yaml:"listen"`
+	Token          string `yaml:"token"`
+	EnableRequestLog bool `yaml:"enable_request_log"` // Enable request logging for Web UI
+	RequestLogSize int    `yaml:"request_log_size"`   // Max number of requests to keep (default 1000)
 }
 
 // HealthCheckConfig contains health check settings.

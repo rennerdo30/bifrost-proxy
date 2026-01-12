@@ -41,6 +41,7 @@ type Server struct {
 	metricsServer  *http.Server
 	apiServer      *http.Server
 	wsHub          *apiserver.WebSocketHub
+	api            *apiserver.API
 
 	running bool
 	mu      sync.RWMutex
@@ -246,13 +247,24 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Start API/Web UI server
 	if s.config.API.Enabled {
+		// Extract ports from listen addresses
+		httpPort := extractPort(s.config.Server.HTTP.Listen, "8080")
+		socks5Port := extractPort(s.config.Server.SOCKS5.Listen, "1080")
+
 		// Create API
-		api := apiserver.New(apiserver.Config{
-			Backends:      s.backends,
-			HealthManager: s.healthManager,
-			Token:         s.config.API.Token,
-			GetConfig:     s.GetSanitizedConfig,
-			ReloadConfig:  s.ReloadConfig,
+		s.api = apiserver.New(apiserver.Config{
+			Backends:         s.backends,
+			HealthManager:    s.healthManager,
+			Token:            s.config.API.Token,
+			GetConfig:        s.GetSanitizedConfig,
+			GetFullConfig:    s.GetFullConfig,
+			ReloadConfig:     s.ReloadConfig,
+			SaveConfig:       s.SaveConfig,
+			ConfigPath:       s.configPath,
+			ProxyPort:        httpPort,
+			SOCKS5Port:       socks5Port,
+			EnableRequestLog: s.config.API.EnableRequestLog,
+			RequestLogSize:   s.config.API.RequestLogSize,
 		})
 
 		// Create WebSocket hub
@@ -260,7 +272,7 @@ func (s *Server) Start(ctx context.Context) error {
 		go s.wsHub.Run()
 
 		// Get the router and add WebSocket routes
-		handler := api.RouterWithWebSocket(s.wsHub)
+		handler := s.api.RouterWithWebSocket(s.wsHub)
 
 		s.apiServer = &http.Server{
 			Addr:    s.config.API.Listen,
@@ -397,6 +409,30 @@ func (s *Server) GetSanitizedConfig() interface{} {
 	sanitized["backend_names"] = backendNames
 
 	return sanitized
+}
+
+// GetFullConfig returns the full configuration for editing.
+func (s *Server) GetFullConfig() *config.ServerConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	// Return the config pointer - callers should not modify
+	return s.config
+}
+
+// SaveConfig saves the configuration to file.
+func (s *Server) SaveConfig(newConfig *config.ServerConfig) error {
+	if s.configPath == "" {
+		return fmt.Errorf("config path not set")
+	}
+	if err := newConfig.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+	return config.Save(s.configPath, newConfig)
+}
+
+// GetConfigPath returns the config file path.
+func (s *Server) GetConfigPath() string {
+	return s.configPath
 }
 
 // SetConfigPath sets the config file path for hot reload support.
@@ -623,4 +659,25 @@ func (s *Server) Running() bool {
 
 func generateRequestID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// extractPort extracts the port from a listen address (e.g., ":8080" -> "8080").
+func extractPort(listen, defaultPort string) string {
+	if listen == "" {
+		return defaultPort
+	}
+	_, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		// Maybe just a port like ":8080"
+		if len(listen) > 0 && listen[0] == ':' {
+			return listen[1:]
+		}
+		return defaultPort
+	}
+	return port
+}
+
+// API returns the API server instance.
+func (s *Server) API() *apiserver.API {
+	return s.api
 }

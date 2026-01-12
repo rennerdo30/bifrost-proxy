@@ -128,3 +128,5 @@ api:
   enabled: true
   listen: ":8082"
   # token: "your-api-token"  # Optional API authentication
+  # enable_request_log: true  # Enable request logging for Web UI (shows visited URLs)
+  # request_log_size: 1000    # Max number of requests to keep in memory

@@ -102,6 +102,114 @@ GET /api/v1/backends/{name}
 GET /api/v1/backends/{name}/stats
 ```
 
+### Configuration
+
+Get sanitized config (safe to display):
+```http
+GET /api/v1/config
+```
+
+Get full config for editing:
+```http
+GET /api/v1/config/full
+```
+
+Get config section metadata (hot-reload info):
+```http
+GET /api/v1/config/meta
+```
+
+Save configuration:
+```http
+PUT /api/v1/config
+Content-Type: application/json
+
+{
+  "config": { ... },
+  "create_backup": true
+}
+```
+
+Validate config without saving:
+```http
+POST /api/v1/config/validate
+Content-Type: application/json
+
+{ ... config object ... }
+```
+
+Reload configuration:
+```http
+POST /api/v1/config/reload
+```
+
+### Request Log
+
+Get recent requests (requires `enable_request_log: true` in config):
+```http
+GET /api/v1/requests
+GET /api/v1/requests?limit=50
+GET /api/v1/requests?since=123  # Get requests since ID
+```
+
+Response:
+```json
+{
+  "enabled": true,
+  "requests": [
+    {
+      "id": 1,
+      "timestamp": "2024-01-01T00:00:00Z",
+      "method": "GET",
+      "host": "example.com",
+      "path": "/api/data",
+      "backend": "direct",
+      "status_code": 200,
+      "duration_ms": 150,
+      "bytes_sent": 1024,
+      "bytes_recv": 2048
+    }
+  ]
+}
+```
+
+Get request log stats:
+```http
+GET /api/v1/requests/stats
+```
+
+Clear request log:
+```http
+DELETE /api/v1/requests
+```
+
+### PAC File (Proxy Auto-Configuration)
+
+Bifrost automatically generates a PAC file based on your routing rules:
+
+```http
+GET /proxy.pac
+GET /wpad.dat
+```
+
+The PAC file contains JavaScript that browsers use for automatic proxy configuration. Example output:
+
+```javascript
+function FindProxyForURL(url, host) {
+    if (shExpMatch(host, "*.internal.company.com")) {
+        return "PROXY bifrost.example.com:8080; DIRECT";
+    }
+    return "DIRECT";
+}
+```
+
+**Using the PAC file:**
+
+- **macOS**: System Preferences → Network → Advanced → Proxies → Automatic Proxy Configuration
+- **Windows**: Settings → Network → Proxy → Use setup script
+- **Firefox**: Settings → Network Settings → Automatic proxy configuration URL
+- **Chrome**: Uses system settings, or use Proxy SwitchyOmega extension
+
 ## Client API
 
 Default: `http://localhost:3130`

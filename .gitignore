@@ -39,6 +39,11 @@ web/server/node_modules/
 web/client/dist/
 web/client/node_modules/
 
+# TypeScript build artifacts
+*.tsbuildinfo
+*.d.ts
+!vite-env.d.ts
+
 # Go workspace
 go.work
 go.work.sum

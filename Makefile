@@ -93,7 +93,7 @@ build-windows: web-sync
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/bifrost-client-windows-amd64.exe ./cmd/client
 
 # Docker
-.PHONY: docker-build docker-push docker-deploy docker-up docker-down docker-logs docker-status docker-stop
+.PHONY: docker-build docker-push docker-deploy docker-up docker-down docker-logs docker-status docker-stop docker-rebuild docker-rebuild-clean
 
 docker-build: web-sync
 	@echo "Building Docker image..."
@@ -127,26 +127,54 @@ docker-logs:
 docker-status:
 	@docker-compose -f docker/docker-compose.yml -p bifrost ps
 
-# Web UI - sync static files from source to embedded directories
-.PHONY: web-sync web-sync-server web-sync-client web-build
+docker-rebuild:
+	@echo "Rebuilding and starting Docker Compose services..."
+	docker compose -f docker/docker-compose.yml -p bifrost up -d --build
+
+docker-rebuild-clean:
+	@echo "Rebuilding (no cache) and starting Docker Compose services..."
+	docker compose -f docker/docker-compose.yml -p bifrost build --no-cache
+	docker compose -f docker/docker-compose.yml -p bifrost up -d
+
+# Web UI - build and sync static files
+.PHONY: web-sync web-sync-server web-sync-client web-build web-install web-dev
 
 web-sync: web-sync-server web-sync-client
 
-web-sync-server:
-	@echo "Syncing server Web UI..."
-	@mkdir -p internal/api/server/static
-	@cp web/server/src/index.html internal/api/server/static/index.html
+web-sync-server: web-build-server
+	@echo "Server Web UI built and synced"
 
-web-sync-client:
-	@echo "Syncing client Web UI..."
-	@mkdir -p internal/api/client/static
-	@cp web/client/src/index.html internal/api/client/static/index.html
+web-sync-client: web-build-client
+	@echo "Client Web UI built and synced"
 
-# Optional: Build web UIs with npm if you add build tools later
-web-build:
-	@echo "Building Web UIs..."
-	@if [ -f web/server/package.json ]; then cd web/server && npm install && npm run build; fi
-	@if [ -f web/client/package.json ]; then cd web/client && npm install && npm run build; fi
+# Build server web UI with Vite
+web-build-server:
+	@echo "Building server Web UI..."
+	@cd web/server && npm install && npm run build
+
+# Build client web UI with Vite
+web-build-client:
+	@echo "Building client Web UI..."
+	@cd web/client && npm install && npm run build
+
+# Build all web UIs
+web-build: web-build-server web-build-client
+
+# Install web dependencies
+web-install:
+	@echo "Installing web dependencies..."
+	@cd web/server && npm install
+	@cd web/client && npm install
+
+# Development mode for server UI
+web-dev:
+	@echo "Starting Vite dev server for server UI..."
+	@cd web/server && npm run dev
+
+# Development mode for client UI
+web-dev-client:
+	@echo "Starting Vite dev server for client UI..."
+	@cd web/client && npm run dev
 
 # Help
 .PHONY: help
@@ -167,14 +195,16 @@ help:
 	@echo "  make install        - Install to GOPATH/bin"
 	@echo ""
 	@echo "Docker:"
-	@echo "  make docker-build   - Build Docker images"
-	@echo "  make docker-push    - Push Docker images to registry"
-	@echo "  make docker-deploy  - Build and deploy with docker-compose"
-	@echo "  make docker-up      - Start docker-compose services"
-	@echo "  make docker-down    - Stop and remove docker-compose services"
-	@echo "  make docker-stop    - Stop services (keep volumes)"
-	@echo "  make docker-logs    - Follow docker-compose logs"
-	@echo "  make docker-status  - Show docker-compose service status"
+	@echo "  make docker-build         - Build Docker images"
+	@echo "  make docker-push          - Push Docker images to registry"
+	@echo "  make docker-deploy        - Build and deploy with docker-compose"
+	@echo "  make docker-up            - Start docker-compose services"
+	@echo "  make docker-down          - Stop and remove docker-compose services"
+	@echo "  make docker-stop          - Stop services (keep volumes)"
+	@echo "  make docker-logs          - Follow docker-compose logs"
+	@echo "  make docker-status        - Show docker-compose service status"
+	@echo "  make docker-rebuild       - Rebuild and start services (--build)"
+	@echo "  make docker-rebuild-clean - Rebuild without cache and start"
 	@echo ""
 	@echo "Other:"
 	@echo "  make web-sync       - Sync web UI files to embedded directories"
