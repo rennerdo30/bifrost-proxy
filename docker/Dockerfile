@@ -48,11 +48,14 @@ RUN apk add --no-cache ca-certificates tzdata
 # Copy binary
 COPY --from=builder /app/bin/bifrost-server /app/bifrost-server
 
-# Copy default config
-COPY configs/server-config.example.yaml /app/config.yaml
+# Create non-root user and data directory
+RUN adduser -D -H -s /sbin/nologin -u 1000 bifrost && \
+    mkdir -p /app/data /var/log/bifrost && \
+    chown -R bifrost:bifrost /app/data /var/log/bifrost
 
-# Create non-root user
-RUN adduser -D -H -s /sbin/nologin bifrost
+# Copy default config to data directory (owned by bifrost)
+COPY --chown=bifrost:bifrost configs/server-config.example.yaml /app/data/config.yaml
+
 USER bifrost
 
 # Expose ports
@@ -62,6 +65,6 @@ EXPOSE 8080 1080 9090 8081
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:9090/metrics || exit 1
 
-# Default command
+# Default command - use config from data directory
 ENTRYPOINT ["/app/bifrost-server"]
-CMD ["-c", "/app/config.yaml"]
+CMD ["-c", "/app/data/config.yaml"]

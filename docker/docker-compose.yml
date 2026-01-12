@@ -14,7 +14,7 @@ services:
       - "8081:8081"   # Web UI
       - "8082:8082"   # API
     volumes:
-      - ./server-config.yaml:/app/config.yaml:ro
+      - bifrost-data:/app/data
       - bifrost-logs:/var/log/bifrost
     environment:
       - TZ=UTC
@@ -39,7 +39,7 @@ services:
       - "3129:3129"   # Web UI
       - "3130:3130"   # API
     volumes:
-      - ./client-config.yaml:/app/config.yaml:ro
+      - bifrost-client-data:/app/data
     environment:
       - TZ=UTC
     depends_on:
@@ -88,6 +88,8 @@ services:
       - bifrost-network
 
 volumes:
+  bifrost-data:
+  bifrost-client-data:
   bifrost-logs:
   prometheus-data:
   grafana-data:
