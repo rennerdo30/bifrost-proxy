@@ -1,0 +1,387 @@
+# CLI Reference
+
+Complete command-line reference for Bifrost server and client.
+
+## Server Commands
+
+### bifrost-server
+
+Main server executable.
+
+```bash
+bifrost-server [flags]
+bifrost-server [command]
+```
+
+#### Global Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--config` | `-c` | `server-config.yaml` | Configuration file path |
+| `--help` | `-h` | | Show help |
+
+#### Commands
+
+| Command | Description |
+|---------|-------------|
+| `completion` | Generate shell autocompletion scripts |
+| `ctl` | Control a running server |
+| `help` | Help about any command |
+| `validate` | Validate configuration file |
+| `version` | Print version information |
+
+### bifrost-server validate
+
+Validate a configuration file without starting the server.
+
+```bash
+bifrost-server validate -c config.yaml
+```
+
+**Exit codes:**
+
+- `0` - Configuration is valid
+- `1` - Configuration has errors
+
+### bifrost-server version
+
+Print version information.
+
+```bash
+bifrost-server version
+```
+
+**Output:**
+
+```
+Bifrost Server v1.0.0
+  Commit: abc1234
+  Built: 2024-01-15T10:00:00Z
+  Go: go1.22.0
+  OS/Arch: linux/amd64
+```
+
+### bifrost-server ctl
+
+Control a running Bifrost server via the API.
+
+```bash
+bifrost-server ctl [command] [flags]
+```
+
+#### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--api` | `http://localhost:8082` | API server URL |
+| `--token` | | API authentication token |
+
+#### Subcommands
+
+##### ctl health
+
+Check server health.
+
+```bash
+bifrost-server ctl health
+```
+
+##### ctl status
+
+Show server status.
+
+```bash
+bifrost-server ctl status
+```
+
+##### ctl stats
+
+Show server statistics.
+
+```bash
+bifrost-server ctl stats
+```
+
+##### ctl backend
+
+Manage backends.
+
+```bash
+# List all backends
+bifrost-server ctl backend list
+
+# Show specific backend
+bifrost-server ctl backend show <name>
+
+# Show backend stats
+bifrost-server ctl backend stats <name>
+```
+
+##### ctl config
+
+Manage configuration.
+
+```bash
+# Show current config
+bifrost-server ctl config show
+
+# Reload configuration
+bifrost-server ctl config reload
+
+# Validate configuration
+bifrost-server ctl config validate
+```
+
+---
+
+## Client Commands
+
+### bifrost-client
+
+Main client executable.
+
+```bash
+bifrost-client [flags]
+bifrost-client [command]
+```
+
+#### Global Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--config` | `-c` | `client-config.yaml` | Configuration file path |
+| `--help` | `-h` | | Show help |
+
+#### Commands
+
+| Command | Description |
+|---------|-------------|
+| `completion` | Generate shell autocompletion scripts |
+| `config` | Configuration management |
+| `ctl` | Control a running client |
+| `help` | Help about any command |
+| `validate` | Validate configuration file |
+| `version` | Print version information |
+
+### bifrost-client config
+
+Configuration management commands.
+
+```bash
+bifrost-client config [command]
+```
+
+#### config init
+
+Generate a sample client configuration file.
+
+```bash
+bifrost-client config init [flags]
+```
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--server` | `-s` | | Server address (host:port) |
+| `--output` | `-o` | `client-config.yaml` | Output file path |
+| `--protocol` | `-p` | `http` | Protocol (http, socks5) |
+
+**Examples:**
+
+```bash
+# Generate basic config
+bifrost-client config init -s proxy.example.com:8080
+
+# Specify output file
+bifrost-client config init -s proxy.example.com:8080 -o my-config.yaml
+
+# Use SOCKS5 protocol
+bifrost-client config init -s proxy.example.com:1080 -p socks5
+```
+
+### bifrost-client validate
+
+Validate a configuration file.
+
+```bash
+bifrost-client validate -c config.yaml
+```
+
+### bifrost-client version
+
+Print version information.
+
+```bash
+bifrost-client version
+```
+
+### bifrost-client ctl
+
+Control a running Bifrost client via the API.
+
+```bash
+bifrost-client ctl [command] [flags]
+```
+
+#### Flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--api` | `http://localhost:3130` | API server URL |
+
+#### Subcommands
+
+##### ctl health
+
+Check client health.
+
+```bash
+bifrost-client ctl health
+```
+
+##### ctl status
+
+Show client status including server connection.
+
+```bash
+bifrost-client ctl status
+```
+
+##### ctl routes
+
+List routing rules.
+
+```bash
+bifrost-client ctl routes
+```
+
+##### ctl test
+
+Test routing for a domain.
+
+```bash
+bifrost-client ctl test example.com
+```
+
+---
+
+## Shell Completion
+
+Generate autocompletion scripts for your shell.
+
+### Bash
+
+```bash
+# Generate completion script
+bifrost-server completion bash > /etc/bash_completion.d/bifrost-server
+
+# Or add to .bashrc
+echo 'source <(bifrost-server completion bash)' >> ~/.bashrc
+```
+
+### Zsh
+
+```bash
+# Generate completion script
+bifrost-server completion zsh > "${fpath[1]}/_bifrost-server"
+
+# Or add to .zshrc
+echo 'source <(bifrost-server completion zsh)' >> ~/.zshrc
+```
+
+### Fish
+
+```bash
+bifrost-server completion fish > ~/.config/fish/completions/bifrost-server.fish
+```
+
+### PowerShell
+
+```powershell
+bifrost-server completion powershell > bifrost-server.ps1
+```
+
+---
+
+## Environment Variables
+
+Configuration can be set via environment variables using the `${VAR_NAME}` syntax in config files.
+
+### Common Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `BIFROST_CONFIG` | Config file path | `/etc/bifrost/config.yaml` |
+| `BIFROST_LOG_LEVEL` | Log level | `debug`, `info`, `warn`, `error` |
+| `BIFROST_API_TOKEN` | API authentication token | `your-secret-token` |
+
+### Authentication Variables
+
+| Variable | Description |
+|----------|-------------|
+| `LDAP_BIND_PASSWORD` | LDAP bind password |
+| `OAUTH_CLIENT_SECRET` | OAuth client secret |
+
+### Example Usage
+
+```yaml
+# config.yaml
+api:
+  token: "${BIFROST_API_TOKEN}"
+
+auth:
+  ldap:
+    bind_password: "${LDAP_BIND_PASSWORD}"
+```
+
+```bash
+export BIFROST_API_TOKEN="my-secret-token"
+export LDAP_BIND_PASSWORD="ldap-password"
+bifrost-server -c config.yaml
+```
+
+---
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | General error |
+| 2 | Configuration error |
+| 3 | Connection error |
+
+---
+
+## Examples
+
+### Start Server with Custom Config
+
+```bash
+bifrost-server -c /etc/bifrost/production.yaml
+```
+
+### Validate Configuration
+
+```bash
+bifrost-server validate -c config.yaml && echo "Config OK"
+```
+
+### Check Server Health
+
+```bash
+bifrost-server ctl health --api http://localhost:8082 --token mytoken
+```
+
+### Generate Client Config and Start
+
+```bash
+bifrost-client config init -s proxy.example.com:8080 -o config.yaml
+bifrost-client -c config.yaml
+```
+
+### Test Route Resolution
+
+```bash
+bifrost-client ctl test google.com
+# Output: google.com -> server (matched rule: default)
+```

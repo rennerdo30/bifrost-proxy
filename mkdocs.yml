@@ -40,6 +40,12 @@ nav:
       - Overview: configuration.md
       - Backends: backends.md
       - Authentication: authentication.md
+  - Deployment: deployment.md
+  - Operations:
+      - CLI Reference: cli-reference.md
+      - Monitoring: monitoring.md
+      - Security: security.md
+      - Troubleshooting: troubleshooting.md
   - API Reference: api.md
   - Development:
       - Contributing: contributing.md

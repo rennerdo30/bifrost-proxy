@@ -67,6 +67,27 @@ Response:
 }
 ```
 
+### Server Statistics
+
+```http
+GET /api/v1/stats
+```
+
+Response:
+```json
+{
+  "total_connections": 5000,
+  "active_connections": 25,
+  "bytes_sent": 104857600,
+  "bytes_received": 209715200,
+  "backends": {
+    "total": 3,
+    "healthy": 3
+  },
+  "time": "2024-01-01T00:00:00Z"
+}
+```
+
 ### List Backends
 
 ```http
@@ -181,6 +202,58 @@ GET /api/v1/requests/stats
 Clear request log:
 ```http
 DELETE /api/v1/requests
+```
+
+### Active Connections
+
+Get all active connections:
+```http
+GET /api/v1/connections
+```
+
+Response:
+```json
+{
+  "connections": [
+    {
+      "id": "20240115100000-1",
+      "client_ip": "192.168.1.100",
+      "client_port": "54321",
+      "host": "example.com:443",
+      "backend": "direct",
+      "protocol": "CONNECT",
+      "start_time": "2024-01-15T10:00:00Z",
+      "bytes_sent": 1024,
+      "bytes_recv": 2048
+    }
+  ],
+  "count": 1,
+  "time": "2024-01-15T10:00:05Z"
+}
+```
+
+### Connected Clients
+
+Get unique connected clients with aggregated stats:
+```http
+GET /api/v1/connections/clients
+```
+
+Response:
+```json
+{
+  "clients": [
+    {
+      "client_ip": "192.168.1.100",
+      "connections": 5,
+      "bytes_sent": 10240,
+      "bytes_recv": 20480,
+      "first_seen": "2024-01-15T09:00:00Z"
+    }
+  ],
+  "count": 1,
+  "time": "2024-01-15T10:00:05Z"
+}
 ```
 
 ### PAC File (Proxy Auto-Configuration)
