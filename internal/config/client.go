@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
@@ -111,6 +112,11 @@ func (c *ClientConfig) Validate() error {
 
 	if c.Server.Address == "" {
 		return fmt.Errorf("server address is required")
+	}
+
+	// Validate server address has host:port format
+	if _, _, err := net.SplitHostPort(c.Server.Address); err != nil {
+		return fmt.Errorf("server address must be in host:port format (e.g., '192.168.1.1:8080'): %w", err)
 	}
 
 	for _, r := range c.Routes {

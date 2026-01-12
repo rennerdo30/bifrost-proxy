@@ -122,3 +122,193 @@ func TestControllerDenyReasons(t *testing.T) {
 	assert.Equal(t, ActionDeny, result.Action)
 	assert.Equal(t, ReasonNotWhitelisted, result.Reason)
 }
+
+func TestController_IsAllowed(t *testing.T) {
+	c, err := NewController(Config{
+		Blacklist: []string{"192.168.1.1"},
+	})
+	require.NoError(t, err)
+
+	assert.False(t, c.IsAllowed("192.168.1.1"))
+	assert.True(t, c.IsAllowed("192.168.1.2"))
+}
+
+func TestController_AddToWhitelist(t *testing.T) {
+	c, err := NewController(Config{})
+	require.NoError(t, err)
+
+	// Initially all IPs allowed
+	assert.True(t, c.IsAllowed("10.0.0.1"))
+
+	// Add to whitelist - now only whitelisted IPs allowed
+	err = c.AddToWhitelist("192.168.0.0/16")
+	require.NoError(t, err)
+
+	assert.True(t, c.IsAllowed("192.168.1.1"))
+	assert.False(t, c.IsAllowed("10.0.0.1"))
+}
+
+func TestController_AddToBlacklist(t *testing.T) {
+	c, err := NewController(Config{})
+	require.NoError(t, err)
+
+	// Initially all IPs allowed
+	assert.True(t, c.IsAllowed("10.0.0.1"))
+
+	// Add to blacklist
+	err = c.AddToBlacklist("10.0.0.1")
+	require.NoError(t, err)
+
+	assert.False(t, c.IsAllowed("10.0.0.1"))
+	assert.True(t, c.IsAllowed("10.0.0.2"))
+}
+
+func TestController_RemoveFromWhitelist(t *testing.T) {
+	c, err := NewController(Config{
+		Whitelist: []string{"192.168.0.0/16"},
+	})
+	require.NoError(t, err)
+
+	// Call RemoveFromWhitelist (currently no-op but should not panic)
+	c.RemoveFromWhitelist("192.168.0.0/16")
+	// Should not panic
+}
+
+func TestController_RemoveFromBlacklist(t *testing.T) {
+	c, err := NewController(Config{
+		Blacklist: []string{"10.0.0.1"},
+	})
+	require.NoError(t, err)
+
+	// Call RemoveFromBlacklist (currently no-op but should not panic)
+	c.RemoveFromBlacklist("10.0.0.1")
+	// Should not panic
+}
+
+func TestController_ClearWhitelist(t *testing.T) {
+	c, err := NewController(Config{
+		Whitelist: []string{"192.168.0.0/16"},
+	})
+	require.NoError(t, err)
+
+	// Initially only whitelisted IPs allowed
+	assert.False(t, c.IsAllowed("10.0.0.1"))
+
+	// Clear whitelist - now all IPs allowed
+	c.ClearWhitelist()
+	assert.True(t, c.IsAllowed("10.0.0.1"))
+}
+
+func TestController_ClearBlacklist(t *testing.T) {
+	c, err := NewController(Config{
+		Blacklist: []string{"10.0.0.1"},
+	})
+	require.NoError(t, err)
+
+	// Initially blacklisted IP denied
+	assert.False(t, c.IsAllowed("10.0.0.1"))
+
+	// Clear blacklist - now allowed
+	c.ClearBlacklist()
+	assert.True(t, c.IsAllowed("10.0.0.1"))
+}
+
+func TestController_Stats(t *testing.T) {
+	c, err := NewController(Config{
+		Whitelist: []string{"192.168.0.0/16", "10.0.0.0/8"},
+		Blacklist: []string{"1.2.3.4"},
+	})
+	require.NoError(t, err)
+
+	stats := c.Stats()
+	assert.Equal(t, 2, stats["whitelist_entries"])
+	assert.Equal(t, 1, stats["blacklist_entries"])
+}
+
+func TestIPMatcher_Clear(t *testing.T) {
+	m := NewIPMatcher()
+
+	require.NoError(t, m.Add("192.168.1.1"))
+	require.NoError(t, m.Add("10.0.0.0/8"))
+	assert.True(t, m.Match("192.168.1.1"))
+
+	m.Clear()
+	assert.False(t, m.Match("192.168.1.1"))
+}
+
+func TestIPMatcher_Count(t *testing.T) {
+	m := NewIPMatcher()
+
+	assert.Equal(t, 0, m.Count())
+
+	require.NoError(t, m.Add("192.168.1.1"))
+	assert.Equal(t, 1, m.Count())
+
+	require.NoError(t, m.Add("10.0.0.0/8"))
+	assert.Equal(t, 2, m.Count())
+}
+
+func TestIPMatcher_AddInvalid(t *testing.T) {
+	m := NewIPMatcher()
+
+	err := m.Add("invalid-ip")
+	assert.Error(t, err)
+}
+
+func TestIPMatcher_AddAll_Invalid(t *testing.T) {
+	m := NewIPMatcher()
+
+	err := m.AddAll([]string{"192.168.1.1", "invalid-ip"})
+	assert.Error(t, err)
+}
+
+func TestIPMatcher_MatchInvalidIP(t *testing.T) {
+	m := NewIPMatcher()
+	require.NoError(t, m.Add("192.168.1.1"))
+
+	// Invalid IP should return false
+	assert.False(t, m.Match("invalid-ip"))
+}
+
+func TestController_NewWithInvalidWhitelist(t *testing.T) {
+	_, err := NewController(Config{
+		Whitelist: []string{"invalid-entry"},
+	})
+	assert.Error(t, err)
+}
+
+func TestController_NewWithInvalidBlacklist(t *testing.T) {
+	_, err := NewController(Config{
+		Blacklist: []string{"invalid-entry"},
+	})
+	assert.Error(t, err)
+}
+
+// Test constants
+func TestActionConstants(t *testing.T) {
+	assert.Equal(t, Action("allow"), ActionAllow)
+	assert.Equal(t, Action("deny"), ActionDeny)
+}
+
+func TestDenyReasonConstants(t *testing.T) {
+	assert.Equal(t, DenyReason("ip_blacklisted"), ReasonBlacklisted)
+	assert.Equal(t, DenyReason("ip_not_whitelisted"), ReasonNotWhitelisted)
+}
+
+func TestResult_Struct(t *testing.T) {
+	r := Result{
+		Action: ActionAllow,
+		Reason: "",
+	}
+	assert.Equal(t, ActionAllow, r.Action)
+	assert.Equal(t, DenyReason(""), r.Reason)
+}
+
+func TestConfig_Struct(t *testing.T) {
+	cfg := Config{
+		Whitelist: []string{"192.168.0.0/16"},
+		Blacklist: []string{"10.0.0.1"},
+	}
+	assert.Len(t, cfg.Whitelist, 1)
+	assert.Len(t, cfg.Blacklist, 1)
+}

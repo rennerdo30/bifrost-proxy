@@ -48,3 +48,4 @@ web/client/node_modules/
 go.work
 go.work.sum
 job-logs.txt
+*.out
