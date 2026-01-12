@@ -4,7 +4,7 @@ This guide will help you get Bifrost up and running quickly.
 
 ## Prerequisites
 
-- Go 1.22+ (for building from source)
+- Go 1.24+ (for building from source)
 - Docker (optional, for containerized deployment)
 
 ## Installation
@@ -79,7 +79,29 @@ curl http://localhost:9090/metrics
 
 ### Client Setup
 
-1. Create a configuration file `client-config.yaml`:
+#### Option 1: Generate Config from CLI
+
+```bash
+# Generate a config file with your server address
+./bifrost-client config init -s your-server:8080
+
+# Or with custom options
+./bifrost-client config init \
+  -s your-server:8080 \
+  -p socks5 \
+  --http-listen 127.0.0.1:8888 \
+  -o my-config.yaml
+```
+
+#### Option 2: Generate Config from Web Dashboard
+
+1. Open your server's web dashboard (e.g., `http://your-server:8081`)
+2. Click "Config Generator" tab
+3. Fill in the form and download the configuration
+
+#### Option 3: Create Config Manually
+
+Create a configuration file `client-config.yaml`:
 
 ```yaml
 proxy:
@@ -94,13 +116,29 @@ routes:
     action: server
 ```
 
-2. Start the client:
+#### Start the Client
 
 ```bash
 ./bifrost-client -c client-config.yaml
 ```
 
-3. Configure your browser/application to use `127.0.0.1:3128` as HTTP proxy.
+#### Configure Your Applications
+
+See the **Setup Guide** tab in the web dashboard for detailed instructions, or use these common methods:
+
+**Browser:**
+- Configure your browser to use `127.0.0.1:3128` as HTTP proxy
+
+**Environment Variables:**
+```bash
+export HTTP_PROXY=http://127.0.0.1:3128
+export HTTPS_PROXY=http://127.0.0.1:3128
+```
+
+**Command Line:**
+```bash
+curl -x http://127.0.0.1:3128 https://example.com
+```
 
 ## Testing the Setup
 

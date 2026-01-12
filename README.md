@@ -12,6 +12,7 @@ A production-ready, MIT-licensed proxy server with support for WireGuard and Ope
 - **Traffic Management**: Rate limiting, bandwidth throttling, health checks, load balancing
 - **Observability**: Prometheus metrics, structured logging, access logs
 - **Cross-Platform**: Windows, macOS, Linux
+- **Web Dashboard**: Real-time monitoring, config generator, setup guides
 
 ## Architecture
 
@@ -47,6 +48,9 @@ make build-server
 ```bash
 # Build
 make build-client
+
+# Generate a config file
+./bin/bifrost-client config init -s your-server:8080
 
 # Run with config
 ./bin/bifrost-client -c client-config.yaml
@@ -93,9 +97,8 @@ routes:
 
 ### Prerequisites
 
-- Go 1.22+
+- Go 1.24+
 - Make
-- Node.js 18+ (for Web UI)
 
 ### Build Commands
 
@@ -116,6 +119,17 @@ make test
 # Run linter
 make lint
 ```
+
+## Web Dashboard
+
+The server includes a built-in web dashboard accessible at the configured web UI port (default: `:8081`).
+
+Features:
+- **Dashboard**: Real-time connection stats and backend health
+- **Backends**: View all configured backends and their status
+- **Statistics**: Traffic metrics and request counts
+- **Config Generator**: Generate client configurations with a visual form
+- **Setup Guide**: Instructions for configuring browsers, system settings, and CLI tools
 
 ## Documentation
 
