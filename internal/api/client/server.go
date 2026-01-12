@@ -90,6 +90,7 @@ func (a *API) HandlerWithUI() http.Handler {
 	}
 
 	// Static files for Web UI (no auth)
+	r.Handle("/", StaticHandler())
 	r.Handle("/*", StaticHandler())
 
 	return r
