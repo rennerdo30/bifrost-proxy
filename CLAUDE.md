@@ -409,6 +409,73 @@ docker build -t simple-proxy-server -f docker/Dockerfile .
 cd docker && docker-compose up -d
 ```
 
+**Docker Data Persistence**: The Docker containers use named volumes (`bifrost-data`, `bifrost-client-data`) for persistent storage. Config files are stored in `/app/data/` which is writable by the non-root `bifrost` user.
+
+## VPN Backend Configuration
+
+### OpenVPN Inline Config
+
+OpenVPN backends support inline configuration without requiring external files:
+
+```yaml
+backends:
+  - name: vpn-inline
+    type: openvpn
+    config:
+      # Option 1: Reference external file
+      config_file: /path/to/client.ovpn
+
+      # Option 2: Inline config content (no external file needed)
+      config_content: |
+        client
+        dev tun
+        proto udp
+        remote vpn.example.com 1194
+        ...
+
+      # Inline credentials (alternative to auth_file)
+      username: myuser
+      password: mypassword
+```
+
+### WireGuard Inline Config
+
+WireGuard backends also support inline configuration:
+
+```yaml
+backends:
+  - name: wg-inline
+    type: wireguard
+    config:
+      # Option 1: Reference external file
+      config_file: /path/to/wg0.conf
+
+      # Option 2: Inline config content
+      config_content: |
+        [Interface]
+        PrivateKey = ...
+        Address = 10.0.0.2/32
+
+        [Peer]
+        PublicKey = ...
+        Endpoint = vpn.example.com:51820
+        AllowedIPs = 0.0.0.0/0
+```
+
+## Connection Tracking API
+
+The server exposes real-time connection tracking via the API:
+
+```bash
+# Get all active connections
+curl http://localhost:8080/api/v1/connections/
+
+# Get unique clients summary
+curl http://localhost:8080/api/v1/connections/clients
+```
+
+Response includes: client IP, port, destination host, backend used, protocol (HTTP/SOCKS5), duration, and bytes transferred.
+
 ## Tray Icon Interface
 
 ```go
