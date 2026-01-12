@@ -10,6 +10,8 @@ import type {
   ConfigMeta,
   ConfigSaveRequest,
   ConfigSaveResponse,
+  ConnectionsResponse,
+  ClientsResponse,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -85,6 +87,10 @@ export const api = {
     fetchJSON<{ message: string; time: string }>('/config/reload', {
       method: 'POST',
     }),
+
+  // Connections
+  getConnections: () => fetchJSON<ConnectionsResponse>('/connections/'),
+  getClients: () => fetchJSON<ClientsResponse>('/connections/clients'),
 }
 
 // Token management

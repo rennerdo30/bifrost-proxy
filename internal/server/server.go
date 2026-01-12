@@ -569,14 +569,24 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	ctx = util.WithRequestID(ctx, generateRequestID())
 
 	// Rate limiting
+	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
+	clientIP := tcpAddr.IP.String()
+	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
+
 	if s.rateLimiter != nil {
-		clientIP := conn.RemoteAddr().(*net.TCPAddr).IP.String()
 		if !s.rateLimiter.Allow(clientIP) {
 			s.metricsCollector.RecordRateLimit("ip")
 			conn.Write([]byte("HTTP/1.1 429 Too Many Requests\r\n\r\n"))
 			conn.Close()
 			return
 		}
+	}
+
+	// Track connection in API
+	var connID string
+	if s.api != nil && s.api.ConnectionTracker() != nil {
+		connID = s.api.ConnectionTracker().Add(clientIP, clientPort, "", "", "HTTP")
+		defer s.api.ConnectionTracker().Remove(connID)
 	}
 
 	// Track connection metrics
@@ -627,13 +637,23 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 	ctx = util.WithRequestID(ctx, generateRequestID())
 
 	// Rate limiting
+	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
+	clientIP := tcpAddr.IP.String()
+	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
+
 	if s.rateLimiter != nil {
-		clientIP := conn.RemoteAddr().(*net.TCPAddr).IP.String()
 		if !s.rateLimiter.Allow(clientIP) {
 			s.metricsCollector.RecordRateLimit("ip")
 			conn.Close()
 			return
 		}
+	}
+
+	// Track connection in API
+	var connID string
+	if s.api != nil && s.api.ConnectionTracker() != nil {
+		connID = s.api.ConnectionTracker().Add(clientIP, clientPort, "", "", "SOCKS5")
+		defer s.api.ConnectionTracker().Remove(connID)
 	}
 
 	// Track connection metrics

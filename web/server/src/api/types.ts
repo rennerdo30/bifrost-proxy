@@ -340,6 +340,39 @@ export interface ConfigSaveResponse {
   changed_sections?: string[]
 }
 
+// Connection tracking
+export interface Connection {
+  id: string
+  client_ip: string
+  client_port: string
+  host: string
+  backend: string
+  protocol: string
+  start_time: string
+  bytes_sent: number
+  bytes_recv: number
+}
+
+export interface ConnectionsResponse {
+  connections: Connection[]
+  count: number
+  time: string
+}
+
+export interface ClientSummary {
+  client_ip: string
+  connections: number
+  bytes_sent: number
+  bytes_recv: number
+  first_seen: string
+}
+
+export interface ClientsResponse {
+  clients: ClientSummary[]
+  count: number
+  time: string
+}
+
 // WebSocket events
 export interface WSEvent {
   type: 'stats' | 'backend_status' | 'config_reload' | 'request'

@@ -30,6 +30,7 @@ type API struct {
 	wsHub         *WebSocketHub
 	pacGenerator  *PACGenerator
 	requestLog    *RequestLog
+	connTracker   *ConnectionTracker
 }
 
 // Config holds API configuration.
@@ -85,7 +86,13 @@ func New(cfg Config) *API {
 		configPath:    cfg.ConfigPath,
 		pacGenerator:  pacGen,
 		requestLog:    requestLog,
+		connTracker:   NewConnectionTracker(),
 	}
+}
+
+// ConnectionTracker returns the connection tracker for tracking active connections.
+func (a *API) ConnectionTracker() *ConnectionTracker {
+	return a.connTracker
 }
 
 // RequestLog returns the request log for adding entries.
@@ -205,6 +212,12 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		r.Get("/", a.handleGetRequests)
 		r.Get("/stats", a.handleGetRequestStats)
 		r.Delete("/", a.handleClearRequests)
+	})
+
+	// Connection tracking routes
+	r.Route("/api/v1/connections", func(r chi.Router) {
+		r.Get("/", a.handleGetConnections)
+		r.Get("/clients", a.handleGetClients)
 	})
 }
 
@@ -431,5 +444,25 @@ func (a *API) handleClearRequests(w http.ResponseWriter, r *http.Request) {
 
 	a.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Request log cleared",
+	})
+}
+
+// handleGetConnections returns all active connections.
+func (a *API) handleGetConnections(w http.ResponseWriter, r *http.Request) {
+	connections := a.connTracker.GetAll()
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"connections": connections,
+		"count":       len(connections),
+		"time":        time.Now().Format(time.RFC3339),
+	})
+}
+
+// handleGetClients returns unique connected clients with summaries.
+func (a *API) handleGetClients(w http.ResponseWriter, r *http.Request) {
+	clients := a.connTracker.GetUniqueClients()
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"clients": clients,
+		"count":   len(clients),
+		"time":    time.Now().Format(time.RFC3339),
 	})
 }
