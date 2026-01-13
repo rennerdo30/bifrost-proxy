@@ -1086,3 +1086,114 @@ rules:
       domains: ["*.crunchyroll.com"]
     backend: "germany"
 ```
+
+## 16. Documentation
+
+### 16.1 Documentation System
+
+The project uses [MkDocs](https://www.mkdocs.org/) with the [Material theme](https://squidfunk.github.io/mkdocs-material/) for documentation, deployed to GitHub Pages.
+
+**Location**: `docs/` directory (Markdown source files)
+
+**Configuration**: `mkdocs.yml`
+
+**Build**: `make docs-build` or `make docs-serve` (local development)
+
+**Deployment**: Automatically deployed via GitHub Actions workflow (`.github/workflows/docs.yml`)
+
+**Live Site**: https://rennerdo30.github.io/bifrost-proxy/
+
+### 16.2 Diagrams
+
+All diagrams in the documentation use **Mermaid** for rendering. Mermaid provides interactive, scalable diagrams that work well in web browsers.
+
+**Why Mermaid?**
+- Native support in MkDocs Material theme
+- Interactive and scalable
+- Text-based (version control friendly)
+- Wide variety of diagram types
+- Better accessibility than ASCII art
+
+**Usage:**
+
+````markdown
+```mermaid
+graph LR
+    A[Node A] --> B[Node B]
+    B --> C[Node C]
+```
+````
+
+**Supported Diagram Types:**
+- **Flowcharts/Graphs**: `graph` or `flowchart` - For architecture, process flows
+- **Sequence Diagrams**: `sequenceDiagram` - For request/response flows
+- **Class Diagrams**: `classDiagram` - For code structure
+- **State Diagrams**: `stateDiagram` - For state machines
+- **Entity-Relationship**: `erDiagram` - For data models
+- **Gantt Charts**: `gantt` - For timelines
+- **Pie Charts**: `pie` - For statistics
+- **Git Graphs**: `gitGraph` - For version control flows
+
+**Example - Architecture Diagram:**
+
+The architecture diagrams shown in sections 2.1 and 2.2 are rendered as Mermaid diagrams in the live documentation:
+
+```mermaid
+graph LR
+    Browser[Browser / App] -->|HTTP/SOCKS5| Client[Client<br/>local]
+    Client -->|HTTP/SOCKS5| Server[Server<br/>central]
+    Server -->|Tunnel| WireGuard[WireGuard<br/>Tunnel]
+    Server -->|Tunnel| OpenVPN[OpenVPN<br/>Tunnel]
+    Server -->|Proxy| HTTPProxy[HTTP/SOCKS5<br/>Proxy]
+```
+
+**Best Practices:**
+- Use descriptive node labels
+- Add styling with `style` directives for visual clarity
+- Keep diagrams focused and simple
+- Choose appropriate diagram types for the content
+- Test locally with `make docs-serve` before committing
+
+**Note**: The ASCII diagrams in this specification document (sections 2.1, 2.2) are converted to Mermaid diagrams in the live documentation for better rendering and interactivity.
+
+### 16.3 Documentation Workflow
+
+**Automatic Deployment:**
+- Triggers on push to `main` branch when files in `docs/`, `mkdocs.yml`, `README.md`, `CHANGELOG.md`, or `CONTRIBUTING.md` change
+- Builds documentation using Python/MkDocs
+- Deploys to GitHub Pages automatically
+
+**Manual Trigger:**
+```bash
+gh workflow run "Documentation"
+```
+
+**Local Development:**
+```bash
+# Start local server (auto-reload)
+make docs-serve
+
+# Build static site
+make docs-build
+```
+
+### 16.4 Documentation Structure
+
+The documentation is organized into the following sections:
+
+- **Home** (`index.md`) - Overview and quick start
+- **Getting Started** - Installation and setup guides
+- **Configuration** - Server and client configuration
+  - Overview
+  - Backends (WireGuard, OpenVPN, HTTP/SOCKS5 proxies)
+  - Authentication (None, Native, System, LDAP, OAuth)
+- **Deployment** - Docker, systemd, launchd
+- **Operations**
+  - CLI Reference
+  - Monitoring (Prometheus, Grafana)
+  - Security
+  - Troubleshooting
+- **API Reference** - REST API documentation
+- **Development**
+  - Contributing
+  - Changelog

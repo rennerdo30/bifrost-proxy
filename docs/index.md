@@ -16,19 +16,20 @@ A production-ready, MIT-licensed proxy server with support for WireGuard and Ope
 
 ## Architecture
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────────────┐
-│   Browser   │────▶│   Client    │────▶│       Server        │
-│  / App      │     │  (local)    │     │    (central)        │
-└─────────────┘     └─────────────┘     └──────────┬──────────┘
-                                                   │
-                    ┌──────────────────────────────┼──────────────────────────────┐
-                    │                              │                              │
-                    ▼                              ▼                              ▼
-            ┌───────────────┐             ┌───────────────┐             ┌───────────────┐
-            │   WireGuard   │             │    OpenVPN    │             │ HTTP/SOCKS5   │
-            │    Tunnel     │             │    Tunnel     │             │    Proxy      │
-            └───────────────┘             └───────────────┘             └───────────────┘
+```mermaid
+graph LR
+    Browser[Browser / App] -->|HTTP/SOCKS5| Client[Client<br/>local]
+    Client -->|HTTP/SOCKS5| Server[Server<br/>central]
+    Server -->|Tunnel| WireGuard[WireGuard<br/>Tunnel]
+    Server -->|Tunnel| OpenVPN[OpenVPN<br/>Tunnel]
+    Server -->|Proxy| HTTPProxy[HTTP/SOCKS5<br/>Proxy]
+    
+    style Browser fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Client fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style Server fill:#50c878,stroke:#3a9d5f,color:#fff
+    style WireGuard fill:#ff6b6b,stroke:#d63031,color:#fff
+    style OpenVPN fill:#ffa726,stroke:#f57c00,color:#fff
+    style HTTPProxy fill:#26c6da,stroke:#00acc1,color:#fff
 ```
 
 ## Quick Start

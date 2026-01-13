@@ -377,6 +377,97 @@ log.Error("dial failed", "error", err)
 3. Update OpenAPI spec if maintained
 4. Update Web UI
 
+## Documentation
+
+### MkDocs Setup
+
+Documentation is built using [MkDocs](https://www.mkdocs.org/) with the [Material theme](https://squidfunk.github.io/mkdocs-material/).
+
+**Configuration**: `mkdocs.yml`
+
+**Source files**: `docs/` directory (Markdown files)
+
+**Build output**: `site/` directory (generated HTML)
+
+**GitHub Pages**: Automatically deployed via `.github/workflows/docs.yml`
+
+### Local Development
+
+```bash
+# Start local development server (auto-reload on changes)
+make docs-serve
+
+# Build static site
+make docs-build
+```
+
+### Mermaid Diagrams
+
+All diagrams in the documentation use **Mermaid** for rendering. Mermaid is supported natively by MkDocs Material.
+
+**Usage in Markdown:**
+
+````markdown
+```mermaid
+graph LR
+    A[Node A] --> B[Node B]
+    B --> C[Node C]
+```
+````
+
+**Supported diagram types:**
+- `graph` / `flowchart` - Flowcharts and graphs
+- `sequenceDiagram` - Sequence diagrams
+- `classDiagram` - Class diagrams
+- `stateDiagram` - State diagrams
+- `erDiagram` - Entity-relationship diagrams
+- `gantt` - Gantt charts
+- `pie` - Pie charts
+- `gitGraph` - Git graphs
+
+**Example - Architecture Diagram:**
+
+```mermaid
+graph LR
+    Browser[Browser / App] -->|HTTP/SOCKS5| Client[Client<br/>local]
+    Client -->|HTTP/SOCKS5| Server[Server<br/>central]
+    Server -->|Tunnel| WireGuard[WireGuard<br/>Tunnel]
+    Server -->|Tunnel| OpenVPN[OpenVPN<br/>Tunnel]
+    Server -->|Proxy| HTTPProxy[HTTP/SOCKS5<br/>Proxy]
+```
+
+**Configuration:**
+
+Mermaid support is configured in `mkdocs.yml` via `pymdownx.superfences`:
+
+```yaml
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+```
+
+**Best Practices:**
+- Use descriptive node labels
+- Add styling with `style` directives for better visualization
+- Keep diagrams simple and focused
+- Use appropriate diagram types for the content
+- Test diagrams locally with `make docs-serve` before committing
+
+### Documentation Workflow
+
+The documentation workflow (`.github/workflows/docs.yml`) automatically:
+1. Builds the documentation when changes are pushed to `main` branch
+2. Triggers on changes to `docs/`, `mkdocs.yml`, `README.md`, `CHANGELOG.md`, or `CONTRIBUTING.md`
+3. Deploys to GitHub Pages at `https://rennerdo30.github.io/bifrost-proxy/`
+
+**Manual trigger:**
+```bash
+gh workflow run "Documentation"
+```
+
 ## Testing Strategy
 
 - **Unit tests**: Mock backends, routers, debugger
