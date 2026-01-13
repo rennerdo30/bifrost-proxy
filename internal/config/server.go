@@ -11,17 +11,18 @@ import (
 
 // ServerConfig is the main configuration for the Bifrost server.
 type ServerConfig struct {
-	Server      ServerSettings  `yaml:"server" json:"server"`
-	Backends    []BackendConfig `yaml:"backends" json:"backends"`
-	Routes      []RouteConfig   `yaml:"routes" json:"routes"`
-	Auth        AuthConfig      `yaml:"auth" json:"auth"`
-	RateLimit   RateLimitConfig `yaml:"rate_limit" json:"rate_limit"`
-	AccessLog   AccessLogConfig `yaml:"access_log" json:"access_log"`
-	Metrics     MetricsConfig   `yaml:"metrics" json:"metrics"`
-	Logging     logging.Config  `yaml:"logging" json:"logging"`
-	WebUI       WebUIConfig     `yaml:"web_ui" json:"web_ui"`
-	API         APIConfig       `yaml:"api" json:"api"`
+	Server      ServerSettings    `yaml:"server" json:"server"`
+	Backends    []BackendConfig   `yaml:"backends" json:"backends"`
+	Routes      []RouteConfig     `yaml:"routes" json:"routes"`
+	Auth        AuthConfig        `yaml:"auth" json:"auth"`
+	RateLimit   RateLimitConfig   `yaml:"rate_limit" json:"rate_limit"`
+	AccessLog   AccessLogConfig   `yaml:"access_log" json:"access_log"`
+	Metrics     MetricsConfig     `yaml:"metrics" json:"metrics"`
+	Logging     logging.Config    `yaml:"logging" json:"logging"`
+	WebUI       WebUIConfig       `yaml:"web_ui" json:"web_ui"`
+	API         APIConfig         `yaml:"api" json:"api"`
 	HealthCheck HealthCheckConfig `yaml:"health_check" json:"health_check"`
+	AutoUpdate  AutoUpdateConfig  `yaml:"auto_update" json:"auto_update"`
 }
 
 // ServerSettings contains server-specific settings.
@@ -192,6 +193,13 @@ type HealthCheckConfig struct {
 	Path     string   `yaml:"path,omitempty" json:"path,omitempty"` // For HTTP health checks
 }
 
+// AutoUpdateConfig contains auto-update settings.
+type AutoUpdateConfig struct {
+	Enabled       bool     `yaml:"enabled" json:"enabled"`
+	CheckInterval Duration `yaml:"check_interval" json:"check_interval"`
+	Channel       string   `yaml:"channel" json:"channel"` // stable, prerelease
+}
+
 // Duration is a time.Duration that can be unmarshaled from YAML.
 type Duration time.Duration
 
@@ -273,6 +281,11 @@ func DefaultServerConfig() ServerConfig {
 			Listen:  ":8082",
 		},
 		Logging: logging.DefaultConfig(),
+		AutoUpdate: AutoUpdateConfig{
+			Enabled:       false,
+			CheckInterval: Duration(24 * time.Hour),
+			Channel:       "stable",
+		},
 	}
 }
 

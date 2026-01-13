@@ -27,6 +27,7 @@ bifrost-server [command]
 | `completion` | Generate shell autocompletion scripts |
 | `ctl` | Control a running server |
 | `help` | Help about any command |
+| `update` | Check for and install updates |
 | `validate` | Validate configuration file |
 | `version` | Print version information |
 
@@ -60,6 +61,62 @@ Bifrost Server v1.0.0
   Go: go1.22.0
   OS/Arch: linux/amd64
 ```
+
+### bifrost-server update
+
+Check for and install updates.
+
+```bash
+bifrost-server update [command] [flags]
+```
+
+#### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--channel` | | `stable` | Release channel (stable, prerelease) |
+| `--force` | `-f` | `false` | Force update even if same version |
+
+#### Subcommands
+
+##### update check
+
+Check if updates are available without installing.
+
+```bash
+bifrost-server update check
+```
+
+**Output:**
+
+```
+Update available!
+  Current version: v1.0.0
+  New version:     v1.1.0
+  Published:       Mon, 15 Jan 2024 10:00:00 UTC
+  Release URL:     https://github.com/rennerdo30/bifrost-proxy/releases/tag/v1.1.0
+
+Run 'bifrost-server update install' to install.
+```
+
+##### update install
+
+Download and install the latest update.
+
+```bash
+bifrost-server update install
+```
+
+**Features:**
+
+- Downloads from GitHub Releases
+- Verifies SHA256 checksum
+- Creates backup before replacing
+- Shows download progress
+
+**Note:** The server must be restarted after updating.
+
+---
 
 ### bifrost-server ctl
 
@@ -160,6 +217,7 @@ bifrost-client [command]
 | `config` | Configuration management |
 | `ctl` | Control a running client |
 | `help` | Help about any command |
+| `update` | Check for and install updates |
 | `validate` | Validate configuration file |
 | `version` | Print version information |
 
@@ -213,6 +271,41 @@ Print version information.
 ```bash
 bifrost-client version
 ```
+
+### bifrost-client update
+
+Check for and install updates.
+
+```bash
+bifrost-client update [command] [flags]
+```
+
+#### Flags
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--channel` | | `stable` | Release channel (stable, prerelease) |
+| `--force` | `-f` | `false` | Force update even if same version |
+
+#### Subcommands
+
+##### update check
+
+Check if updates are available without installing.
+
+```bash
+bifrost-client update check
+```
+
+##### update install
+
+Download and install the latest update.
+
+```bash
+bifrost-client update install
+```
+
+**Note:** The client must be restarted after updating.
 
 ### bifrost-client ctl
 
