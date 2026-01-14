@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"bufio"
 	"context"
 	"io"
 	"net"
@@ -251,4 +252,257 @@ func TestCopyBidirectional_ContextCanceled(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for cancellation")
 	}
+}
+
+func TestHTTPHandler_handleConnect(t *testing.T) {
+	// Create a test server
+	targetServer, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer targetServer.Close()
+
+	targetAddr := targetServer.Addr().(*net.TCPAddr)
+	targetHost := targetAddr.String()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	var connectCalled bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		DialTimeout: 5 * time.Second,
+		OnConnect: func(ctx context.Context, conn net.Conn, host string, be backend.Backend) {
+			connectCalled = true
+		},
+	})
+
+	// Create CONNECT request
+	req, err := http.NewRequest("CONNECT", "http://"+targetHost, nil)
+	require.NoError(t, err)
+	req.Host = targetHost
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Write request
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	// Read response
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.True(t, connectCalled)
+}
+
+func TestHTTPHandler_handleConnect_NoBackend(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+
+	var errorCalled bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled = true
+		},
+	})
+
+	req, err := http.NewRequest("CONNECT", "http://example.com:443", nil)
+	require.NoError(t, err)
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.True(t, errorCalled)
+}
+
+func TestHTTPHandler_handleConnect_HostWithoutPort(t *testing.T) {
+	targetServer, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer targetServer.Close()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+	})
+
+	req, err := http.NewRequest("CONNECT", "http://example.com", nil)
+	require.NoError(t, err)
+	req.Host = "example.com" // No port
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	// Should default to 443
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestHTTPHandler_sendResponse(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+	})
+
+	// Test sendResponse in goroutine to avoid blocking
+	done := make(chan struct{})
+	go func() {
+		defer serverConn.Close()
+		handler.sendResponse(serverConn, http.StatusOK, "Connection Established")
+		close(done)
+	}()
+
+	reader := bufio.NewReader(clientConn)
+	line, err := reader.ReadString('\n')
+	require.NoError(t, err)
+	assert.Contains(t, line, "200")
+	assert.Contains(t, line, "Connection Established")
+
+	clientConn.Close()
+	<-done
+}
+
+func TestHTTPHandler_sendHTTPError(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer serverConn.Close()
+		handler.sendHTTPError(serverConn, http.StatusBadGateway, "No backend available")
+		close(done)
+	}()
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, nil)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+	assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
+
+	clientConn.Close()
+	<-done
+}
+
+func TestHTTPHandler_handleHTTP_HTTPS(t *testing.T) {
+	// Create a test HTTP server
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}))
+	defer targetServer.Close()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	var connectCalled bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		DialTimeout: 5 * time.Second,
+		OnConnect: func(ctx context.Context, conn net.Conn, host string, be backend.Backend) {
+			connectCalled = true
+		},
+	})
+
+	// Create HTTP request with https scheme
+	req, err := http.NewRequest("GET", "https://example.com/path", nil)
+	require.NoError(t, err)
+	req.Host = targetServer.Listener.Addr().String()
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	// Read response
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.True(t, connectCalled)
+}
+
+func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+
+	var errorCalled bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled = true
+		},
+	})
+
+	req, err := http.NewRequest("GET", "http://example.com/path", nil)
+	require.NoError(t, err)
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+
+	time.Sleep(50 * time.Millisecond)
+	assert.True(t, errorCalled)
 }
