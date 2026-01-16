@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -269,14 +270,14 @@ func TestHTTPHandler_handleConnect(t *testing.T) {
 
 	clientConn, serverConn := net.Pipe()
 
-	var connectCalled bool
+	var connectCalled atomic.Bool
 	handler := NewHTTPHandler(HTTPHandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return directBackend
 		},
 		DialTimeout: 5 * time.Second,
 		OnConnect: func(ctx context.Context, conn net.Conn, host string, be backend.Backend) {
-			connectCalled = true
+			connectCalled.Store(true)
 		},
 	})
 
@@ -301,19 +302,19 @@ func TestHTTPHandler_handleConnect(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
-	assert.True(t, connectCalled)
+	assert.True(t, connectCalled.Load())
 }
 
 func TestHTTPHandler_handleConnect_NoBackend(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 
-	var errorCalled bool
+	var errorCalled atomic.Bool
 	handler := NewHTTPHandler(HTTPHandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return nil
 		},
 		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
-			errorCalled = true
+			errorCalled.Store(true)
 		},
 	})
 
@@ -334,7 +335,7 @@ func TestHTTPHandler_handleConnect_NoBackend(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
-	assert.True(t, errorCalled)
+	assert.True(t, errorCalled.Load())
 }
 
 func TestHTTPHandler_handleConnect_HostWithoutPort(t *testing.T) {
@@ -440,14 +441,14 @@ func TestHTTPHandler_handleHTTP_HTTPS(t *testing.T) {
 
 	clientConn, serverConn := net.Pipe()
 
-	var connectCalled bool
+	var connectCalled atomic.Bool
 	handler := NewHTTPHandler(HTTPHandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return directBackend
 		},
 		DialTimeout: 5 * time.Second,
 		OnConnect: func(ctx context.Context, conn net.Conn, host string, be backend.Backend) {
-			connectCalled = true
+			connectCalled.Store(true)
 		},
 	})
 
@@ -471,19 +472,19 @@ func TestHTTPHandler_handleHTTP_HTTPS(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
-	assert.True(t, connectCalled)
+	assert.True(t, connectCalled.Load())
 }
 
 func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 
-	var errorCalled bool
+	var errorCalled atomic.Bool
 	handler := NewHTTPHandler(HTTPHandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return nil
 		},
 		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
-			errorCalled = true
+			errorCalled.Store(true)
 		},
 	})
 
@@ -504,5 +505,5 @@ func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
-	assert.True(t, errorCalled)
+	assert.True(t, errorCalled.Load())
 }

@@ -161,6 +161,7 @@ func (u *Updater) StartBackgroundChecker(ctx context.Context) {
 		return // Already running
 	}
 	u.stopCh = make(chan struct{})
+	stopCh := u.stopCh // Capture under lock to avoid race
 	u.mu.Unlock()
 
 	go func() {
@@ -169,7 +170,7 @@ func (u *Updater) StartBackgroundChecker(ctx context.Context) {
 		case <-time.After(1 * time.Minute):
 		case <-ctx.Done():
 			return
-		case <-u.stopCh:
+		case <-stopCh:
 			return
 		}
 
@@ -184,7 +185,7 @@ func (u *Updater) StartBackgroundChecker(ctx context.Context) {
 				u.backgroundCheck(ctx)
 			case <-ctx.Done():
 				return
-			case <-u.stopCh:
+			case <-stopCh:
 				return
 			}
 		}

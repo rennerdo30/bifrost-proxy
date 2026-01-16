@@ -2004,16 +2004,28 @@ func TestInterceptor_CacheHit(t *testing.T) {
 	err = manager.Put(ctx, req, resp, body)
 	require.NoError(t, err)
 
-	// Create a test server to get a connection
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	defer server.Close()
+	// Use net.Pipe to get a proper bidirectional connection
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
 
-	conn, err := net.Dial("tcp", server.Listener.Addr().String())
-	require.NoError(t, err)
-	defer conn.Close()
+	// Start a goroutine to read and discard the response
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			_, err := clientConn.Read(buf)
+			if err != nil {
+				return
+			}
+		}
+	}()
 
 	// Request should be served from cache
-	handled, err := interceptor.HandleRequest(ctx, conn, req)
+	handled, err := interceptor.HandleRequest(ctx, serverConn, req)
+	serverConn.Close() // Close to signal done reading
+	<-done
 	assert.NoError(t, err)
 	assert.True(t, handled)
 }
@@ -2049,19 +2061,31 @@ func TestInterceptor_CacheHitWithRange(t *testing.T) {
 	err = manager.Put(ctx, req, resp, body)
 	require.NoError(t, err)
 
-	// Create a test server to get a connection
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	defer server.Close()
+	// Use net.Pipe to get a proper bidirectional connection
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
 
-	conn, err := net.Dial("tcp", server.Listener.Addr().String())
-	require.NoError(t, err)
-	defer conn.Close()
+	// Start a goroutine to read and discard the response
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			_, err := clientConn.Read(buf)
+			if err != nil {
+				return
+			}
+		}
+	}()
 
 	// Add Range header
 	req.Header.Set("Range", "bytes=0-4")
 
 	// Request should be served from cache with range
-	handled, err := interceptor.HandleRequest(ctx, conn, req)
+	handled, err := interceptor.HandleRequest(ctx, serverConn, req)
+	serverConn.Close() // Close to signal done reading
+	<-done
 	assert.NoError(t, err)
 	assert.True(t, handled)
 }
