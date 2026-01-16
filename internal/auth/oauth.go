@@ -3,6 +3,8 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -37,6 +39,13 @@ type OAuthAuthenticator struct {
 type cachedToken struct {
 	user      *UserInfo
 	expiresAt time.Time
+}
+
+// hashToken creates a SHA-256 hash of the token for secure cache key storage.
+// This prevents tokens from being exposed if memory is dumped.
+func hashToken(token string) string {
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 // NewOAuthAuthenticator creates a new OAuth authenticator.
@@ -89,9 +98,12 @@ func (a *OAuthAuthenticator) Authenticate(ctx context.Context, username, passwor
 		return nil, ErrInvalidCredentials
 	}
 
-	// Check cache
+	// Hash token for secure cache storage - prevents token exposure in memory dumps
+	tokenHash := hashToken(token)
+
+	// Check cache using hashed token
 	a.cacheMu.RLock()
-	if cached, ok := a.tokenCache[token]; ok && time.Now().Before(cached.expiresAt) {
+	if cached, ok := a.tokenCache[tokenHash]; ok && time.Now().Before(cached.expiresAt) {
 		a.cacheMu.RUnlock()
 		return cached.user, nil
 	}
@@ -113,9 +125,9 @@ func (a *OAuthAuthenticator) Authenticate(ctx context.Context, username, passwor
 		return nil, err
 	}
 
-	// Cache the result
+	// Cache the result using hashed token
 	a.cacheMu.Lock()
-	a.tokenCache[token] = &cachedToken{
+	a.tokenCache[tokenHash] = &cachedToken{
 		user:      user,
 		expiresAt: time.Now().Add(a.cacheMaxAge),
 	}
@@ -281,7 +293,8 @@ func discoverOIDCEndpoints(issuerURL string) (introspect, userinfo string, err e
 		return "", "", fmt.Errorf("OIDC discovery returned status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	// Limit body read to 1MB to prevent memory exhaustion from malicious servers
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return "", "", fmt.Errorf("read OIDC discovery: %w", err)
 	}

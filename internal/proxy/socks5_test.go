@@ -169,6 +169,7 @@ func TestSOCKS5Handler_handleAuth_InvalidVersion(t *testing.T) {
 	defer clientConn.Close()
 
 	var errorCalled bool
+	done := make(chan struct{})
 	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return nil
@@ -179,16 +180,18 @@ func TestSOCKS5Handler_handleAuth_InvalidVersion(t *testing.T) {
 	})
 
 	go func() {
+		defer close(done)
 		defer serverConn.Close()
 		handler.ServeConn(context.Background(), serverConn)
 	}()
 
-	// Send invalid version
-	_, err := clientConn.Write([]byte{0x04, 0x01, socks5AuthNone})
+	// Send invalid version - only send 2 bytes (the header the handler reads first)
+	// Handler reads {version, nmethods} then checks version and returns error
+	_, err := clientConn.Write([]byte{0x04, 0x01})
 	require.NoError(t, err)
 
-	// Connection should close
-	time.Sleep(50 * time.Millisecond)
+	// Wait for handler to complete
+	<-done
 	assert.True(t, errorCalled)
 }
 
@@ -442,16 +445,26 @@ func TestSOCKS5Handler_handleRequest_InvalidAddressType(t *testing.T) {
 	_, err = io.ReadFull(clientConn, authResp)
 	require.NoError(t, err)
 
-	// Request with invalid address type
-	req := []byte{socks5Version, socks5CmdConnect, 0x00, 0xFF, 0, 0}
+	// Request with invalid address type - only send bytes that will be read
+	// before the handler sends an error (version, cmd, reserved, addrType)
+	req := []byte{socks5Version, socks5CmdConnect, 0x00, 0xFF}
+
+	// Write and read concurrently to avoid deadlock with net.Pipe
+	done := make(chan struct{})
+	var reply []byte
+	var readErr error
+	go func() {
+		reply = make([]byte, 10)
+		_, readErr = io.ReadFull(clientConn, reply)
+		close(done)
+	}()
+
 	_, err = clientConn.Write(req)
 	require.NoError(t, err)
 
-	// Read reply
-	reply := make([]byte, 10)
-	n, err := io.ReadFull(clientConn, reply)
-	require.NoError(t, err)
-	assert.GreaterOrEqual(t, n, 4)
+	// Wait for read to complete
+	<-done
+	require.NoError(t, readErr)
 	assert.Equal(t, socks5Version, reply[0])
 	assert.Equal(t, socks5ReplyAddrNotSupported, reply[1])
 }
@@ -496,33 +509,49 @@ func TestSOCKS5Handler_handleRequest_NoBackend(t *testing.T) {
 }
 
 func TestSOCKS5Handler_sendReply(t *testing.T) {
-	clientConn, serverConn := net.Pipe()
-	defer clientConn.Close()
-
 	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return nil
 		},
 	})
 
-	// Test with nil address
-	handler.sendReply(serverConn, socks5ReplySuccess, nil)
+	// Test with nil address - use concurrent read/write to avoid net.Pipe deadlock
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
 	reply := make([]byte, 10)
-	n, err := clientConn.Read(reply)
-	require.NoError(t, err)
+	var readErr error
+	var n int
+	done := make(chan struct{})
+	go func() {
+		n, readErr = clientConn.Read(reply)
+		close(done)
+	}()
+
+	handler.sendReply(serverConn, socks5ReplySuccess, nil)
+	<-done
+
+	require.NoError(t, readErr)
 	assert.GreaterOrEqual(t, n, 4)
 	assert.Equal(t, socks5Version, reply[0])
 	assert.Equal(t, socks5ReplySuccess, reply[1])
 
-	// Test with TCP address
+	// Test with TCP address - use concurrent read/write to avoid net.Pipe deadlock
 	clientConn2, serverConn2 := net.Pipe()
 	defer clientConn2.Close()
 
+	reply2 := make([]byte, 10)
+	done2 := make(chan struct{})
+	go func() {
+		n, readErr = clientConn2.Read(reply2)
+		close(done2)
+	}()
+
 	addr := &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8080}
 	handler.sendReply(serverConn2, socks5ReplySuccess, addr)
-	reply2 := make([]byte, 10)
-	n, err = clientConn2.Read(reply2)
-	require.NoError(t, err)
+	<-done2
+
+	require.NoError(t, readErr)
 	assert.GreaterOrEqual(t, n, 4)
 	assert.Equal(t, socks5Version, reply2[0])
 	assert.Equal(t, socks5ReplySuccess, reply2[1])

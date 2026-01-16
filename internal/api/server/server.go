@@ -2,6 +2,7 @@
 package server
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"golang.org/x/net/websocket"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/health"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
@@ -21,6 +23,7 @@ import (
 type API struct {
 	backends      *backend.Manager
 	healthManager *health.Manager
+	cacheManager  *cache.Manager
 	token         string
 	getConfig     func() interface{}
 	getFullConfig func() *config.ServerConfig
@@ -31,12 +34,14 @@ type API struct {
 	pacGenerator  *PACGenerator
 	requestLog    *RequestLog
 	connTracker   *ConnectionTracker
+	cacheAPI      *CacheAPI
 }
 
 // Config holds API configuration.
 type Config struct {
 	Backends         *backend.Manager
 	HealthManager    *health.Manager
+	CacheManager     *cache.Manager
 	Token            string
 	GetConfig        func() interface{}               // Returns sanitized config
 	GetFullConfig    func() *config.ServerConfig      // Returns full config for editing
@@ -75,9 +80,16 @@ func New(cfg Config) *API {
 	}
 	requestLog := NewRequestLog(requestLogSize, cfg.EnableRequestLog)
 
+	// Create cache API if cache manager is provided
+	var cacheAPI *CacheAPI
+	if cfg.CacheManager != nil {
+		cacheAPI = NewCacheAPI(cfg.CacheManager)
+	}
+
 	return &API{
 		backends:      cfg.Backends,
 		healthManager: cfg.HealthManager,
+		cacheManager:  cfg.CacheManager,
 		token:         cfg.Token,
 		getConfig:     cfg.GetConfig,
 		getFullConfig: cfg.GetFullConfig,
@@ -87,6 +99,7 @@ func New(cfg Config) *API {
 		pacGenerator:  pacGen,
 		requestLog:    requestLog,
 		connTracker:   NewConnectionTracker(),
+		cacheAPI:      cacheAPI,
 	}
 }
 
@@ -110,6 +123,7 @@ func (a *API) Router() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(a.securityHeadersMiddleware)
 
 	// Auth middleware if token is set
 	if a.token != "" {
@@ -155,20 +169,26 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(a.securityHeadersMiddleware)
 
-	// Auth middleware if token is set (skip for WebSocket and static)
+	// Auth middleware if token is set
 	if a.token != "" {
 		r.Group(func(r chi.Router) {
 			r.Use(a.authMiddleware)
 			a.addAPIRoutes(r)
+
+			// WebSocket route (with auth - uses query param token for WS connections)
+			if hub != nil {
+				r.Handle("/api/v1/ws", websocket.Handler(hub.ServeWS))
+			}
 		})
 	} else {
 		a.addAPIRoutes(r)
-	}
 
-	// WebSocket route (no auth)
-	if hub != nil {
-		r.Handle("/api/v1/ws", websocket.Handler(hub.ServeWS))
+		// WebSocket route (no auth when token not configured)
+		if hub != nil {
+			r.Handle("/api/v1/ws", websocket.Handler(hub.ServeWS))
+		}
 	}
 
 	// PAC file routes (no auth required for browser auto-config)
@@ -219,12 +239,24 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		r.Get("/", a.handleGetConnections)
 		r.Get("/clients", a.handleGetClients)
 	})
+
+	// Cache routes
+	if a.cacheAPI != nil {
+		a.cacheAPI.RegisterRoutes(r)
+	}
 }
 
 func (a *API) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If no token is configured, allow all requests
+		if a.token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		token := r.Header.Get("Authorization")
 		if token == "" {
+			// Fallback to query parameter for WebSocket connections
 			token = r.URL.Query().Get("token")
 		}
 
@@ -233,10 +265,29 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 			token = token[7:]
 		}
 
-		if token != a.token {
+		// Use constant-time comparison to prevent timing attacks
+		if subtle.ConstantTimeCompare([]byte(token), []byte(a.token)) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// securityHeadersMiddleware adds common security headers to all responses.
+func (a *API) securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Prevent MIME type sniffing
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// Prevent clickjacking
+		w.Header().Set("X-Frame-Options", "DENY")
+		// XSS protection (legacy, but still useful)
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		// Referrer policy
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// Content Security Policy for API responses
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 
 		next.ServeHTTP(w, r)
 	})
@@ -403,16 +454,28 @@ func (a *API) handleGetRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse query params
+	// Parse and validate query params
 	limitStr := r.URL.Query().Get("limit")
 	sinceStr := r.URL.Query().Get("since")
 
 	var entries []RequestLogEntry
 	if sinceStr != "" {
-		sinceID, _ := strconv.ParseInt(sinceStr, 10, 64)
+		sinceID, err := strconv.ParseInt(sinceStr, 10, 64)
+		if err != nil {
+			http.Error(w, "invalid 'since' parameter: must be an integer", http.StatusBadRequest)
+			return
+		}
 		entries = a.requestLog.GetSince(sinceID)
 	} else if limitStr != "" {
-		limit, _ := strconv.Atoi(limitStr)
+		limit, err := strconv.Atoi(limitStr)
+		if err != nil {
+			http.Error(w, "invalid 'limit' parameter: must be an integer", http.StatusBadRequest)
+			return
+		}
+		if limit <= 0 {
+			http.Error(w, "invalid 'limit' parameter: must be positive", http.StatusBadRequest)
+			return
+		}
 		entries = a.requestLog.GetRecent(limit)
 	} else {
 		entries = a.requestLog.GetRecent(100) // Default to last 100

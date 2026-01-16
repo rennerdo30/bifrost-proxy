@@ -6,30 +6,34 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
 // HTTPHandler handles HTTP and HTTPS CONNECT proxy requests.
 type HTTPHandler struct {
-	getBackend  func(domain, clientIP string) backend.Backend
-	dialTimeout time.Duration
-	onConnect   func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
-	onError     func(ctx context.Context, conn net.Conn, host string, err error)
+	getBackend       func(domain, clientIP string) backend.Backend
+	dialTimeout      time.Duration
+	onConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
+	onError          func(ctx context.Context, conn net.Conn, host string, err error)
+	cacheInterceptor *cache.Interceptor
 }
 
 
 // HTTPHandlerConfig configures the HTTP handler.
 type HTTPHandlerConfig struct {
-	GetBackend  func(domain, clientIP string) backend.Backend
-	DialTimeout time.Duration
-	OnConnect   func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
-	OnError     func(ctx context.Context, conn net.Conn, host string, err error)
+	GetBackend       func(domain, clientIP string) backend.Backend
+	DialTimeout      time.Duration
+	OnConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
+	OnError          func(ctx context.Context, conn net.Conn, host string, err error)
+	CacheInterceptor *cache.Interceptor
 }
 
 // NewHTTPHandler creates a new HTTP proxy handler.
@@ -38,10 +42,11 @@ func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
 		cfg.DialTimeout = 30 * time.Second
 	}
 	return &HTTPHandler{
-		getBackend:  cfg.GetBackend,
-		dialTimeout: cfg.DialTimeout,
-		onConnect:   cfg.OnConnect,
-		onError:     cfg.OnError,
+		getBackend:       cfg.GetBackend,
+		dialTimeout:      cfg.DialTimeout,
+		onConnect:        cfg.OnConnect,
+		onError:          cfg.OnError,
+		cacheInterceptor: cfg.CacheInterceptor,
 	}
 }
 
@@ -140,6 +145,18 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 		}
 	}
 
+	// Try to serve from cache first (for GET requests)
+	if h.cacheInterceptor != nil && req.Method == http.MethodGet {
+		handled, err := h.cacheInterceptor.HandleRequest(ctx, conn, req)
+		if err != nil {
+			slog.Debug("cache error", "error", err, "host", host)
+		}
+		if handled {
+			// Request was served from cache
+			return
+		}
+	}
+
 	// Get backend for this domain
 	domain := util.GetHostFromRequest(host)
 	be := h.getBackend(domain, clientIP)
@@ -188,6 +205,17 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 	}
 	defer resp.Body.Close()
 
+	// Store response in cache if applicable
+	if h.cacheInterceptor != nil {
+		newBody, err := h.cacheInterceptor.StoreResponse(ctx, req, resp)
+		if err != nil {
+			slog.Debug("cache store error", "error", err, "host", host)
+		} else {
+			// Replace response body with the new one (the original was read for caching)
+			resp.Body = newBody
+		}
+	}
+
 	// Write response to client
 	if err := resp.Write(conn); err != nil {
 		h.handleError(ctx, conn, host, fmt.Errorf("write response: %w", err))
@@ -198,7 +226,13 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 // sendResponse sends an HTTP response for CONNECT.
 func (h *HTTPHandler) sendResponse(conn net.Conn, statusCode int, message string) {
 	response := fmt.Sprintf("HTTP/1.1 %d %s\r\n\r\n", statusCode, message)
-	conn.Write([]byte(response))
+	if _, err := conn.Write([]byte(response)); err != nil {
+		slog.Debug("failed to send HTTP response",
+			"status_code", statusCode,
+			"error", err,
+			"remote_addr", conn.RemoteAddr(),
+		)
+	}
 }
 
 // sendHTTPError sends an HTTP error response.
@@ -208,7 +242,13 @@ func (h *HTTPHandler) sendHTTPError(conn net.Conn, statusCode int, message strin
 		"HTTP/1.1 %d %s\r\nContent-Type: text/html\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
 		statusCode, message, len(body), body,
 	)
-	conn.Write([]byte(response))
+	if _, err := conn.Write([]byte(response)); err != nil {
+		slog.Debug("failed to send HTTP error response",
+			"status_code", statusCode,
+			"error", err,
+			"remote_addr", conn.RemoteAddr(),
+		)
+	}
 }
 
 // handleError calls the error callback if set.

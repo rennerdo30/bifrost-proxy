@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 	"gopkg.in/yaml.v3"
 )
@@ -23,6 +24,7 @@ type ServerConfig struct {
 	API         APIConfig         `yaml:"api" json:"api"`
 	HealthCheck HealthCheckConfig `yaml:"health_check" json:"health_check"`
 	AutoUpdate  AutoUpdateConfig  `yaml:"auto_update" json:"auto_update"`
+	Cache       cache.Config      `yaml:"cache" json:"cache"`
 }
 
 // ServerSettings contains server-specific settings.
@@ -286,6 +288,7 @@ func DefaultServerConfig() ServerConfig {
 			CheckInterval: Duration(24 * time.Hour),
 			Channel:       "stable",
 		},
+		Cache: cache.DefaultConfig(),
 	}
 }
 

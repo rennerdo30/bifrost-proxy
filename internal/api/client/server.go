@@ -2,6 +2,7 @@
 package client
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -50,6 +51,7 @@ func (a *API) Handler() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(securityHeadersMiddleware)
 
 	// Auth middleware if token is set
 	if a.token != "" {
@@ -75,6 +77,7 @@ func (a *API) HandlerWithUI() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
+	r.Use(securityHeadersMiddleware)
 
 	// CORS for local development
 	r.Use(corsMiddleware)
@@ -119,16 +122,25 @@ func (a *API) addAPIRoutes(r chi.Router) {
 
 func (a *API) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If no token is configured, allow all requests
+		if a.token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		token := r.Header.Get("Authorization")
 		if token == "" {
+			// Fallback to query parameter for WebSocket connections
 			token = r.URL.Query().Get("token")
 		}
 
+		// Remove "Bearer " prefix if present
 		if len(token) > 7 && token[:7] == "Bearer " {
 			token = token[7:]
 		}
 
-		if token != a.token {
+		// Use constant-time comparison to prevent timing attacks
+		if subtle.ConstantTimeCompare([]byte(token), []byte(a.token)) != 1 {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -139,14 +151,70 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
+		origin := r.Header.Get("Origin")
+
+		// Allow requests from localhost/127.0.0.1 on any port (for local web UI)
+		// For same-origin requests, Origin header may be empty
+		allowedOrigin := ""
+		if origin == "" {
+			// Same-origin request, no CORS headers needed
+			allowedOrigin = ""
+		} else if isLocalOrigin(origin) {
+			allowedOrigin = origin
+		}
+
+		if allowedOrigin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		}
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// isLocalOrigin checks if the origin is from localhost or 127.0.0.1
+func isLocalOrigin(origin string) bool {
+	// Check common local origins
+	localPrefixes := []string{
+		"http://localhost",
+		"https://localhost",
+		"http://127.0.0.1",
+		"https://127.0.0.1",
+		"http://[::1]",
+		"https://[::1]",
+	}
+	for _, prefix := range localPrefixes {
+		if len(origin) >= len(prefix) && origin[:len(prefix)] == prefix {
+			// Check that what follows is either empty, a colon (port), or a slash
+			rest := origin[len(prefix):]
+			if rest == "" || rest[0] == ':' || rest[0] == '/' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// securityHeadersMiddleware adds common security headers to all responses.
+func securityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Prevent MIME type sniffing
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		// Prevent clickjacking
+		w.Header().Set("X-Frame-Options", "DENY")
+		// XSS protection (legacy, but still useful)
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+		// Referrer policy
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		// Content Security Policy for API responses
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
 
 		next.ServeHTTP(w, r)
 	})

@@ -130,3 +130,64 @@ api:
   # token: "your-api-token"  # Optional API authentication
   # enable_request_log: true  # Enable request logging for Web UI (shows visited URLs)
   # request_log_size: 1000    # Max number of requests to keep in memory
+
+# HTTP Cache - inspired by steamcache/lancache
+# Caches HTTP responses for configured domains (game downloads, CDNs, etc.)
+cache:
+  enabled: false  # Set to true to enable caching
+  default_ttl: "30d"  # Default time-to-live for cached entries
+  max_file_size: "50GB"  # Maximum size of a single cached file
+
+  # Storage backend configuration
+  storage:
+    type: tiered  # memory, disk, or tiered
+
+    # Tiered storage: small files in memory, large files on disk
+    tiered:
+      memory_threshold: "10MB"  # Files <= 10MB go to memory
+
+    # Memory storage settings
+    memory:
+      max_size: "2GB"
+      max_entries: 50000
+      evict_policy: lru  # lru, lfu, fifo
+
+    # Disk storage settings
+    disk:
+      path: "/var/cache/bifrost"
+      max_size: "500GB"
+      cleanup_interval: "1h"
+
+  # Built-in presets for game CDNs and software updates
+  # Available presets: steam, origin, epic, battlenet, windows, playstation,
+  #                    xbox, nintendo, ubisoft, riot, apple, google, linux
+  presets:
+    # - steam
+    # - origin
+    # - epic
+    # - battlenet
+    # - windows
+
+  # Custom caching rules
+  rules:
+    # Example: Cache a custom CDN
+    # - name: my-cdn
+    #   domains:
+    #     - "cdn.example.com"
+    #     - "*.mycdn.net"
+    #   enabled: true
+    #   ttl: "7d"
+    #   priority: 50
+    #   ignore_query: true  # Ignore query string in cache key
+    #   content_types:      # Only cache specific content types
+    #     - "application/octet-stream"
+    #     - "application/zip"
+
+    # Example: General HTTP caching (respects Cache-Control headers)
+    # - name: general-http
+    #   domains:
+    #     - "*"
+    #   enabled: false
+    #   ttl: "1d"
+    #   priority: 1
+    #   respect_cache_control: true

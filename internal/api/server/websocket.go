@@ -9,6 +9,12 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+// MaxWebSocketClients is the maximum number of concurrent WebSocket connections.
+const MaxWebSocketClients = 100
+
+// WebSocketReadTimeout is the maximum time to wait for a message from a client.
+const WebSocketReadTimeout = 60 * time.Second
+
 // WebSocketHub manages WebSocket connections.
 type WebSocketHub struct {
 	clients    map[*websocket.Conn]bool
@@ -16,6 +22,7 @@ type WebSocketHub struct {
 	register   chan *websocket.Conn
 	unregister chan *websocket.Conn
 	mu         sync.RWMutex
+	maxClients int
 }
 
 // NewWebSocketHub creates a new WebSocket hub.
@@ -25,6 +32,7 @@ func NewWebSocketHub() *WebSocketHub {
 		broadcast:  make(chan []byte, 256),
 		register:   make(chan *websocket.Conn),
 		unregister: make(chan *websocket.Conn),
+		maxClients: MaxWebSocketClients,
 	}
 }
 
@@ -34,6 +42,12 @@ func (h *WebSocketHub) Run() {
 		select {
 		case client := <-h.register:
 			h.mu.Lock()
+			// Enforce connection limit to prevent resource exhaustion
+			if len(h.clients) >= h.maxClients {
+				h.mu.Unlock()
+				client.Close()
+				continue
+			}
 			h.clients[client] = true
 			h.mu.Unlock()
 
@@ -46,13 +60,20 @@ func (h *WebSocketHub) Run() {
 			h.mu.Unlock()
 
 		case message := <-h.broadcast:
+			// Collect failed clients while holding lock, then unregister after releasing
+			// to prevent deadlock from sending to channel while holding lock
 			h.mu.RLock()
+			var failed []*websocket.Conn
 			for client := range h.clients {
 				if _, err := client.Write(message); err != nil {
-					h.unregister <- client
+					failed = append(failed, client)
 				}
 			}
 			h.mu.RUnlock()
+			// Unregister failed clients after releasing lock
+			for _, client := range failed {
+				h.unregister <- client
+			}
 		}
 	}
 }
@@ -78,6 +99,9 @@ func (h *WebSocketHub) ServeWS(ws *websocket.Conn) {
 
 	// Keep connection alive and read messages (for ping/pong)
 	for {
+		// Set read deadline to prevent connections from being held indefinitely
+		ws.SetReadDeadline(time.Now().Add(WebSocketReadTimeout))
+
 		var msg string
 		if err := websocket.Message.Receive(ws, &msg); err != nil {
 			break

@@ -225,12 +225,16 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 	}
 
 	if err := b.cmd.Start(); err != nil {
+		// Clean up temp files on failure to prevent credential leakage
+		b.cleanupTempFiles()
 		return NewBackendError(b.name, "start openvpn", err)
 	}
 
 	// Wait for management interface to be available
 	if err := b.waitForManagement(ctx); err != nil {
 		b.cmd.Process.Kill()
+		// Clean up temp files on failure to prevent credential leakage
+		b.cleanupTempFiles()
 		return NewBackendError(b.name, "connect management", err)
 	}
 
@@ -318,10 +322,12 @@ func (b *OpenVPNBackend) monitor() {
 				b.mu.RUnlock()
 				return
 			}
+			// Check if process is still running while holding the lock
+			cmd := b.cmd
 			b.mu.RUnlock()
 
-			// Check if process is still running
-			if b.cmd != nil && b.cmd.ProcessState != nil && b.cmd.ProcessState.Exited() {
+			// Only check process state if we have a command
+			if cmd != nil && cmd.ProcessState != nil && cmd.ProcessState.Exited() {
 				b.healthy.Store(false)
 				b.recordError(fmt.Errorf("openvpn process exited"))
 			}
@@ -368,15 +374,8 @@ func (b *OpenVPNBackend) Stop(ctx context.Context) error {
 	b.healthy.Store(false)
 	b.stopChan = make(chan struct{})
 
-	// Clean up temp files
-	if b.tempConfigFile != "" {
-		os.Remove(b.tempConfigFile)
-		b.tempConfigFile = ""
-	}
-	if b.tempAuthFile != "" {
-		os.Remove(b.tempAuthFile)
-		b.tempAuthFile = ""
-	}
+	// Clean up temp files containing sensitive credentials
+	b.cleanupTempFiles()
 
 	return nil
 }
@@ -414,4 +413,17 @@ func (b *OpenVPNBackend) recordError(err error) {
 	b.stats.lastError = err.Error()
 	b.stats.lastErrorTime = time.Now()
 	b.stats.lastErrorMu.Unlock()
+}
+
+// cleanupTempFiles removes any temporary files created for this backend.
+// This is called on both successful Stop() and on Start() failure.
+func (b *OpenVPNBackend) cleanupTempFiles() {
+	if b.tempConfigFile != "" {
+		os.Remove(b.tempConfigFile)
+		b.tempConfigFile = ""
+	}
+	if b.tempAuthFile != "" {
+		os.Remove(b.tempAuthFile)
+		b.tempAuthFile = ""
+	}
 }

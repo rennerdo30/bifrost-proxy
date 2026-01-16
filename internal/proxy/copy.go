@@ -39,41 +39,30 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 net.Conn) (sent, receiv
 
 // copyWithContext copies from src to dst until src returns EOF or ctx is cancelled.
 func copyWithContext(ctx context.Context, dst, src net.Conn) (int64, error) {
-	buf := make([]byte, 32*1024) // 32KB buffer
-	var total int64
+	// Use a simple io.Copy - it will be interrupted when connections are closed
+	// by the caller or when EOF is reached
+	type result struct {
+		n   int64
+		err error
+	}
 
-	for {
-		select {
-		case <-ctx.Done():
-			return total, ctx.Err()
-		default:
+	done := make(chan result, 1)
+
+	go func() {
+		n, err := io.Copy(dst, src)
+		done <- result{n, err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err == io.EOF {
+			return r.n, nil
 		}
-
-		// Set read deadline for interruptibility
-		src.SetReadDeadline(time.Now().Add(5 * time.Second))
-
-		n, err := src.Read(buf)
-		if n > 0 {
-			// Clear deadline for write
-			dst.SetWriteDeadline(time.Time{})
-
-			written, writeErr := dst.Write(buf[:n])
-			total += int64(written)
-			if writeErr != nil {
-				return total, writeErr
-			}
-		}
-
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				// Timeout is expected, continue
-				continue
-			}
-			if err == io.EOF {
-				return total, nil
-			}
-			return total, err
-		}
+		return r.n, r.err
+	case <-ctx.Done():
+		// Context cancelled - the connection should be closed by caller
+		// which will cause io.Copy to return
+		return 0, ctx.Err()
 	}
 }
 

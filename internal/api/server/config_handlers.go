@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"time"
@@ -141,8 +142,13 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Auto-reload if only hot-reloadable sections changed
+	reloadError := ""
 	if !requiresRestart && len(changedSections) > 0 && a.reloadConfig != nil {
-		_ = a.reloadConfig() // Ignore error, config is already saved
+		if err := a.reloadConfig(); err != nil {
+			// Log error but don't fail - config is already saved
+			slog.Error("failed to auto-reload config after save", "error", err)
+			reloadError = err.Error()
+		}
 	}
 
 	// Broadcast config change via WebSocket
@@ -153,13 +159,18 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	a.writeJSON(w, http.StatusOK, ConfigSaveResponse{
+	response := ConfigSaveResponse{
 		Success:         true,
 		Message:         "Configuration saved successfully",
 		BackupPath:      backupPath,
 		RequiresRestart: requiresRestart,
 		ChangedSections: changedSections,
-	})
+	}
+	if reloadError != "" {
+		response.Message = "Configuration saved but reload failed"
+		response.Errors = []ValidationError{{Section: "reload", Message: reloadError}}
+	}
+	a.writeJSON(w, http.StatusOK, response)
 }
 
 // handleValidateConfig validates config without saving.

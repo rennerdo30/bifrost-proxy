@@ -6,35 +6,55 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
+	"regexp"
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
+// domainRegex validates domain name format (RFC 1035 compliant).
+// Allows alphanumeric characters, hyphens, and dots.
+var domainRegex = regexp.MustCompile(`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+
+// isValidDomain checks if a domain name has a valid format.
+func isValidDomain(domain string) bool {
+	// Empty domain is invalid
+	if len(domain) == 0 {
+		return false
+	}
+	// Domain cannot exceed 253 characters (RFC 1035)
+	if len(domain) > 253 {
+		return false
+	}
+	// Check format with regex
+	return domainRegex.MatchString(domain)
+}
+
 // SOCKS5 constants
 const (
-	socks5Version         = 0x05
-	socks5AuthNone        = 0x00
-	socks5AuthPassword    = 0x02
-	socks5AuthNoAccept    = 0xFF
-	socks5CmdConnect      = 0x01
-	socks5CmdBind         = 0x02
-	socks5CmdUDPAssociate = 0x03
-	socks5AddrIPv4        = 0x01
-	socks5AddrDomain      = 0x03
-	socks5AddrIPv6        = 0x04
+	socks5Version         byte = 0x05
+	socks5AuthNone        byte = 0x00
+	socks5AuthPassword    byte = 0x02
+	socks5AuthNoAccept    byte = 0xFF
+	socks5CmdConnect      byte = 0x01
+	socks5CmdBind         byte = 0x02
+	socks5CmdUDPAssociate byte = 0x03
+	socks5AddrIPv4        byte = 0x01
+	socks5AddrDomain      byte = 0x03
+	socks5AddrIPv6        byte = 0x04
 
-	socks5ReplySuccess          = 0x00
-	socks5ReplyGeneralFailure   = 0x01
-	socks5ReplyConnNotAllowed   = 0x02
-	socks5ReplyNetUnreachable   = 0x03
-	socks5ReplyHostUnreachable  = 0x04
-	socks5ReplyConnRefused      = 0x05
-	socks5ReplyTTLExpired       = 0x06
-	socks5ReplyCmdNotSupported  = 0x07
-	socks5ReplyAddrNotSupported = 0x08
+	socks5ReplySuccess          byte = 0x00
+	socks5ReplyGeneralFailure   byte = 0x01
+	socks5ReplyConnNotAllowed   byte = 0x02
+	socks5ReplyNetUnreachable   byte = 0x03
+	socks5ReplyHostUnreachable  byte = 0x04
+	socks5ReplyConnRefused      byte = 0x05
+	socks5ReplyTTLExpired       byte = 0x06
+	socks5ReplyCmdNotSupported  byte = 0x07
+	socks5ReplyAddrNotSupported byte = 0x08
 )
 
 // SOCKS5Handler handles SOCKS5 proxy requests.
@@ -196,12 +216,23 @@ func (h *SOCKS5Handler) handlePasswordAuth(conn net.Conn) error {
 
 	// Authenticate
 	if h.authenticate == nil || !h.authenticate(string(username), string(password)) {
-		conn.Write([]byte{0x01, 0x01}) // Auth failed
+		if _, err := conn.Write([]byte{0x01, 0x01}); err != nil { // Auth failed
+			slog.Debug("failed to send SOCKS5 auth failure response",
+				"error", err,
+				"remote_addr", conn.RemoteAddr(),
+			)
+		}
 		return errors.New("authentication failed")
 	}
 
 	// Auth success
-	conn.Write([]byte{0x01, 0x00})
+	if _, err := conn.Write([]byte{0x01, 0x00}); err != nil {
+		slog.Debug("failed to send SOCKS5 auth success response",
+			"error", err,
+			"remote_addr", conn.RemoteAddr(),
+		)
+		return fmt.Errorf("write auth success: %w", err)
+	}
 	return nil
 }
 
@@ -246,7 +277,13 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 		if _, err := io.ReadFull(conn, domain); err != nil {
 			return "", fmt.Errorf("read domain: %w", err)
 		}
-		host = string(domain)
+		domainStr := string(domain)
+		// Validate domain format to prevent malformed requests
+		if !isValidDomain(domainStr) {
+			h.sendReply(conn, socks5ReplyGeneralFailure, nil)
+			return "", fmt.Errorf("invalid domain format: %s", domainStr)
+		}
+		host = domainStr
 
 	default:
 		h.sendReply(conn, socks5ReplyAddrNotSupported, nil)
@@ -340,7 +377,13 @@ func (h *SOCKS5Handler) sendReply(conn net.Conn, reply byte, bindAddr net.Addr) 
 		}
 	}
 
-	conn.Write(resp)
+	if _, err := conn.Write(resp); err != nil {
+		slog.Debug("failed to send SOCKS5 reply",
+			"reply", reply,
+			"error", err,
+			"remote_addr", conn.RemoteAddr(),
+		)
+	}
 }
 
 // errToReply converts an error to a SOCKS5 reply code.

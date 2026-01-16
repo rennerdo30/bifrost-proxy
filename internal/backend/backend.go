@@ -94,24 +94,29 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 io.ReadWriteCloser) (se
 	sentCh := make(chan copyResult, 1)
 	receivedCh := make(chan copyResult, 1)
 
-	// Copy conn1 -> conn2
+	// Copy conn1 -> conn2 (data sent from conn1 to conn2)
 	go func() {
 		n, copyErr := io.Copy(conn2, conn1)
 		sentCh <- copyResult{n, copyErr}
 	}()
 
-	// Copy conn2 -> conn1
+	// Copy conn2 -> conn1 (data received from conn2 to conn1)
 	go func() {
 		n, copyErr := io.Copy(conn1, conn2)
 		receivedCh <- copyResult{n, copyErr}
 	}()
 
-	// Wait for either copy to finish or context cancellation
+	// Track which results we've received
 	var sentResult, receivedResult copyResult
+	var sentReceived, receivedReceived bool
+
+	// Wait for first copy to finish or context cancellation
 	select {
 	case sentResult = <-sentCh:
+		sentReceived = true
 		err = sentResult.err
 	case receivedResult = <-receivedCh:
+		receivedReceived = true
 		err = receivedResult.err
 	case <-ctx.Done():
 		err = ctx.Err()
@@ -121,10 +126,12 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 io.ReadWriteCloser) (se
 	conn1.Close()
 	conn2.Close()
 
-	// Wait for the other copy to finish
-	select {
-	case sentResult = <-sentCh:
-	case receivedResult = <-receivedCh:
+	// Wait for the other copy to finish and collect its result
+	if !sentReceived {
+		sentResult = <-sentCh
+	}
+	if !receivedReceived {
+		receivedResult = <-receivedCh
 	}
 
 	return sentResult.n, receivedResult.n, err

@@ -40,6 +40,7 @@ nav:
       - Overview: configuration.md
       - Backends: backends.md
       - Authentication: authentication.md
+      - HTTP Cache: cache.md
   - Deployment: deployment.md
   - Operations:
       - CLI Reference: cli-reference.md

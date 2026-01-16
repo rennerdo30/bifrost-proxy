@@ -8,6 +8,7 @@ A production-ready, MIT-licensed proxy server with support for WireGuard and Ope
 - **VPN Tunnel Support**: WireGuard (userspace), OpenVPN
 - **Upstream Proxy Support**: Chain through HTTP or SOCKS5 proxies
 - **Domain-Based Routing**: Route traffic through different backends based on domain patterns
+- **HTTP Cache**: LAN cache for game downloads, software updates (steamcache/lancache-inspired)
 - **Authentication Modes**: None, Native, System (PAM/Windows/macOS), LDAP, OAuth/OIDC
 - **Traffic Management**: Rate limiting, bandwidth throttling, health checks, load balancing
 - **Observability**: Prometheus metrics, structured logging, access logs

@@ -1,13 +1,25 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"encoding/binary"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
 
@@ -758,4 +770,565 @@ func TestServer_authenticate_Success(t *testing.T) {
 
 	// NoneAuthenticator accepts any credentials
 	assert.True(t, s.authenticate("any", "any"))
+}
+
+func TestServer_authenticate_Failure(t *testing.T) {
+	// Create a hash for "correctpassword"
+	hash, err := auth.HashPassword("correctpassword")
+	require.NoError(t, err)
+
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Auth: config.AuthConfig{
+			Mode: "native",
+			Native: &config.NativeAuth{
+				Users: []config.NativeUser{
+					{Username: "testuser", PasswordHash: hash},
+				},
+			},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	// Wrong password should fail
+	assert.False(t, s.authenticate("testuser", "wrongpassword"))
+}
+
+func TestServer_ReloadConfig_WithPath(t *testing.T) {
+	// Create a temporary config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	initialConfig := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"*"}, Backend: "default"},
+		},
+	}
+
+	err := config.Save(configPath, initialConfig)
+	require.NoError(t, err)
+
+	s, err := New(initialConfig)
+	require.NoError(t, err)
+	s.SetConfigPath(configPath)
+
+	// Reload should succeed
+	err = s.ReloadConfig()
+	require.NoError(t, err)
+}
+
+func TestServer_ReloadConfig_InvalidFile(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	// Set an invalid config path
+	s.SetConfigPath("/nonexistent/config.yaml")
+
+	err = s.ReloadConfig()
+	assert.Error(t, err)
+}
+
+func TestServer_SaveConfig_WithPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+	s.SetConfigPath(configPath)
+
+	newConfig := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:9090"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	err = s.SaveConfig(newConfig)
+	require.NoError(t, err)
+
+	// Verify file was created
+	_, err = os.Stat(configPath)
+	require.NoError(t, err)
+}
+
+func TestServer_SaveConfig_InvalidConfig(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+	s.SetConfigPath(configPath)
+
+	// Create an invalid config (missing required backend for route)
+	invalidConfig := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:9090"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"*"}, Backend: "nonexistent"},
+		},
+	}
+
+	err = s.SaveConfig(invalidConfig)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "validation failed")
+}
+
+func TestServer_onConnect(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	// Create a mock backend
+	be := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+
+	// Create a pipe for mock connection
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	// onConnect should not panic
+	ctx := context.Background()
+	s.onConnect(ctx, serverConn, "example.com", be)
+}
+
+func TestServer_onError(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	// Create a pipe for mock connection
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	defer serverConn.Close()
+
+	// onError should not panic
+	ctx := context.Background()
+	testErr := fmt.Errorf("test error")
+	s.onError(ctx, serverConn, "example.com", testErr)
+}
+
+func TestServer_StartHTTPListenerError(t *testing.T) {
+	// First server will bind to the port
+	firstServer, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer firstServer.Close()
+
+	addr := firstServer.Addr().String()
+
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: addr}, // Use already bound address
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	// Start should fail because port is already in use
+	err = s.Start(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "listen HTTP")
+}
+
+func TestServer_StartSOCKS5ListenerError(t *testing.T) {
+	// First server will bind to the port
+	firstServer, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer firstServer.Close()
+
+	addr := firstServer.Addr().String()
+
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			SOCKS5: config.ListenerConfig{Listen: addr}, // Use already bound address
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	// Start should fail because port is already in use
+	err = s.Start(context.Background())
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "listen SOCKS5")
+}
+
+func TestServer_StartWithDefaultMetricsPath(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Metrics: config.MetricsConfig{
+			Enabled: true,
+			Listen:  "127.0.0.1:0",
+			Path:    "", // Empty path should default to /metrics
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = s.Start(ctx)
+	require.NoError(t, err)
+
+	time.Sleep(50 * time.Millisecond)
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = s.Stop(stopCtx)
+	require.NoError(t, err)
+}
+
+func TestServer_ReloadConfig_WithRateLimiter(t *testing.T) {
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	initialConfig := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"*"}, Backend: "default"},
+		},
+		RateLimit: config.RateLimitConfig{
+			Enabled:           true,
+			RequestsPerSecond: 100,
+			BurstSize:         10,
+		},
+	}
+
+	err := config.Save(configPath, initialConfig)
+	require.NoError(t, err)
+
+	s, err := New(initialConfig)
+	require.NoError(t, err)
+	s.SetConfigPath(configPath)
+
+	// Reload should update rate limiter
+	err = s.ReloadConfig()
+	require.NoError(t, err)
+}
+
+func TestServer_HandleHTTPConn(t *testing.T) {
+	// Create a test target server that immediately closes
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}))
+	defer targetServer.Close()
+
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"*"}, Backend: "default"},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = s.Start(ctx)
+	require.NoError(t, err)
+
+	// Get the actual listening address
+	httpAddr := s.httpListener.Addr().String()
+
+	// Make a CONNECT request to the proxy with timeout
+	conn, err := net.DialTimeout("tcp", httpAddr, 2*time.Second)
+	require.NoError(t, err)
+	conn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	// Send CONNECT request to target server
+	targetURL := strings.TrimPrefix(targetServer.URL, "http://")
+	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n", targetURL, targetURL)
+	_, err = conn.Write([]byte(connectReq))
+	require.NoError(t, err)
+
+	// Read response
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, nil)
+	require.NoError(t, err)
+	resp.Body.Close()
+
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Close connection before stopping server to avoid waiting for grace period
+	conn.Close()
+
+	// Stop server
+	stopCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	s.Stop(stopCtx)
+}
+
+func TestServer_HandleSOCKS5Conn(t *testing.T) {
+	// Create a test target server
+	targetServer, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer targetServer.Close()
+
+	go func() {
+		for {
+			conn, err := targetServer.Accept()
+			if err != nil {
+				return
+			}
+			conn.Write([]byte("Hello from target"))
+			conn.Close()
+		}
+	}()
+
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			SOCKS5: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"*"}, Backend: "default"},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = s.Start(ctx)
+	require.NoError(t, err)
+
+	// Get the actual listening address
+	socks5Addr := s.socks5Listener.Addr().String()
+
+	// Make a SOCKS5 connection
+	conn, err := net.Dial("tcp", socks5Addr)
+	require.NoError(t, err)
+
+	// SOCKS5 handshake - no auth
+	_, err = conn.Write([]byte{0x05, 0x01, 0x00})
+	require.NoError(t, err)
+
+	// Read auth response
+	authResp := make([]byte, 2)
+	_, err = io.ReadFull(conn, authResp)
+	require.NoError(t, err)
+	assert.Equal(t, byte(0x05), authResp[0]) // SOCKS version
+	assert.Equal(t, byte(0x00), authResp[1]) // No auth required
+
+	// Connect to target
+	targetAddr := targetServer.Addr().(*net.TCPAddr)
+	connectReq := []byte{0x05, 0x01, 0x00, 0x01} // VER, CMD=CONNECT, RSV, ATYP=IPv4
+	connectReq = append(connectReq, targetAddr.IP.To4()...)
+	portBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(portBytes, uint16(targetAddr.Port))
+	connectReq = append(connectReq, portBytes...)
+
+	_, err = conn.Write(connectReq)
+	require.NoError(t, err)
+
+	// Read connect response
+	connectResp := make([]byte, 10)
+	_, err = io.ReadFull(conn, connectResp)
+	require.NoError(t, err)
+	assert.Equal(t, byte(0x05), connectResp[0]) // SOCKS version
+	assert.Equal(t, byte(0x00), connectResp[1]) // Success
+
+	// Close connection before stopping server
+	conn.Close()
+
+	// Stop server
+	stopCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	s.Stop(stopCtx)
+}
+
+func TestServer_HandleHTTPConn_WithRateLimiting(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"*"}, Backend: "default"},
+		},
+		RateLimit: config.RateLimitConfig{
+			Enabled:           true,
+			RequestsPerSecond: 1, // Very low rate limit for testing
+			BurstSize:         1,
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = s.Start(ctx)
+	require.NoError(t, err)
+
+	httpAddr := s.httpListener.Addr().String()
+
+	// First request should succeed (within rate limit)
+	conn1, err := net.DialTimeout("tcp", httpAddr, 2*time.Second)
+	require.NoError(t, err)
+	conn1.SetDeadline(time.Now().Add(2 * time.Second))
+	_, err = conn1.Write([]byte("CONNECT example.com:80 HTTP/1.1\r\nHost: example.com\r\n\r\n"))
+	require.NoError(t, err)
+	conn1.Close()
+
+	// Immediate second request may hit rate limit
+	conn2, err := net.DialTimeout("tcp", httpAddr, 2*time.Second)
+	require.NoError(t, err)
+	conn2.SetDeadline(time.Now().Add(2 * time.Second))
+
+	_, err = conn2.Write([]byte("CONNECT example.com:80 HTTP/1.1\r\nHost: example.com\r\n\r\n"))
+	require.NoError(t, err)
+
+	// Read response - might be 429 if rate limited
+	reader := bufio.NewReader(conn2)
+	resp, err := http.ReadResponse(reader, nil)
+	if err == nil {
+		resp.Body.Close()
+		// Either success or rate limited response is valid
+		assert.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode == http.StatusBadGateway) // BadGateway if connect fails
+	}
+	conn2.Close()
+
+	// Stop server
+	stopCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	s.Stop(stopCtx)
+}
+
+func TestServer_HandleSOCKS5Conn_WithRateLimiting(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			SOCKS5: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"*"}, Backend: "default"},
+		},
+		RateLimit: config.RateLimitConfig{
+			Enabled:           true,
+			RequestsPerSecond: 1,
+			BurstSize:         1,
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = s.Start(ctx)
+	require.NoError(t, err)
+
+	socks5Addr := s.socks5Listener.Addr().String()
+
+	// First connection - should succeed
+	conn1, err := net.Dial("tcp", socks5Addr)
+	require.NoError(t, err)
+	_, err = conn1.Write([]byte{0x05, 0x01, 0x00})
+	require.NoError(t, err)
+	conn1.Close()
+
+	// Second immediate connection - may be rate limited (connection closed)
+	conn2, err := net.Dial("tcp", socks5Addr)
+	require.NoError(t, err)
+
+	conn2.SetReadDeadline(time.Now().Add(1 * time.Second))
+	_, err = conn2.Write([]byte{0x05, 0x01, 0x00})
+	// Either the write succeeds or fails due to connection being closed
+	// Both are valid behaviors under rate limiting
+	conn2.Close()
+
+	// Stop server
+	stopCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	s.Stop(stopCtx)
 }

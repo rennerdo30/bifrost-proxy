@@ -878,3 +878,207 @@ Track implementation progress by checking off completed items.
   - [ ] Store and refresh tokens securely
   - [ ] Add configuration options for redirect URI
   - [ ] Test with common providers (Google, GitHub, Azure AD, Okta)
+
+---
+
+## Security Review - Open Issues (2026-01-16)
+
+Issues identified during deep code review. All CRITICAL, HIGH, and MEDIUM priority items have been fixed.
+
+### Medium Priority - ALL COMPLETED ✅
+
+#### 5. LDAP Context Not Propagated ✅ FIXED
+**File:** `internal/auth/ldap.go`
+
+- [x] Pass context to LDAP `DialURL` operation via context-aware dialer
+- [x] Pass context to LDAP search operations (checked before dialing)
+- [x] Enable proper timeout/cancellation handling
+
+**Fixed:** Added `connectWithContext()` function using `net.Dialer` with context support.
+
+---
+
+#### 6. LDAP Time/Size Limits Not Set ✅ FIXED
+**File:** `internal/auth/ldap.go`
+
+- [x] Add `TimeLimit` to search requests (30 seconds)
+- [x] Add `SizeLimit` to group queries (100 results)
+
+**Fixed:** Added `ldapSearchTimeLimit`, `ldapSearchSizeLimit`, and `ldapGroupSizeLimit` constants.
+
+---
+
+#### 7. OAuth Tokens Cached in Plaintext ✅ FIXED
+**File:** `internal/auth/oauth.go`
+
+- [x] Hash tokens before using as cache keys
+- [x] Use `sha256.Sum256()` + `hex.EncodeToString()`
+
+**Fixed:** Added `hashToken()` function, tokens are now hashed before cache storage.
+
+---
+
+#### 8. No Brute Force Protection ✅ FIXED
+**File:** `internal/auth/bruteforce.go` (NEW)
+
+- [x] Track failed authentication attempts per IP/username
+- [x] Implement exponential backoff or lockout after N failures
+- [x] Created `BruteForceProtector` with configurable limits
+
+**Fixed:** New `BruteForceProtector` struct with exponential backoff, window-based tracking, and automatic cleanup.
+
+---
+
+#### 9. WebSocket No Read Timeout ✅ FIXED
+**File:** `internal/api/server/websocket.go`
+
+- [x] Add `SetReadDeadline` in `ServeWS` read loop
+- [x] Set timeout to 60 seconds (`WebSocketReadTimeout` constant)
+
+**Fixed:** `ws.SetReadDeadline(time.Now().Add(WebSocketReadTimeout))` added before each read.
+
+---
+
+#### 10. WebSocket Broadcast Race Condition ✅ FIXED
+**File:** `internal/api/server/websocket.go`
+
+- [x] Collect failed clients in slice while holding RLock
+- [x] Send to unregister channel after releasing lock
+
+**Fixed:** Failed clients collected in `var failed []*websocket.Conn` slice, unregister sent after `RUnlock()`.
+
+---
+
+#### 11. Query Parameter Validation Missing ✅ FIXED
+**File:** `internal/api/server/server.go`
+
+- [x] Handle `strconv` errors for `limit` parameter
+- [x] Handle `strconv` errors for `since` parameter
+- [x] Return 400 Bad Request for invalid values
+
+**Fixed:** Proper error handling with descriptive error messages in `handleGetRequests()`.
+
+---
+
+#### 12. Config Reload Error Silently Ignored ✅ FIXED
+**File:** `internal/api/server/config_handlers.go`
+
+- [x] Remove `_ = a.reloadConfig()` pattern
+- [x] Always handle and return reload errors to caller
+
+**Fixed:** Error logged with `slog.Error()` and included in response as `reloadError`.
+
+---
+
+#### 13. SOCKS5 No Domain Length Validation ✅ FIXED
+**File:** `internal/proxy/socks5.go`
+
+- [x] Add basic domain format validation
+- [x] Validate characters and structure, not just length
+
+**Fixed:** Added `isValidDomain()` function with RFC 1035 compliant regex validation.
+
+---
+
+#### 14. OpenVPN Temp File Cleanup Not Guaranteed ✅ FIXED
+**File:** `internal/backend/openvpn.go`
+
+- [x] Added `cleanupTempFiles()` helper function
+- [x] Cleanup called on Start() failure
+- [x] Cleanup called in Stop() method
+
+**Fixed:** Temp files now cleaned up on both successful Stop() and Start() failure.
+
+---
+
+### Low Priority
+
+#### 15. LDAP Groups Retrieval Silently Fails
+**File:** `internal/auth/ldap.go`
+
+- [ ] Make group lookup failure behavior configurable (fail-open vs fail-closed)
+
+**Current:** If group lookup fails, user authenticates with empty groups.
+
+---
+
+#### 16. No Audit Logging of Auth Failures
+**Files:** All authenticators
+
+- [ ] Add structured audit logging for all auth events
+- [ ] Log username, reason, client IP for failures
+- [ ] Use `slog.Warn` with consistent fields
+
+---
+
+#### 17. Router Potential Nil Dereference
+**File:** `internal/router/server_router.go`
+
+- [ ] Add nil checks before accessing internal state
+- [ ] Or ensure router is always properly initialized
+
+---
+
+#### 18. Context Timeout Not Applied in Direct Backend
+**File:** `internal/backend/direct.go`
+
+- [ ] Wrap dial with explicit timeout from context
+- [ ] Ensure underlying dialer respects context
+
+---
+
+#### 19. IPv6 Address Formatting in SOCKS5
+**File:** `internal/proxy/socks5.go`
+
+- [ ] Use consistent IPv6 formatting with brackets in error messages/logs
+
+---
+
+#### 20. No Backend Name Validation
+**File:** `internal/backend/manager.go`
+
+- [ ] Validate backend names against regex pattern
+- [ ] Allow only alphanumeric, hyphens, underscores
+
+---
+
+#### 21. Hardcoded 5s Copy Timeout
+**File:** `internal/proxy/copy.go`
+
+- [ ] Make idle timeout configurable via context or parameter
+
+---
+
+### Completed Security Fixes (Reference)
+
+The following issues from the security review have been fixed:
+
+**CRITICAL (6/6):**
+- [x] Timing attack on API token comparison → `crypto/subtle.ConstantTimeCompare()`
+- [x] Ignored write errors in HTTP/SOCKS5 → Error logging with `log/slog`
+- [x] Ignored I/O errors in SOCKS5Proxy backend → Proper error handling
+- [x] CopyBidirectional return value race → Both results collected
+- [x] WebSocket endpoint unauthenticated → Inside auth group
+- [x] CORS wildcard origin → Restricted to localhost via `isLocalOrigin()`
+
+**HIGH (6/6):**
+- [x] WireGuard resource leak → Direct dial without intermediate connection
+- [x] HTTP proxy response body leak → `defer resp.Body.Close()`
+- [x] Copy timeout busy loop → Clean goroutine/channel with `io.Copy()`
+- [x] OpenVPN monitor race → Lock captured before process check
+- [x] OAuth unbounded read → `io.LimitReader` with 1MB limit
+
+**MEDIUM (13/13) - ALL COMPLETED:**
+- [x] Security headers → Full middleware with CSP, X-Frame-Options, etc.
+- [x] WebSocket connection limit → `MaxWebSocketClients = 100`
+- [x] Bcrypt cost → Increased to 12
+- [x] LDAP context propagation → `connectWithContext()` with `net.Dialer`
+- [x] LDAP time/size limits → 30s timeout, 100/1000 size limits
+- [x] OAuth token hashing → `hashToken()` with SHA-256
+- [x] Brute force protection → New `BruteForceProtector` with exponential backoff
+- [x] WebSocket read timeout → 60 second `SetReadDeadline`
+- [x] WebSocket broadcast race → Failed clients collected before unregister
+- [x] Query parameter validation → Proper error handling with 400 responses
+- [x] Config reload error handling → Logged and returned in response
+- [x] SOCKS5 domain validation → RFC 1035 compliant regex
+- [x] OpenVPN temp file cleanup → `cleanupTempFiles()` on failure and stop

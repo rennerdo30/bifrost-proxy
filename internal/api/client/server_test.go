@@ -520,11 +520,13 @@ func TestCorsMiddleware(t *testing.T) {
 	api := New(Config{})
 	handler := api.Handler()
 
+	// CORS only allows localhost origins for security
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, "*", w.Header().Get("Access-Control-Allow-Origin"))
+	assert.Equal(t, "http://localhost:3000", w.Header().Get("Access-Control-Allow-Origin"))
 	assert.NotEmpty(t, w.Header().Get("Access-Control-Allow-Methods"))
 	assert.NotEmpty(t, w.Header().Get("Access-Control-Allow-Headers"))
 }

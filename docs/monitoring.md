@@ -66,6 +66,21 @@ scrape_configs:
 | `bifrost_bytes_total` | Counter | `direction`, `backend` | Total bytes transferred |
 | `bifrost_bandwidth_bytes_per_second` | Gauge | `direction` | Current bandwidth usage |
 
+#### Cache Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `bifrost_cache_hits_total` | Counter | `domain` | Total cache hits |
+| `bifrost_cache_misses_total` | Counter | `domain`, `reason` | Total cache misses |
+| `bifrost_cache_bytes_served_total` | Counter | `source` | Bytes served (cache vs origin) |
+| `bifrost_cache_storage_size_bytes` | Gauge | `tier` | Current storage size |
+| `bifrost_cache_storage_entries` | Gauge | `tier` | Current entry count |
+| `bifrost_cache_storage_usage_percent` | Gauge | `tier` | Storage usage percentage |
+| `bifrost_cache_evictions_total` | Counter | `tier`, `reason` | Cache evictions |
+| `bifrost_cache_operation_duration_seconds` | Histogram | `operation` | Cache operation latency |
+| `bifrost_cache_active_rules` | Gauge | | Number of active cache rules |
+| `bifrost_cache_active_presets` | Gauge | | Number of enabled presets |
+
 #### System Metrics
 
 | Metric | Type | Description |
@@ -94,6 +109,16 @@ rate(bifrost_bytes_total[5m]) / 1024 / 1024
 
 # Unhealthy backends
 bifrost_backend_healthy == 0
+
+# Cache hit rate
+bifrost_cache_hits_total / (bifrost_cache_hits_total + bifrost_cache_misses_total)
+
+# Cache storage usage
+bifrost_cache_storage_usage_percent{tier="memory"}
+bifrost_cache_storage_usage_percent{tier="disk"}
+
+# Bytes saved by cache (vs fetching from origin)
+rate(bifrost_cache_bytes_served_total{source="cache"}[1h])
 ```
 
 ---

@@ -13,6 +13,7 @@ import (
 	apiserver "github.com/rennerdo30/bifrost-proxy/internal/api/server"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/health"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
@@ -35,6 +36,8 @@ type Server struct {
 	metrics          *metrics.Metrics
 	metricsCollector *metrics.Collector
 	accessLogger     accesslog.Logger
+	cacheManager     *cache.Manager
+	cacheInterceptor *cache.Interceptor
 
 	httpListener   net.Listener
 	socks5Listener net.Listener
@@ -101,6 +104,17 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("create access logger: %w", err)
 	}
 
+	// Create cache manager if enabled
+	var cacheManager *cache.Manager
+	var cacheInterceptor *cache.Interceptor
+	if cfg.Cache.Enabled {
+		cacheManager, err = cache.NewManager(&cfg.Cache)
+		if err != nil {
+			return nil, fmt.Errorf("create cache manager: %w", err)
+		}
+		cacheInterceptor = cache.NewInterceptor(cacheManager)
+	}
+
 	return &Server{
 		config:           cfg,
 		backends:         backends,
@@ -111,6 +125,8 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		metrics:          m,
 		metricsCollector: collector,
 		accessLogger:     accessLogger,
+		cacheManager:     cacheManager,
+		cacheInterceptor: cacheInterceptor,
 		done:             make(chan struct{}),
 	}, nil
 }
@@ -221,6 +237,18 @@ func (s *Server) Start(ctx context.Context) error {
 		return fmt.Errorf("start backends: %w", err)
 	}
 
+	// Start cache manager
+	if s.cacheManager != nil {
+		if err := s.cacheManager.Start(ctx); err != nil {
+			return fmt.Errorf("start cache manager: %w", err)
+		}
+		logging.Info("Cache manager started",
+			"storage_type", s.config.Cache.Storage.Type,
+			"presets", len(s.config.Cache.Presets),
+			"rules", len(s.config.Cache.Rules),
+		)
+	}
+
 	// Start health manager
 	if err := s.healthManager.Start(ctx); err != nil {
 		return fmt.Errorf("start health manager: %w", err)
@@ -289,6 +317,7 @@ func (s *Server) Start(ctx context.Context) error {
 		s.api = apiserver.New(apiserver.Config{
 			Backends:         s.backends,
 			HealthManager:    s.healthManager,
+			CacheManager:     s.cacheManager,
 			Token:            s.config.API.Token,
 			GetConfig:        s.GetSanitizedConfig,
 			GetFullConfig:    s.GetFullConfig,
@@ -374,6 +403,13 @@ func (s *Server) Stop(ctx context.Context) error {
 	case <-done:
 	case <-time.After(gracePeriod):
 		logging.Warn("Grace period exceeded, forcing shutdown")
+	}
+
+	// Stop cache manager
+	if s.cacheManager != nil {
+		if err := s.cacheManager.Stop(ctx); err != nil {
+			logging.Error("Error stopping cache manager", "error", err)
+		}
 	}
 
 	// Stop health manager
@@ -537,10 +573,11 @@ func (s *Server) serveHTTP(ctx context.Context) {
 	defer s.wg.Done()
 
 	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
-		GetBackend:  s.getBackend,
-		DialTimeout: s.config.Server.HTTP.ReadTimeout.Duration(),
-		OnConnect:   s.onConnect,
-		OnError:     s.onError,
+		GetBackend:       s.getBackend,
+		DialTimeout:      s.config.Server.HTTP.ReadTimeout.Duration(),
+		OnConnect:        s.onConnect,
+		OnError:          s.onError,
+		CacheInterceptor: s.cacheInterceptor,
 	})
 
 	for {

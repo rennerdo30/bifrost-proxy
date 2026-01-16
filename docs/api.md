@@ -256,6 +256,156 @@ Response:
 }
 ```
 
+### Cache Management
+
+Get cache statistics:
+```http
+GET /api/v1/cache/stats
+```
+
+Response:
+```json
+{
+  "enabled": true,
+  "hit_rate": 0.85,
+  "total_requests": 12450,
+  "cache_hits": 10582,
+  "cache_misses": 1868,
+  "storage_type": "tiered",
+  "rules_count": 5,
+  "memory": {
+    "entries": 4521,
+    "size_bytes": 1073741824,
+    "max_size_bytes": 2147483648
+  },
+  "disk": {
+    "entries": 892,
+    "size_bytes": 107374182400,
+    "max_size_bytes": 536870912000
+  }
+}
+```
+
+List cached entries:
+```http
+GET /api/v1/cache/entries
+GET /api/v1/cache/entries?domain=*.steamcontent.com
+GET /api/v1/cache/entries?limit=10&offset=0
+```
+
+Response:
+```json
+{
+  "entries": [
+    {
+      "key": "ab12cd34...",
+      "url": "http://cdn.steamcontent.com/depot/123/chunk/abc",
+      "host": "cdn.steamcontent.com",
+      "size": 1048576,
+      "content_type": "application/octet-stream",
+      "created_at": "2024-01-15T10:30:00Z",
+      "expires_at": "2025-01-15T10:30:00Z"
+    }
+  ],
+  "total": 892,
+  "offset": 0,
+  "limit": 10
+}
+```
+
+Get single entry metadata:
+```http
+GET /api/v1/cache/entries/{key}
+```
+
+Delete single entry:
+```http
+DELETE /api/v1/cache/entries/{key}
+```
+
+Clear all cache:
+```http
+DELETE /api/v1/cache/entries?confirm=true
+```
+
+Purge entries for a domain:
+```http
+DELETE /api/v1/cache/domain/{domain}
+```
+
+List caching rules:
+```http
+GET /api/v1/cache/rules
+```
+
+Response:
+```json
+{
+  "rules": [
+    {
+      "name": "steam",
+      "domains": ["*.steamcontent.com", "content*.steampowered.com"],
+      "enabled": true,
+      "ttl": "8760h0m0s",
+      "priority": 100,
+      "preset": "steam"
+    }
+  ]
+}
+```
+
+Add custom rule:
+```http
+POST /api/v1/cache/rules
+Content-Type: application/json
+
+{
+  "name": "my-cdn",
+  "domains": ["cdn.example.com"],
+  "enabled": true,
+  "ttl": "168h",
+  "priority": 50
+}
+```
+
+Update rule:
+```http
+PUT /api/v1/cache/rules/{name}
+```
+
+Delete rule:
+```http
+DELETE /api/v1/cache/rules/{name}
+```
+
+List available presets:
+```http
+GET /api/v1/cache/presets
+```
+
+Response:
+```json
+{
+  "presets": [
+    {
+      "name": "steam",
+      "description": "Steam game downloads and updates",
+      "domains": ["*.steamcontent.com", "content*.steampowered.com"],
+      "ttl": "8760h0m0s",
+      "priority": 100
+    }
+  ]
+}
+```
+
+Enable/disable preset:
+```http
+POST /api/v1/cache/presets/{name}
+Content-Type: application/json
+
+{"enabled": true}
+```
+
 ### PAC File (Proxy Auto-Configuration)
 
 Bifrost automatically generates a PAC file based on your routing rules:

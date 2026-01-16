@@ -93,18 +93,13 @@ func (b *WireGuardBackend) Dial(ctx context.Context, network, address string) (n
 
 	switch network {
 	case "tcp", "tcp4", "tcp6":
-		conn, err = tnet.DialContextTCP(ctx, &net.TCPAddr{})
-		if err != nil {
-			b.recordError(err)
-			return nil, NewBackendError(b.name, "dial tcp", err)
-		}
-		// Need to actually connect to the target
+		// Resolve the target address first
 		tcpAddr, resolveErr := net.ResolveTCPAddr(network, address)
 		if resolveErr != nil {
-			conn.Close()
 			b.recordError(resolveErr)
 			return nil, NewBackendError(b.name, "resolve", resolveErr)
 		}
+		// Connect to the target through the WireGuard tunnel
 		conn, err = tnet.DialContextTCPAddrPort(ctx, netip.AddrPortFrom(
 			netip.MustParseAddr(tcpAddr.IP.String()),
 			uint16(tcpAddr.Port),

@@ -14,14 +14,14 @@ import (
 
 // SOCKS5 constants
 const (
-	socks5Version     = 0x05
-	socks5AuthNone    = 0x00
-	socks5AuthPasswd  = 0x02
-	socks5CmdConnect  = 0x01
-	socks5AddrIPv4    = 0x01
-	socks5AddrDomain  = 0x03
-	socks5AddrIPv6    = 0x04
-	socks5ReplyOK     = 0x00
+	socks5Version    byte = 0x05
+	socks5AuthNone   byte = 0x00
+	socks5AuthPasswd byte = 0x02
+	socks5CmdConnect byte = 0x01
+	socks5AddrIPv4   byte = 0x01
+	socks5AddrDomain byte = 0x03
+	socks5AddrIPv6   byte = 0x04
+	socks5ReplyOK    byte = 0x00
 )
 
 // SOCKS5ProxyBackend connects through an upstream SOCKS5 proxy.
@@ -258,15 +258,25 @@ func (b *SOCKS5ProxyBackend) connect(conn net.Conn, address string) error {
 	switch response[3] {
 	case socks5AddrIPv4:
 		discard := make([]byte, 4+2) // IPv4 + port
-		io.ReadFull(conn, discard)
+		if _, err := io.ReadFull(conn, discard); err != nil {
+			return fmt.Errorf("read bound IPv4 address: %w", err)
+		}
 	case socks5AddrIPv6:
 		discard := make([]byte, 16+2) // IPv6 + port
-		io.ReadFull(conn, discard)
+		if _, err := io.ReadFull(conn, discard); err != nil {
+			return fmt.Errorf("read bound IPv6 address: %w", err)
+		}
 	case socks5AddrDomain:
 		lenByte := make([]byte, 1)
-		io.ReadFull(conn, lenByte)
+		if _, err := io.ReadFull(conn, lenByte); err != nil {
+			return fmt.Errorf("read bound domain length: %w", err)
+		}
 		discard := make([]byte, int(lenByte[0])+2) // domain + port
-		io.ReadFull(conn, discard)
+		if _, err := io.ReadFull(conn, discard); err != nil {
+			return fmt.Errorf("read bound domain: %w", err)
+		}
+	default:
+		return fmt.Errorf("unknown address type in SOCKS5 response: %d", response[3])
 	}
 
 	return nil

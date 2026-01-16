@@ -4,9 +4,18 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"strings"
+	"time"
 
 	"github.com/go-ldap/ldap/v3"
+)
+
+// LDAP search limits to prevent resource exhaustion
+const (
+	ldapSearchTimeLimit = 30   // seconds
+	ldapSearchSizeLimit = 1000 // max entries
+	ldapGroupSizeLimit  = 100  // max groups per user
 )
 
 // LDAPAuthenticator provides LDAP authentication.
@@ -64,8 +73,8 @@ func NewLDAPAuthenticator(cfg LDAPConfig) (*LDAPAuthenticator, error) {
 
 // Authenticate validates credentials against LDAP.
 func (a *LDAPAuthenticator) Authenticate(ctx context.Context, username, password string) (*UserInfo, error) {
-	// Connect to LDAP
-	conn, err := a.connect()
+	// Connect to LDAP with context for timeout/cancellation
+	conn, err := a.connectWithContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -78,14 +87,14 @@ func (a *LDAPAuthenticator) Authenticate(ctx context.Context, username, password
 		}
 	}
 
-	// Search for user
+	// Search for user with time limit to prevent resource exhaustion
 	filter := fmt.Sprintf(a.config.UserFilter, ldap.EscapeFilter(username))
 	searchReq := ldap.NewSearchRequest(
 		a.config.BaseDN,
 		ldap.ScopeWholeSubtree,
 		ldap.NeverDerefAliases,
-		1, // Size limit
-		0, // Time limit
+		1,                    // Size limit (only need 1 user)
+		ldapSearchTimeLimit,  // Time limit in seconds
 		false,
 		filter,
 		[]string{a.config.UserAttribute, a.config.EmailAttribute, a.config.FullNameAttribute, "dn"},
@@ -141,20 +150,37 @@ func (a *LDAPAuthenticator) Authenticate(ctx context.Context, username, password
 	}, nil
 }
 
-// connect establishes a connection to the LDAP server.
-func (a *LDAPAuthenticator) connect() (*ldap.Conn, error) {
+// connectWithContext establishes a connection to the LDAP server with context support.
+func (a *LDAPAuthenticator) connectWithContext(ctx context.Context) (*ldap.Conn, error) {
 	var conn *ldap.Conn
 	var err error
 
+	// Create a context-aware dialer
+	dialer := &net.Dialer{
+		Timeout: 30 * time.Second, // Connection timeout
+	}
+
+	// Build dial options
+	dialOpts := []ldap.DialOpt{
+		ldap.DialWithDialer(dialer),
+	}
+
+	// Add TLS config if needed
 	if a.config.TLS || strings.HasPrefix(a.config.URL, "ldaps://") {
 		tlsConfig := &tls.Config{
 			InsecureSkipVerify: a.config.InsecureSkipVerify,
 		}
-		conn, err = ldap.DialURL(a.config.URL, ldap.DialWithTLSConfig(tlsConfig))
-	} else {
-		conn, err = ldap.DialURL(a.config.URL)
+		dialOpts = append(dialOpts, ldap.DialWithTLSConfig(tlsConfig))
 	}
 
+	// Check context before dialing
+	select {
+	case <-ctx.Done():
+		return nil, NewAuthError("ldap", "connect", ctx.Err())
+	default:
+	}
+
+	conn, err = ldap.DialURL(a.config.URL, dialOpts...)
 	if err != nil {
 		return nil, NewAuthError("ldap", "connect", err)
 	}
@@ -169,8 +195,8 @@ func (a *LDAPAuthenticator) getUserGroups(conn *ldap.Conn, username string) ([]s
 		a.config.BaseDN,
 		ldap.ScopeWholeSubtree,
 		ldap.NeverDerefAliases,
-		0, // No size limit
-		0, // No time limit
+		ldapGroupSizeLimit,   // Size limit to prevent memory exhaustion
+		ldapSearchTimeLimit,  // Time limit in seconds
 		false,
 		filter,
 		[]string{a.config.GroupAttribute},
