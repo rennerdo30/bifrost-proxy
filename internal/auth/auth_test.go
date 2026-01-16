@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"testing"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
@@ -663,9 +664,19 @@ func TestChainAuthenticator_ConcurrentAccess(t *testing.T) {
 }
 
 // SystemAuthenticator tests
+// Note: System auth is not supported on Windows - NewSystemAuthenticator returns
+// ErrAuthMethodUnsupported on that platform. These tests only run on Unix systems.
 
 func TestSystemAuthenticator_NewWithDefaults(t *testing.T) {
 	auth, err := NewSystemAuthenticator(SystemConfig{})
+
+	// On Windows, this should fail with ErrAuthMethodUnsupported
+	if runtime.GOOS == "windows" {
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrAuthMethodUnsupported)
+		assert.Nil(t, auth)
+		return
+	}
 
 	require.NoError(t, err)
 	assert.NotNil(t, auth)
@@ -675,6 +686,11 @@ func TestSystemAuthenticator_NewWithDefaults(t *testing.T) {
 }
 
 func TestSystemAuthenticator_NewWithCustomConfig(t *testing.T) {
+	// Skip on Windows - system auth not supported
+	if runtime.GOOS == "windows" {
+		t.Skip("system auth not supported on Windows")
+	}
+
 	auth, err := NewSystemAuthenticator(SystemConfig{
 		Service:       "sshd",
 		AllowedUsers:  []string{"alice", "bob"},
@@ -690,6 +706,11 @@ func TestSystemAuthenticator_NewWithCustomConfig(t *testing.T) {
 }
 
 func TestSystemAuthenticator_AuthenticateEmptyCredentials(t *testing.T) {
+	// Skip on Windows - system auth not supported
+	if runtime.GOOS == "windows" {
+		t.Skip("system auth not supported on Windows")
+	}
+
 	auth, _ := NewSystemAuthenticator(SystemConfig{})
 	ctx := context.Background()
 
@@ -703,6 +724,11 @@ func TestSystemAuthenticator_AuthenticateEmptyCredentials(t *testing.T) {
 }
 
 func TestSystemAuthenticator_AuthenticateDisallowedUser(t *testing.T) {
+	// Skip on Windows - system auth not supported
+	if runtime.GOOS == "windows" {
+		t.Skip("system auth not supported on Windows")
+	}
+
 	auth, _ := NewSystemAuthenticator(SystemConfig{
 		AllowedUsers: []string{"alice"},
 	})
@@ -713,6 +739,11 @@ func TestSystemAuthenticator_AuthenticateDisallowedUser(t *testing.T) {
 }
 
 func TestSystemAuthenticator_AuthenticateNonexistentUser(t *testing.T) {
+	// Skip on Windows - system auth not supported
+	if runtime.GOOS == "windows" {
+		t.Skip("system auth not supported on Windows")
+	}
+
 	auth, _ := NewSystemAuthenticator(SystemConfig{})
 	ctx := context.Background()
 

@@ -357,6 +357,11 @@ sudo launchctl load /Library/LaunchDaemons/com.bifrost.client.plist
 
 ## Windows
 
+!!! note "Authentication Limitation"
+    System authentication (`auth.mode: system`) is **not supported on Windows**.
+    Use `native`, `ldap`, or `oauth` authentication instead.
+    See the [Authentication Guide](authentication.md#system-authentication) for details.
+
 ### Manual Installation
 
 1. Download the Windows binary (`bifrost-server.exe` or `bifrost-client.exe`)

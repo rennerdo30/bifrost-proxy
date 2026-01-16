@@ -76,6 +76,48 @@ auth:
 | `group_filter` | Filter to find user groups |
 | `require_group` | Only allow users in this group |
 
+## System Authentication
+
+Authenticate against the operating system's user database (PAM on Linux, Directory Services on macOS).
+
+!!! warning "Platform Support"
+    System authentication is **only supported on Linux and macOS**. Windows is not currently supported.
+    If you need authentication on Windows, use `native`, `ldap`, or `oauth` mode instead.
+
+```yaml
+auth:
+  mode: system
+  system:
+    service: "login"           # PAM service name (Linux only)
+    allowed_users:             # Optional: restrict to specific users
+      - alice
+      - bob
+    allowed_groups:            # Optional: restrict to specific groups
+      - admin
+      - staff
+```
+
+### Platform Support Matrix
+
+| Platform | Support | Method |
+|----------|---------|--------|
+| Linux    | ✅ Supported | PAM via `su` command |
+| macOS    | ✅ Supported | Directory Services (`dscl`) |
+| Windows  | ❌ Not Supported | Use native/ldap/oauth instead |
+
+### System Authentication Configuration
+
+| Field | Description |
+|-------|-------------|
+| `service` | PAM service name (default: `login`) - Linux only |
+| `allowed_users` | Optional list of allowed usernames |
+| `allowed_groups` | Optional list of allowed groups (user must be in at least one) |
+
+### Requirements
+
+- **Linux**: Requires that the Bifrost process can execute `su` (typically needs to run as root or with appropriate privileges)
+- **macOS**: Requires access to Directory Services via `dscl`
+
 ## OAuth/OIDC Authentication
 
 Authenticate using OAuth 2.0 or OpenID Connect.

@@ -763,3 +763,118 @@ Track implementation progress by checking off completed items.
 ### Milestones
 - [x] **MVP**: Server with direct/WireGuard, HTTP/SOCKS5, routing, basic CLI, client
 - [x] **v1.0**: All features complete, documentation, CI/CD
+
+---
+
+## Known Issues & Future Improvements
+
+### 1. System Auth on Windows Bug
+
+**Problem**: `internal/auth/system.go` - The `validatePassword` function falls back to `validateWithSu()` on Windows, which uses the Unix `su` command that doesn't exist on Windows. Authentication will silently fail.
+
+- [x] **Phase 1: Immediate Fix - Return explicit error** ✅ COMPLETED
+  - [x] Add `case "windows":` to `validatePassword()` switch statement in `internal/auth/system.go`
+  - [x] Return `ErrAuthMethodUnsupported` with descriptive message
+  - [x] Add test case for Windows platform detection in `internal/auth/auth_test.go`
+  - [x] Update `NewSystemAuthenticator()` to log warning on Windows
+
+- [x] **Phase 2: Documentation** ✅ COMPLETED
+  - [x] Add warning to `docs/authentication.md` about Windows limitation
+  - [x] Add note to `docs/deployment.md` Windows section
+  - [x] Add troubleshooting entry in `docs/troubleshooting.md`
+
+- [ ] **Phase 3 (Future v2.0): Windows API Implementation**
+  - [ ] Research `LogonUserW` Win32 API requirements
+  - [ ] Create `internal/auth/system_windows.go` with build tags
+  - [ ] Implement `validateWindows()` using syscall or CGO
+  - [ ] Add Windows-specific tests with mocks
+  - [ ] Test on actual Windows system (Windows 10/11 and Server)
+
+---
+
+### 2. Docker Fixes (Uncommitted Changes)
+
+**Problem**: Recent Docker fixes need to be committed.
+
+- [x] **Health Check Fixes** ✅ VERIFIED
+  - [x] Verify `docker/Dockerfile` uses `127.0.0.1:9090` (not localhost)
+  - [x] Verify `docker/Dockerfile.client` uses `127.0.0.1:3130` (not localhost)
+  - [x] Verify comments explain IPv6 resolution issue
+
+- [x] **Client Docker Config** ✅ VERIFIED
+  - [x] Verify `configs/client-config.docker.yaml` exists with `0.0.0.0` bindings
+  - [x] Verify `Dockerfile.client` copies `client-config.docker.yaml` (not example)
+  - [x] Verify server address is `bifrost-server:8080` (Docker DNS)
+  - [x] Verify tray is disabled (`enabled: false`) for headless container
+
+- [x] **Docker Compose Updates** ✅ VERIFIED
+  - [x] Verify `version: '3.8'` line is removed (deprecated)
+  - [x] Verify Grafana port mapping is `3001:3000` (avoids conflicts)
+
+- [x] **Testing** ✅ COMPLETED
+  - [x] Run `docker compose build` - verify success
+  - [x] Run `docker compose up -d` - verify all containers start
+  - [x] Verify health checks pass (all containers show "healthy")
+  - [x] Test client can connect to server via Docker network
+
+- [x] **Commit & Push** ✅ COMPLETED
+  - [x] Stage: `docker/Dockerfile`, `docker/Dockerfile.client`, `docker/docker-compose.yml`
+  - [x] Stage: `configs/client-config.docker.yaml`
+  - [x] Create commit with descriptive message
+  - [x] Push to remote
+
+---
+
+### 3. Documentation Gaps
+
+- [x] **Document Windows system auth limitation** ✅ COMPLETED
+  - [x] **In `docs/authentication.md`**
+    - [x] Add "System Authentication" section if missing
+    - [x] Add platform support matrix table (Linux ✓, macOS ✓, Windows ✗)
+    - [x] Add admonition warning (`!!! warning`) for Windows limitation
+    - [x] Document PAM service configuration for Linux
+    - [x] Document `dscl` usage on macOS
+  - [x] **In `docs/deployment.md`**
+    - [x] Add note in Windows section about auth limitations
+    - [x] Recommend Native/LDAP/OAuth for Windows deployments
+  - [x] **In `docs/troubleshooting.md`**
+    - [x] Add "Windows Authentication Issues" section
+    - [x] Document error messages and workarounds
+
+- [x] **Update CHANGELOG.md release date** ✅ COMPLETED
+  - [x] Decide on version number (0.1.0 vs 1.0.0) → 1.0.0
+  - [x] Update placeholder date `2024-XX-XX` to actual release date (2026-01-16)
+  - [x] Move "Unreleased" items to versioned section if releasing
+  - [x] Add any missing entries for recent changes (Docker fixes, etc.)
+  - [x] Update `docs/changelog.md` to match root CHANGELOG.md
+
+---
+
+### 4. Future Enhancements (v2.0 Candidates)
+
+- [ ] **Windows system authentication support (LogonUser API)**
+  - [ ] Research Windows LogonUser API requirements
+  - [ ] Determine CGO vs syscall approach
+  - [ ] Create build-tagged `internal/auth/system_windows.go`
+  - [ ] Implement `LogonUserW` call with proper error handling
+  - [ ] Handle domain vs local user authentication
+  - [ ] Add comprehensive tests with mocks
+  - [ ] Test on Windows 10/11 and Windows Server
+
+- [ ] **Platform-specific tray implementations**
+  - [ ] Evaluate current `fyne.io/systray` limitations
+  - [ ] Research native implementations:
+    - [ ] Windows: Win32 `Shell_NotifyIcon` API
+    - [ ] macOS: `NSStatusItem` API
+    - [ ] Linux: AppIndicator/StatusNotifierItem
+  - [ ] Determine if custom implementation provides value over fyne.io/systray
+  - [ ] Consider using build tags for platform separation
+
+- [ ] **OAuth authorization code flow**
+  - [ ] Research OAuth 2.0 authorization code flow requirements
+  - [ ] Design callback server for code exchange
+  - [ ] Implement PKCE (Proof Key for Code Exchange) for public clients
+  - [ ] Add state parameter for CSRF protection
+  - [ ] Store and refresh tokens securely
+  - [ ] Add configuration options for redirect URI
+  - [ ] Test with common providers (Google, GitHub, Azure AD, Okta)

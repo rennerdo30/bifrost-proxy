@@ -4,6 +4,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"os/user"
 	"runtime"
@@ -27,7 +28,7 @@ type SystemConfig struct {
 
 // SystemAuthenticator implements system-level authentication.
 // On Unix systems, it uses PAM or su to validate credentials.
-// On Windows, it validates against the local user database.
+// Note: Windows is not currently supported. Use native, ldap, or oauth authentication instead.
 type SystemAuthenticator struct {
 	config        SystemConfig
 	allowedUsers  map[string]bool
@@ -36,6 +37,14 @@ type SystemAuthenticator struct {
 
 // NewSystemAuthenticator creates a new system authenticator.
 func NewSystemAuthenticator(cfg SystemConfig) (*SystemAuthenticator, error) {
+	// Check for Windows - system auth is not supported
+	if runtime.GOOS == "windows" {
+		slog.Warn("system authentication is not supported on Windows",
+			"platform", runtime.GOOS,
+			"recommendation", "use native, ldap, or oauth authentication instead")
+		return nil, fmt.Errorf("%w: system authentication is not supported on Windows - use native, ldap, or oauth instead", ErrAuthMethodUnsupported)
+	}
+
 	if cfg.Service == "" {
 		cfg.Service = "login"
 	}

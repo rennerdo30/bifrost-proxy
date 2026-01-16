@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-01-16
+
 ### Added
 - Initial release of Bifrost Proxy
 - HTTP and HTTPS CONNECT proxy support
@@ -25,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - None (open proxy)
   - Native (bcrypt passwords)
   - LDAP/Active Directory
+  - System (PAM/Directory Services - Linux/macOS only)
 - Rate limiting with token bucket algorithm
 - Bandwidth throttling
 - IP access control (whitelist/blacklist)
@@ -33,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Prometheus metrics endpoint
 - Access logging (JSON, Apache combined format)
 - REST API for server and client
-- Web UI dashboards
+- Web UI dashboards with documentation links
 - WebSocket support for live updates
 - CLI control commands
 - System tray integration
@@ -41,15 +44,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions CI/CD
 - Cross-platform builds (Linux, macOS, Windows)
 - Systemd and launchd service files
+- Self-update capability for binaries
+- Comprehensive documentation with MkDocs and GitHub Pages
+
+### Fixed
+- Docker health checks now use 127.0.0.1 to avoid IPv6 resolution issues
+- Docker client container now has proper configuration with 0.0.0.0 bindings
 
 ### Security
 - Secure password hashing with bcrypt
 - TLS support for listeners
 - LDAP over TLS with certificate validation
+- System authentication returns explicit error on unsupported platforms (Windows)
 
-## [0.1.0] - 2024-XX-XX
-
-- Initial development release
+### Documentation
+- Added platform support matrix for system authentication
+- Added Windows authentication troubleshooting guide
+- Added Mermaid diagram support
 
 ---
 

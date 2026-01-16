@@ -364,6 +364,52 @@ bifrost-server validate -c config.yaml
 
 ## Authentication Issues
 
+### Windows System Authentication Not Working
+
+**Symptoms:** Server fails to start with error about system authentication not being supported on Windows.
+
+**Cause:** System authentication (`auth.mode: system`) uses OS-level authentication (PAM on Linux, Directory Services on macOS). Windows is not currently supported.
+
+**Error Message:**
+```
+authentication method not supported: system authentication is not supported on Windows - use native, ldap, or oauth instead
+```
+
+**Solution:**
+
+Use a different authentication mode on Windows:
+
+1. **Native Authentication** (recommended for simple setups):
+   ```yaml
+   auth:
+     mode: native
+     native:
+       users:
+         - username: admin
+           password_hash: "$2a$12$..."  # bcrypt hash
+   ```
+
+2. **LDAP Authentication** (for Active Directory):
+   ```yaml
+   auth:
+     mode: ldap
+     ldap:
+       url: "ldap://your-dc.domain.com:389"
+       base_dn: "dc=domain,dc=com"
+       user_filter: "(sAMAccountName=%s)"
+   ```
+
+3. **OAuth/OIDC** (for SSO):
+   ```yaml
+   auth:
+     mode: oauth
+     oauth:
+       issuer_url: "https://auth.example.com"
+       client_id: "..."
+   ```
+
+See the [Authentication Guide](authentication.md#system-authentication) for more details.
+
 ### LDAP Authentication Failing
 
 **Diagnostics:**
