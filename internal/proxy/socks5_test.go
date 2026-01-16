@@ -608,3 +608,204 @@ func TestSOCKS5Handler_handleError(t *testing.T) {
 	handler2.handleError(ctx, nil, "test", testErr)
 	// Should not panic
 }
+
+func TestIsValidDomain(t *testing.T) {
+	tests := []struct {
+		domain   string
+		expected bool
+	}{
+		// Valid domains
+		{"example.com", true},
+		{"sub.example.com", true},
+		{"a.b.c.d.example.com", true},
+		{"localhost", true},
+		{"test-domain.com", true},
+		{"test123.example.org", true},
+		{"a.co", true},
+
+		// Invalid domains
+		{"", false},                                               // Empty
+		{"-invalid.com", false},                                   // Starts with hyphen
+		{"invalid-.com", false},                                   // Ends with hyphen
+		{"example..com", false},                                   // Double dot
+		{".example.com", false},                                   // Starts with dot
+		{"example.com.", false},                                   // Ends with dot
+		{"a" + string(make([]byte, 254)), false},                  // Too long (>253 chars)
+		{"test_invalid.com", false},                               // Underscore not allowed
+		{"test!invalid.com", false},                               // Special character
+		{"test@invalid.com", false},                               // @ symbol
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.domain, func(t *testing.T) {
+			result := isValidDomain(tt.domain)
+			assert.Equal(t, tt.expected, result, "domain: %s", tt.domain)
+		})
+	}
+}
+
+func TestSOCKS5Handler_handleAuth_NoMethods(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		AuthRequired: true,
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Send auth with only NoAuth method, but server requires auth
+	_, err := clientConn.Write([]byte{socks5Version, 0x01, socks5AuthNone})
+	require.NoError(t, err)
+
+	// Read response - should reject with 0xFF
+	resp := make([]byte, 2)
+	_, err = io.ReadFull(clientConn, resp)
+	require.NoError(t, err)
+	assert.Equal(t, socks5Version, resp[0])
+	assert.Equal(t, byte(0xFF), resp[1]) // No acceptable method
+}
+
+func TestSOCKS5Handler_handleConnect_InvalidDomain(t *testing.T) {
+	// Use real TCP sockets instead of net.Pipe to avoid synchronous blocking issues
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		handler.ServeConn(context.Background(), conn)
+	}()
+
+	// Connect to the server
+	clientConn, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer clientConn.Close()
+
+	// Set read timeout
+	clientConn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	// Auth
+	_, err = clientConn.Write([]byte{socks5Version, 0x01, socks5AuthNone})
+	require.NoError(t, err)
+	authResp := make([]byte, 2)
+	_, err = io.ReadFull(clientConn, authResp)
+	require.NoError(t, err)
+
+	// CONNECT request with invalid domain (contains invalid character)
+	invalidDomain := "test!invalid.com"
+	req := []byte{socks5Version, socks5CmdConnect, 0x00, socks5AddrDomain}
+	req = append(req, byte(len(invalidDomain)))
+	req = append(req, []byte(invalidDomain)...)
+	portBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(portBytes, 80)
+	req = append(req, portBytes...)
+
+	_, err = clientConn.Write(req)
+	require.NoError(t, err)
+
+	// Read reply
+	reply := make([]byte, 10)
+	n, err := clientConn.Read(reply)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, n, 2)
+	assert.Equal(t, socks5Version, reply[0])
+	assert.Equal(t, socks5ReplyGeneralFailure, reply[1])
+
+	<-done
+}
+
+func TestSOCKS5Handler_handlePasswordAuth_EmptyCredentials(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		AuthRequired: true,
+		Authenticate: func(username, password string) bool {
+			return false
+		},
+	})
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Send auth method selection with password auth
+	_, err := clientConn.Write([]byte{socks5Version, 0x01, socks5AuthPassword})
+	require.NoError(t, err)
+
+	// Read method selection response
+	resp := make([]byte, 2)
+	_, err = io.ReadFull(clientConn, resp)
+	require.NoError(t, err)
+	assert.Equal(t, socks5AuthPassword, resp[1])
+
+	// Send empty username and password
+	authData := []byte{0x01}     // version
+	authData = append(authData, byte(0)) // empty username length
+	authData = append(authData, byte(0)) // empty password length
+
+	_, err = clientConn.Write(authData)
+	require.NoError(t, err)
+
+	// Read auth response (should fail)
+	authResp := make([]byte, 2)
+	_, err = io.ReadFull(clientConn, authResp)
+	require.NoError(t, err)
+	assert.Equal(t, byte(0x01), authResp[0])
+	assert.Equal(t, byte(0x01), authResp[1]) // failure
+}
+
+func TestSOCKS5Handler_sendReply_IPv6(t *testing.T) {
+	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+	})
+
+	// Test with IPv6 address
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	reply := make([]byte, 22) // IPv6 reply is longer
+	var readErr error
+	var n int
+	done := make(chan struct{})
+	go func() {
+		n, readErr = clientConn.Read(reply)
+		close(done)
+	}()
+
+	addr := &net.TCPAddr{IP: net.ParseIP("::1"), Port: 8080}
+	handler.sendReply(serverConn, socks5ReplySuccess, addr)
+	<-done
+
+	require.NoError(t, readErr)
+	assert.GreaterOrEqual(t, n, 4)
+	assert.Equal(t, socks5Version, reply[0])
+	assert.Equal(t, socks5ReplySuccess, reply[1])
+}

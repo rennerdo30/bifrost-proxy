@@ -175,3 +175,173 @@ func TestBruteForceProtector_Stats(t *testing.T) {
 		t.Errorf("expected 1 lockout, got %d", stats.CurrentLockouts)
 	}
 }
+
+func TestBruteForceProtector_GetLockoutRemaining_NonExistent(t *testing.T) {
+	bf := NewBruteForceProtector(BruteForceConfig{
+		MaxAttempts: 3,
+		LockoutTime: 1 * time.Second,
+		WindowSize:  1 * time.Second,
+	})
+	defer bf.Close()
+
+	// Non-existent key should return 0
+	remaining := bf.GetLockoutRemaining("nonexistent")
+	if remaining != 0 {
+		t.Errorf("expected 0 lockout remaining for non-existent key, got %v", remaining)
+	}
+}
+
+func TestBruteForceProtector_GetLockoutRemaining_NotLockedOut(t *testing.T) {
+	bf := NewBruteForceProtector(BruteForceConfig{
+		MaxAttempts: 5,
+		LockoutTime: 1 * time.Second,
+		WindowSize:  1 * time.Second,
+	})
+	defer bf.Close()
+
+	// Record some failures but not enough to lockout
+	bf.RecordFailure("test-key")
+	bf.RecordFailure("test-key")
+
+	// Should return 0 (not locked out yet)
+	remaining := bf.GetLockoutRemaining("test-key")
+	if remaining != 0 {
+		t.Errorf("expected 0 lockout remaining for non-locked key, got %v", remaining)
+	}
+}
+
+func TestBruteForceProtector_GetLockoutRemaining_Expired(t *testing.T) {
+	bf := NewBruteForceProtector(BruteForceConfig{
+		MaxAttempts: 2,
+		LockoutTime: 50 * time.Millisecond,
+		WindowSize:  1 * time.Second,
+	})
+	defer bf.Close()
+
+	// Lock out
+	bf.RecordFailure("test-key")
+	bf.RecordFailure("test-key")
+
+	// Wait for lockout to expire
+	time.Sleep(100 * time.Millisecond)
+
+	// Should return 0 (lockout expired)
+	remaining := bf.GetLockoutRemaining("test-key")
+	if remaining != 0 {
+		t.Errorf("expected 0 lockout remaining after expiry, got %v", remaining)
+	}
+}
+
+func TestBruteForceProtector_Cleanup(t *testing.T) {
+	bf := NewBruteForceProtector(BruteForceConfig{
+		MaxAttempts: 2,
+		LockoutTime: 50 * time.Millisecond,
+		WindowSize:  50 * time.Millisecond, // Short window for testing
+	})
+	defer bf.Close()
+
+	// Add some entries
+	bf.RecordFailure("key1")
+	bf.RecordFailure("key2")
+	bf.RecordFailure("key2") // This will lock out key2
+
+	stats := bf.Stats()
+	if stats.TrackedKeys != 2 {
+		t.Errorf("expected 2 tracked keys, got %d", stats.TrackedKeys)
+	}
+
+	// Wait for window and lockout to expire
+	time.Sleep(100 * time.Millisecond)
+
+	// Manually trigger cleanup
+	bf.cleanup()
+
+	// All keys should be cleaned up
+	stats = bf.Stats()
+	if stats.TrackedKeys != 0 {
+		t.Errorf("expected 0 tracked keys after cleanup, got %d", stats.TrackedKeys)
+	}
+}
+
+func TestBruteForceProtector_Cleanup_KeepsActiveEntries(t *testing.T) {
+	bf := NewBruteForceProtector(BruteForceConfig{
+		MaxAttempts: 2,
+		LockoutTime: 1 * time.Second, // Long lockout
+		WindowSize:  50 * time.Millisecond,
+	})
+	defer bf.Close()
+
+	// Add an entry that will be locked out
+	bf.RecordFailure("locked-key")
+	bf.RecordFailure("locked-key")
+
+	// Add an entry within the window
+	bf.RecordFailure("recent-key")
+
+	stats := bf.Stats()
+	if stats.TrackedKeys != 2 {
+		t.Errorf("expected 2 tracked keys, got %d", stats.TrackedKeys)
+	}
+
+	// Wait for window to expire (but not lockout)
+	time.Sleep(100 * time.Millisecond)
+
+	// Manually trigger cleanup
+	bf.cleanup()
+
+	// locked-key should be kept (still locked out)
+	// recent-key should be cleaned up (outside window, not locked)
+	stats = bf.Stats()
+	if stats.TrackedKeys != 1 {
+		t.Errorf("expected 1 tracked key after cleanup, got %d", stats.TrackedKeys)
+	}
+}
+
+func TestBruteForceProtector_DefaultConfig(t *testing.T) {
+	// Test with all defaults
+	bf := NewBruteForceProtector(BruteForceConfig{})
+	defer bf.Close()
+
+	stats := bf.Stats()
+	if stats.MaxAttempts != 5 {
+		t.Errorf("expected default MaxAttempts of 5, got %d", stats.MaxAttempts)
+	}
+	if stats.LockoutTime != 1*time.Minute {
+		t.Errorf("expected default LockoutTime of 1 minute, got %v", stats.LockoutTime)
+	}
+	if stats.WindowSize != 15*time.Minute {
+		t.Errorf("expected default WindowSize of 15 minutes, got %v", stats.WindowSize)
+	}
+}
+
+func TestBruteForceProtector_MaxLockoutCap(t *testing.T) {
+	bf := NewBruteForceProtector(BruteForceConfig{
+		MaxAttempts: 2,
+		LockoutTime: 100 * time.Millisecond,
+		MaxLockout:  200 * time.Millisecond, // Cap at 200ms
+		WindowSize:  2 * time.Second,
+	})
+	defer bf.Close()
+
+	key := "test-ip"
+
+	// First lockout (100ms)
+	bf.RecordFailure(key)
+	bf.RecordFailure(key)
+	time.Sleep(110 * time.Millisecond)
+
+	// Second lockout (would be 200ms, but still within cap)
+	bf.RecordFailure(key)
+	bf.RecordFailure(key)
+	time.Sleep(210 * time.Millisecond)
+
+	// Third lockout (would be 400ms, but capped at 200ms)
+	bf.RecordFailure(key)
+	bf.RecordFailure(key)
+
+	remaining := bf.GetLockoutRemaining(key)
+	// Should be capped at MaxLockout (200ms)
+	if remaining > 200*time.Millisecond {
+		t.Errorf("lockout should be capped at MaxLockout, got %v", remaining)
+	}
+}

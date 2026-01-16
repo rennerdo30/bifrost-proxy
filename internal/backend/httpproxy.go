@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -93,7 +94,9 @@ func (b *HTTPProxyBackend) Dial(ctx context.Context, network, address string) (n
 	// Send CONNECT request
 	connectReq := &http.Request{
 		Method: "CONNECT",
-		URL:    nil,
+		URL: &url.URL{
+			Opaque: address,
+		},
 		Host:   address,
 		Header: make(http.Header),
 	}

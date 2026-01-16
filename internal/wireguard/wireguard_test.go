@@ -119,6 +119,51 @@ func TestConfigValidate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "missing interface address",
+			config: Config{
+				Interface: InterfaceConfig{
+					PrivateKey: "WGExample1234567890123456789012345678901234=",
+				},
+				Peers: []PeerConfig{
+					{
+						PublicKey:  "WGExample1234567890123456789012345678901234=",
+						AllowedIPs: []string{"0.0.0.0/0"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "peer missing public key",
+			config: Config{
+				Interface: InterfaceConfig{
+					PrivateKey: "WGExample1234567890123456789012345678901234=",
+					Address:    []string{"10.0.0.2/24"},
+				},
+				Peers: []PeerConfig{
+					{
+						AllowedIPs: []string{"0.0.0.0/0"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			name: "peer missing allowed IPs",
+			config: Config{
+				Interface: InterfaceConfig{
+					PrivateKey: "WGExample1234567890123456789012345678901234=",
+					Address:    []string{"10.0.0.2/24"},
+				},
+				Peers: []PeerConfig{
+					{
+						PublicKey: "WGExample1234567890123456789012345678901234=",
+					},
+				},
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -131,4 +176,333 @@ func TestConfigValidate(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestConfig_ToIPC(t *testing.T) {
+	config := Config{
+		Interface: InterfaceConfig{
+			PrivateKey: "WGExample1234567890123456789012345678901234=",
+			ListenPort: 51820,
+		},
+		Peers: []PeerConfig{
+			{
+				PublicKey:           "WGExample1234567890123456789012345678901234=",
+				PresharedKey:        "WGExample1234567890123456789012345678901234=",
+				Endpoint:            "vpn.example.com:51820",
+				AllowedIPs:          []string{"0.0.0.0/0", "::/0"},
+				PersistentKeepalive: 25,
+			},
+		},
+	}
+
+	ipc := config.ToIPC()
+
+	// Check that IPC contains expected keys
+	assert.Contains(t, ipc, "private_key=")
+	assert.Contains(t, ipc, "listen_port=51820")
+	assert.Contains(t, ipc, "public_key=")
+	assert.Contains(t, ipc, "preshared_key=")
+	assert.Contains(t, ipc, "endpoint=vpn.example.com:51820")
+	assert.Contains(t, ipc, "allowed_ip=0.0.0.0/0")
+	assert.Contains(t, ipc, "allowed_ip=::/0")
+	assert.Contains(t, ipc, "persistent_keepalive_interval=25")
+}
+
+func TestConfig_ToIPC_MinimalConfig(t *testing.T) {
+	config := Config{
+		Interface: InterfaceConfig{
+			PrivateKey: "WGExample1234567890123456789012345678901234=",
+		},
+		Peers: []PeerConfig{
+			{
+				PublicKey:  "WGExample1234567890123456789012345678901234=",
+				AllowedIPs: []string{"10.0.0.0/8"},
+			},
+		},
+	}
+
+	ipc := config.ToIPC()
+
+	assert.Contains(t, ipc, "private_key=")
+	assert.Contains(t, ipc, "public_key=")
+	assert.Contains(t, ipc, "allowed_ip=10.0.0.0/8")
+	// Should not contain optional fields
+	assert.NotContains(t, ipc, "listen_port=")
+	assert.NotContains(t, ipc, "preshared_key=")
+	assert.NotContains(t, ipc, "endpoint=")
+	assert.NotContains(t, ipc, "persistent_keepalive_interval=")
+}
+
+func TestParseFile_WithHooks(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+Table = auto
+PreUp = echo pre-up
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT
+PreDown = echo pre-down
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+
+	assert.Equal(t, "auto", config.Interface.Table)
+	assert.Equal(t, "echo pre-up", config.Interface.PreUp)
+	assert.Equal(t, "iptables -A FORWARD -i wg0 -j ACCEPT", config.Interface.PostUp)
+	assert.Equal(t, "echo pre-down", config.Interface.PreDown)
+	assert.Equal(t, "iptables -D FORWARD -i wg0 -j ACCEPT", config.Interface.PostDown)
+}
+
+func TestParseFile_WithPresharedKey(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+PresharedKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+
+	require.Len(t, config.Peers, 1)
+	assert.Equal(t, "WGExample1234567890123456789012345678901234=", config.Peers[0].PresharedKey)
+}
+
+func TestParseFile_InvalidFormat(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+InvalidLine without equals sign
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid format")
+}
+
+func TestParseFile_InvalidAddress(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = not-an-ip-address
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid address")
+}
+
+func TestParseFile_InvalidListenPort(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+ListenPort = invalid
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid listen port")
+}
+
+func TestParseFile_InvalidMTU(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+MTU = 100
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid MTU")
+}
+
+func TestParseFile_InvalidPrivateKey(t *testing.T) {
+	content := `[Interface]
+PrivateKey = not-a-valid-key
+Address = 10.0.0.2/24
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid private key")
+}
+
+func TestParseFile_InvalidPeerPublicKey(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = invalid-key
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid public key")
+}
+
+func TestParseFile_InvalidAllowedIP(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = not-an-ip
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid allowed IP")
+}
+
+func TestParseFile_InvalidPersistentKeepalive(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = invalid
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid persistent keepalive")
+}
+
+func TestParseFile_MultiplePeers(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 10.0.0.0/8
+Endpoint = vpn1.example.com:51820
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 192.168.0.0/16
+Endpoint = vpn2.example.com:51820
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+
+	require.Len(t, config.Peers, 2)
+	assert.Equal(t, "vpn1.example.com:51820", config.Peers[0].Endpoint)
+	assert.Equal(t, "vpn2.example.com:51820", config.Peers[1].Endpoint)
+}
+
+func TestParseFile_FileNotFound(t *testing.T) {
+	_, err := ParseFile("/nonexistent/path/wg0.conf")
+	assert.Error(t, err)
+}
+
+func TestParseFile_PeerKeyWithoutSection(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+PublicKey = WGExample1234567890123456789012345678901234=
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	// PublicKey in Interface section should be ignored (unknown key)
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+	assert.Len(t, config.Peers, 0)
+}
+
+func TestInterfaceConfig_Struct(t *testing.T) {
+	iface := InterfaceConfig{
+		PrivateKey: "test-key",
+		Address:    []string{"10.0.0.2/24", "fd00::2/64"},
+		ListenPort: 51820,
+		DNS:        []string{"1.1.1.1", "8.8.8.8"},
+		MTU:        1420,
+		Table:      "auto",
+		PreUp:      "pre-up",
+		PostUp:     "post-up",
+		PreDown:    "pre-down",
+		PostDown:   "post-down",
+	}
+
+	assert.Equal(t, "test-key", iface.PrivateKey)
+	assert.Len(t, iface.Address, 2)
+	assert.Equal(t, 51820, iface.ListenPort)
+	assert.Len(t, iface.DNS, 2)
+	assert.Equal(t, 1420, iface.MTU)
+	assert.Equal(t, "auto", iface.Table)
+}
+
+func TestPeerConfig_Struct(t *testing.T) {
+	peer := PeerConfig{
+		PublicKey:           "pub-key",
+		PresharedKey:        "psk-key",
+		Endpoint:            "vpn.example.com:51820",
+		AllowedIPs:          []string{"0.0.0.0/0"},
+		PersistentKeepalive: 25,
+	}
+
+	assert.Equal(t, "pub-key", peer.PublicKey)
+	assert.Equal(t, "psk-key", peer.PresharedKey)
+	assert.Equal(t, "vpn.example.com:51820", peer.Endpoint)
+	assert.Len(t, peer.AllowedIPs, 1)
+	assert.Equal(t, 25, peer.PersistentKeepalive)
 }
