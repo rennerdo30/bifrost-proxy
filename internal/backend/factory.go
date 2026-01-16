@@ -2,6 +2,7 @@ package backend
 
 import (
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
@@ -227,22 +228,55 @@ func (f *Factory) createOpenVPN(cfg config.BackendConfig) (Backend, error) {
 }
 
 // CreateAll creates all backends from configuration.
+// Backends that fail to create are logged and skipped rather than causing a total failure.
+// Returns an error only if no backends could be created at all.
 func (f *Factory) CreateAll(configs []config.BackendConfig) (*Manager, error) {
 	manager := NewManager()
+	var successCount int
+	var enabledCount int
 
 	for _, cfg := range configs {
 		if !cfg.Enabled {
 			continue
 		}
+		enabledCount++
 
 		backend, err := f.Create(cfg)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create backend %s: %w", cfg.Name, err)
+			slog.Error("failed to create backend, skipping",
+				"backend", cfg.Name,
+				"type", cfg.Type,
+				"error", err,
+			)
+			continue
 		}
 
 		if err := manager.Add(backend); err != nil {
-			return nil, fmt.Errorf("failed to add backend %s: %w", cfg.Name, err)
+			slog.Error("failed to add backend to manager, skipping",
+				"backend", cfg.Name,
+				"type", cfg.Type,
+				"error", err,
+			)
+			continue
 		}
+
+		successCount++
+		slog.Info("backend created successfully",
+			"backend", cfg.Name,
+			"type", cfg.Type,
+		)
+	}
+
+	if enabledCount > 0 && successCount == 0 {
+		return nil, fmt.Errorf("all %d enabled backends failed to initialize", enabledCount)
+	}
+
+	if enabledCount > 0 && successCount < enabledCount {
+		slog.Warn("some backends failed to initialize",
+			"successful", successCount,
+			"failed", enabledCount-successCount,
+			"total_enabled", enabledCount,
+		)
 	}
 
 	return manager, nil

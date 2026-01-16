@@ -324,7 +324,11 @@ func TestFactory_CreateAll_DuplicateNames(t *testing.T) {
 		},
 	}
 
-	_, err := f.CreateAll(configs)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "already exists")
+	// With the resilient behavior, duplicate names are logged but don't cause total failure
+	// The first backend is added, the second is skipped
+	manager, err := f.CreateAll(configs)
+	assert.NoError(t, err)
+	assert.NotNil(t, manager)
+	// Only one backend should be added (the duplicate is skipped)
+	assert.Len(t, manager.List(), 1)
 }
