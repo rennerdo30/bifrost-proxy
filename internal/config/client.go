@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
 // ClientConfig is the main configuration for the Bifrost client.
@@ -19,6 +20,7 @@ type ClientConfig struct {
 	API        APIConfig           `yaml:"api" json:"api"`
 	Tray       TrayConfig          `yaml:"tray" json:"tray"`
 	AutoUpdate AutoUpdateConfig    `yaml:"auto_update" json:"auto_update"`
+	VPN        vpn.Config          `yaml:"vpn" json:"vpn"`
 }
 
 // ClientProxySettings contains client proxy listener settings.
@@ -107,6 +109,7 @@ func DefaultClientConfig() ClientConfig {
 			CheckInterval: Duration(24 * time.Hour),
 			Channel:       "stable",
 		},
+		VPN: vpn.DefaultConfig(),
 	}
 }
 
@@ -139,6 +142,13 @@ func (c *ClientConfig) Validate() error {
 
 	if c.Debug.MaxEntries < 0 {
 		return fmt.Errorf("debug max_entries must be non-negative")
+	}
+
+	// Validate VPN config if enabled
+	if c.VPN.Enabled {
+		if err := c.VPN.Validate(); err != nil {
+			return fmt.Errorf("invalid VPN config: %w", err)
+		}
 	}
 
 	return nil

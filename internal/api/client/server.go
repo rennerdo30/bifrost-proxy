@@ -2,6 +2,7 @@
 package client
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
@@ -13,14 +14,16 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/debug"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
 // API provides the REST API for Bifrost client.
 type API struct {
-	router         *router.ClientRouter
-	debugger       *debug.Logger
+	router          *router.ClientRouter
+	debugger        *debug.Logger
 	serverConnected func() bool
-	token          string
+	token           string
+	vpnManager      *vpn.Manager
 }
 
 // Config holds API configuration.
@@ -29,6 +32,7 @@ type Config struct {
 	Debugger        *debug.Logger
 	ServerConnected func() bool
 	Token           string
+	VPNManager      *vpn.Manager
 }
 
 // New creates a new API server.
@@ -38,6 +42,7 @@ func New(cfg Config) *API {
 		debugger:        cfg.Debugger,
 		serverConnected: cfg.ServerConnected,
 		token:           cfg.Token,
+		vpnManager:      cfg.VPNManager,
 	}
 }
 
@@ -117,6 +122,26 @@ func (a *API) addAPIRoutes(r chi.Router) {
 	r.Route("/api/v1/routes", func(r chi.Router) {
 		r.Get("/", a.handleGetRoutes)
 		r.Get("/test", a.handleTestRoute)
+	})
+
+	// VPN routes
+	r.Route("/api/v1/vpn", func(r chi.Router) {
+		r.Get("/status", a.handleVPNStatus)
+		r.Post("/enable", a.handleVPNEnable)
+		r.Post("/disable", a.handleVPNDisable)
+		r.Get("/connections", a.handleVPNConnections)
+
+		// Split tunnel routes
+		r.Route("/split", func(r chi.Router) {
+			r.Get("/rules", a.handleVPNSplitRules)
+			r.Post("/apps", a.handleVPNSplitAddApp)
+			r.Delete("/apps/{name}", a.handleVPNSplitRemoveApp)
+			r.Post("/domains", a.handleVPNSplitAddDomain)
+			r.Post("/ips", a.handleVPNSplitAddIP)
+		})
+
+		// DNS routes
+		r.Get("/dns/cache", a.handleVPNDNSCache)
 	})
 }
 
@@ -349,4 +374,169 @@ func (a *API) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(data)
+}
+
+// VPN handlers
+
+func (a *API) handleVPNStatus(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		a.writeJSON(w, http.StatusOK, vpn.VPNStats{Status: vpn.StatusDisabled})
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, a.vpnManager.Status())
+}
+
+func (a *API) handleVPNEnable(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.Start(context.Background()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
+}
+
+func (a *API) handleVPNDisable(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.Stop(context.Background()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
+}
+
+func (a *API) handleVPNConnections(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		a.writeJSON(w, http.StatusOK, []vpn.ConnectionInfo{})
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, a.vpnManager.Connections())
+}
+
+func (a *API) handleVPNSplitRules(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		a.writeJSON(w, http.StatusOK, vpn.SplitTunnelConfig{})
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, a.vpnManager.SplitTunnelRules())
+}
+
+func (a *API) handleVPNSplitAddApp(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Name string `json:"name"`
+		Path string `json:"path,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.AddSplitTunnelApp(vpn.AppRule{Name: req.Name, Path: req.Path}); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	a.writeJSON(w, http.StatusCreated, map[string]string{"status": "added"})
+}
+
+func (a *API) handleVPNSplitRemoveApp(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.RemoveSplitTunnelApp(name); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+}
+
+func (a *API) handleVPNSplitAddDomain(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Pattern string `json:"pattern"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Pattern == "" {
+		http.Error(w, "pattern is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.AddSplitTunnelDomain(req.Pattern); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	a.writeJSON(w, http.StatusCreated, map[string]string{"status": "added"})
+}
+
+func (a *API) handleVPNSplitAddIP(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		CIDR string `json:"cidr"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.CIDR == "" {
+		http.Error(w, "cidr is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.AddSplitTunnelIP(req.CIDR); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	a.writeJSON(w, http.StatusCreated, map[string]string{"status": "added"})
+}
+
+func (a *API) handleVPNDNSCache(w http.ResponseWriter, r *http.Request) {
+	// DNS cache is internal to VPN manager
+	// Return empty for now - would need to expose from VPN manager
+	a.writeJSON(w, http.StatusOK, []interface{}{})
 }

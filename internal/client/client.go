@@ -17,6 +17,7 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/proxy"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
 // Client is the Bifrost client.
@@ -25,6 +26,7 @@ type Client struct {
 	router         *router.ClientRouter
 	serverConn     *ServerConnection
 	debugger       *debug.Logger
+	vpnManager     *vpn.Manager
 
 	httpListener   net.Listener
 	socks5Listener net.Listener
@@ -70,11 +72,24 @@ func New(cfg *config.ClientConfig) (*Client, error) {
 		})
 	}
 
+	// Create VPN manager if enabled
+	var vpnManager *vpn.Manager
+	if cfg.VPN.Enabled {
+		var err error
+		vpnManager, err = vpn.New(cfg.VPN)
+		if err != nil {
+			return nil, fmt.Errorf("create VPN manager: %w", err)
+		}
+		// Configure VPN with server connector
+		vpnManager.Configure(vpn.WithServerConnector(serverConn))
+	}
+
 	return &Client{
 		config:     cfg,
 		router:     r,
 		serverConn: serverConn,
 		debugger:   debugger,
+		vpnManager: vpnManager,
 		done:       make(chan struct{}),
 	}, nil
 }
@@ -125,7 +140,8 @@ func (c *Client) Start(ctx context.Context) error {
 			ServerConnected: func() bool {
 				return c.serverConn.IsConnected(context.Background())
 			},
-			Token: c.config.API.Token,
+			Token:      c.config.API.Token,
+			VPNManager: c.vpnManager,
 		})
 
 		c.apiServer = &http.Server{
@@ -141,6 +157,16 @@ func (c *Client) Start(ctx context.Context) error {
 				logging.Error("API server error", "error", err)
 			}
 		}()
+	}
+
+	// Start VPN if enabled
+	if c.vpnManager != nil && c.vpnManager.Enabled() {
+		if err := c.vpnManager.Start(ctx); err != nil {
+			logging.Error("Failed to start VPN", "error", err)
+			// VPN failure is not fatal for the client
+		} else {
+			logging.Info("VPN mode started")
+		}
 	}
 
 	logging.Info("Bifrost client started")
@@ -171,6 +197,13 @@ func (c *Client) Stop(ctx context.Context) error {
 	// Stop API server
 	if c.apiServer != nil {
 		c.apiServer.Shutdown(ctx)
+	}
+
+	// Stop VPN
+	if c.vpnManager != nil {
+		if err := c.vpnManager.Stop(ctx); err != nil {
+			logging.Error("Failed to stop VPN", "error", err)
+		}
 	}
 
 	// Wait for connections
@@ -293,6 +326,11 @@ func (c *Client) GetDebugEntries() []debug.Entry {
 		return nil
 	}
 	return c.debugger.GetEntries()
+}
+
+// VPNManager returns the VPN manager if enabled, nil otherwise.
+func (c *Client) VPNManager() *vpn.Manager {
+	return c.vpnManager
 }
 
 func generateRequestID() string {
