@@ -7,6 +7,7 @@ BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 LDFLAGS := -X github.com/rennerdo30/bifrost-proxy/internal/version.Version=$(VERSION) \
            -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit=$(COMMIT) \
            -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime=$(BUILD_TIME)
+LDFLAGS_STRIP := -s -w $(LDFLAGS)
 
 # Directories
 BIN_DIR := bin
@@ -91,6 +92,46 @@ build-windows: web-sync
 	@mkdir -p $(DIST_DIR)
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/bifrost-server-windows-amd64.exe ./cmd/server
 	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(DIST_DIR)/bifrost-client-windows-amd64.exe ./cmd/client
+
+# OpenWrt / Embedded builds (stripped for smaller size)
+.PHONY: build-stripped build-openwrt build-openwrt-all build-openwrt-mips build-openwrt-arm
+
+build-stripped: web-sync
+	@echo "Building stripped binaries (30-40% smaller)..."
+	@mkdir -p $(BIN_DIR)
+	go build -ldflags "$(LDFLAGS_STRIP)" -o $(BIN_DIR)/bifrost-server ./cmd/server
+	go build -ldflags "$(LDFLAGS_STRIP)" -o $(BIN_DIR)/bifrost-client ./cmd/client
+
+build-openwrt: build-openwrt-all
+
+build-openwrt-all: web-sync
+	@echo "Building for OpenWrt (all architectures)..."
+	@mkdir -p $(DIST_DIR)
+	@$(MAKE) build-openwrt-mips
+	@$(MAKE) build-openwrt-arm
+
+build-openwrt-mips: web-sync
+	@echo "Building for OpenWrt MIPS..."
+	@mkdir -p $(DIST_DIR)
+	# MIPS big-endian (many older routers)
+	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-server-linux-mips ./cmd/server
+	CGO_ENABLED=0 GOOS=linux GOARCH=mips GOMIPS=softfloat go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-client-linux-mips ./cmd/client
+	# MIPS little-endian
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-server-linux-mipsle ./cmd/server
+	CGO_ENABLED=0 GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-client-linux-mipsle ./cmd/client
+
+build-openwrt-arm: web-sync
+	@echo "Building for OpenWrt ARM..."
+	@mkdir -p $(DIST_DIR)
+	# ARM v6 (older Raspberry Pi, some routers)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-server-linux-arm6 ./cmd/server
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-client-linux-arm6 ./cmd/client
+	# ARM v7 (Raspberry Pi 2+, many modern routers)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-server-linux-arm7 ./cmd/server
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-client-linux-arm7 ./cmd/client
+	# ARM64 (modern high-end routers, Raspberry Pi 3+)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-server-linux-arm64-openwrt ./cmd/server
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-client-linux-arm64-openwrt ./cmd/client
 
 # Docker
 .PHONY: docker-build docker-push docker-deploy docker-up docker-down docker-logs docker-status docker-stop docker-rebuild docker-rebuild-clean
@@ -201,6 +242,7 @@ help:
 	@echo "  make build          - Build both server and client (syncs web UI)"
 	@echo "  make build-server   - Build server only"
 	@echo "  make build-client   - Build client only"
+	@echo "  make build-stripped - Build stripped binaries (30-40% smaller)"
 	@echo "  make test           - Run all tests"
 	@echo "  make test-coverage  - Run tests with coverage"
 	@echo "  make lint           - Run linter"
@@ -208,6 +250,11 @@ help:
 	@echo "  make clean          - Clean build artifacts"
 	@echo "  make build-all      - Cross-platform builds"
 	@echo "  make install        - Install to GOPATH/bin"
+	@echo ""
+	@echo "OpenWrt/Embedded:"
+	@echo "  make build-openwrt       - Build for all OpenWrt architectures"
+	@echo "  make build-openwrt-mips  - Build for MIPS (big/little endian)"
+	@echo "  make build-openwrt-arm   - Build for ARM (v6, v7, arm64)"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build         - Build Docker images"

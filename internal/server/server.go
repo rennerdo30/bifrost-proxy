@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/accesslog"
@@ -50,6 +51,10 @@ type Server struct {
 	mu      sync.RWMutex
 	wg      sync.WaitGroup
 	done    chan struct{}
+
+	// Connection limiting for resource-constrained devices (OpenWrt)
+	httpActiveConns   int32 // atomic counter for active HTTP connections
+	socks5ActiveConns int32 // atomic counter for active SOCKS5 connections
 }
 
 // New creates a new Bifrost server.
@@ -92,7 +97,9 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 
 	// Create metrics
 	m := metrics.New()
-	collector := metrics.NewCollector(m, backends)
+	// Use configurable collection interval (default 15s, for low-power devices use 60s-300s)
+	collectionInterval := cfg.Metrics.CollectionInterval.Duration()
+	collector := metrics.NewCollectorWithInterval(m, backends, collectionInterval)
 
 	// Create access logger
 	accessLogger, err := accesslog.New(accesslog.Config{
@@ -330,8 +337,12 @@ func (s *Server) Start(ctx context.Context) error {
 			RequestLogSize:   s.config.API.RequestLogSize,
 		})
 
-		// Create WebSocket hub
-		s.wsHub = apiserver.NewWebSocketHub()
+		// Create WebSocket hub with configurable max clients (default 100, for low-power devices use 5-10)
+		wsMaxClients := s.config.API.WebSocketMaxClients
+		if wsMaxClients <= 0 {
+			wsMaxClients = apiserver.MaxWebSocketClients
+		}
+		s.wsHub = apiserver.NewWebSocketHubWithMaxClients(wsMaxClients)
 		go s.wsHub.Run()
 
 		// Get the router and add WebSocket routes
@@ -605,6 +616,24 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	// Add request ID
 	ctx = util.WithRequestID(ctx, generateRequestID())
 
+	// Connection limiting for resource-constrained devices (OpenWrt)
+	maxConns := s.config.Server.HTTP.MaxConnections
+	if maxConns > 0 {
+		current := atomic.AddInt32(&s.httpActiveConns, 1)
+		defer atomic.AddInt32(&s.httpActiveConns, -1)
+
+		if current > int32(maxConns) {
+			logging.Warn("HTTP connection limit exceeded",
+				"current", current,
+				"max", maxConns,
+				"client", conn.RemoteAddr().String(),
+			)
+			conn.Write([]byte("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nConnection: close\r\n\r\n"))
+			conn.Close()
+			return
+		}
+	}
+
 	// Rate limiting
 	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
 	clientIP := tcpAddr.IP.String()
@@ -672,6 +701,23 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *proxy.SOCKS5Handler) {
 	// Add request ID
 	ctx = util.WithRequestID(ctx, generateRequestID())
+
+	// Connection limiting for resource-constrained devices (OpenWrt)
+	maxConns := s.config.Server.SOCKS5.MaxConnections
+	if maxConns > 0 {
+		current := atomic.AddInt32(&s.socks5ActiveConns, 1)
+		defer atomic.AddInt32(&s.socks5ActiveConns, -1)
+
+		if current > int32(maxConns) {
+			logging.Warn("SOCKS5 connection limit exceeded",
+				"current", current,
+				"max", maxConns,
+				"client", conn.RemoteAddr().String(),
+			)
+			conn.Close()
+			return
+		}
+	}
 
 	// Rate limiting
 	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)

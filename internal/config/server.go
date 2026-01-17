@@ -36,11 +36,12 @@ type ServerSettings struct {
 
 // ListenerConfig contains settings for a network listener.
 type ListenerConfig struct {
-	Listen       string     `yaml:"listen" json:"listen"`
-	TLS          *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
-	ReadTimeout  Duration   `yaml:"read_timeout" json:"read_timeout"`
-	WriteTimeout Duration   `yaml:"write_timeout" json:"write_timeout"`
-	IdleTimeout  Duration   `yaml:"idle_timeout" json:"idle_timeout"`
+	Listen         string     `yaml:"listen" json:"listen"`
+	TLS            *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+	ReadTimeout    Duration   `yaml:"read_timeout" json:"read_timeout"`
+	WriteTimeout   Duration   `yaml:"write_timeout" json:"write_timeout"`
+	IdleTimeout    Duration   `yaml:"idle_timeout" json:"idle_timeout"`
+	MaxConnections int        `yaml:"max_connections" json:"max_connections"` // 0 = unlimited
 }
 
 // TLSConfig contains TLS settings.
@@ -165,9 +166,10 @@ type AccessLogConfig struct {
 
 // MetricsConfig contains Prometheus metrics settings.
 type MetricsConfig struct {
-	Enabled bool   `yaml:"enabled" json:"enabled"`
-	Listen  string `yaml:"listen" json:"listen"`
-	Path    string `yaml:"path" json:"path"`
+	Enabled            bool     `yaml:"enabled" json:"enabled"`
+	Listen             string   `yaml:"listen" json:"listen"`
+	Path               string   `yaml:"path" json:"path"`
+	CollectionInterval Duration `yaml:"collection_interval" json:"collection_interval"` // Default: 15s, for low-power devices use 60s-300s
 }
 
 // WebUIConfig contains Web UI settings.
@@ -179,11 +181,12 @@ type WebUIConfig struct {
 
 // APIConfig contains REST API settings.
 type APIConfig struct {
-	Enabled          bool   `yaml:"enabled" json:"enabled"`
-	Listen           string `yaml:"listen" json:"listen"`
-	Token            string `yaml:"token" json:"token,omitempty"`
-	EnableRequestLog bool   `yaml:"enable_request_log" json:"enable_request_log"` // Enable request logging for Web UI
-	RequestLogSize   int    `yaml:"request_log_size" json:"request_log_size"`     // Max number of requests to keep (default 1000)
+	Enabled             bool   `yaml:"enabled" json:"enabled"`
+	Listen              string `yaml:"listen" json:"listen"`
+	Token               string `yaml:"token" json:"token,omitempty"`
+	EnableRequestLog    bool   `yaml:"enable_request_log" json:"enable_request_log"`       // Enable request logging for Web UI
+	RequestLogSize      int    `yaml:"request_log_size" json:"request_log_size"`           // Max number of requests to keep (default 1000)
+	WebSocketMaxClients int    `yaml:"websocket_max_clients" json:"websocket_max_clients"` // Default: 100, for low-power devices use 5-10
 }
 
 // HealthCheckConfig contains health check settings.
@@ -274,9 +277,10 @@ func DefaultServerConfig() ServerConfig {
 			Output:  "stdout",
 		},
 		Metrics: MetricsConfig{
-			Enabled: true,
-			Listen:  ":9090",
-			Path:    "/metrics",
+			Enabled:            true,
+			Listen:             ":9090",
+			Path:               "/metrics",
+			CollectionInterval: Duration(15 * time.Second),
 		},
 		API: APIConfig{
 			Enabled: true,

@@ -10,6 +10,7 @@ before:
     - cp web/client/src/index.html internal/api/client/static/index.html
 
 builds:
+  # Standard builds (desktop/server platforms)
   - id: bifrost-server
     main: ./cmd/server
     binary: bifrost-server
@@ -52,8 +53,84 @@ builds:
       - -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit={{.ShortCommit}}
       - -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime={{.Date}}
 
+  # OpenWrt/Embedded builds (MIPS)
+  - id: bifrost-server-openwrt-mips
+    main: ./cmd/server
+    binary: bifrost-server
+    env:
+      - CGO_ENABLED=0
+      - GOMIPS=softfloat
+    goos:
+      - linux
+    goarch:
+      - mips
+      - mipsle
+    ldflags:
+      - -s -w
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.Version={{.Version}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime={{.Date}}
+
+  - id: bifrost-client-openwrt-mips
+    main: ./cmd/client
+    binary: bifrost-client
+    env:
+      - CGO_ENABLED=0
+      - GOMIPS=softfloat
+    goos:
+      - linux
+    goarch:
+      - mips
+      - mipsle
+    ldflags:
+      - -s -w
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.Version={{.Version}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime={{.Date}}
+
+  # OpenWrt/Embedded builds (ARM v6/v7)
+  - id: bifrost-server-openwrt-arm
+    main: ./cmd/server
+    binary: bifrost-server
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm
+    goarm:
+      - "6"
+      - "7"
+    ldflags:
+      - -s -w
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.Version={{.Version}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime={{.Date}}
+
+  - id: bifrost-client-openwrt-arm
+    main: ./cmd/client
+    binary: bifrost-client
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - arm
+    goarm:
+      - "6"
+      - "7"
+    ldflags:
+      - -s -w
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.Version={{.Version}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit={{.ShortCommit}}
+      - -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime={{.Date}}
+
 archives:
+  # Standard platform archives
   - id: default
+    builds:
+      - bifrost-server
+      - bifrost-client
     name_template: >-
       {{ .ProjectName }}_
       {{- .Version }}_
@@ -66,6 +143,36 @@ archives:
       - README.md
       - LICENSE
       - configs/*.example.yaml
+
+  # OpenWrt MIPS archives
+  - id: openwrt-mips
+    builds:
+      - bifrost-server-openwrt-mips
+      - bifrost-client-openwrt-mips
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_openwrt_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE
+      - configs/server-config.openwrt.yaml
+      - openwrt/**/*
+
+  # OpenWrt ARM archives
+  - id: openwrt-arm
+    builds:
+      - bifrost-server-openwrt-arm
+      - bifrost-client-openwrt-arm
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_openwrt_
+      {{- .Arch }}{{ with .Arm }}v{{ . }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+      - configs/server-config.openwrt.yaml
+      - openwrt/**/*
 
 checksum:
   name_template: 'checksums.txt'

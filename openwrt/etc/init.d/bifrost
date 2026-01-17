@@ -1,0 +1,83 @@
+#!/bin/sh /etc/rc.common
+# Bifrost Proxy Server for OpenWrt
+# procd init script
+#
+# Installation:
+#   1. Copy bifrost-server binary to /usr/bin/
+#   2. Copy this script to /etc/init.d/bifrost
+#   3. Copy config to /etc/bifrost/config.yaml
+#   4. Enable: /etc/init.d/bifrost enable
+#   5. Start: /etc/init.d/bifrost start
+
+START=90
+STOP=10
+USE_PROCD=1
+
+PROG=/usr/bin/bifrost-server
+CONFIG=/etc/bifrost/config.yaml
+PIDFILE=/var/run/bifrost.pid
+
+validate_config() {
+    [ -f "$CONFIG" ] || {
+        echo "Error: Config file not found: $CONFIG"
+        return 1
+    }
+    [ -x "$PROG" ] || {
+        echo "Error: Binary not found or not executable: $PROG"
+        return 1
+    }
+    return 0
+}
+
+start_service() {
+    validate_config || return 1
+
+    procd_open_instance bifrost
+    procd_set_param command $PROG start -c $CONFIG
+
+    # Restart on crash: wait 5 seconds, max 5 retries per hour
+    procd_set_param respawn 3600 5 5
+
+    # Resource limits for embedded devices
+    procd_set_param limits nofile="4096 8192"
+
+    # Log to syslog
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+
+    # Lower priority to prevent starving other services
+    procd_set_param nice 10
+
+    # Store PID
+    procd_set_param pidfile $PIDFILE
+
+    procd_close_instance
+}
+
+stop_service() {
+    # Graceful shutdown via SIGTERM (procd handles this)
+    :
+}
+
+reload_service() {
+    # Send SIGHUP to reload configuration
+    local pid
+    pid=$(cat "$PIDFILE" 2>/dev/null) || pid=$(pgrep -f "$PROG")
+    [ -n "$pid" ] && kill -HUP $pid
+}
+
+service_triggers() {
+    procd_add_reload_trigger "bifrost"
+}
+
+status_service() {
+    local pid
+    pid=$(cat "$PIDFILE" 2>/dev/null)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "bifrost is running (PID: $pid)"
+        return 0
+    else
+        echo "bifrost is not running"
+        return 1
+    fi
+}

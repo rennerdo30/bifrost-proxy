@@ -8,6 +8,9 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 )
 
+// DefaultCollectionInterval is the default metrics collection interval.
+const DefaultCollectionInterval = 15 * time.Second
+
 // Collector collects and updates metrics periodically.
 type Collector struct {
 	metrics    *Metrics
@@ -17,14 +20,25 @@ type Collector struct {
 	done       chan struct{}
 	mu         sync.Mutex
 	running    bool
+	interval   time.Duration
 }
 
-// NewCollector creates a new metrics collector.
+// NewCollector creates a new metrics collector with the default collection interval.
 func NewCollector(metrics *Metrics, backends *backend.Manager) *Collector {
+	return NewCollectorWithInterval(metrics, backends, DefaultCollectionInterval)
+}
+
+// NewCollectorWithInterval creates a new metrics collector with a custom collection interval.
+// For low-power devices (OpenWrt routers), use 60s-300s to reduce CPU usage.
+func NewCollectorWithInterval(metrics *Metrics, backends *backend.Manager, interval time.Duration) *Collector {
+	if interval <= 0 {
+		interval = DefaultCollectionInterval
+	}
 	return &Collector{
 		metrics:   metrics,
 		backends:  backends,
 		startTime: time.Now(),
+		interval:  interval,
 	}
 }
 
@@ -39,7 +53,7 @@ func (c *Collector) Start() {
 
 	c.running = true
 	c.done = make(chan struct{})
-	c.ticker = time.NewTicker(15 * time.Second)
+	c.ticker = time.NewTicker(c.interval)
 
 	go c.collectLoop()
 }

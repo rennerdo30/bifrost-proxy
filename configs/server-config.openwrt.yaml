@@ -1,0 +1,77 @@
+# Bifrost Server - OpenWrt / Low-Resource Router Configuration
+# Optimized for 64-256MB RAM devices (MIPS, ARM, ARM64)
+#
+# This configuration disables resource-intensive features:
+# - Metrics collection disabled (saves 1-2MB RAM, 5-10% CPU)
+# - Web UI disabled (saves memory)
+# - Access logging disabled (saves I/O)
+# - Connection limits prevent OOM on constrained devices
+# - WebSocket clients limited to 5 (saves ~1MB per 100 connections)
+#
+# For minimal devices (32MB RAM), further reduce max_connections to 25-50
+
+server:
+  http:
+    listen: ":8080"
+    read_timeout: "60s"
+    write_timeout: "60s"
+    idle_timeout: "120s"
+    max_connections: 100  # Prevent OOM; use 25-50 for 32MB RAM devices
+  socks5:
+    listen: ":1080"
+    max_connections: 100  # Prevent OOM; use 25-50 for 32MB RAM devices
+  graceful_period: "10s"
+
+backends:
+  - name: direct
+    type: direct
+    enabled: true
+    priority: 10
+
+routes:
+  - domains: ["*"]
+    backend: direct
+    priority: 1
+
+auth:
+  mode: none
+
+rate_limit:
+  enabled: false  # Disable to save CPU
+
+access_log:
+  enabled: false  # Disable to save I/O and memory
+
+metrics:
+  enabled: false  # Disable for low-power devices
+  # If you need metrics, enable with longer collection interval:
+  # enabled: true
+  # listen: ":9090"
+  # path: "/metrics"
+  # collection_interval: "300s"  # 5 minutes instead of default 15s
+
+logging:
+  level: warn  # Reduce log volume; use "error" for minimal logging
+  format: text  # Text is slightly more efficient than JSON
+  output: stdout
+
+web_ui:
+  enabled: false  # Disable to save memory
+
+api:
+  enabled: true  # Required for basic management
+  listen: ":8082"
+  enable_request_log: false  # Disable to save memory
+  request_log_size: 50  # Reduced from default 1000
+  websocket_max_clients: 5  # Reduced from default 100
+
+health_check:
+  type: tcp
+  interval: "60s"  # Longer interval to save resources
+  timeout: "10s"
+
+cache:
+  enabled: false  # Disable to save memory
+
+auto_update:
+  enabled: false  # Disable for stability on embedded devices

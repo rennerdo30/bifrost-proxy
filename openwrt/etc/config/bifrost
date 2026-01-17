@@ -1,0 +1,29 @@
+# Bifrost UCI Configuration
+# This file is used by LuCI and UCI commands
+# Changes here are NOT automatically applied to the YAML config
+#
+# To apply changes:
+#   /etc/init.d/bifrost reload
+#
+# For full configuration, edit /etc/bifrost/config.yaml directly
+
+config bifrost 'main'
+    option enabled '1'
+    option config_file '/etc/bifrost/config.yaml'
+
+config server 'http'
+    option listen ':8080'
+    option max_connections '100'
+
+config server 'socks5'
+    option listen ':1080'
+    option max_connections '100'
+
+config logging 'log'
+    option level 'warn'
+    option format 'text'
+
+config api 'api'
+    option enabled '1'
+    option listen ':8082'
+    option websocket_max_clients '5'

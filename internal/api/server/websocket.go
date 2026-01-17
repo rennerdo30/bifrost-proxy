@@ -25,14 +25,23 @@ type WebSocketHub struct {
 	maxClients int
 }
 
-// NewWebSocketHub creates a new WebSocket hub.
+// NewWebSocketHub creates a new WebSocket hub with default max clients.
 func NewWebSocketHub() *WebSocketHub {
+	return NewWebSocketHubWithMaxClients(MaxWebSocketClients)
+}
+
+// NewWebSocketHubWithMaxClients creates a new WebSocket hub with a custom max clients limit.
+// For low-power devices (OpenWrt routers), use 5-10 to reduce memory usage.
+func NewWebSocketHubWithMaxClients(maxClients int) *WebSocketHub {
+	if maxClients <= 0 {
+		maxClients = MaxWebSocketClients
+	}
 	return &WebSocketHub{
 		clients:    make(map[*websocket.Conn]bool),
 		broadcast:  make(chan []byte, 256),
 		register:   make(chan *websocket.Conn),
 		unregister: make(chan *websocket.Conn),
-		maxClients: MaxWebSocketClients,
+		maxClients: maxClients,
 	}
 }
 
