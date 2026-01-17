@@ -359,3 +359,12 @@ func (r *windowsRouteManager) restoreDNS() error {
 	r.originalDNS = nil
 	return nil
 }
+
+// splitHostPort splits a host:port string.
+func splitHostPort(addr string) (host, port string, err error) {
+	lastColon := strings.LastIndex(addr, ":")
+	if lastColon == -1 {
+		return addr, "", nil
+	}
+	return addr[:lastColon], addr[lastColon+1:], nil
+}

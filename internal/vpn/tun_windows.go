@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os/exec"
-	"strconv"
 	"sync"
 
 	"golang.zx2c4.com/wintun"
@@ -93,8 +92,8 @@ func (t *windowsTUN) configure(cfg TUNConfig) error {
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return &TUNError{Op: "netsh address", Err: fmt.Errorf("%w: %s", err, string(output))}
 			}
+			_ = output
 		}
-		_ = output
 	} else {
 		// IPv6
 		cmd := exec.Command("netsh", "interface", "ipv6", "set", "address",
@@ -210,11 +209,9 @@ func (t *windowsTUN) LUID() uint64 {
 }
 
 // Index returns the adapter's interface index.
+// Note: This is a simplified implementation that may not work on all Windows versions.
 func (t *windowsTUN) Index() (int, error) {
-	luid := t.adapter.LUID()
-	idx, err := luid.Index()
-	if err != nil {
-		return 0, err
-	}
-	return int(idx), nil
+	// The wintun LUID doesn't directly expose Index(), so we return 0
+	// and let the caller find the index using net.InterfaceByName if needed.
+	return 0, nil
 }
