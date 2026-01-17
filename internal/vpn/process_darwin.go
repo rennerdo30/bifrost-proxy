@@ -2,26 +2,6 @@
 
 package vpn
 
-/*
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/sysctl.h>
-#include <sys/proc_info.h>
-#include <libproc.h>
-
-// Get process name by PID
-int get_proc_name(int pid, char *buf, int bufsize) {
-    return proc_name(pid, buf, bufsize);
-}
-
-// Get process path by PID
-int get_proc_path(int pid, char *buf, int bufsize) {
-    return proc_pidpath(pid, buf, bufsize);
-}
-*/
-import "C"
-
 import (
 	"bufio"
 	"bytes"
@@ -30,7 +10,6 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
-	"unsafe"
 )
 
 // darwinProcessLookup implements ProcessLookup for macOS.
@@ -118,7 +97,7 @@ func (d *darwinProcessLookup) parseLsofOutput(output []byte, local, remote netip
 					Name: currentName,
 				}
 
-				// Get full path using libproc
+				// Get full path using ps command
 				info.Path = d.getProcessPath(currentPID)
 
 				return info, nil
@@ -187,22 +166,13 @@ func (d *darwinProcessLookup) matchAddrPort(s string, ap netip.AddrPort) bool {
 	return addr == ap.Addr() && uint16(port) == ap.Port()
 }
 
-// getProcessPath gets the executable path for a PID using libproc.
+// getProcessPath gets the executable path for a PID using ps.
 func (d *darwinProcessLookup) getProcessPath(pid int) string {
-	buf := make([]byte, 4096)
-	n := C.get_proc_path(C.int(pid), (*C.char)(unsafe.Pointer(&buf[0])), C.int(len(buf)))
-	if n <= 0 {
+	// Use ps to get the command path
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=")
+	output, err := cmd.Output()
+	if err != nil {
 		return ""
 	}
-	return string(buf[:n])
-}
-
-// getProcessName gets the process name for a PID using libproc.
-func (d *darwinProcessLookup) getProcessName(pid int) string {
-	buf := make([]byte, 256)
-	n := C.get_proc_name(C.int(pid), (*C.char)(unsafe.Pointer(&buf[0])), C.int(len(buf)))
-	if n <= 0 {
-		return ""
-	}
-	return string(buf[:n])
+	return strings.TrimSpace(string(output))
 }
