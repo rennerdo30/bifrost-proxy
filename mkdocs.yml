@@ -4,34 +4,60 @@ site_url: https://rennerdo30.github.io/bifrost-proxy/
 repo_url: https://github.com/rennerdo30/bifrost-proxy
 repo_name: rennerdo30/bifrost-proxy
 
+# Theme Configuration - Luminous Void
 theme:
   name: material
+  custom_dir: overrides
+  language: en
+
+  # Color palette with toggle (dark mode default, matching renner.dev)
   palette:
     - scheme: slate
-      primary: indigo
-      accent: cyan
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
     - scheme: default
-      primary: indigo
-      accent: cyan
+      primary: custom
+      accent: custom
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
+
+  # Font configuration
+  font:
+    text: Inter
+    code: Fira Code
+
+  # Features
   features:
     - navigation.instant
+    - navigation.instant.prefetch
     - navigation.tracking
     - navigation.tabs
     - navigation.sections
     - navigation.expand
+    - navigation.path
     - navigation.top
+    - navigation.footer
+    - toc.follow
     - search.suggest
     - search.highlight
+    - search.share
     - content.code.copy
+    - content.code.annotate
     - content.tabs.link
+    - content.tooltips
+    - header.autohide
+
+  # Icons
   icon:
+    logo: material/rocket-launch
     repo: fontawesome/brands/github
+
+  # Favicon
+  favicon: assets/images/favicon.png
 
 nav:
   - Home: index.md
@@ -40,7 +66,12 @@ nav:
       - Overview: configuration.md
       - Backends: backends.md
       - Authentication: authentication.md
+      - VPN Mode: vpn-mode.md
+      - Mesh Networking: mesh-networking.md
       - HTTP Cache: cache.md
+  - Clients:
+      - Desktop Client: desktop-client.md
+      - Mobile Client: mobile-client.md
   - Deployment: deployment.md
   - Operations:
       - CLI Reference: cli-reference.md
@@ -78,6 +109,10 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+
+# Extra CSS and JavaScript
+extra_css:
+  - assets/stylesheets/extra.css
 
 extra:
   social:
