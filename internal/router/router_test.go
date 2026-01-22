@@ -821,12 +821,12 @@ func TestClientRouter_LoadRoutes_EmptyDomains(t *testing.T) {
 			Action:  "direct",
 		},
 	}
-	require.NoError(t, r.LoadRoutes(routes))
+	err := r.LoadRoutes(routes)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must have at least one domain")
 
 	allRoutes := r.Routes()
-	assert.Len(t, allRoutes, 1)
-	// Name remains "empty-domains" since no domains to default from
-	assert.Equal(t, "empty-domains", allRoutes[0].Name)
+	assert.Empty(t, allRoutes)
 }
 
 func TestRouter_AddRoute_WithLoadBalancer(t *testing.T) {

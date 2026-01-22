@@ -971,6 +971,10 @@ func TestProcess_handleManagement_TimeoutRetry(t *testing.T) {
 
 	// Wait for timeout then send data
 	go func() {
+		// Read initial command to unblock client.Write
+		buf := make([]byte, 1024)
+		server.Read(buf)
+
 		time.Sleep(1500 * time.Millisecond) // Wait for timeout cycle
 		server.Write([]byte(">STATE:123,CONNECTED,SUCCESS,10.8.0.2,1.2.3.4\n"))
 		time.Sleep(50 * time.Millisecond)
