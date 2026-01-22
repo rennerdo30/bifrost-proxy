@@ -327,6 +327,46 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start metrics collector
 	s.metricsCollector.Start()
 
+	// Initialize API if enabled (must be done before listeners start to avoid race conditions)
+	if s.config.API.Enabled {
+		// Extract ports from listen addresses
+		httpPort := extractPort(s.config.Server.HTTP.Listen, "8080")
+		socks5Port := extractPort(s.config.Server.SOCKS5.Listen, "1080")
+
+		// Create API
+		s.api = apiserver.New(apiserver.Config{
+			Backends:         s.backends,
+			HealthManager:    s.healthManager,
+			CacheManager:     s.cacheManager,
+			Token:            s.config.API.Token,
+			GetConfig:        s.GetSanitizedConfig,
+			GetFullConfig:    s.GetFullConfig,
+			ReloadConfig:     s.ReloadConfig,
+			SaveConfig:       s.SaveConfig,
+			ConfigPath:       s.configPath,
+			ProxyPort:        httpPort,
+			SOCKS5Port:       socks5Port,
+			EnableRequestLog: s.config.API.EnableRequestLog,
+			RequestLogSize:   s.config.API.RequestLogSize,
+		})
+
+		// Create WebSocket hub with configurable max clients (default 100, for low-power devices use 5-10)
+		wsMaxClients := s.config.API.WebSocketMaxClients
+		if wsMaxClients <= 0 {
+			wsMaxClients = apiserver.MaxWebSocketClients
+		}
+		s.wsHub = apiserver.NewWebSocketHubWithMaxClients(wsMaxClients)
+		go s.wsHub.Run()
+
+		// Get the router and add WebSocket routes
+		handler := s.api.RouterWithWebSocket(s.wsHub)
+
+		s.apiServer = &http.Server{
+			Addr:    s.config.API.Listen,
+			Handler: handler,
+		}
+	}
+
 	// Start HTTP proxy listener
 	if s.config.Server.HTTP.Listen != "" {
 		listener, err := net.Listen("tcp", s.config.Server.HTTP.Listen)
@@ -379,43 +419,6 @@ func (s *Server) Start(ctx context.Context) error {
 
 	// Start API/Web UI server
 	if s.config.API.Enabled {
-		// Extract ports from listen addresses
-		httpPort := extractPort(s.config.Server.HTTP.Listen, "8080")
-		socks5Port := extractPort(s.config.Server.SOCKS5.Listen, "1080")
-
-		// Create API
-		s.api = apiserver.New(apiserver.Config{
-			Backends:         s.backends,
-			HealthManager:    s.healthManager,
-			CacheManager:     s.cacheManager,
-			Token:            s.config.API.Token,
-			GetConfig:        s.GetSanitizedConfig,
-			GetFullConfig:    s.GetFullConfig,
-			ReloadConfig:     s.ReloadConfig,
-			SaveConfig:       s.SaveConfig,
-			ConfigPath:       s.configPath,
-			ProxyPort:        httpPort,
-			SOCKS5Port:       socks5Port,
-			EnableRequestLog: s.config.API.EnableRequestLog,
-			RequestLogSize:   s.config.API.RequestLogSize,
-		})
-
-		// Create WebSocket hub with configurable max clients (default 100, for low-power devices use 5-10)
-		wsMaxClients := s.config.API.WebSocketMaxClients
-		if wsMaxClients <= 0 {
-			wsMaxClients = apiserver.MaxWebSocketClients
-		}
-		s.wsHub = apiserver.NewWebSocketHubWithMaxClients(wsMaxClients)
-		go s.wsHub.Run()
-
-		// Get the router and add WebSocket routes
-		handler := s.api.RouterWithWebSocket(s.wsHub)
-
-		s.apiServer = &http.Server{
-			Addr:    s.config.API.Listen,
-			Handler: handler,
-		}
-
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
