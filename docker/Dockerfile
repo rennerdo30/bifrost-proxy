@@ -59,11 +59,11 @@ COPY --chown=bifrost:bifrost configs/server-config.example.yaml /app/data/config
 USER bifrost
 
 # Expose ports
-EXPOSE 8080 1080 9090 8081
+EXPOSE 7080 7180 7090 7081
 
 # Health check (use 127.0.0.1 to avoid IPv6 resolution issues)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:9090/metrics || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:7090/metrics || exit 1
 
 # Default command - use config from data directory
 ENTRYPOINT ["/app/bifrost-server"]

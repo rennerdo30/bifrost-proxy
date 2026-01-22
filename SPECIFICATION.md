@@ -107,10 +107,10 @@ Local proxy that decides what traffic goes to the server vs direct. Includes sys
 ```yaml
 # Server configuration
 server:
-  http_port: 8080           # HTTP/HTTPS proxy port
-  socks5_port: 1080         # SOCKS5 proxy port
+  http_port: 7080           # HTTP/HTTPS proxy port
+  socks5_port: 7180         # SOCKS5 proxy port
   bind_address: "0.0.0.0"   # Bind to all interfaces (for clients)
-  web_ui_port: 8081         # Web UI port
+  web_ui_port: 7081         # Web UI port
   log_level: "info"         # debug, info, warn, error
 
   # Authentication for clients (see Section 12 for details)
@@ -294,10 +294,10 @@ rules:
 ```yaml
 # Client configuration
 client:
-  http_port: 3128           # Local HTTP/HTTPS proxy port
-  socks5_port: 1081         # Local SOCKS5 proxy port
+  http_port: 7380           # Local HTTP/HTTPS proxy port
+  socks5_port: 7381         # Local SOCKS5 proxy port
   bind_address: "127.0.0.1" # Only local connections
-  web_ui_port: 3129         # Web UI port
+  web_ui_port: 7382         # Web UI port
   log_level: "info"
 
 # System tray configuration
@@ -698,7 +698,7 @@ FROM alpine:latest
 RUN apk add --no-cache iptables openvpn
 COPY --from=builder /app/simple-proxy-server /usr/local/bin/
 COPY --from=builder /app/configs/server-config.yaml /etc/simple-proxy/config.yaml
-EXPOSE 8080 1080 8081
+EXPOSE 7080 7180 7081
 ENTRYPOINT ["simple-proxy-server", "start", "--config", "/etc/simple-proxy/config.yaml"]
 ```
 
@@ -716,9 +716,9 @@ services:
     sysctls:
       - net.ipv4.ip_forward=1
     ports:
-      - "8080:7080"   # HTTP/HTTPS proxy
-      - "1080:7180"   # SOCKS5 proxy
-      - "8081:7081"   # Web UI
+      - "7080:7080"   # HTTP/HTTPS proxy
+      - "7180:7180"   # SOCKS5 proxy
+      - "7081:7081"   # Web UI
     volumes:
       - ./config:/etc/simple-proxy
       - ./wireguard:/etc/wireguard:ro  # WireGuard configs
@@ -1077,7 +1077,7 @@ simple-proxy-server user groups --username john --remove streaming
 ```yaml
 # client-config.yaml
 client:
-  http_port: 3128
+  http_port: 7380
 rules:
   - name: "Claude via server"
     match:
