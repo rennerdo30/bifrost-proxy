@@ -8,6 +8,9 @@
 
 A Go-based proxy system with client-server architecture providing HTTP, HTTPS, and SOCKS5 proxy capabilities with intelligent routing and traffic debugging.
 
+> [!IMPORTANT]
+> This project is designed for production use. All components follow strict security practices, including structured logging, encrypted tunnels, and modular authentication.
+
 ### Key Features
 - HTTP, HTTPS (CONNECT), and SOCKS5 proxy protocols
 - VPN tunnel integration (WireGuard and OpenVPN)
@@ -35,69 +38,62 @@ A Go-based proxy system with client-server architecture providing HTTP, HTTPS, a
 
 Central proxy server that handles the actual routing through different backends.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       PROXY SERVER                              │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │ HTTP Proxy  │  │HTTPS Tunnel │  │ SOCKS5 Proxy│              │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │
-│         └────────────────┼────────────────┘                     │
-│                          ▼                                      │
-│              ┌───────────────────────┐                          │
-│              │    Router/Matcher     │                          │
-│              │  (Domain → Backend)   │                          │
-│              └───────────┬───────────┘                          │
-│                          ▼                                      │
-│         ┌────────────────┼────────────────┐                     │
-│         ▼                ▼                ▼                     │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Direct    │  │  WireGuard  │  │  Forward    │              │
-│  │  Connection │  │   Tunnel    │  │   Proxy     │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │  Config     │  │   Web UI    │  │    CLI      │              │
-│  │  Manager    │  │  (REST API) │  │             │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Ingress Layers"
+        H[HTTP Proxy]
+        HT[HTTPS Tunnel]
+        S[SOCKS5 Proxy]
+    end
+
+    subgraph "Core Logic"
+        H & HT & S --> Router[Router / Matcher]
+        Router -->|Domain Match| Backends
+    end
+
+    subgraph "Egress Backends"
+        Backends{Backends}
+        Backends --> D[Direct Connection]
+        Backends --> WG[WireGuard Tunnel]
+        Backends --> F[Forward Proxy]
+    end
+
+    subgraph "Management"
+        CM[Config Manager]
+        WUI[Web UI / REST API]
+        CLI[CLI Control]
+    end
 ```
 
 ### 2.2 Client (`simple-proxy-client`)
 
 Local proxy that decides what traffic goes to the server vs direct. Includes system tray integration for easy access on all platforms.
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                       PROXY CLIENT                              │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │ HTTP Proxy  │  │HTTPS Tunnel │  │ SOCKS5 Proxy│              │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘              │
-│         └────────────────┼────────────────┘                     │
-│                          ▼                                      │
-│              ┌───────────────────────┐                          │
-│              │   Traffic Debugger    │                          │
-│              │ (Logging & Inspection)│                          │
-│              └───────────┬───────────┘                          │
-│                          ▼                                      │
-│              ┌───────────────────────┐                          │
-│              │    Router/Matcher     │                          │
-│              │(Domain → Server/Direct)│                         │
-│              └───────────┬───────────┘                          │
-│                          ▼                                      │
-│              ┌───────────┴───────────┐                          │
-│              ▼                       ▼                          │
-│       ┌─────────────┐        ┌─────────────┐                    │
-│       │   Direct    │        │   Server    │                    │
-│       │  Connection │        │  Connection │                    │
-│       └─────────────┘        └─────────────┘                    │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐            │
-│  │  Config  │ │  Web UI  │ │   CLI    │ │ Tray Icon│            │
-│  │  Manager │ │(Debug UI)│ │          │ │          │            │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘            │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Local Listeners"
+        H[HTTP Proxy]
+        HT[HTTPS Tunnel]
+        S[SOCKS5 Proxy]
+    end
+
+    subgraph "Traffic Handling"
+        H & HT & S --> Debug[Traffic Debugger]
+        Debug --> Router[Router / Matcher]
+    end
+
+    subgraph "Routing Decisions"
+        Router --> Decisions{Target?}
+        Decisions -->|Bypass| Direct[Direct Connection]
+        Decisions -->|Tunnel| Server[Bifrost Server]
+    end
+
+    subgraph "User Interface"
+        CM[Config Manager]
+        WUI[Web UI]
+        CLI[CLI]
+        Tray[Tray Icon]
+    end
 ```
 
 ## 3. Configuration
@@ -143,6 +139,9 @@ network:
     max_connections: 10000           # Max total connections
     max_connections_per_ip: 100      # Max connections per client IP
     max_connections_per_backend: 50  # Max connections per backend
+
+> [!TIP]
+> Use environment variables (e.g., `${OAUTH_CLIENT_SECRET}`) for sensitive credentials to avoid committing them to version control.
 
 # Rate limiting
 rate_limiting:
@@ -623,14 +622,26 @@ Matching is case-insensitive.
 
 ### 6.4 Connection Flow
 
-**Client to Direct:**
-```
-Browser → Client → Target
-```
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant C as Bifrost Client
+    participant S as Bifrost Server
+    participant T as Target Target
 
-**Client to Server to Backend:**
-```
-Browser → Client → Server → Backend (WG/Proxy) → Target
+    Note over B, T: Direct Connection
+    B->>C: Request
+    C->>T: Connect (Direct)
+    T-->>C: Response
+    C-->>B: Response
+
+    Note over B, T: Proxy Connection
+    B->>C: Request
+    C->>S: Encrypted Tunnel
+    S->>T: Connect (Backend)
+    T-->>S: Response
+    S-->>C: Response
+    C-->>B: Response
 ```
 
 ## 7. Security Considerations
@@ -639,7 +650,9 @@ Browser → Client → Server → Backend (WG/Proxy) → Target
 - Client binds to localhost by default
 - WireGuard .conf files contain private keys - protect file permissions
 - MITM mode requires careful handling of generated certificates
-- Auth credentials in config files should be protected
+
+> [!CAUTION]
+> WireGuard and OpenVPN configuration files contain sensitive private keys. Ensure file permissions are restricted (e.g., `chmod 600`) and they are excluded from backups where appropriate.
 
 ## 8. Platform Support
 
@@ -787,12 +800,10 @@ backends:
         expected_status: 200
 ```
 
-### 11.3 Passive Health Checks
-
-In addition to active probing, the server monitors actual traffic:
-- Tracks connection failures and timeouts
-- Automatically marks backend unhealthy after consecutive failures
 - Faster response to real-world issues
+
+> [!NOTE]
+> Passive health checks supplement active probing. If a backend fails multiple consecutive real requests, it is temporarily marked unhealthy even if the next active probe hasn't triggered yet.
 
 ### 11.4 Load Balancing (Multiple Backends per Rule)
 
@@ -838,7 +849,7 @@ The server exposes Prometheus-compatible metrics at `/metrics`:
 metrics:
   enabled: true
   endpoint: "/metrics"
-  port: 9090                    # Separate port for metrics (optional)
+  port: 7090                    # Separate port for metrics (optional)
 ```
 
 ### 12.2 Available Metrics
@@ -890,7 +901,14 @@ GET /health/live     - Liveness check (process running)
 
 ### 13.1 Graceful Shutdown
 
-When receiving SIGTERM or SIGINT:
+```mermaid
+stateDiagram-v2
+    [*] --> Running
+    Running --> Stopping : SIGTERM / SIGINT
+    Stopping --> Draining : Close Sockets
+    Draining --> Cleanup : Drain Timeout / Finished
+    Cleanup --> [*] : Terminate
+```
 
 1. **Stop accepting new connections** - Close listening sockets
 2. **Drain existing connections** - Allow in-flight requests to complete
@@ -1182,7 +1200,7 @@ graph LR
 - Choose appropriate diagram types for the content
 - Test locally with `make docs-serve` before committing
 
-**Note**: The ASCII diagrams in this specification document (sections 2.1, 2.2) are converted to Mermaid diagrams in the live documentation for better rendering and interactivity.
+**Note**: The ASCII diagrams in previous versions of this specification have been converted to Mermaid diagrams for better rendering and interactivity across all platforms.
 
 ### 16.3 Documentation Workflow
 
@@ -1226,9 +1244,20 @@ The documentation is organized into the following sections:
   - Contributing
   - Changelog
 
-## 17. Authentication Plugin System
-
 The authentication system has been refactored to use a plugin architecture, allowing for modular authentication providers that can be combined and extended.
+
+```mermaid
+graph LR
+    C[Client Request] --> PM[Plugin Manager]
+    subgraph "Auth Plugins"
+        PM --> P1[None]
+        PM --> P2[Native]
+        PM --> P3[LDAP]
+        PM --> P4[OAuth]
+        PM --> P5[...]
+    end
+    P1 & P2 & P3 & P4 & P5 --> Session[Session Store]
+```
 
 ### 17.1 Plugin Interface
 
@@ -1308,22 +1337,13 @@ The client supports a TUN-based VPN mode that captures all system traffic and ro
 
 ### 18.1 Overview
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        VPN MODE                                  │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │  TUN Device │──▶│ Split Rules │──▶│   Router    │             │
-│  │  (bifrost0) │  │             │  │             │             │
-│  └─────────────┘  └─────────────┘  └──────┬──────┘             │
-│                                           │                     │
-│                    ┌──────────────────────┼──────────────────┐  │
-│                    ▼                      ▼                  ▼  │
-│            ┌─────────────┐        ┌─────────────┐    ┌──────────┐
-│            │   Direct    │        │   Server    │    │  Block   │
-│            │  Connection │        │  Connection │    │          │
-│            └─────────────┘        └─────────────┘    └──────────┘
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph LR
+    TUN[TUN Device<br/>bifrost0] --> Rules[Split Rules]
+    Rules --> Router[Router]
+    Router -->|Route| Direct[Direct Connection]
+    Router -->|Route| Server[Server Connection]
+    Router -->|Route| Block[Block / Drop]
 ```
 
 ### 18.2 Configuration
@@ -1394,20 +1414,14 @@ A native desktop client built with [Wails](https://wails.io/) providing a GUI fo
 
 ### 19.2 Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    DESKTOP CLIENT (Wails)                        │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │  Frontend   │  │   Backend   │  │    Tray     │              │
-│  │  (React)    │◀─▶│   (Go)     │◀─▶│  (Native)   │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-│         │                │                                       │
-│         ▼                ▼                                       │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │           Bifrost Client Core (Go library)                  ││
-│  └─────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Wails UI System"
+        FE[Frontend<br/>React] <--> BE[Backend<br/>Go Wrapper]
+        Tray[Native Tray<br/>Go] <--> BE
+    end
+
+    BE <--> Core[Bifrost Client Core<br/>Go Library]
 ```
 
 ### 19.3 Building
@@ -1448,21 +1462,14 @@ A cross-platform mobile client built with React Native and Expo.
 
 ### 20.2 Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    MOBILE CLIENT (React Native)                  │
-├─────────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Screens   │  │   Hooks     │  │   API       │              │
-│  │  (React)    │──▶│  (Query)    │──▶│  Service    │              │
-│  └─────────────┘  └─────────────┘  └──────┬──────┘              │
-│                                           │                      │
-│                                           ▼                      │
-│                           ┌─────────────────────────────────────┐│
-│                           │  Bifrost Client REST API            ││
-│                           │  http://localhost:7383/api/v1       ││
-│                           └─────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph "Application"
+        Screens[React Native Screens] --> Hooks[React Query Hooks]
+        Hooks --> API[API Proxy Service]
+    end
+
+    API -->|REST| Bifrost[Bifrost Client API]
 ```
 
 ### 20.3 Screens

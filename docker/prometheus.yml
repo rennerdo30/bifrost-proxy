@@ -9,8 +9,8 @@ scrape_configs:
 
   - job_name: 'bifrost-server'
     static_configs:
-      - targets: ['bifrost-server:9090']
+      - targets: ['bifrost-server:7090']
 
   - job_name: 'bifrost-client'
     static_configs:
-      - targets: ['bifrost-client:3129']
+      - targets: ['bifrost-client:7383']

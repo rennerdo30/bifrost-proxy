@@ -89,8 +89,8 @@ The generated configuration includes:
 	initCmd.Flags().StringVarP(&initOutput, "output", "o", "client-config.yaml", "output file path")
 	initCmd.Flags().StringVarP(&initServer, "server", "s", "", "server address (host:port) - required")
 	initCmd.Flags().StringVarP(&initProtocol, "protocol", "p", "http", "server protocol (http or socks5)")
-	initCmd.Flags().StringVar(&initHTTPListen, "http-listen", "127.0.0.1:3128", "HTTP proxy listen address")
-	initCmd.Flags().StringVar(&initSOCKS5Listen, "socks5-listen", "127.0.0.1:1081", "SOCKS5 proxy listen address")
+	initCmd.Flags().StringVar(&initHTTPListen, "http-listen", "127.0.0.1:7380", "HTTP proxy listen address")
+	initCmd.Flags().StringVar(&initSOCKS5Listen, "socks5-listen", "127.0.0.1:7381", "SOCKS5 proxy listen address")
 	initCmd.Flags().BoolVarP(&initForce, "force", "f", false, "overwrite existing file")
 
 	configCmd.AddCommand(initCmd)
