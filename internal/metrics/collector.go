@@ -13,14 +13,14 @@ const DefaultCollectionInterval = 15 * time.Second
 
 // Collector collects and updates metrics periodically.
 type Collector struct {
-	metrics    *Metrics
-	backends   *backend.Manager
-	startTime  time.Time
-	ticker     *time.Ticker
-	done       chan struct{}
-	mu         sync.Mutex
-	running    bool
-	interval   time.Duration
+	metrics   *Metrics
+	backends  *backend.Manager
+	startTime time.Time
+	ticker    *time.Ticker
+	done      chan struct{}
+	mu        sync.Mutex
+	running   bool
+	interval  time.Duration
 }
 
 // NewCollector creates a new metrics collector with the default collection interval.
@@ -55,7 +55,7 @@ func (c *Collector) Start() {
 	c.done = make(chan struct{})
 	c.ticker = time.NewTicker(c.interval)
 
-	go c.collectLoop()
+	go c.collectLoop(c.ticker, c.done)
 }
 
 // Stop stops the metrics collector.
@@ -73,15 +73,15 @@ func (c *Collector) Stop() {
 }
 
 // collectLoop periodically collects metrics.
-func (c *Collector) collectLoop() {
+func (c *Collector) collectLoop(ticker *time.Ticker, done chan struct{}) {
 	// Initial collection
 	c.collect()
 
 	for {
 		select {
-		case <-c.done:
+		case <-done:
 			return
-		case <-c.ticker.C:
+		case <-ticker.C:
 			c.collect()
 		}
 	}

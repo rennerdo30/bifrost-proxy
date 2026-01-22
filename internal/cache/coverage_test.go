@@ -1670,6 +1670,8 @@ func TestInterceptor_ServeRangeRequest_InvalidRange(t *testing.T) {
 	defer serverConn.Close()
 
 	// This should fall back to serving full content
+	go io.Copy(io.Discard, clientConn)
+
 	handled, err := interceptor.HandleRequest(ctx, serverConn, req)
 	serverConn.Close()
 	assert.NoError(t, err)
@@ -1712,6 +1714,9 @@ func TestInterceptor_ServeRangeRequest_MultipleRanges(t *testing.T) {
 	clientConn, serverConn := createPipeConn(t)
 	defer clientConn.Close()
 	defer serverConn.Close()
+
+	// Drain response
+	go io.Copy(io.Discard, clientConn)
 
 	handled, err := interceptor.HandleRequest(ctx, serverConn, req)
 	serverConn.Close()

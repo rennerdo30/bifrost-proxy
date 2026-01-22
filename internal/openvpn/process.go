@@ -27,16 +27,17 @@ const (
 
 // Process manages an OpenVPN process.
 type Process struct {
-	config     *Config
-	cmd        *exec.Cmd
-	state      State
-	localIP    string
-	remoteIP   string
-	mgmtConn   net.Conn
-	stopCh     chan struct{}
-	stateCh    chan State
-	mu         sync.RWMutex
-	logger     *slog.Logger
+	config   *Config
+	cmd      *exec.Cmd
+	state    State
+	localIP  string
+	remoteIP string
+	mgmtConn net.Conn
+	stopCh   chan struct{}
+	waitDone chan struct{}
+	stateCh  chan State
+	mu       sync.RWMutex
+	logger   *slog.Logger
 }
 
 // ProcessConfig holds configuration for the OpenVPN process.
@@ -99,9 +100,12 @@ func (p *Process) Start(ctx context.Context) error {
 	// Connect to management interface
 	go p.monitorManagement(ctx)
 
+	p.waitDone = make(chan struct{})
+
 	// Wait for process in background
 	go func() {
 		p.cmd.Wait()
+		close(p.waitDone)
 		p.mu.Lock()
 		p.setState(StateDisconnected)
 		p.mu.Unlock()
@@ -129,14 +133,8 @@ func (p *Process) Stop(ctx context.Context) error {
 	}
 
 	// Give it a moment to exit gracefully
-	done := make(chan struct{})
-	go func() {
-		p.cmd.Wait()
-		close(done)
-	}()
-
 	select {
-	case <-done:
+	case <-p.waitDone:
 		// Exited gracefully
 	case <-time.After(5 * time.Second):
 		// Force kill

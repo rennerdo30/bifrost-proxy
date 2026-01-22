@@ -2570,7 +2570,7 @@ func TestAPI_HandleVPNStatus_WithMockVPNManager(t *testing.T) {
 	// Note: This test uses nil VPNManager since mockVPNManager type is not compatible
 	// with *vpn.Manager. This tests the "VPN not configured" path.
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2585,7 +2585,7 @@ func TestAPI_HandleVPNStatus_WithMockVPNManager(t *testing.T) {
 func TestAPI_HandleVPNEnable_WithMockVPNManager(t *testing.T) {
 
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2593,13 +2593,20 @@ func TestAPI_HandleVPNEnable_WithMockVPNManager(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "enabled", resp["status"])
 }
 
 func TestAPI_HandleVPNEnable_WithMockVPNManager_Error(t *testing.T) {
 
+	mock := newMockVPNManager()
+	mock.startErr = errors.New("start failed")
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: mock,
 	})
 	handler := api.Handler()
 
@@ -2607,12 +2614,13 @@ func TestAPI_HandleVPNEnable_WithMockVPNManager_Error(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "start failed")
 }
 
 func TestAPI_HandleVPNDisable_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2620,13 +2628,20 @@ func TestAPI_HandleVPNDisable_WithMockVPNManager(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "disabled", resp["status"])
 }
 
 func TestAPI_HandleVPNDisable_WithMockVPNManager_Error(t *testing.T) {
 
+	mock := newMockVPNManager()
+	mock.stopErr = errors.New("stop failed")
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: mock,
 	})
 	handler := api.Handler()
 
@@ -2634,13 +2649,14 @@ func TestAPI_HandleVPNDisable_WithMockVPNManager_Error(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.Contains(t, w.Body.String(), "stop failed")
 }
 
 func TestAPI_HandleVPNConnections_WithMockVPNManager(t *testing.T) {
 	// Note: Using nil VPNManager since mockVPNManager is not compatible with *vpn.Manager
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2655,7 +2671,7 @@ func TestAPI_HandleVPNConnections_WithMockVPNManager(t *testing.T) {
 func TestAPI_HandleVPNSplitRules_WithMockVPNManager(t *testing.T) {
 	// Note: Using nil VPNManager since mockVPNManager is not compatible with *vpn.Manager
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2669,7 +2685,7 @@ func TestAPI_HandleVPNSplitRules_WithMockVPNManager(t *testing.T) {
 func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager(t *testing.T) {
 
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2679,13 +2695,20 @@ func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "added", resp["status"])
 }
 
 func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager_Error(t *testing.T) {
 
+	mock := newMockVPNManager()
+	mock.addAppErr = errors.New("add app failed")
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: mock,
 	})
 	handler := api.Handler()
 
@@ -2701,7 +2724,7 @@ func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager_Error(t *testing.T) {
 func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager(t *testing.T) {
 
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2709,13 +2732,20 @@ func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "removed", resp["status"])
 }
 
 func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager_Error(t *testing.T) {
 
+	mock := newMockVPNManager()
+	mock.removeAppErr = errors.New("remove app failed")
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: mock,
 	})
 	handler := api.Handler()
 
@@ -2729,7 +2759,7 @@ func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager_Error(t *testing.T) {
 func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager(t *testing.T) {
 
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2739,13 +2769,20 @@ func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "added", resp["status"])
 }
 
 func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager_Error(t *testing.T) {
 
+	mock := newMockVPNManager()
+	mock.addDomainErr = errors.New("add domain failed")
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: mock,
 	})
 	handler := api.Handler()
 
@@ -2761,7 +2798,7 @@ func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager_Error(t *testing.T) {
 func TestAPI_HandleVPNSplitAddIP_WithMockVPNManager(t *testing.T) {
 
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: newMockVPNManager(),
 	})
 	handler := api.Handler()
 
@@ -2771,13 +2808,20 @@ func TestAPI_HandleVPNSplitAddIP_WithMockVPNManager(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "added", resp["status"])
 }
 
 func TestAPI_HandleVPNSplitAddIP_WithMockVPNManager_Error(t *testing.T) {
 
+	mock := newMockVPNManager()
+	mock.addIPErr = errors.New("add ip failed")
 	api := New(Config{
-		VPNManager: nil,
+		VPNManager: mock,
 	})
 	handler := api.Handler()
 

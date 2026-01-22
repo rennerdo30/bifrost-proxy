@@ -72,6 +72,8 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 			)
 		}
 
+		// Initialize stopCh before starting goroutine
+		authenticator.stopCh = make(chan struct{})
 		// Start background refresh
 		go authenticator.startJWKSRefresh()
 	}
@@ -590,7 +592,6 @@ func (a *Authenticator) refreshJWKS() error {
 
 // startJWKSRefresh starts the background JWKS refresh goroutine.
 func (a *Authenticator) startJWKSRefresh() {
-	a.stopCh = make(chan struct{})
 	ticker := time.NewTicker(a.config.JWKSRefreshInterval)
 	defer ticker.Stop()
 

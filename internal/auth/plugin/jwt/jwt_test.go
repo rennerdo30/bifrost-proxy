@@ -14,6 +14,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1555,12 +1556,12 @@ func TestHmacEqual(t *testing.T) {
 // ============================================================
 
 func TestAuthenticator_JWKSBackgroundRefresh(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	privateKey := generateTestRSAKey(t)
 	jwks := createJWKS(t, &privateKey.PublicKey, "refresh-key")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(jwks))
 	}))
@@ -1579,16 +1580,16 @@ func TestAuthenticator_JWKSBackgroundRefresh(t *testing.T) {
 	// Wait for at least 2 refresh cycles
 	time.Sleep(150 * time.Millisecond)
 
-	assert.GreaterOrEqual(t, callCount, 2, "JWKS should be refreshed multiple times")
+	assert.GreaterOrEqual(t, int(callCount.Load()), 2, "JWKS should be refreshed multiple times")
 }
 
 func TestAuthenticator_JWKSBackgroundRefresh_StopsOnClose(t *testing.T) {
-	callCount := 0
+	var callCount atomic.Int32
 	privateKey := generateTestRSAKey(t)
 	jwks := createJWKS(t, &privateKey.PublicKey, "refresh-key")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
+		callCount.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(jwks))
 	}))
@@ -1606,11 +1607,11 @@ func TestAuthenticator_JWKSBackgroundRefresh_StopsOnClose(t *testing.T) {
 	// Close immediately
 	jwtAuth.Close()
 
-	countAfterClose := callCount
+	countAfterClose := callCount.Load()
 	time.Sleep(150 * time.Millisecond)
 
 	// Should not have many more calls after close (allow for 1-2 in-flight)
-	assert.LessOrEqual(t, callCount, countAfterClose+2)
+	assert.LessOrEqual(t, int(callCount.Load()), int(countAfterClose)+2)
 }
 
 // ============================================================
