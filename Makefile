@@ -146,7 +146,7 @@ build-openwrt-ipk: build-openwrt-all
 		echo "2.0" > $$TEMP_DIR/debian-binary; \
 		echo "Package: bifrost-server" > $$TEMP_DIR/control/control; \
 		echo "Version: $(VERSION)" >> $$TEMP_DIR/control/control; \
-		echo "Architecture: $$arch" >> $$TEMP_DIR/control/control; \
+		echo "Architecture: all" >> $$TEMP_DIR/control/control; \
 		echo "Maintainer: Bifrost Team" >> $$TEMP_DIR/control/control; \
 		echo "Description: Lightweight proxy server with WireGuard and OpenVPN support" >> $$TEMP_DIR/control/control; \
 		cp $(CURDIR)/$(DIST_DIR)/bifrost-server-linux-$$arch $$TEMP_DIR/data/usr/bin/bifrost-server || exit 1; \

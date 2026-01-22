@@ -10,7 +10,7 @@ export function Header() {
     queryClient.invalidateQueries()
   }
 
-  const isConnected = status?.server_status === 'connected'
+  const isConnected = !!status?.server_connected
 
   return (
     <header className="border-b border-bifrost-border bg-bifrost-card/50 backdrop-blur-sm sticky top-0 z-50">

@@ -8,10 +8,19 @@ export interface VersionInfo {
 
 export interface StatusResponse {
   status: string
-  server_status: 'connected' | 'disconnected'
-  time: string
   version: string
+  server_connected: boolean
+  server_address?: string
+  http_proxy?: string
+  socks5_proxy?: string
+  vpn_enabled: boolean
+  vpn_status: string
   debug_entries: number
+  uptime: string
+  bytes_sent: number
+  bytes_received: number
+  active_connections: number
+  timestamp: string
 }
 
 export interface DebugEntry {
