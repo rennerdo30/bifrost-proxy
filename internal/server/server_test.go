@@ -25,7 +25,10 @@ import (
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/oauth"
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/system"
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
+	"github.com/rennerdo30/bifrost-proxy/internal/logging"
+	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
 func TestNew(t *testing.T) {
@@ -1534,10 +1537,10 @@ func TestConvertLegacyProviderConfig_LDAP(t *testing.T) {
 	provider := config.AuthProvider{
 		Type: "ldap",
 		LDAP: &config.LDAPAuth{
-			URL:           "ldap://localhost:389",
-			BaseDN:        "dc=test,dc=com",
-			TLS:           true,
-			RequireGroup:  "cn=admins",
+			URL:                "ldap://localhost:389",
+			BaseDN:             "dc=test,dc=com",
+			TLS:                true,
+			RequireGroup:       "cn=admins",
 			InsecureSkipVerify: true,
 		},
 	}

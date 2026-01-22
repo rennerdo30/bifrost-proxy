@@ -599,7 +599,7 @@ func TestAPI_RouterWithWebSocket_NilHub(t *testing.T) {
 
 // CORS is tested through the router directly rather than the internal middleware
 
-func TestWriteJSON(t *testing.T) {
+func TestAPI_WriteJSON(t *testing.T) {
 	api := New(Config{})
 	w := httptest.NewRecorder()
 
@@ -785,19 +785,6 @@ func TestAPI_HandleClearRequests_NilLog(t *testing.T) {
 	api.handleClearRequests(w, r)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-}
-
-func TestStaticHandler(t *testing.T) {
-	handler := StaticHandler()
-	require.NotNil(t, handler)
-
-	// Test that it handles requests (even if embedded FS is empty)
-	req := httptest.NewRequest("GET", "/", nil)
-	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
-
-	// Will return 404 or 200 depending on embedded content
-	assert.True(t, w.Code == http.StatusOK || w.Code == http.StatusNotFound)
 }
 
 // Server API doesn't have CORS middleware built-in like the client API

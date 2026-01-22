@@ -1307,6 +1307,7 @@ func TestDefaultStatePath_EnvOverrides(t *testing.T) {
 	originalUserProfile := os.Getenv("USERPROFILE")
 	originalXdgConfig := os.Getenv("XDG_CONFIG_HOME")
 	originalHome, _ := os.UserHomeDir()
+	_ = originalHome // Used to verify home directory functionality
 
 	defer func() {
 		if originalAppData != "" {

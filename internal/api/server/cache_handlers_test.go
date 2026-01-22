@@ -22,7 +22,11 @@ func createTestCacheManager(t *testing.T) *cache.Manager {
 	cfg := cache.DefaultConfig()
 	cfg.Enabled = true
 	cfg.Storage.Type = "memory"
-	cfg.Storage.Memory.MaxSize = "100MB"
+	cfg.Storage.Memory = &cache.MemoryConfig{
+		MaxSize:     100 * cache.MB,
+		MaxEntries:  10000,
+		EvictPolicy: "lru",
+	}
 
 	mgr, err := cache.NewManager(&cfg)
 	require.NoError(t, err)

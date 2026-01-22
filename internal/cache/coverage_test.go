@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1958,8 +1959,11 @@ func (p *pipeConn) Close() error {
 	p.w.Close()
 	return nil
 }
-func (p *pipeConn) LocalAddr() interface{}  { return nil }
-func (p *pipeConn) RemoteAddr() interface{} { return nil }
+func (p *pipeConn) LocalAddr() net.Addr                { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0} }
+func (p *pipeConn) RemoteAddr() net.Addr               { return &net.TCPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0} }
+func (p *pipeConn) SetDeadline(t time.Time) error      { return nil }
+func (p *pipeConn) SetReadDeadline(t time.Time) error  { return nil }
+func (p *pipeConn) SetWriteDeadline(t time.Time) error { return nil }
 
 func createPipe() (*pipeConn, *pipeConn, error) {
 	r1, w1 := io.Pipe()

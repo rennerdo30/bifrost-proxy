@@ -483,6 +483,11 @@ simple-proxy-server rule remove --name "Anime"
 simple-proxy-server config show
 simple-proxy-server config reload
 simple-proxy-server config validate
+
+# Service management (install as system service)
+simple-proxy-server service install --config /path/to/config.yaml
+simple-proxy-server service uninstall
+simple-proxy-server service status
 ```
 
 ### 5.2 Client CLI Commands
@@ -515,6 +520,11 @@ simple-proxy-client debug export --output traffic.har  # Export as HAR file
 # Configuration
 simple-proxy-client config show
 simple-proxy-client config reload
+
+# Service management (install as system service)
+simple-proxy-client service install --config /path/to/config.yaml
+simple-proxy-client service uninstall
+simple-proxy-client service status
 ```
 
 ### 5.3 Server REST API

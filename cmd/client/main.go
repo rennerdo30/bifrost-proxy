@@ -14,10 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/client"
 	clicmd "github.com/rennerdo30/bifrost-proxy/internal/cli/client"
+	"github.com/rennerdo30/bifrost-proxy/internal/client"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
+	"github.com/rennerdo30/bifrost-proxy/internal/service"
 	"github.com/rennerdo30/bifrost-proxy/internal/updater"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
 )
@@ -99,6 +100,9 @@ The generated configuration includes:
 
 	// Add update commands
 	rootCmd.AddCommand(newUpdateCommand())
+
+	// Add service commands
+	rootCmd.AddCommand(newServiceCommand())
 }
 
 // Update command flags
@@ -356,6 +360,112 @@ func run(cmd *cobra.Command, args []string) error {
 
 	cancel()
 	return c.Stop(context.Background())
+}
+
+// Service command flags
+var (
+	serviceConfigPath string
+	serviceName       string
+)
+
+func newServiceCommand() *cobra.Command {
+	serviceCmd := &cobra.Command{
+		Use:   "service",
+		Short: "Manage system service installation",
+		Long:  `Install, uninstall, or check status of bifrost-client as a system service.`,
+	}
+
+	// Install command
+	installCmd := &cobra.Command{
+		Use:   "install",
+		Short: "Install as a system service",
+		Long: `Install bifrost-client as a system service.
+
+On Linux: Creates a systemd unit file
+On macOS: Creates a launchd plist
+On Windows: Registers a Windows Service`,
+		RunE: runServiceInstall,
+	}
+	installCmd.Flags().StringVarP(&serviceConfigPath, "config", "c", "", "Path to config file (required)")
+	installCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-client)")
+	installCmd.MarkFlagRequired("config")
+
+	// Uninstall command
+	uninstallCmd := &cobra.Command{
+		Use:   "uninstall",
+		Short: "Remove the system service",
+		RunE:  runServiceUninstall,
+	}
+	uninstallCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-client)")
+
+	// Status command
+	statusCmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show service installation status",
+		RunE:  runServiceStatus,
+	}
+	statusCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-client)")
+
+	serviceCmd.AddCommand(installCmd, uninstallCmd, statusCmd)
+	return serviceCmd
+}
+
+func runServiceInstall(cmd *cobra.Command, args []string) error {
+	// Get current executable path
+	exePath, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("get executable path: %w", err)
+	}
+
+	cfg := service.Config{
+		Type:       service.TypeClient,
+		Name:       serviceName,
+		BinaryPath: exePath,
+		ConfigPath: serviceConfigPath,
+	}
+
+	mgr, err := service.New(cfg)
+	if err != nil {
+		return fmt.Errorf("create service manager: %w", err)
+	}
+
+	return mgr.Install()
+}
+
+func runServiceUninstall(cmd *cobra.Command, args []string) error {
+	cfg := service.Config{
+		Type: service.TypeClient,
+		Name: serviceName,
+	}
+
+	mgr, err := service.New(cfg)
+	if err != nil {
+		return fmt.Errorf("create service manager: %w", err)
+	}
+
+	return mgr.Uninstall()
+}
+
+func runServiceStatus(cmd *cobra.Command, args []string) error {
+	cfg := service.Config{
+		Type: service.TypeClient,
+		Name: serviceName,
+	}
+
+	mgr, err := service.New(cfg)
+	if err != nil {
+		return fmt.Errorf("create service manager: %w", err)
+	}
+
+	status, err := mgr.Status()
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("Service: %s\n", cfg.Name)
+	fmt.Printf("Platform: %s\n", service.Platform())
+	fmt.Printf("Status: %s\n", status)
+	return nil
 }
 
 func main() {
