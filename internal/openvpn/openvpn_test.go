@@ -846,13 +846,27 @@ func TestProcess_monitorManagement_ConnectionSuccess(t *testing.T) {
 
 // TestProcess_handleManagement_ContextCancelled tests handleManagement exits on context cancel
 func TestProcess_handleManagement_ContextCancelled(t *testing.T) {
-	// Create a pipe for the connection
-	server, client := net.Pipe()
-	defer server.Close()
-	defer client.Close()
+	// Use TCP listener instead of net.Pipe to support deadlines
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
 
-	// Need to read from server side because net.Pipe is unbuffered and Write blocks
-	go io.Copy(io.Discard, server)
+	done := make(chan struct{})
+	
+	// Accept connection in background
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			// Keep connection open but send no data
+			// Wait until test is done
+			<-done
+			conn.Close()
+		}
+	}()
+
+	client, err := net.Dial("tcp", listener.Addr().String())
+	require.NoError(t, err)
+	defer client.Close()
 
 	proc := &Process{
 		stateCh: make(chan State, 10),
@@ -860,20 +874,25 @@ func TestProcess_handleManagement_ContextCancelled(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // Cancel immediately
-
-	done := make(chan struct{})
+	
+	// Start handler in background
+	handlerDone := make(chan struct{})
 	go func() {
 		proc.handleManagement(ctx, client)
-		close(done)
+		close(handlerDone)
 	}()
 
+	// Cancel context after a short delay
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
 	select {
-	case <-done:
+	case <-handlerDone:
 		// Success
 	case <-time.After(2 * time.Second):
 		t.Fatal("handleManagement didn't exit on context cancel")
 	}
+	close(done)
 }
 
 // TestProcess_handleManagement_EOF tests handleManagement exits on EOF
