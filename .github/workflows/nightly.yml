@@ -48,12 +48,14 @@ jobs:
         run: make build-all
 
       - name: Build OpenWrt platforms
-        run: make build-openwrt
+        run: |
+          make build-openwrt VERSION=nightly
+          make build-openwrt-ipk VERSION=nightly
 
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum * > checksums.txt
+          sha256sum $(find . -maxdepth 2 -type f -not -name "checksums.txt") > checksums.txt
 
       - name: Get short SHA
         id: sha
@@ -92,12 +94,23 @@ jobs:
             | macOS (arm64) | `bifrost-server-darwin-arm64` | `bifrost-client-darwin-arm64` |
             | Windows (amd64) | `bifrost-server-windows-amd64.exe` | `bifrost-client-windows-amd64.exe` |
 
-            ### OpenWrt / Embedded (stripped binaries)
+            ### OpenWrt / Embedded (OPKG Packages)
+
+            **Recommended for LuCI / GL.iNet users.**
+
+            | Architecture | IPK Package (Server) | Common Devices |
+            |--------------|----------------------|----------------|
+            | ARM64 | `bifrost-server_nightly_arm64-openwrt.ipk` | Flint 2, Beryl AX, Slate AX, Brume 2 |
+            | ARM v7 | `bifrost-server_nightly_arm7.ipk` | Slate Plus, Pi 2/3 |
+            | MIPS (le) | `bifrost-server_nightly_mipsle.ipk` | Beryl, Mango, Puli |
+            | MIPS (be) | `bifrost-server_nightly_mips.ipk` | Archer C7, older routers |
+
+            ### OpenWrt / Embedded (Raw Binaries)
 
             | Platform | Server | Client |
             |----------|--------|--------|
-            | MIPS (big-endian) | `bifrost-server-linux-mips` | `bifrost-client-linux-mips` |
-            | MIPS (little-endian) | `bifrost-server-linux-mipsle` | `bifrost-client-linux-mipsle` |
+            | MIPS (be) | `bifrost-server-linux-mips` | `bifrost-client-linux-mips` |
+            | MIPS (le) | `bifrost-server-linux-mipsle` | `bifrost-client-linux-mipsle` |
             | ARM v6 | `bifrost-server-linux-arm6` | `bifrost-client-linux-arm6` |
             | ARM v7 | `bifrost-server-linux-arm7` | `bifrost-client-linux-arm7` |
             | ARM64 (OpenWrt) | `bifrost-server-linux-arm64-openwrt` | `bifrost-client-linux-arm64-openwrt` |
@@ -106,6 +119,7 @@ jobs:
           prerelease: true
           files: |
             dist/*
+            dist/ipk/*
 
   docker-nightly:
     name: Docker Nightly

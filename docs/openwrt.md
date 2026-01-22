@@ -7,10 +7,10 @@ This guide covers installing and running Bifrost on OpenWrt routers and other re
 | Architecture | Build Target | Common Devices |
 |--------------|--------------|----------------|
 | MIPS (big-endian) | `bifrost-server-linux-mips` | TP-Link TL-WR841N, Archer C7 |
-| MIPS (little-endian) | `bifrost-server-linux-mipsle` | Netgear R6220, some MediaTek |
+| MIPS (little-endian) | `bifrost-server-linux-mipsle` | GL-MT1300 (Beryl), GL-MT300N (Mango), Netgear R6220 |
 | ARM v6 | `bifrost-server-linux-arm6` | Raspberry Pi 1, Pi Zero |
-| ARM v7 | `bifrost-server-linux-arm7` | Raspberry Pi 2, GL.iNet GL-AR750 |
-| ARM64 | `bifrost-server-linux-arm64-openwrt` | Raspberry Pi 3+, NanoPi R4S |
+| ARM v7 | `bifrost-server-linux-arm7` | GL-A1300 (Slate Plus), Raspberry Pi 2, GL-AR750 |
+| ARM64 | `bifrost-server-linux-arm64-openwrt` | GL-MT6000 (Flint 2), GL-MT3000 (Beryl AX), GL-AX1800 (Flint), GL-MT2500 (Brume 2) |
 
 ## Hardware Requirements
 
@@ -110,6 +110,101 @@ ssh root@router "/etc/init.d/bifrost enable"
 ```bash
 ssh root@router "/etc/init.d/bifrost start"
 ```
+
+## Installation via LuCI GUI (OPKG)
+
+This is the easiest method and is recommended for most users, especially those using GL.iNet routers.
+
+### 1. Download the `.ipk` Package
+
+1.  Identify your router's architecture from the [Supported Architectures](#supported-architectures) table.
+2.  Go to the [Bifrost GitHub Releases](https://github.com/rennerdo30/bifrost-proxy/releases).
+3.  Download the `.ipk` file for your architecture (e.g., `bifrost-server_1.0.0_arm64-openwrt.ipk`).
+
+### 2. Upload and Install via LuCI
+
+1.  Log into your router's LuCI interface.
+2.  Navigate to **System** -> **Software**.
+3.  Click the **Upload Package...** button.
+4.  Select the `.ipk` file you downloaded.
+5.  Click **Upload**, then click **Install**.
+6.  The package will automatically install the binary, the init script, and a default configuration.
+
+### 3. Start the Service
+
+1.  Navigate to **System** -> **Startup**.
+2.  Find `bifrost` in the list.
+3.  Click **Enabled** (if not already enabled) and click **Start**.
+
+## GL.iNet Specific Guide
+
+Most GL.iNet routers (Flint, Beryl, Slate, etc.) run a customized version of OpenWrt. You can access the standard LuCI interface from within the GL.iNet Admin Panel.
+
+1.  Log into your GL.iNet Admin Panel (usually `http://192.168.8.1`).
+2.  Navigate to **Applications** -> **Plug-ins** (or **System** -> **Advanced Settings** in older versions).
+3.  In some versions, you click "Advanced Settings" which opens LuCI in a new tab.
+4.  Once in LuCI, follow the [OPKG Installation](#installation-via-luci-gui-opkg) steps above.
+
+## Alternative LuCI Methods
+
+If you don't want to use the `.ipk` package, you can still install manually via LuCI.
+
+### 1. Identify Architecture
+
+1.  Log into your router's LuCI interface (usually at `http://192.168.1.1`).
+2.  Navigate to **Status** -> **Overview**.
+3.  Look for **Architecture** or **Model** in the "System" section.
+4.  Match your architecture to the [Build Targets](#supported-architectures) table above.
+
+### 2. Download Bifrost
+
+1.  Go to the [Bifrost GitHub Releases](https://github.com/rennerdo30/bifrost-proxy/releases) (or the Nightly builds).
+2.  Download the appropriate binary for your architecture (e.g., `bifrost-server-linux-mipsle`).
+
+### 3. Upload and Install
+
+Since LuCI does not have a generic file upload tool for binaries by default, we recommend one of the following plugins:
+
+#### Option A: Using `luci-app-commands` (Recommended)
+
+1.  Navigate to **System** -> **Software**.
+2.  Click **Update lists...** then search for and install `luci-app-commands`.
+3.  Go to **System** -> **Custom Commands**.
+4.  In the "Custom Commands" section, you can use `wget` to download the binary directly to the router:
+    ```bash
+    wget -O /usr/bin/bifrost-server https://github.com/rennerdo30/bifrost-proxy/releases/download/nightly/bifrost-server-linux-YOUR_ARCH
+    chmod +x /usr/bin/bifrost-server
+    ```
+5.  Click **Run** to execute the command.
+
+#### Option B: Using `luci-app-filebrowser`
+
+1.  Install `luci-app-filebrowser` via **System** -> **Software**.
+2.  Navigate to **Tools** -> **File Browser**.
+3.  Browse to `/usr/bin/`.
+4.  Upload your downloaded `bifrost-server` binary.
+5.  Click on the uploaded file and set permissions to `755` (Executable).
+
+### 4. Upload Configuration
+
+1.  Using your chosen File Browser plugin, browse to `/etc/`.
+2.  Create a new directory named `bifrost`.
+3.  Upload your `config.yaml` (you can use [server-config.openwrt.yaml](https://github.com/rennerdo30/bifrost-proxy/blob/main/configs/server-config.openwrt.yaml) as a template).
+
+### 5. Install Init Script
+
+To ensure Bifrost starts on boot, you must upload the init script:
+
+1.  Download the [init script](https://github.com/rennerdo30/bifrost-proxy/blob/main/openwrt/etc/init.d/bifrost).
+2.  Upload it to `/etc/init.d/bifrost` on your router.
+3.  Make it executable (`chmod +x /etc/init.d/bifrost`).
+
+### 6. Start and Enable Service
+
+1.  Navigate to **System** -> **Startup**.
+2.  Find `bifrost` in the list.
+3.  Click **Enabled** (it should toggle from "Disabled" to "Enabled").
+4.  Click **Start** to run the service immediately.
 
 ## Configuration
 

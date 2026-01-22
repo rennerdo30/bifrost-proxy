@@ -133,6 +133,31 @@ build-openwrt-arm: web-sync
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-server-linux-arm64-openwrt ./cmd/server
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags "$(LDFLAGS_STRIP)" -o $(DIST_DIR)/bifrost-client-linux-arm64-openwrt ./cmd/client
 
+# IPK Packaging for OpenWrt
+.PHONY: build-openwrt-ipk
+
+build-openwrt-ipk: build-openwrt-all
+	@echo "Creating .ipk packages for all architectures..."
+	@mkdir -p $(CURDIR)/$(DIST_DIR)/ipk
+	@for arch in mips mipsle arm6 arm7 arm64-openwrt; do \
+		echo "Packaging for $$arch..."; \
+		TEMP_DIR=$$(mktemp -d); \
+		mkdir -p $$TEMP_DIR/control $$TEMP_DIR/data/usr/bin $$TEMP_DIR/data/etc/init.d $$TEMP_DIR/data/etc/bifrost || exit 1; \
+		echo "2.0" > $$TEMP_DIR/debian-binary; \
+		echo "Package: bifrost-server" > $$TEMP_DIR/control/control; \
+		echo "Version: $(VERSION)" >> $$TEMP_DIR/control/control; \
+		echo "Architecture: $$arch" >> $$TEMP_DIR/control/control; \
+		echo "Maintainer: Bifrost Team" >> $$TEMP_DIR/control/control; \
+		echo "Description: Lightweight proxy server with WireGuard and OpenVPN support" >> $$TEMP_DIR/control/control; \
+		cp $(CURDIR)/$(DIST_DIR)/bifrost-server-linux-$$arch $$TEMP_DIR/data/usr/bin/bifrost-server || exit 1; \
+		cp $(CURDIR)/openwrt/etc/init.d/bifrost $$TEMP_DIR/data/etc/init.d/bifrost || exit 1; \
+		cp $(CURDIR)/configs/server-config.openwrt.yaml $$TEMP_DIR/data/etc/bifrost/config.yaml || exit 1; \
+		(cd $$TEMP_DIR/control && tar -czf ../control.tar.gz .) || exit 1; \
+		(cd $$TEMP_DIR/data && tar -czf ../data.tar.gz .) || exit 1; \
+		(cd $$TEMP_DIR && tar -czf $(CURDIR)/$(DIST_DIR)/ipk/bifrost-server_$(VERSION)_$$arch.ipk debian-binary control.tar.gz data.tar.gz) || exit 1; \
+		rm -rf $$TEMP_DIR; \
+	done
+
 # Docker
 .PHONY: docker-build docker-push docker-deploy docker-up docker-down docker-logs docker-status docker-stop docker-rebuild docker-rebuild-clean
 

@@ -26,3 +26,8 @@
 - **Description**: Service installation is implemented for systemd (Linux), launchd (macOS), and SCM (Windows).
 - **Plan**: Verify compatibility with older Linux distributions using SysVinit or Upstart if requested.
 - **Status**: Open
+
+### Native OpenWRT LuCI Application
+- **Description**: Installation on OpenWRT currently requires manual binary upload or using generic plugins.
+- **Plan**: Create `luci-app-bifrost` (IPK package) to simplify installation and provide a native configuration UI.
+- **Status**: Open

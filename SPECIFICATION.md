@@ -1233,6 +1233,7 @@ The documentation is organized into the following sections:
   - Overview
   - Backends (WireGuard, OpenVPN, HTTP/SOCKS5 proxies)
   - Authentication (None, Native, System, LDAP, OAuth)
+  - [OpenWRT LuCI Setup Guide](file:///Users/rennerdo30/Development/simple-proxy-server/docs/openwrt.md#installation-via-luci-gui)
 - **Deployment** - Docker, systemd, launchd
 - **Operations**
   - CLI Reference
