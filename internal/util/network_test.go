@@ -16,7 +16,7 @@ func TestSplitHostPort(t *testing.T) {
 	}{
 		{
 			name:     "host with port",
-			addr:     "example.com:7080",
+			addr:     "example.com:8080",
 			wantHost: "example.com",
 			wantPort: 8080,
 			wantErr:  false,
@@ -44,14 +44,14 @@ func TestSplitHostPort(t *testing.T) {
 		},
 		{
 			name:     "IPv6 with port",
-			addr:     "[::1]:7080",
+			addr:     "[::1]:8080",
 			wantHost: "::1",
 			wantPort: 8080,
 			wantErr:  false,
 		},
 		{
 			name:     "colon only",
-			addr:     ":7080",
+			addr:     ":8080",
 			wantHost: "",
 			wantPort: 8080,
 			wantErr:  false,
@@ -100,7 +100,7 @@ func TestJoinHostPort(t *testing.T) {
 			name: "simple host",
 			host: "example.com",
 			port: 8080,
-			want: "example.com:7080",
+			want: "example.com:8080",
 		},
 		{
 			name: "IP address",
@@ -112,7 +112,7 @@ func TestJoinHostPort(t *testing.T) {
 			name: "IPv6",
 			host: "::1",
 			port: 8080,
-			want: "[::1]:7080",
+			want: "[::1]:8080",
 		},
 		{
 			name: "empty host",
