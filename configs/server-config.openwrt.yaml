@@ -1,14 +1,12 @@
 # Bifrost Server - OpenWrt / Low-Resource Router Configuration
 # Optimized for 64-256MB RAM devices (MIPS, ARM, ARM64)
 #
-# This configuration disables resource-intensive features:
+# This configuration disables resource-intensive features to ensure stability:
 # - Metrics collection disabled (saves 1-2MB RAM, 5-10% CPU)
 # - Web UI disabled (saves memory)
 # - Access logging disabled (saves I/O)
 # - Connection limits prevent OOM on constrained devices
 # - WebSocket clients limited to 5 (saves ~1MB per 100 connections)
-#
-# For minimal devices (32MB RAM), further reduce max_connections to 25-50
 
 server:
   http:
@@ -44,11 +42,6 @@ access_log:
 
 metrics:
   enabled: false  # Disable for low-power devices
-  # If you need metrics, enable with longer collection interval:
-  # enabled: true
-  # listen: ":7090"
-  # path: "/metrics"
-  # collection_interval: "300s"  # 5 minutes instead of default 15s
 
 logging:
   level: warn  # Reduce log volume; use "error" for minimal logging

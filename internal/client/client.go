@@ -16,18 +16,20 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 	"github.com/rennerdo30/bifrost-proxy/internal/proxy"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
+	"github.com/rennerdo30/bifrost-proxy/internal/sysproxy"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
 // Client is the Bifrost client.
 type Client struct {
-	config         *config.ClientConfig
-	configPath     string
-	router         *router.ClientRouter
-	serverConn     *ServerConnection
-	debugger       *debug.Logger
-	vpnManager     *vpn.Manager
+	config          *config.ClientConfig
+	configPath      string
+	router          *router.ClientRouter
+	serverConn      *ServerConnection
+	debugger        *debug.Logger
+	vpnManager      *vpn.Manager
+	sysProxyManager sysproxy.Manager
 
 	httpListener   net.Listener
 	socks5Listener net.Listener
@@ -86,12 +88,13 @@ func New(cfg *config.ClientConfig) (*Client, error) {
 	}
 
 	return &Client{
-		config:     cfg,
-		router:     r,
-		serverConn: serverConn,
-		debugger:   debugger,
-		vpnManager: vpnManager,
-		done:       make(chan struct{}),
+		config:          cfg,
+		router:          r,
+		serverConn:      serverConn,
+		debugger:        debugger,
+		vpnManager:      vpnManager,
+		sysProxyManager: sysproxy.New(),
+		done:            make(chan struct{}),
 	}, nil
 }
 
@@ -141,8 +144,13 @@ func (c *Client) Start(ctx context.Context) error {
 			ServerConnected: func() bool {
 				return c.serverConn.IsConnected(context.Background())
 			},
-			Token:           c.config.API.Token,
-			VPNManager:      c.vpnManager,
+			Token: c.config.API.Token,
+			VPNManager: func() apiclient.VPNManager {
+				if c.vpnManager == nil {
+					return nil
+				}
+				return c.vpnManager
+			}(),
 			ServerAddress:   c.config.Server.Address,
 			HTTPProxyAddr:   c.config.Proxy.HTTP.Listen,
 			SOCKS5ProxyAddr: c.config.Proxy.SOCKS5.Listen,
@@ -150,6 +158,10 @@ func (c *Client) Start(ctx context.Context) error {
 				return c.config
 			},
 			ConfigUpdater: c.updateConfig,
+			SettingsGetter: func() *apiclient.QuickSettings {
+				return c.getQuickSettings()
+			},
+			SettingsUpdater: c.updateQuickSettings,
 		})
 
 		c.apiServer = &http.Server{
@@ -174,6 +186,25 @@ func (c *Client) Start(ctx context.Context) error {
 			// VPN failure is not fatal for the client
 		} else {
 			logging.Info("VPN mode started")
+		}
+	}
+
+	// Enable System Proxy if configured
+	if c.config.SystemProxy.Enabled {
+		// Prefer HTTP proxy for system settings
+		proxyAddr := c.config.Proxy.HTTP.Listen
+		if proxyAddr == "" {
+			proxyAddr = c.config.Proxy.SOCKS5.Listen
+		}
+
+		if proxyAddr != "" {
+			if err := c.sysProxyManager.SetProxy(proxyAddr); err != nil {
+				logging.Error("Failed to set system proxy", "error", err)
+			} else {
+				logging.Info("System proxy enabled", "address", proxyAddr)
+			}
+		} else {
+			logging.Warn("System proxy enabled but no proxy listeners configured")
 		}
 	}
 
@@ -211,6 +242,15 @@ func (c *Client) Stop(ctx context.Context) error {
 	if c.vpnManager != nil {
 		if err := c.vpnManager.Stop(ctx); err != nil {
 			logging.Error("Failed to stop VPN", "error", err)
+		}
+	}
+
+	// Disable System Proxy if it was enabled
+	if c.config.SystemProxy.Enabled {
+		if err := c.sysProxyManager.ClearProxy(); err != nil {
+			logging.Error("Failed to clear system proxy", "error", err)
+		} else {
+			logging.Info("System proxy settings restored")
 		}
 	}
 
@@ -483,6 +523,34 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 		}
 	}
 
+	if sysProxy, ok := updates["system_proxy"].(map[string]interface{}); ok {
+		if enabled, ok := sysProxy["enabled"].(bool); ok {
+			oldEnabled := c.config.SystemProxy.Enabled
+			c.config.SystemProxy.Enabled = enabled
+
+			// Handle runtime toggle
+			if enabled != oldEnabled {
+				if enabled {
+					// Enable
+					proxyAddr := c.config.Proxy.HTTP.Listen
+					if proxyAddr == "" {
+						proxyAddr = c.config.Proxy.SOCKS5.Listen
+					}
+					if proxyAddr != "" {
+						if err := c.sysProxyManager.SetProxy(proxyAddr); err != nil {
+							logging.Error("Failed to enable system proxy", "error", err)
+						}
+					}
+				} else {
+					// Disable
+					if err := c.sysProxyManager.ClearProxy(); err != nil {
+						logging.Error("Failed to disable system proxy", "error", err)
+					}
+				}
+			}
+		}
+	}
+
 	if meshCfg, ok := updates["mesh"].(map[string]interface{}); ok {
 		if enabled, ok := meshCfg["enabled"].(bool); ok {
 			c.config.Mesh.Enabled = enabled
@@ -500,8 +568,20 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 
 	// Save to file if path is set
 	if c.configPath != "" {
-		if err := config.Save(c.configPath, c.config); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
+		node, err := config.LoadNode(c.configPath)
+		if err != nil {
+			logging.Warn("Failed to load config for update, preserving comments might fail", "error", err)
+			// Fallback to struct-based save if load fails
+			if err := config.Save(c.configPath, c.config); err != nil {
+				return fmt.Errorf("failed to save config: %w", err)
+			}
+		} else {
+			if err := config.UpdateNode(node, updates); err != nil {
+				return fmt.Errorf("failed to update config node: %w", err)
+			}
+			if err := config.SaveNode(c.configPath, node); err != nil {
+				return fmt.Errorf("failed to save config node: %w", err)
+			}
 		}
 		logging.Info("Configuration saved", "path", c.configPath)
 	}

@@ -3151,3 +3151,42 @@ func TestCorsMiddleware_AllowedHeaders(t *testing.T) {
 	assert.Contains(t, headers, "Authorization")
 	assert.Contains(t, headers, "Content-Type")
 }
+
+func TestAPI_HandleVPNStatus_NilConcreteVPNManager(t *testing.T) {
+	var mgr *vpn.Manager // nil concrete pointer
+	api := New(Config{
+		VPNManager: mgr, // Pass nil concrete pointer via interface
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("GET", "/api/v1/vpn/status", nil)
+	w := httptest.NewRecorder()
+
+	// This should not panic
+	assert.NotPanics(t, func() {
+		handler.ServeHTTP(w, req)
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var resp vpn.VPNStats
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, vpn.StatusDisabled, resp.Status)
+}
+
+func TestAPI_HandleStatus_NilConcreteVPNManager(t *testing.T) {
+	var mgr *vpn.Manager // nil concrete pointer
+	api := New(Config{
+		VPNManager: mgr,
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("GET", "/api/v1/status", nil)
+	w := httptest.NewRecorder()
+
+	assert.NotPanics(t, func() {
+		handler.ServeHTTP(w, req)
+	})
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}

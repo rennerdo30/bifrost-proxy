@@ -46,11 +46,12 @@ type ServerInfo struct {
 
 // QuickSettings represents settings accessible from the quick GUI.
 type QuickSettings struct {
-	AutoConnect       bool   `json:"auto_connect"`
-	StartMinimized    bool   `json:"start_minimized"`
-	ShowNotifications bool   `json:"show_notifications"`
-	VPNEnabled        bool   `json:"vpn_enabled"`
-	CurrentServer     string `json:"current_server"`
+	AutoConnect        bool   `json:"auto_connect"`
+	StartMinimized     bool   `json:"start_minimized"`
+	ShowNotifications  bool   `json:"show_notifications"`
+	VPNEnabled         bool   `json:"vpn_enabled"`
+	SystemProxyEnabled bool   `json:"system_proxy_enabled"`
+	CurrentServer      string `json:"current_server"`
 }
 
 // ConfigUpdateResponse represents the response from a config update.
@@ -1290,11 +1291,12 @@ func (a *API) handleGetSettings(w http.ResponseWriter, r *http.Request) {
 			vpnEnabled = a.vpnManager.Status().Status == vpn.StatusConnected
 		}
 		settings := &QuickSettings{
-			AutoConnect:       false,
-			StartMinimized:    false,
-			ShowNotifications: true,
-			VPNEnabled:        vpnEnabled,
-			CurrentServer:     "",
+			AutoConnect:        false,
+			StartMinimized:     false,
+			ShowNotifications:  true,
+			VPNEnabled:         vpnEnabled,
+			SystemProxyEnabled: false,
+			CurrentServer:      "",
 		}
 		a.writeJSON(w, http.StatusOK, settings)
 		return

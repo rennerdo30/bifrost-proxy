@@ -1,16 +1,18 @@
 # Bifrost Server Configuration Example
+# This file contains the configuration for the Bifrost proxy server.
 
 server:
   http:
-    listen: ":7080"
-    read_timeout: "30s"
-    write_timeout: "30s"
-    idle_timeout: "60s"
+    listen: ":7080"           # Address to listen on for HTTP connections
+    read_timeout: "30s"       # timeout for reading the entire request
+    write_timeout: "30s"      # timeout for writing the response
+    idle_timeout: "60s"       # timeout for keep-alive connections
   socks5:
-    listen: ":7180"
-  graceful_period: "30s"
+    listen: ":7180"           # Address to listen on for SOCKS5 connections
+  graceful_period: "30s"      # Time to wait for active connections to finish on shutdown
 
 # Backend definitions
+# Backends are upstream proxy servers or tunnels (WireGuard, Direct, etc.)
 backends:
   # Direct connection (no tunnel)
   - name: direct
@@ -26,168 +28,65 @@ backends:
   #   config:
   #     private_key: "YOUR_PRIVATE_KEY_BASE64"
   #     address: "10.0.0.2/24"
-  #     dns:
-  #       - "1.1.1.1"
+  #     dns: ["1.1.1.1"]
   #     mtu: 1420
   #     peer:
   #       public_key: "PEER_PUBLIC_KEY_BASE64"
   #       endpoint: "vpn.example.com:51820"
-  #       allowed_ips:
-  #         - "0.0.0.0/0"
+  #       allowed_ips: ["0.0.0.0/0"]
   #       persistent_keepalive: 25
 
-  # HTTP proxy upstream example
-  # - name: upstream-proxy
-  #   type: http_proxy
-  #   enabled: true
-  #   config:
-  #     address: "proxy.example.com:8080"
-  #     username: "user"
-  #     password: "pass"
-
-  # SOCKS5 proxy upstream example
-  # - name: socks-proxy
-  #   type: socks5_proxy
-  #   enabled: true
-  #   config:
-  #     address: "socks.example.com:1080"
-
 # Routing rules
+# Determine which backend to use based on domain matching.
 routes:
-  # Route specific domains through WireGuard
-  # - domains:
-  #     - "*.internal.company.com"
-  #     - "internal.company.com"
-  #   backend: wg-tunnel
-  #   priority: 100
-
-  # Default route - direct connection
-  - domains:
-      - "*"
+  # Default route - all traffic through the direct backend
+  - domains: ["*"]
     backend: direct
     priority: 1
 
-# Authentication
+# Authentication settings
 auth:
-  mode: none  # none, native, system, ldap, oauth
-
-  # Native authentication example
-  # mode: native
-  # native:
-  #   users:
-  #     - username: admin
-  #       password_hash: "$2a$10$..."  # bcrypt hash
-
-  # LDAP authentication example
-  # mode: ldap
-  # ldap:
-  #   url: "ldap://ldap.example.com:389"
-  #   base_dn: "dc=example,dc=com"
-  #   bind_dn: "cn=admin,dc=example,dc=com"
-  #   bind_password: "secret"
-  #   user_filter: "(uid=%s)"
-  #   tls: false
+  mode: none                  # Auth mode (none, native, system, ldap, oauth)
 
 # Rate limiting
+# Control the flow of incoming requests.
 rate_limit:
-  enabled: false
-  requests_per_second: 100
-  burst_size: 200
-  per_ip: true
-  per_user: false
-  # bandwidth:
-  #   enabled: false
-  #   upload: "10Mbps"
-  #   download: "100Mbps"
+  enabled: false              # Enable rate limiting
+  requests_per_second: 100    # Sustained rate limit
+  burst_size: 200             # Maximum burst size
+  per_ip: true                # Rate limit per IP address
+  per_user: false             # Rate limit per authenticated user
 
 # Access logging
+# Log all connections handled by the server.
 access_log:
-  enabled: true
-  format: json  # json, apache
-  output: stdout  # stdout, stderr, or file path
+  enabled: true               # Enable access logging
+  format: json                # Log format (json, apache)
+  output: stdout              # Output destination (stdout, stderr, or file path)
 
-# Prometheus metrics
+# Metrics
+# Expose server metrics in Prometheus format.
 metrics:
-  enabled: true
-  listen: ":7090"
-  path: "/metrics"
+  enabled: true               # Enable metrics collection
+  listen: ":7090"             # Address to listen on for metrics scraper
+  path: "/metrics"            # URL path for metrics
 
 # Application logging
+# Configure server's own diagnostic logs.
 logging:
-  level: info  # debug, info, warn, error
-  format: text  # json, text
-  output: stdout
+  level: info                 # Log level (debug, info, warn, error)
+  format: text                # Log format (json, text)
+  output: stdout              # Output destination
 
-# Web UI (management interface)
+# Web UI (Management interface)
 web_ui:
-  enabled: false
-  listen: ":7081"
+  enabled: false              # Enable management dashboard
+  listen: ":7081"             # Address to listen on for the Web UI
 
 # REST API
+# Programmatic management of the server.
 api:
-  enabled: true
-  listen: ":7082"
-  # token: "your-api-token"  # Optional API authentication
-  # enable_request_log: true  # Enable request logging for Web UI (shows visited URLs)
-  # request_log_size: 1000    # Max number of requests to keep in memory
-
-# HTTP Cache - inspired by steamcache/lancache
-# Caches HTTP responses for configured domains (game downloads, CDNs, etc.)
-cache:
-  enabled: false  # Set to true to enable caching
-  default_ttl: "30d"  # Default time-to-live for cached entries
-  max_file_size: "50GB"  # Maximum size of a single cached file
-
-  # Storage backend configuration
-  storage:
-    type: tiered  # memory, disk, or tiered
-
-    # Tiered storage: small files in memory, large files on disk
-    tiered:
-      memory_threshold: "10MB"  # Files <= 10MB go to memory
-
-    # Memory storage settings
-    memory:
-      max_size: "2GB"
-      max_entries: 50000
-      evict_policy: lru  # lru, lfu, fifo
-
-    # Disk storage settings
-    disk:
-      path: "/var/cache/bifrost"
-      max_size: "500GB"
-      cleanup_interval: "1h"
-
-  # Built-in presets for game CDNs and software updates
-  # Available presets: steam, origin, epic, battlenet, windows, playstation,
-  #                    xbox, nintendo, ubisoft, riot, apple, google, linux
-  presets:
-    # - steam
-    # - origin
-    # - epic
-    # - battlenet
-    # - windows
-
-  # Custom caching rules
-  rules:
-    # Example: Cache a custom CDN
-    # - name: my-cdn
-    #   domains:
-    #     - "cdn.example.com"
-    #     - "*.mycdn.net"
-    #   enabled: true
-    #   ttl: "7d"
-    #   priority: 50
-    #   ignore_query: true  # Ignore query string in cache key
-    #   content_types:      # Only cache specific content types
-    #     - "application/octet-stream"
-    #     - "application/zip"
-
-    # Example: General HTTP caching (respects Cache-Control headers)
-    # - name: general-http
-    #   domains:
-    #     - "*"
-    #   enabled: false
-    #   ttl: "1d"
-    #   priority: 1
-    #   respect_cache_control: true
+  enabled: true               # Enable REST API
+  listen: ":7082"             # Address to listen on for the API
+  # token: "your-api-token"   # Optional API authentication token
+`

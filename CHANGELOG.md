@@ -39,6 +39,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - VPN page with split tunneling management
   - Settings page with configuration editor
   - Logs page with SSE streaming for real-time logs
+- **Automatic Updates**
+  - New `update` command for client and server
+  - Improved release detection and version comparison
+  - Support for stable and prerelease channels
+- **System Service Management**
+  - New `service` command to manage Bifrost as a system service
+  - Native support for systemd (Linux), launchd (macOS), and Windows Service (SCM)
+- **System Proxy Support**
+  - OS-level proxy configuration (implemented for Windows)
+  - Toggle system proxy via Web UI and Quick Settings
+- **Configuration Preservation**
+  - AST-based YAML updates to maintain comments and formatting
+  - Preserves user-added documentation in configuration files
+
+### Fixed
+- VPN manager nil pointer panics when disabled or uninitialized
+- Auto-updater reliability issues with non-SemVer releases
+- Improved error handling in API server
 
 ### Fixed
 - Cross-compilation support for VPN mode on all platforms

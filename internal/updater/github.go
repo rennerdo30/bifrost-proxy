@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 )
@@ -62,18 +63,39 @@ func (c *GitHubClient) GetLatestRelease(ctx context.Context, includePrerelease b
 	}
 
 	// For prereleases, we need to get all releases and find the latest
-	releases, err := c.GetReleases(ctx, 10)
+	// Fetch more releases to ensure we don't miss a newer version that was released earlier
+	releases, err := c.GetReleases(ctx, 30) // Increased limit to cover more history
 	if err != nil {
 		return nil, err
 	}
 
+	var validReleases []Release
 	for _, release := range releases {
 		if !release.Draft {
-			return &release, nil
+			validReleases = append(validReleases, release)
 		}
 	}
 
-	return nil, fmt.Errorf("%w: no releases found", ErrNoUpdateAvailable)
+	if len(validReleases) == 0 {
+		return nil, fmt.Errorf("%w: no releases found", ErrNoUpdateAvailable)
+	}
+
+	// Sort by semantic version descending (newest first)
+	sort.Slice(validReleases, func(i, j int) bool {
+		v1, err1 := ParseVersion(validReleases[i].TagName)
+		v2, err2 := ParseVersion(validReleases[j].TagName)
+
+		// If both parse successfully, compare versions
+		if err1 == nil && err2 == nil {
+			return v1.IsNewerThan(v2)
+		}
+
+		// Fallback to PublishedAt if either fails to parse
+		// Newer timestamp = appearing earlier in the sorted list (descending)
+		return validReleases[i].PublishedAt.After(validReleases[j].PublishedAt)
+	})
+
+	return &validReleases[0], nil
 }
 
 // GetReleases fetches recent releases.

@@ -88,7 +88,31 @@ func (u *Updater) CheckForUpdate(ctx context.Context) (*UpdateInfo, error) {
 	}
 
 	// Compare versions
-	if !releaseVersion.IsNewerThan(currentVersion) {
+	// Compare versions
+	isNewer := false
+
+	// Try SemVer comparison first
+	if err == nil && releaseVersion.Major != 0 {
+		// Valid SemVer found for current version
+		isNewer = releaseVersion.IsNewerThan(currentVersion)
+	} else {
+		// Fallback to timestamp comparison for non-SemVer (nightlies/SHAs)
+		// Only if the version strings are different (to avoid redeploying same SHA)
+		if currentVersionStr != release.TagName {
+			// Parse local build time
+			// version.BuildTime is injected at build time, format expected: RFC3339
+			localBuildTime, timeErr := time.Parse(time.RFC3339, version.BuildTime)
+			if timeErr != nil {
+				// If local build time is unknown/unparseable, assume update is available
+				// This ensures dev builds always can update to a real release
+				isNewer = true
+			} else {
+				isNewer = release.PublishedAt.After(localBuildTime)
+			}
+		}
+	}
+
+	if !isNewer {
 		return nil, ErrNoUpdateAvailable
 	}
 

@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -139,12 +137,40 @@ func newUpdateCommand() *cobra.Command {
 	return updateCmd
 }
 
-func runUpdateCheck(cmd *cobra.Command, args []string) error {
-	cfg := updater.Config{
+func getUpdaterConfig(cmd *cobra.Command) (updater.Config, error) {
+	// Start with defaults
+	clientCfg := config.DefaultClientConfig()
+
+	// Try to load config file
+	if err := config.Load(configFile, &clientCfg); err != nil {
+		// If config load fails, we proceed with defaults
+		// This ensures update commands work even without a valid config file
+		logging.Debug("Failed to load config for update check", "error", err)
+	}
+
+	// Determine channel
+	channel := clientCfg.AutoUpdate.Channel
+	if channel == "" {
+		channel = "stable"
+	}
+
+	// If CLI flag was explicitly defined, it takes precedence
+	if cmd.Flags().Changed("channel") {
+		channel = updateChannel
+	}
+
+	return updater.Config{
 		Enabled:     true,
-		Channel:     updater.Channel(updateChannel),
+		Channel:     updater.Channel(channel),
 		GitHubOwner: "rennerdo30",
 		GitHubRepo:  "bifrost-proxy",
+	}, nil
+}
+
+func runUpdateCheck(cmd *cobra.Command, args []string) error {
+	cfg, err := getUpdaterConfig(cmd)
+	if err != nil {
+		return err
 	}
 
 	u, err := updater.New(cfg, updater.BinaryTypeClient, nil)
@@ -158,13 +184,14 @@ func runUpdateCheck(cmd *cobra.Command, args []string) error {
 	info, err := u.CheckForUpdate(ctx)
 	if err != nil {
 		if errors.Is(err, updater.ErrNoUpdateAvailable) {
-			fmt.Printf("Current version %s is up to date.\n", version.Short())
+			fmt.Printf("Current version %s is up to date (Channel: %s).\n", version.Short(), cfg.Channel)
 			return nil
 		}
 		return fmt.Errorf("check for update: %w", err)
 	}
 
 	fmt.Printf("Update available!\n")
+	fmt.Printf("  Channel:         %s\n", cfg.Channel)
 	fmt.Printf("  Current version: %s\n", info.CurrentVersion)
 	fmt.Printf("  New version:     %s\n", info.NewVersion)
 	fmt.Printf("  Published:       %s\n", info.PublishedAt.Format(time.RFC1123))
@@ -175,11 +202,9 @@ func runUpdateCheck(cmd *cobra.Command, args []string) error {
 }
 
 func runUpdateInstall(cmd *cobra.Command, args []string) error {
-	cfg := updater.Config{
-		Enabled:     true,
-		Channel:     updater.Channel(updateChannel),
-		GitHubOwner: "rennerdo30",
-		GitHubRepo:  "bifrost-proxy",
+	cfg, err := getUpdaterConfig(cmd)
+	if err != nil {
+		return err
 	}
 
 	u, err := updater.New(cfg, updater.BinaryTypeClient, nil)
@@ -194,7 +219,7 @@ func runUpdateInstall(cmd *cobra.Command, args []string) error {
 	info, err := u.CheckForUpdate(ctx)
 	if err != nil {
 		if errors.Is(err, updater.ErrNoUpdateAvailable) && !updateForce {
-			fmt.Printf("Already running latest version %s.\n", version.Short())
+			fmt.Printf("Already running latest version %s (Channel: %s).\n", version.Short(), cfg.Channel)
 			return nil
 		}
 		if !updateForce {
@@ -228,11 +253,9 @@ func runUpdateInstall(cmd *cobra.Command, args []string) error {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	cfg := updater.Config{
-		Enabled:     true,
-		Channel:     updater.Channel(updateChannel),
-		GitHubOwner: "rennerdo30",
-		GitHubRepo:  "bifrost-proxy",
+	cfg, err := getUpdaterConfig(cmd)
+	if err != nil {
+		return err
 	}
 
 	u, err := updater.New(cfg, updater.BinaryTypeClient, nil)
@@ -246,13 +269,14 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	info, err := u.CheckForUpdate(ctx)
 	if err != nil {
 		if errors.Is(err, updater.ErrNoUpdateAvailable) {
-			fmt.Printf("Current version %s is up to date.\n", version.Short())
+			fmt.Printf("Current version %s is up to date (Channel: %s).\n", version.Short(), cfg.Channel)
 			return nil
 		}
 		return fmt.Errorf("check for update: %w", err)
 	}
 
 	fmt.Printf("Update available!\n")
+	fmt.Printf("  Channel:         %s\n", cfg.Channel)
 	fmt.Printf("  Current version: %s\n", info.CurrentVersion)
 	fmt.Printf("  New version:     %s\n", info.NewVersion)
 	fmt.Printf("  Published:       %s\n", info.PublishedAt.Format(time.RFC1123))
@@ -313,8 +337,34 @@ func runConfigInit(cmd *cobra.Command, args []string) error {
 		},
 	}
 
+	// Create updates map from flags
+	updates := map[string]interface{}{
+		"proxy": map[string]interface{}{
+			"http": map[string]interface{}{
+				"listen": initHTTPListen,
+			},
+			"socks5": map[string]interface{}{
+				"listen": initSOCKS5Listen,
+			},
+		},
+		"server": map[string]interface{}{
+			"address":  initServer,
+			"protocol": initProtocol,
+		},
+	}
+
+	// Parse template and apply updates
+	node, err := config.ParseNode([]byte(config.DefaultClientConfigTemplate))
+	if err != nil {
+		return fmt.Errorf("failed to parse config template: %w", err)
+	}
+
+	if err := config.UpdateNode(node, updates); err != nil {
+		return fmt.Errorf("failed to update config template: %w", err)
+	}
+
 	// Save configuration
-	if err := config.Save(initOutput, &cfg); err != nil {
+	if err := config.SaveNode(initOutput, node); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
@@ -342,24 +392,8 @@ func run(cmd *cobra.Command, args []string) error {
 	// Set config path so changes can be saved
 	c.SetConfigPath(configFile)
 
-	// Setup signal handling
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-
-	// Start client
-	if err := c.Start(ctx); err != nil {
-		return fmt.Errorf("start client: %w", err)
-	}
-
-	// Wait for shutdown signal
-	sig := <-sigChan
-	logging.Info("Received signal", "signal", sig)
-
-	cancel()
-	return c.Stop(context.Background())
+	// Run service (handles signals and Windows Service events)
+	return service.Run("bifrost-client", c)
 }
 
 // Service command flags

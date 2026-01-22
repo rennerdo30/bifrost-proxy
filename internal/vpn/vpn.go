@@ -43,17 +43,17 @@ type VPNStats struct {
 
 // ConnectionInfo contains information about an active VPN connection.
 type ConnectionInfo struct {
-	ID           string        `json:"id"`
-	Protocol     string        `json:"protocol"` // "tcp" or "udp"
-	LocalAddr    netip.AddrPort `json:"local_addr"`
-	RemoteAddr   netip.AddrPort `json:"remote_addr"`
-	RemoteHost   string        `json:"remote_host,omitempty"` // Resolved hostname
-	Action       Action        `json:"action"`
-	MatchedBy    string        `json:"matched_by"`
-	ProcessInfo  *ProcessInfo  `json:"process_info,omitempty"`
-	StartTime    time.Time     `json:"start_time"`
-	BytesSent    int64         `json:"bytes_sent"`
-	BytesReceived int64        `json:"bytes_received"`
+	ID            string         `json:"id"`
+	Protocol      string         `json:"protocol"` // "tcp" or "udp"
+	LocalAddr     netip.AddrPort `json:"local_addr"`
+	RemoteAddr    netip.AddrPort `json:"remote_addr"`
+	RemoteHost    string         `json:"remote_host,omitempty"` // Resolved hostname
+	Action        Action         `json:"action"`
+	MatchedBy     string         `json:"matched_by"`
+	ProcessInfo   *ProcessInfo   `json:"process_info,omitempty"`
+	StartTime     time.Time      `json:"start_time"`
+	BytesSent     int64          `json:"bytes_sent"`
+	BytesReceived int64          `json:"bytes_received"`
 }
 
 // ServerConnector defines the interface for tunneling traffic through the proxy server.
@@ -502,6 +502,9 @@ func (m *Manager) forwardOnConnection(conn *TrackedConnection, packet *IPPacket)
 
 // Status returns the current VPN status and statistics.
 func (m *Manager) Status() VPNStats {
+	if m == nil {
+		return VPNStats{Status: StatusDisabled}
+	}
 	status := m.status.Load().(Status)
 
 	var uptime time.Duration
@@ -550,7 +553,7 @@ func (m *Manager) Status() VPNStats {
 
 // Connections returns information about active VPN connections.
 func (m *Manager) Connections() []ConnectionInfo {
-	if m.connTracker == nil {
+	if m == nil || m.connTracker == nil {
 		return nil
 	}
 
@@ -584,6 +587,9 @@ func (m *Manager) Enabled() bool {
 
 // SplitTunnelRules returns the current split tunnel rules.
 func (m *Manager) SplitTunnelRules() SplitTunnelConfig {
+	if m == nil {
+		return SplitTunnelConfig{}
+	}
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.config.SplitTunnel
@@ -591,6 +597,9 @@ func (m *Manager) SplitTunnelRules() SplitTunnelConfig {
 
 // AddSplitTunnelApp adds an app to the split tunnel rules.
 func (m *Manager) AddSplitTunnelApp(app AppRule) error {
+	if m == nil {
+		return errors.New("VPN manager not initialized")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -612,6 +621,9 @@ func (m *Manager) AddSplitTunnelApp(app AppRule) error {
 
 // RemoveSplitTunnelApp removes an app from the split tunnel rules.
 func (m *Manager) RemoveSplitTunnelApp(name string) error {
+	if m == nil {
+		return errors.New("VPN manager not initialized")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -640,6 +652,9 @@ func (m *Manager) RemoveSplitTunnelApp(name string) error {
 
 // AddSplitTunnelDomain adds a domain pattern to the split tunnel rules.
 func (m *Manager) AddSplitTunnelDomain(pattern string) error {
+	if m == nil {
+		return errors.New("VPN manager not initialized")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -661,6 +676,9 @@ func (m *Manager) AddSplitTunnelDomain(pattern string) error {
 
 // AddSplitTunnelIP adds an IP/CIDR to the split tunnel rules.
 func (m *Manager) AddSplitTunnelIP(cidr string) error {
+	if m == nil {
+		return errors.New("VPN manager not initialized")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

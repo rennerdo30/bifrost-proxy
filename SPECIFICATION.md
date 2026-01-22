@@ -488,6 +488,10 @@ simple-proxy-server config validate
 simple-proxy-server service install --config /path/to/config.yaml
 simple-proxy-server service uninstall
 simple-proxy-server service status
+
+# Update management
+simple-proxy-server update check
+simple-proxy-server update install --channel stable
 ```
 
 ### 5.2 Client CLI Commands
@@ -525,6 +529,10 @@ simple-proxy-client config reload
 simple-proxy-client service install --config /path/to/config.yaml
 simple-proxy-client service uninstall
 simple-proxy-client service status
+
+# Update management
+simple-proxy-client update check
+simple-proxy-client update install --channel stable
 ```
 
 ### 5.3 Server REST API
@@ -1494,3 +1502,62 @@ The mobile client uses React Query for data fetching with automatic:
 - Optimistic updates for mutations
 - Error handling and retry logic
 - Cache invalidation on mutations
+
+## 21. Automatic Updates
+
+Bifrost includes a built-in update mechanism that checks GitHub for new releases.
+
+### 21.1 Update Channels
+- **stable**: Production-ready releases.
+- **prerelease**: Beta and release candidates.
+- **nightly**: Automated builds from the master branch (if available).
+
+### 21.2 CLI Integration
+Users can manually check for and install updates using the `update` command.
+```bash
+bifrost-client update check
+bifrost-client update install --channel stable
+```
+
+### 21.3 Background Checks
+The application can be configured to check for updates in the background at regular intervals.
+```yaml
+auto_update:
+  enabled: true
+  check_interval: "24h"
+  channel: "stable"
+```
+
+## 22. System Service Management
+
+Bifrost provides native service management for Windows (SCM), macOS (launchd), and Linux (systemd).
+
+### 22.1 Service Commands
+- `install`: Registers the binary as a system service with specified configuration.
+- `uninstall`: Unregisters and removes the service.
+- `status`: Displays the current service status.
+
+### 22.2 Platform Specifics
+- **Windows**: Registers as a Windows Service using the SCM. Supports START, STOP, and SHUTDOWN events.
+- **macOS**: Generates and installs a `.plist` file in `~/Library/LaunchAgents`.
+- **Linux**: Generates and installs a `.service` unit file in `/etc/systemd/system`.
+
+## 23. System Proxy Support
+
+The Bifrost client can automatically configure the operating system's proxy settings.
+
+### 23.1 Configuration
+```yaml
+system_proxy:
+  enabled: true
+```
+
+### 23.2 Windows Implementation
+On Windows, Bifrost modifies the registry keys under `Software\Microsoft\Windows\CurrentVersion\Internet Settings` and notifies the system using `InternetSetOption` from `wininet.dll`.
+
+## 24. Configuration Preservation
+
+When updating configuration via the REST API or CLI, Bifrost uses an AST-based approach (using `yaml.v3`) to ensure that:
+- User comments are preserved.
+- Formatting and indentation are maintained.
+- Only the specific requested fields are modified.

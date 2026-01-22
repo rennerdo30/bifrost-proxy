@@ -12,17 +12,23 @@ import (
 
 // ClientConfig is the main configuration for the Bifrost client.
 type ClientConfig struct {
-	Proxy      ClientProxySettings `yaml:"proxy" json:"proxy"`
-	Server     ServerConnection    `yaml:"server" json:"server"`
-	Routes     []ClientRouteConfig `yaml:"routes" json:"routes"`
-	Debug      DebugConfig         `yaml:"debug" json:"debug"`
-	Logging    logging.Config      `yaml:"logging" json:"logging"`
-	WebUI      WebUIConfig         `yaml:"web_ui" json:"web_ui"`
-	API        APIConfig           `yaml:"api" json:"api"`
-	Tray       TrayConfig          `yaml:"tray" json:"tray"`
-	AutoUpdate AutoUpdateConfig    `yaml:"auto_update" json:"auto_update"`
-	VPN        vpn.Config          `yaml:"vpn" json:"vpn"`
-	Mesh       mesh.Config         `yaml:"mesh" json:"mesh"`
+	Proxy       ClientProxySettings `yaml:"proxy" json:"proxy"`
+	Server      ServerConnection    `yaml:"server" json:"server"`
+	Routes      []ClientRouteConfig `yaml:"routes" json:"routes"`
+	Debug       DebugConfig         `yaml:"debug" json:"debug"`
+	Logging     logging.Config      `yaml:"logging" json:"logging"`
+	WebUI       WebUIConfig         `yaml:"web_ui" json:"web_ui"`
+	API         APIConfig           `yaml:"api" json:"api"`
+	Tray        TrayConfig          `yaml:"tray" json:"tray"`
+	AutoUpdate  AutoUpdateConfig    `yaml:"auto_update" json:"auto_update"`
+	SystemProxy SystemProxyConfig   `yaml:"system_proxy" json:"system_proxy"`
+	VPN         vpn.Config          `yaml:"vpn" json:"vpn"`
+	Mesh        mesh.Config         `yaml:"mesh" json:"mesh"`
+}
+
+// SystemProxyConfig contains settings for OS-level proxy configuration.
+type SystemProxyConfig struct {
+	Enabled bool `yaml:"enabled" json:"enabled"`
 }
 
 // ClientProxySettings contains client proxy listener settings.
@@ -120,6 +126,9 @@ func DefaultClientConfig() ClientConfig {
 			Enabled:       false,
 			CheckInterval: Duration(24 * time.Hour),
 			Channel:       "stable",
+		},
+		SystemProxy: SystemProxyConfig{
+			Enabled: false,
 		},
 		VPN:  vpn.DefaultConfig(),
 		Mesh: mesh.DefaultConfig(),
