@@ -130,7 +130,7 @@ bifrost-server ctl [command] [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--api` | `http://localhost:8082` | API server URL |
+| `--api` | `http://localhost:7082` | API server URL |
 | `--token` | | API authentication token |
 
 #### Subcommands
@@ -247,13 +247,13 @@ bifrost-client config init [flags]
 
 ```bash
 # Generate basic config
-bifrost-client config init -s proxy.example.com:8080
+bifrost-client config init -s proxy.example.com:7080
 
 # Specify output file
-bifrost-client config init -s proxy.example.com:8080 -o my-config.yaml
+bifrost-client config init -s proxy.example.com:7080 -o my-config.yaml
 
 # Use SOCKS5 protocol
-bifrost-client config init -s proxy.example.com:1080 -p socks5
+bifrost-client config init -s proxy.example.com:7180 -p socks5
 ```
 
 ### bifrost-client validate
@@ -319,7 +319,7 @@ bifrost-client ctl [command] [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--api` | `http://localhost:3130` | API server URL |
+| `--api` | `http://localhost:7383` | API server URL |
 
 #### Subcommands
 
@@ -462,13 +462,13 @@ bifrost-server validate -c config.yaml && echo "Config OK"
 ### Check Server Health
 
 ```bash
-bifrost-server ctl health --api http://localhost:8082 --token mytoken
+bifrost-server ctl health --api http://localhost:7082 --token mytoken
 ```
 
 ### Generate Client Config and Start
 
 ```bash
-bifrost-client config init -s proxy.example.com:8080 -o config.yaml
+bifrost-client config init -s proxy.example.com:7080 -o config.yaml
 bifrost-client -c config.yaml
 ```
 

@@ -246,7 +246,7 @@ backends:
   - name: "us-proxy"
     type: "http"
     proxy:
-      address: "proxy.example.com:8080"
+      address: "proxy.example.com:7080"
       username: ""
       password: ""
 
@@ -254,7 +254,7 @@ backends:
   - name: "socks-proxy"
     type: "socks5"
     proxy:
-      address: "socks.example.com:1080"
+      address: "socks.example.com:7180"
       username: ""
       password: ""
 
@@ -309,7 +309,7 @@ tray:
 
 # Server connection
 server:
-  address: "proxy-server.example.com:8080"
+  address: "proxy-server.example.com:7080"
   protocol: "http"          # http, https, socks5
   auth:
     enabled: false
@@ -589,7 +589,17 @@ This is optional and requires explicit user setup. By default, HTTPS is tunneled
 Domain patterns support:
 - Exact match: `example.com`
 - Wildcard subdomain: `*.example.com` (matches any.example.com, also example.com itself)
+- Suffix match: `.example.com` (matches example.com and all subdomains)
 - Full wildcard: `*`
+- Glob patterns within labels: `sf-*.example.com` (matches sf-abc.example.com, sf-xyz.example.com)
+
+**Glob Pattern Examples:**
+| Pattern | Matches | Does Not Match |
+|---------|---------|----------------|
+| `sf-*.example.com` | `sf-abc.example.com`, `sf-123.example.com` | `other.example.com` |
+| `*-api.example.com` | `backend-api.example.com`, `v2-api.example.com` | `api.example.com` |
+| `pre-*-suf.example.com` | `pre-middle-suf.example.com` | `pre-other.example.com` |
+| `*.sf-*.example.com` | `sub.sf-abc.example.com` | `sf-abc.example.com` |
 
 Matching is case-insensitive.
 
@@ -696,9 +706,9 @@ services:
     sysctls:
       - net.ipv4.ip_forward=1
     ports:
-      - "8080:8080"   # HTTP/HTTPS proxy
-      - "1080:1080"   # SOCKS5 proxy
-      - "8081:8081"   # Web UI
+      - "8080:7080"   # HTTP/HTTPS proxy
+      - "1080:7180"   # SOCKS5 proxy
+      - "8081:7081"   # Web UI
     volumes:
       - ./config:/etc/simple-proxy
       - ./wireguard:/etc/wireguard:ro  # WireGuard configs
@@ -1069,7 +1079,7 @@ rules:
     action: "direct"
 ```
 
-Then set `HTTP_PROXY=http://127.0.0.1:3128` for Claude Code.
+Then set `HTTP_PROXY=http://127.0.0.1:7380` for Claude Code.
 
 ### Streaming Geo-Unlock
 ```yaml
@@ -1197,3 +1207,280 @@ The documentation is organized into the following sections:
 - **Development**
   - Contributing
   - Changelog
+
+## 17. Authentication Plugin System
+
+The authentication system has been refactored to use a plugin architecture, allowing for modular authentication providers that can be combined and extended.
+
+### 17.1 Plugin Interface
+
+```go
+type Plugin interface {
+    // Name returns the unique identifier for this plugin
+    Name() string
+
+    // Init initializes the plugin with configuration
+    Init(config map[string]interface{}) error
+
+    // Authenticate validates credentials and returns user info
+    Authenticate(ctx context.Context, creds Credentials) (*User, error)
+
+    // Close cleans up resources
+    Close() error
+}
+```
+
+### 17.2 Built-in Plugins
+
+| Plugin | Description | Use Case |
+|--------|-------------|----------|
+| `none` | No authentication | Development, trusted networks |
+| `native` | Server-managed users/passwords | Simple deployments |
+| `system` | OS user authentication (PAM/Directory Services) | Single-server with OS users |
+| `ldap` | LDAP/Active Directory | Enterprise environments |
+| `oauth` | OAuth 2.0 / OpenID Connect | SSO integration |
+| `apikey` | API key in header | Service-to-service auth |
+| `jwt` | JWT token validation with JWKS | Token-based auth |
+| `totp` | Time-based OTP | Google Authenticator |
+| `hotp` | Counter-based OTP | YubiKey |
+| `mtls` | Client certificate auth | Smart cards, certificates |
+| `kerberos` | Kerberos/SPNEGO | Enterprise SSO |
+| `ntlm` | NTLM authentication | Windows domain fallback |
+
+### 17.3 MFA Wrapper
+
+The MFA wrapper allows combining a primary authentication method with an OTP provider:
+
+```yaml
+auth:
+  mode: mfa_wrapper
+  mfa_wrapper:
+    primary:
+      mode: native
+      native:
+        users:
+          - username: admin
+            password_hash: "$2a$10$..."
+    secondary:
+      mode: totp
+      totp:
+        issuer: "Bifrost"
+        secrets:
+          admin: "JBSWY3DPEHPK3PXP"
+```
+
+### 17.4 Session Management
+
+Sessions can be stored in memory or Redis:
+
+```yaml
+session:
+  store: redis  # or "memory"
+  redis:
+    address: "localhost:6379"
+    password: ""
+    db: 0
+  ttl: "24h"
+  cookie_name: "bifrost_session"
+```
+
+## 18. VPN Mode
+
+The client supports a TUN-based VPN mode that captures all system traffic and routes it through the proxy.
+
+### 18.1 Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        VPN MODE                                  │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │  TUN Device │──▶│ Split Rules │──▶│   Router    │             │
+│  │  (bifrost0) │  │             │  │             │             │
+│  └─────────────┘  └─────────────┘  └──────┬──────┘             │
+│                                           │                     │
+│                    ┌──────────────────────┼──────────────────┐  │
+│                    ▼                      ▼                  ▼  │
+│            ┌─────────────┐        ┌─────────────┐    ┌──────────┐
+│            │   Direct    │        │   Server    │    │  Block   │
+│            │  Connection │        │  Connection │    │          │
+│            └─────────────┘        └─────────────┘    └──────────┘
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 18.2 Configuration
+
+```yaml
+vpn:
+  enabled: true
+  mode: tun
+  interface_name: bifrost0
+  mtu: 1420
+
+  # DNS interception
+  dns:
+    enabled: true
+    servers:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    cache_ttl: "5m"
+
+  # Split tunneling rules
+  split:
+    mode: exclude  # "include" or "exclude"
+
+    # App-based rules (by process name or path)
+    apps:
+      - name: "Slack"
+        path: "/Applications/Slack.app"
+      - name: "Teams"
+
+    # Domain-based rules
+    domains:
+      - "*.internal.company.com"
+      - "localhost"
+      - "*.local"
+
+    # IP/CIDR-based rules
+    ips:
+      - "192.168.0.0/16"
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+```
+
+### 18.3 Split Tunneling Modes
+
+- **Include Mode**: Only traffic matching rules goes through VPN
+- **Exclude Mode**: All traffic except matching rules goes through VPN
+
+### 18.4 Platform-Specific Notes
+
+| Platform | TUN Support | App Rules | Notes |
+|----------|-------------|-----------|-------|
+| Linux | ✅ | Process matching | Requires CAP_NET_ADMIN |
+| macOS | ✅ | Bundle ID matching | Uses utun interface |
+| Windows | ✅ | Process path matching | Requires wintun driver |
+
+## 19. Desktop Client
+
+A native desktop client built with [Wails](https://wails.io/) providing a GUI for managing the proxy.
+
+### 19.1 Features
+
+- **Quick GUI**: Floating window for quick access to common controls
+- **System Tray**: Background operation with status indicators
+- **Connection Dashboard**: Real-time connection statistics
+- **Server Management**: Configure and switch between servers
+- **Split Tunneling**: Visual rule editor for app/domain exclusions
+- **Logs Viewer**: Real-time log streaming
+
+### 19.2 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    DESKTOP CLIENT (Wails)                        │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │  Frontend   │  │   Backend   │  │    Tray     │              │
+│  │  (React)    │◀─▶│   (Go)     │◀─▶│  (Native)   │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+│         │                │                                       │
+│         ▼                ▼                                       │
+│  ┌─────────────────────────────────────────────────────────────┐│
+│  │           Bifrost Client Core (Go library)                  ││
+│  └─────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 19.3 Building
+
+```bash
+# Install Wails CLI
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+# Build for current platform
+cd desktop
+wails build
+
+# Build for all platforms
+wails build -platform darwin/amd64
+wails build -platform windows/amd64
+wails build -platform linux/amd64
+```
+
+### 19.4 Quick GUI
+
+The Quick GUI is a small floating window that provides:
+- Connection status indicator
+- Quick connect/disconnect toggle
+- Bandwidth usage graph
+- Recent connections list
+- Quick access to full dashboard
+
+## 20. Mobile Client
+
+A cross-platform mobile client built with React Native and Expo.
+
+### 20.1 Features
+
+- **Home Screen**: VPN connection status and quick toggle
+- **Servers Screen**: Server list with latency indicators
+- **Stats Screen**: Real-time traffic statistics
+- **Settings Screen**: Configuration management
+
+### 20.2 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    MOBILE CLIENT (React Native)                  │
+├─────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │   Screens   │  │   Hooks     │  │   API       │              │
+│  │  (React)    │──▶│  (Query)    │──▶│  Service    │              │
+│  └─────────────┘  └─────────────┘  └──────┬──────┘              │
+│                                           │                      │
+│                                           ▼                      │
+│                           ┌─────────────────────────────────────┐│
+│                           │  Bifrost Client REST API            ││
+│                           │  http://localhost:7383/api/v1       ││
+│                           └─────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 20.3 Screens
+
+| Screen | Description |
+|--------|-------------|
+| Home | Connection status, VPN toggle, traffic summary |
+| Servers | Server list with status, latency, selection |
+| Stats | Detailed statistics, connection info, network details |
+| Settings | Auto-connect, kill switch, server address, notifications |
+
+### 20.4 Building
+
+```bash
+# Install dependencies
+cd mobile
+npm install
+
+# Start development
+npx expo start
+
+# Build for iOS
+npx expo build:ios
+
+# Build for Android
+npx expo build:android
+
+# Using EAS Build (recommended)
+eas build --platform ios
+eas build --platform android
+```
+
+### 20.5 API Integration
+
+The mobile client uses React Query for data fetching with automatic:
+- Background refetching (configurable intervals)
+- Optimistic updates for mutations
+- Error handling and retry logic
+- Cache invalidation on mutations

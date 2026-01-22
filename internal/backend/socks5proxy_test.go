@@ -13,7 +13,7 @@ import (
 func TestNewSOCKS5ProxyBackend(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -25,7 +25,7 @@ func TestNewSOCKS5ProxyBackend(t *testing.T) {
 func TestNewSOCKS5ProxyBackend_DefaultTimeout(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -35,7 +35,7 @@ func TestNewSOCKS5ProxyBackend_DefaultTimeout(t *testing.T) {
 func TestNewSOCKS5ProxyBackend_WithAuth(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:     "test-socks5",
-		Address:  "proxy.example.com:1080",
+		Address:  "proxy.example.com:7180",
 		Username: "user",
 		Password: "pass",
 	}
@@ -48,7 +48,7 @@ func TestNewSOCKS5ProxyBackend_WithAuth(t *testing.T) {
 func TestSOCKS5ProxyBackend_Start(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -66,7 +66,7 @@ func TestSOCKS5ProxyBackend_Start(t *testing.T) {
 func TestSOCKS5ProxyBackend_Stop(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -81,7 +81,7 @@ func TestSOCKS5ProxyBackend_Stop(t *testing.T) {
 func TestSOCKS5ProxyBackend_Stats(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -102,7 +102,7 @@ func TestSOCKS5ProxyBackend_Stats(t *testing.T) {
 func TestSOCKS5ProxyBackend_Dial_NotStarted(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -116,7 +116,7 @@ func TestSOCKS5ProxyBackend_Dial_NotStarted(t *testing.T) {
 func TestSOCKS5ProxyBackend_DialTimeout(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -137,7 +137,7 @@ func TestSOCKS5ProxyBackend_DialTimeout(t *testing.T) {
 func TestSOCKS5ProxyBackend_IsHealthy(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -154,7 +154,7 @@ func TestSOCKS5ProxyBackend_IsHealthy(t *testing.T) {
 func TestSOCKS5ProxyBackend_handshake_NoAuth(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -191,7 +191,7 @@ func TestSOCKS5ProxyBackend_handshake_NoAuth(t *testing.T) {
 func TestSOCKS5ProxyBackend_handshake_WithAuth(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:     "test-socks5",
-		Address:  "proxy.example.com:1080",
+		Address:  "proxy.example.com:7180",
 		Username: "user",
 		Password: "pass",
 	}
@@ -235,7 +235,7 @@ func TestSOCKS5ProxyBackend_handshake_WithAuth(t *testing.T) {
 func TestSOCKS5ProxyBackend_authenticate(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:     "test-socks5",
-		Address:  "proxy.example.com:1080",
+		Address:  "proxy.example.com:7180",
 		Username: "user",
 		Password: "pass",
 	}
@@ -274,7 +274,7 @@ func TestSOCKS5ProxyBackend_authenticate(t *testing.T) {
 func TestSOCKS5ProxyBackend_authenticate_Failed(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:     "test-socks5",
-		Address:  "proxy.example.com:1080",
+		Address:  "proxy.example.com:7180",
 		Username: "user",
 		Password: "pass",
 	}
@@ -314,7 +314,7 @@ func TestSOCKS5ProxyBackend_authenticate_Failed(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_IPv4(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -352,7 +352,7 @@ func TestSOCKS5ProxyBackend_connect_IPv4(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_Domain(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -390,7 +390,7 @@ func TestSOCKS5ProxyBackend_connect_Domain(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_InvalidAddress(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -409,7 +409,7 @@ func TestSOCKS5ProxyBackend_connect_InvalidAddress(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_InvalidPort(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -428,7 +428,7 @@ func TestSOCKS5ProxyBackend_connect_InvalidPort(t *testing.T) {
 func TestSOCKS5ProxyBackend_recordError(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -614,7 +614,7 @@ func TestSOCKS5ProxyBackend_Dial_ConnectFailed(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_IPv6(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -654,7 +654,7 @@ func TestSOCKS5ProxyBackend_connect_IPv6(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_ResponseIPv6(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -694,7 +694,7 @@ func TestSOCKS5ProxyBackend_connect_ResponseIPv6(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_ResponseDomain(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -736,7 +736,7 @@ func TestSOCKS5ProxyBackend_connect_ResponseDomain(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_InvalidVersionResponse(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -775,7 +775,7 @@ func TestSOCKS5ProxyBackend_connect_InvalidVersionResponse(t *testing.T) {
 func TestSOCKS5ProxyBackend_connect_UnknownAddressType(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -814,7 +814,7 @@ func TestSOCKS5ProxyBackend_connect_UnknownAddressType(t *testing.T) {
 func TestSOCKS5ProxyBackend_handshake_InvalidVersion(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -852,7 +852,7 @@ func TestSOCKS5ProxyBackend_handshake_InvalidVersion(t *testing.T) {
 func TestSOCKS5ProxyBackend_handshake_UnsupportedAuthMethod(t *testing.T) {
 	cfg := SOCKS5ProxyConfig{
 		Name:    "test-socks5",
-		Address: "proxy.example.com:1080",
+		Address: "proxy.example.com:7180",
 	}
 
 	backend := NewSOCKS5ProxyBackend(cfg)
@@ -914,6 +914,356 @@ func TestSOCKS5ProxyBackend_TrackedConn_OnClose(t *testing.T) {
 
 	stats = backend.Stats()
 	assert.Equal(t, int64(0), stats.ActiveConnections)
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_handshake_WriteError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create a server that closes immediately
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			conn.Close() // Close immediately to cause write error
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	// Give server time to close
+	time.Sleep(10 * time.Millisecond)
+
+	err = backend.handshake(conn)
+	assert.Error(t, err)
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_handshake_ReadError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create a server that closes after receiving greeting
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			// Read greeting then close
+			buf := make([]byte, 10)
+			conn.Read(buf)
+			conn.Close()
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = backend.handshake(conn)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read greeting response")
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_authenticate_WriteError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:     "test-socks5",
+		Address:  "proxy.example.com:7180",
+		Username: "user",
+		Password: "pass",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create server that closes
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	time.Sleep(10 * time.Millisecond)
+
+	err = backend.authenticate(conn)
+	assert.Error(t, err)
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_authenticate_ReadError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:     "test-socks5",
+		Address:  "proxy.example.com:7180",
+		Username: "user",
+		Password: "pass",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create server that reads auth but closes before responding
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			buf := make([]byte, 100)
+			conn.Read(buf)
+			conn.Close()
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = backend.authenticate(conn)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read auth response")
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_connect_WriteError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Use pipe and close one side
+	client, server := net.Pipe()
+	server.Close()
+
+	err := backend.connect(client, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "write connect")
+
+	client.Close()
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_connect_ReadResponseError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create server that reads connect but closes before responding
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			buf := make([]byte, 100)
+			conn.Read(buf)
+			conn.Close()
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = backend.connect(conn, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read connect response")
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_connect_ReadIPv4Error(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create server that sends partial response (only 4 bytes, no address)
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			defer conn.Close()
+			buf := make([]byte, 100)
+			conn.Read(buf)
+			// Send only the header, missing IPv4 address
+			conn.Write([]byte{socks5Version, socks5ReplyOK, 0x00, socks5AddrIPv4})
+			// Close without sending address bytes
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = backend.connect(conn, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read bound IPv4 address")
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_connect_ReadIPv6Error(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create server that sends partial response for IPv6
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			defer conn.Close()
+			buf := make([]byte, 100)
+			conn.Read(buf)
+			// Send only the header indicating IPv6, but no address
+			conn.Write([]byte{socks5Version, socks5ReplyOK, 0x00, socks5AddrIPv6})
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = backend.connect(conn, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read bound IPv6 address")
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_connect_ReadDomainLengthError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create server that sends response with domain type but no length
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			defer conn.Close()
+			buf := make([]byte, 100)
+			conn.Read(buf)
+			// Send header with domain type, but no length byte
+			conn.Write([]byte{socks5Version, socks5ReplyOK, 0x00, socks5AddrDomain})
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = backend.connect(conn, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read bound domain length")
+
+	backend.Stop(ctx)
+}
+
+func TestSOCKS5ProxyBackend_connect_ReadDomainError(t *testing.T) {
+	cfg := SOCKS5ProxyConfig{
+		Name:    "test-socks5",
+		Address: "proxy.example.com:7180",
+	}
+
+	backend := NewSOCKS5ProxyBackend(cfg)
+	ctx := context.Background()
+	backend.Start(ctx)
+
+	// Create server that sends domain length but not the domain
+	server, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer server.Close()
+
+	go func() {
+		conn, _ := server.Accept()
+		if conn != nil {
+			defer conn.Close()
+			buf := make([]byte, 100)
+			conn.Read(buf)
+			// Send header with domain type and length, but not the domain itself
+			conn.Write([]byte{socks5Version, socks5ReplyOK, 0x00, socks5AddrDomain, 10}) // Says 10 byte domain, but closes
+		}
+	}()
+
+	conn, err := net.Dial("tcp", server.Addr().String())
+	require.NoError(t, err)
+	defer conn.Close()
+
+	err = backend.connect(conn, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read bound domain")
 
 	backend.Stop(ctx)
 }

@@ -335,6 +335,9 @@ func run(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("create client: %w", err)
 	}
 
+	// Set config path so changes can be saved
+	c.SetConfigPath(configFile)
+
 	// Setup signal handling
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

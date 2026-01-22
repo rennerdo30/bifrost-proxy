@@ -8,13 +8,13 @@ This guide helps diagnose and resolve common issues with Bifrost.
 
 ```bash
 # Server health
-curl http://localhost:8082/api/v1/health
+curl http://localhost:7082/api/v1/health
 
 # Server status
-curl http://localhost:8082/api/v1/status
+curl http://localhost:7082/api/v1/status
 
 # Backend status
-curl http://localhost:8082/api/v1/backends
+curl http://localhost:7082/api/v1/backends
 ```
 
 ### Enable Debug Logging
@@ -57,12 +57,12 @@ bifrost-server -c config.yaml --log-level debug
    # Wrong: only localhost can connect
    server:
      http:
-       listen: "127.0.0.1:8080"
+       listen: "127.0.0.1:7080"
 
    # Correct: all interfaces
    server:
      http:
-       listen: ":8080"
+       listen: ":7080"
    ```
 
 3. **Firewall blocking**
@@ -83,10 +83,10 @@ bifrost-server -c config.yaml --log-level debug
 1. **Backend unreachable**
    ```bash
    # Test backend connectivity
-   curl -x http://localhost:8080 https://example.com
+   curl -x http://localhost:7080 https://example.com
 
    # Check backend health
-   curl http://localhost:8082/api/v1/backends
+   curl http://localhost:7082/api/v1/backends
    ```
 
 2. **DNS resolution issues**
@@ -114,7 +114,7 @@ bifrost-server -c config.yaml --log-level debug
 1. **Check credentials**
    ```bash
    # Test with curl
-   curl -x http://user:password@localhost:8080 https://example.com
+   curl -x http://user:password@localhost:7080 https://example.com
    ```
 
 2. **Verify auth configuration**
@@ -229,7 +229,7 @@ tail -f /var/log/openvpn.log
 
 ```bash
 # Test upstream proxy directly
-curl -x http://upstream-proxy:3128 https://example.com
+curl -x http://upstream-proxy:7380 https://example.com
 
 # Check connectivity
 nc -zv upstream-proxy 3128
@@ -245,10 +245,10 @@ nc -zv upstream-proxy 3128
 
 ```bash
 # Measure request time
-time curl -x http://localhost:8080 https://example.com -o /dev/null
+time curl -x http://localhost:7080 https://example.com -o /dev/null
 
 # Check active connections
-curl http://localhost:8082/api/v1/stats
+curl http://localhost:7082/api/v1/stats
 ```
 
 **Solutions:**
@@ -347,7 +347,7 @@ bifrost-server validate -c config.yaml
    kill -HUP $(pgrep bifrost-server)
 
    # Or via API
-   curl -X POST http://localhost:8082/api/v1/config/reload
+   curl -X POST http://localhost:7082/api/v1/config/reload
    ```
 
 2. **Check logs for reload errors**
@@ -486,7 +486,7 @@ api:
 
 View via API:
 ```bash
-curl http://localhost:8082/api/v1/requests | jq
+curl http://localhost:7082/api/v1/requests | jq
 ```
 
 ---

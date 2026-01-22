@@ -2,12 +2,12 @@
 
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
     read_timeout: "30s"
     write_timeout: "30s"
     idle_timeout: "60s"
   socks5:
-    listen: ":1080"
+    listen: ":7180"
   graceful_period: "30s"
 
 # Backend definitions
@@ -109,7 +109,7 @@ access_log:
 # Prometheus metrics
 metrics:
   enabled: true
-  listen: ":9090"
+  listen: ":7090"
   path: "/metrics"
 
 # Application logging
@@ -121,12 +121,12 @@ logging:
 # Web UI (management interface)
 web_ui:
   enabled: false
-  listen: ":8081"
+  listen: ":7081"
 
 # REST API
 api:
   enabled: true
-  listen: ":8082"
+  listen: ":7082"
   # token: "your-api-token"  # Optional API authentication
   # enable_request_log: true  # Enable request logging for Web UI (shows visited URLs)
   # request_log_size: 1000    # Max number of requests to keep in memory

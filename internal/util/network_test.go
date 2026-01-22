@@ -1,6 +1,7 @@
 package util
 
 import (
+	"errors"
 	"net"
 	"testing"
 )
@@ -15,7 +16,7 @@ func TestSplitHostPort(t *testing.T) {
 	}{
 		{
 			name:     "host with port",
-			addr:     "example.com:8080",
+			addr:     "example.com:7080",
 			wantHost: "example.com",
 			wantPort: 8080,
 			wantErr:  false,
@@ -43,14 +44,14 @@ func TestSplitHostPort(t *testing.T) {
 		},
 		{
 			name:     "IPv6 with port",
-			addr:     "[::1]:8080",
+			addr:     "[::1]:7080",
 			wantHost: "::1",
 			wantPort: 8080,
 			wantErr:  false,
 		},
 		{
 			name:     "colon only",
-			addr:     ":8080",
+			addr:     ":7080",
 			wantHost: "",
 			wantPort: 8080,
 			wantErr:  false,
@@ -99,7 +100,7 @@ func TestJoinHostPort(t *testing.T) {
 			name: "simple host",
 			host: "example.com",
 			port: 8080,
-			want: "example.com:8080",
+			want: "example.com:7080",
 		},
 		{
 			name: "IP address",
@@ -111,7 +112,7 @@ func TestJoinHostPort(t *testing.T) {
 			name: "IPv6",
 			host: "::1",
 			port: 8080,
-			want: "[::1]:8080",
+			want: "[::1]:7080",
 		},
 		{
 			name: "empty host",
@@ -144,7 +145,7 @@ func TestIsLocalAddress(t *testing.T) {
 		want bool
 	}{
 		{"localhost", "localhost", true},
-		{"localhost with port", "localhost:8080", true},
+		{"localhost with port", "localhost:7080", true},
 		{"127.0.0.1", "127.0.0.1", true},
 		{"127.0.0.1 with port", "127.0.0.1:3000", true},
 		{"::1", "::1", true},
@@ -181,6 +182,30 @@ func TestGetOutboundIP(t *testing.T) {
 	// Should be a valid IP, not loopback
 	if ip.IsLoopback() {
 		t.Error("GetOutboundIP() returned loopback address")
+	}
+}
+
+func TestGetOutboundIP_DialError(t *testing.T) {
+	// Save the original dialer and restore it after the test
+	originalDialer := netDialer
+	defer func() { netDialer = originalDialer }()
+
+	// Replace with a dialer that always fails
+	expectedErr := errors.New("dial error")
+	netDialer = func(network, address string) (net.Conn, error) {
+		return nil, expectedErr
+	}
+
+	ip, err := GetOutboundIP()
+
+	if err == nil {
+		t.Error("GetOutboundIP() should return error when dial fails")
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("GetOutboundIP() error = %v, want %v", err, expectedErr)
+	}
+	if ip != nil {
+		t.Errorf("GetOutboundIP() ip = %v, want nil", ip)
 	}
 }
 
@@ -314,7 +339,7 @@ func TestGetHostFromRequest(t *testing.T) {
 		},
 		{
 			name: "host with port",
-			host: "example.com:8080",
+			host: "example.com:7080",
 			want: "example.com",
 		},
 		{
@@ -329,7 +354,7 @@ func TestGetHostFromRequest(t *testing.T) {
 		},
 		{
 			name: "IPv6 with brackets and port",
-			host: "[::1]:8080",
+			host: "[::1]:7080",
 			want: "::1",
 		},
 		{

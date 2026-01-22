@@ -200,3 +200,119 @@ func TestWireGuardConfig_Struct(t *testing.T) {
 	assert.Equal(t, 25, cfg.Peer.PersistentKeepalive)
 	assert.Equal(t, "psk", cfg.Peer.PresharedKey)
 }
+
+func TestWireGuardBackend_Start_AlreadyRunning(t *testing.T) {
+	// Create a backend and manually set it as running to test idempotent Start
+	cfg := WireGuardConfig{
+		Name:       "test-wg",
+		PrivateKey: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=",
+		Address:    "10.0.0.2/24",
+	}
+
+	b := NewWireGuardBackend(cfg)
+	// Manually set running state to test idempotent behavior
+	b.mu.Lock()
+	b.running = true
+	b.mu.Unlock()
+
+	// Start should be idempotent - should not return error
+	err := b.Start(context.Background())
+	assert.NoError(t, err)
+}
+
+func TestWireGuardBackend_Stop_WithDevice(t *testing.T) {
+	// Test that Stop properly cleans up when device exists
+	cfg := WireGuardConfig{
+		Name:       "test-wg",
+		PrivateKey: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=",
+		Address:    "10.0.0.2/24",
+	}
+
+	b := NewWireGuardBackend(cfg)
+
+	// Manually set state without actually creating a device
+	b.mu.Lock()
+	b.running = true
+	b.healthy.Store(true)
+	b.mu.Unlock()
+
+	// Stop should clean up properly
+	err := b.Stop(context.Background())
+	assert.NoError(t, err)
+	assert.False(t, b.IsHealthy())
+
+	// Verify internal state was cleaned up
+	b.mu.RLock()
+	assert.False(t, b.running)
+	assert.Nil(t, b.tnet)
+	b.mu.RUnlock()
+}
+
+func TestWireGuardBackend_Dial_UnsupportedNetwork(t *testing.T) {
+	cfg := WireGuardConfig{
+		Name:       "test-wg",
+		PrivateKey: "YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=",
+		Address:    "10.0.0.2/24",
+	}
+
+	b := NewWireGuardBackend(cfg)
+
+	// Manually set as running with nil tnet to get past first check
+	b.mu.Lock()
+	b.running = true
+	b.mu.Unlock()
+
+	ctx := context.Background()
+	_, err := b.Dial(ctx, "tcp", "example.com:80")
+	// Should fail because tnet is nil
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not started")
+}
+
+func TestWireGuardBackend_buildConfig_NoEndpoint(t *testing.T) {
+	cfg := WireGuardConfig{
+		Name:       "test-wg",
+		PrivateKey: "test_private_key",
+		Peer: WireGuardPeer{
+			PublicKey: "test_public_key",
+			// No endpoint
+		},
+	}
+
+	b := NewWireGuardBackend(cfg)
+	configStr := b.buildConfig()
+
+	assert.Contains(t, configStr, "private_key=test_private_key")
+	assert.Contains(t, configStr, "public_key=test_public_key")
+	assert.NotContains(t, configStr, "endpoint=")
+}
+
+func TestWireGuardBackend_buildConfig_NoPersistentKeepalive(t *testing.T) {
+	cfg := WireGuardConfig{
+		Name:       "test-wg",
+		PrivateKey: "test_private_key",
+		Peer: WireGuardPeer{
+			PublicKey:           "test_public_key",
+			PersistentKeepalive: 0, // Zero means no keepalive
+		},
+	}
+
+	b := NewWireGuardBackend(cfg)
+	configStr := b.buildConfig()
+
+	assert.NotContains(t, configStr, "persistent_keepalive_interval")
+}
+
+func TestWireGuardBackend_Stats_WithLastError(t *testing.T) {
+	b := NewWireGuardBackend(WireGuardConfig{Name: "test"})
+
+	// Record an error
+	b.recordError(assert.AnError)
+
+	stats := b.Stats()
+	assert.Equal(t, "test", stats.Name)
+	assert.Equal(t, "wireguard", stats.Type)
+	assert.Equal(t, int64(1), stats.Errors)
+	assert.NotEmpty(t, stats.LastError)
+	assert.False(t, stats.LastErrorTime.IsZero())
+}

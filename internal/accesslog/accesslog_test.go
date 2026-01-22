@@ -3,6 +3,7 @@ package accesslog
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -540,5 +541,78 @@ func TestApacheLogger_WriteError(t *testing.T) {
 	err := logger.Log(entry)
 	if err == nil {
 		t.Error("Expected error from failing writer")
+	}
+}
+
+func TestGetOutput_FileOpenError(t *testing.T) {
+	// Create a file that blocks creating a file with the same name as a directory component
+	tmpDir := t.TempDir()
+
+	// Create a regular file
+	blockingFile := filepath.Join(tmpDir, "blocking")
+	if err := os.WriteFile(blockingFile, []byte("data"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Now try to create a log file that would require "blocking" to be a directory
+	impossiblePath := filepath.Join(blockingFile, "access.log")
+
+	_, err := getOutput(impossiblePath)
+	if err == nil {
+		t.Error("getOutput() should fail when path component is a file, not a directory")
+	}
+
+	// Verify error message contains expected text
+	if !strings.Contains(err.Error(), "create log directory") && !strings.Contains(err.Error(), "open log file") {
+		t.Errorf("Error should mention file/directory issue, got: %v", err)
+	}
+}
+
+func TestGetOutput_FileCannotBeOpened(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a directory with the log file name to prevent opening it as a file
+	logPath := filepath.Join(tmpDir, "access.log")
+	if err := os.Mkdir(logPath, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := getOutput(logPath)
+	if err == nil {
+		t.Error("getOutput() should fail when log path is a directory")
+	}
+
+	if !strings.Contains(err.Error(), "open log file") {
+		t.Errorf("Error should mention 'open log file', got: %v", err)
+	}
+}
+
+// TestJSONLogger_MarshalError tests the json.Marshal error path.
+func TestJSONLogger_MarshalError(t *testing.T) {
+	buf := newBufferCloser()
+	logger := NewJSONLogger(buf)
+
+	// Override the marshaler to simulate a marshal error
+	marshalErr := fmt.Errorf("simulated marshal error")
+	logger.marshaler = func(v any) ([]byte, error) {
+		return nil, marshalErr
+	}
+
+	entry := Entry{
+		Timestamp: time.Now(),
+		ClientIP:  "192.168.1.1",
+	}
+
+	err := logger.Log(entry)
+	if err == nil {
+		t.Error("Expected error from failing marshaler")
+	}
+	if err != marshalErr {
+		t.Errorf("Expected marshalErr, got: %v", err)
+	}
+
+	// Verify nothing was written
+	if buf.Len() != 0 {
+		t.Error("Buffer should be empty when marshal fails")
 	}
 }

@@ -6,6 +6,7 @@ require (
 	fyne.io/systray v1.12.0
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/go-ldap/ldap/v3 v3.4.6
+	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/miekg/dns v1.1.70
 	github.com/prometheus/client_golang v1.19.0
 	github.com/spf13/cobra v1.8.0
@@ -27,7 +28,13 @@ require (
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/uuid v1.3.1 // indirect
+	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
+	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
+	github.com/jcmturner/gofork v1.7.6 // indirect
+	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
+	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect

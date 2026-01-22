@@ -200,7 +200,7 @@ The cache provides management endpoints:
 ### Get Cache Stats
 
 ```bash
-curl http://localhost:8082/api/v1/cache/stats
+curl http://localhost:7082/api/v1/cache/stats
 ```
 
 Response:
@@ -227,31 +227,31 @@ Response:
 ### List Cached Entries
 
 ```bash
-curl "http://localhost:8082/api/v1/cache/entries?domain=*.steamcontent.com&limit=10"
+curl "http://localhost:7082/api/v1/cache/entries?domain=*.steamcontent.com&limit=10"
 ```
 
 ### Clear Cache
 
 ```bash
-curl -X DELETE "http://localhost:8082/api/v1/cache/entries?confirm=true"
+curl -X DELETE "http://localhost:7082/api/v1/cache/entries?confirm=true"
 ```
 
 ### Purge Domain
 
 ```bash
-curl -X DELETE "http://localhost:8082/api/v1/cache/domain/steamcontent.com"
+curl -X DELETE "http://localhost:7082/api/v1/cache/domain/steamcontent.com"
 ```
 
 ### List Rules
 
 ```bash
-curl http://localhost:8082/api/v1/cache/rules
+curl http://localhost:7082/api/v1/cache/rules
 ```
 
 ### List Available Presets
 
 ```bash
-curl http://localhost:8082/api/v1/cache/presets
+curl http://localhost:7082/api/v1/cache/presets
 ```
 
 ## Prometheus Metrics
@@ -274,7 +274,7 @@ The cache fully supports HTTP Range requests for resumable downloads:
 
 ```bash
 # Resume download from byte 1000
-curl -H "Range: bytes=1000-" http://cdn.example.com/file.bin -x http://localhost:8080
+curl -H "Range: bytes=1000-" http://cdn.example.com/file.bin -x http://localhost:7080
 ```
 
 The cache will serve partial content (206 Partial Content) from the cached file.
@@ -317,7 +317,7 @@ cache:
 
 ### Cache Not Working
 
-1. Verify cache is enabled: `curl http://localhost:8082/api/v1/cache/stats`
+1. Verify cache is enabled: `curl http://localhost:7082/api/v1/cache/stats`
 2. Check if domain matches a preset or rule
 3. Verify traffic is HTTP (not HTTPS) - caching only works for plain HTTP
 4. Check logs for cache hit/miss messages
@@ -341,7 +341,7 @@ Complete configuration for caching game downloads at a LAN party:
 ```yaml
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
 
 cache:
   enabled: true
@@ -369,7 +369,7 @@ cache:
 
 metrics:
   enabled: true
-  listen: ":9090"
+  listen: ":7090"
 
 logging:
   level: info

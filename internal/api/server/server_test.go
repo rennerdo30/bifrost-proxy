@@ -978,7 +978,7 @@ func TestAPI_HandleGetFullConfig(t *testing.T) {
 		GetFullConfig: func() *config.ServerConfig {
 			return &config.ServerConfig{
 				Server: config.ServerSettings{
-					HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+					HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 				},
 			}
 		},
@@ -1017,7 +1017,7 @@ func TestAPI_HandleValidateConfig(t *testing.T) {
 
 	api := New(cfg)
 
-	body := strings.NewReader(`{"server": {"listen": "0.0.0.0:8080"}}`)
+	body := strings.NewReader(`{"server": {"listen": "0.0.0.0:7080"}}`)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/v1/config/validate", body)
 	api.handleValidateConfig(w, r)

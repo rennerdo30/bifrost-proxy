@@ -797,14 +797,14 @@ Track implementation progress by checking off completed items.
 **Problem**: Recent Docker fixes need to be committed.
 
 - [x] **Health Check Fixes** ✅ VERIFIED
-  - [x] Verify `docker/Dockerfile` uses `127.0.0.1:9090` (not localhost)
-  - [x] Verify `docker/Dockerfile.client` uses `127.0.0.1:3130` (not localhost)
+  - [x] Verify `docker/Dockerfile` uses `127.0.0.1:7090` (not localhost)
+  - [x] Verify `docker/Dockerfile.client` uses `127.0.0.1:7383` (not localhost)
   - [x] Verify comments explain IPv6 resolution issue
 
 - [x] **Client Docker Config** ✅ VERIFIED
   - [x] Verify `configs/client-config.docker.yaml` exists with `0.0.0.0` bindings
   - [x] Verify `Dockerfile.client` copies `client-config.docker.yaml` (not example)
-  - [x] Verify server address is `bifrost-server:8080` (Docker DNS)
+  - [x] Verify server address is `bifrost-server:7080` (Docker DNS)
   - [x] Verify tray is disabled (`enabled: false`) for headless container
 
 - [x] **Docker Compose Updates** ✅ VERIFIED

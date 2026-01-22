@@ -559,10 +559,10 @@ The server exposes real-time connection tracking via the API:
 
 ```bash
 # Get all active connections
-curl http://localhost:8080/api/v1/connections/
+curl http://localhost:7080/api/v1/connections/
 
 # Get unique clients summary
-curl http://localhost:8080/api/v1/connections/clients
+curl http://localhost:7080/api/v1/connections/clients
 ```
 
 Response includes: client IP, port, destination host, backend used, protocol (HTTP/SOCKS5), duration, and bytes transferred.

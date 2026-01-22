@@ -217,6 +217,69 @@ web-dev-client:
 	@echo "Starting Vite dev server for client UI..."
 	@cd web/client && npm run dev
 
+# Desktop (Wails)
+.PHONY: desktop-dev desktop-build desktop-build-all desktop-install desktop-check-wails
+
+# Wails binary path (use GOPATH/bin or system wails)
+WAILS := $(shell command -v wails 2>/dev/null || echo "$(shell go env GOPATH)/bin/wails")
+
+# Check and install Wails if not present
+desktop-check-wails:
+	@if [ ! -f "$(WAILS)" ]; then \
+		echo "Wails not found, installing..."; \
+		go install github.com/wailsapp/wails/v2/cmd/wails@latest; \
+	fi
+
+desktop-dev: desktop-check-wails desktop-install
+	@echo "Starting Wails dev server..."
+	@cd desktop && $(WAILS) dev
+
+desktop-build: desktop-check-wails desktop-install
+	@echo "Building desktop app for current platform..."
+	@cd desktop && $(WAILS) build
+
+desktop-build-all: desktop-check-wails desktop-install
+	@echo "Building desktop app for all platforms..."
+	@mkdir -p $(DIST_DIR)
+	cd desktop && $(WAILS) build -platform darwin/amd64 -o ../$(DIST_DIR)/bifrost-quick-darwin-amd64
+	cd desktop && $(WAILS) build -platform darwin/arm64 -o ../$(DIST_DIR)/bifrost-quick-darwin-arm64
+	cd desktop && $(WAILS) build -platform windows/amd64 -o ../$(DIST_DIR)/bifrost-quick-windows-amd64.exe
+	cd desktop && $(WAILS) build -platform linux/amd64 -o ../$(DIST_DIR)/bifrost-quick-linux-amd64
+
+desktop-install:
+	@echo "Installing Wails frontend dependencies..."
+	@cd desktop/frontend && npm install
+
+# Mobile (React Native / Expo)
+.PHONY: mobile-install mobile-dev mobile-ios mobile-android mobile-build-ios mobile-build-android
+
+mobile-install:
+	@echo "Installing mobile dependencies..."
+	@cd mobile && npm install
+
+mobile-dev:
+	@echo "Starting Expo development server..."
+	@cd mobile && npx expo start
+
+mobile-ios:
+	@echo "Starting iOS simulator..."
+	@cd mobile && npx expo run:ios
+
+mobile-android:
+	@echo "Starting Android emulator..."
+	@cd mobile && npx expo run:android
+
+mobile-build-ios:
+	@echo "Building iOS app..."
+	@cd mobile && npx expo prebuild --platform ios
+	@echo "Open mobile/ios/BifrostVPN.xcworkspace in Xcode to build"
+
+mobile-build-android:
+	@echo "Building Android app..."
+	@cd mobile && npx expo prebuild --platform android
+	@cd mobile/android && ./gradlew assembleRelease
+	@echo "APK available at mobile/android/app/build/outputs/apk/release/"
+
 # Documentation
 .PHONY: docs docs-serve docs-build
 
@@ -255,6 +318,20 @@ help:
 	@echo "  make build-openwrt       - Build for all OpenWrt architectures"
 	@echo "  make build-openwrt-mips  - Build for MIPS (big/little endian)"
 	@echo "  make build-openwrt-arm   - Build for ARM (v6, v7, arm64)"
+	@echo ""
+	@echo "Desktop (Wails):"
+	@echo "  make desktop-dev        - Start Wails dev server"
+	@echo "  make desktop-build      - Build for current platform"
+	@echo "  make desktop-build-all  - Build for all platforms"
+	@echo "  make desktop-install    - Install frontend dependencies"
+	@echo ""
+	@echo "Mobile (React Native):"
+	@echo "  make mobile-install     - Install dependencies"
+	@echo "  make mobile-dev         - Start Expo dev server"
+	@echo "  make mobile-ios         - Run on iOS simulator"
+	@echo "  make mobile-android     - Run on Android emulator"
+	@echo "  make mobile-build-ios   - Build iOS app"
+	@echo "  make mobile-build-android - Build Android APK"
 	@echo ""
 	@echo "Docker:"
 	@echo "  make docker-build         - Build Docker images"

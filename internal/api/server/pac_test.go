@@ -57,8 +57,8 @@ func TestPACGenerator_Generate_WithRoutes(t *testing.T) {
 	assert.Contains(t, pac, "FindProxyForURL")
 	assert.Contains(t, pac, "*.google.com")
 	assert.Contains(t, pac, "example.com")
-	assert.Contains(t, pac, "PROXY localhost:8080")
-	assert.Contains(t, pac, "SOCKS5 localhost:1080")
+	assert.Contains(t, pac, "PROXY localhost:7080")
+	assert.Contains(t, pac, "SOCKS5 localhost:7180")
 }
 
 func TestPACGenerator_Generate_CatchAll(t *testing.T) {
@@ -82,7 +82,7 @@ func TestPACGenerator_Generate_CatchAll(t *testing.T) {
 
 	assert.Contains(t, pac, "FindProxyForURL")
 	// Catch-all should result in proxy being default
-	assert.Contains(t, pac, "PROXY localhost:8080")
+	assert.Contains(t, pac, "PROXY localhost:7080")
 }
 
 func TestPACGenerator_Generate_EmptyHost(t *testing.T) {
@@ -113,7 +113,7 @@ func TestPACGenerator_Generate_HostWithPort(t *testing.T) {
 	gen := NewPACGenerator(getConfig, "", "8080", "1080")
 	pac := gen.Generate("192.168.1.1:9000")
 
-	assert.Contains(t, pac, "PROXY 192.168.1.1:8080")
+	assert.Contains(t, pac, "PROXY 192.168.1.1:7080")
 }
 
 func TestPACGenerator_HandlePAC(t *testing.T) {
@@ -178,7 +178,7 @@ func TestPACGenerator_Generate_OnlyCatchAll(t *testing.T) {
 
 	assert.Contains(t, pac, "FindProxyForURL")
 	// Should use proxy as default
-	assert.Contains(t, pac, "PROXY localhost:8080")
+	assert.Contains(t, pac, "PROXY localhost:7080")
 	assert.NotContains(t, pac, "return \"DIRECT\"")
 }
 
@@ -204,7 +204,7 @@ func TestPACGenerator_Generate_MixedCatchAllAndSpecific(t *testing.T) {
 
 	assert.Contains(t, pac, "*.example.com")
 	// With catch-all, default should return proxy
-	assert.Contains(t, pac, "PROXY localhost:8080")
+	assert.Contains(t, pac, "PROXY localhost:7080")
 }
 
 func TestEscapeJS(t *testing.T) {

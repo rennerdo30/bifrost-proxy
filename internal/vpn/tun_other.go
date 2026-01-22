@@ -2,11 +2,6 @@
 
 package vpn
 
-import (
-	"errors"
-)
-
-// createPlatformTUN returns an error on unsupported platforms.
-func createPlatformTUN(cfg TUNConfig) (TUNDevice, error) {
-	return nil, errors.New("TUN device not supported on this platform")
-}
+// This file is kept for backwards compatibility.
+// TUN device creation is now handled by the device package.
+// The CreateTUN function in tun.go delegates to device.Create().

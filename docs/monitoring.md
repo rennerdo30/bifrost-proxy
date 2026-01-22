@@ -11,7 +11,7 @@ Bifrost exposes metrics in Prometheus format at the configured metrics endpoint.
 ```yaml
 metrics:
   enabled: true
-  listen: ":9090"
+  listen: ":7090"
   path: "/metrics"
 ```
 
@@ -23,12 +23,12 @@ Add to your `prometheus.yml`:
 scrape_configs:
   - job_name: 'bifrost-server'
     static_configs:
-      - targets: ['bifrost-server:9090']
+      - targets: ['bifrost-server:7090']
     scrape_interval: 15s
 
   - job_name: 'bifrost-client'
     static_configs:
-      - targets: ['bifrost-client:9090']
+      - targets: ['bifrost-client:7090']
     scrape_interval: 15s
 ```
 
@@ -140,7 +140,7 @@ Access Grafana at `http://localhost:3000` (default: admin/admin).
 
 1. Go to Configuration → Data Sources
 2. Add data source → Prometheus
-3. URL: `http://prometheus:9090`
+3. URL: `http://prometheus:7090`
 4. Save & Test
 
 ### Dashboard Panels
@@ -205,7 +205,7 @@ Access Grafana at `http://localhost:3000` (default: admin/admin).
 ### HTTP Health Endpoint
 
 ```bash
-curl http://localhost:8082/api/v1/health
+curl http://localhost:7082/api/v1/health
 ```
 
 Response:
@@ -224,7 +224,7 @@ Status values:
 ### Backend Health
 
 ```bash
-curl http://localhost:8082/api/v1/backends
+curl http://localhost:7082/api/v1/backends
 ```
 
 Response:
@@ -248,7 +248,7 @@ Response:
 
 ```yaml
 healthcheck:
-  test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/metrics"]
+  test: ["CMD", "wget", "-q", "--spider", "http://localhost:7090/metrics"]
   interval: 30s
   timeout: 5s
   retries: 3

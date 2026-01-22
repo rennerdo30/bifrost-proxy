@@ -938,7 +938,7 @@ func TestRuleSet_MatchHost(t *testing.T) {
 	})
 
 	t.Run("with port", func(t *testing.T) {
-		got := rs.MatchHost("cdn.example.com:8080")
+		got := rs.MatchHost("cdn.example.com:7080")
 		assert.NotNil(t, got)
 	})
 }

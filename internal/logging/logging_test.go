@@ -310,3 +310,21 @@ func TestSetup_InvalidFilePath(t *testing.T) {
 		t.Error("Setup() with invalid file path should return error")
 	}
 }
+
+func TestGetOutput_OpenFileError(t *testing.T) {
+	// Test the case where MkdirAll succeeds but OpenFile fails.
+	// This happens when we try to open a directory as a file.
+	tmpDir := t.TempDir()
+
+	// Use the temp directory itself as the "file" to open.
+	// This will fail because we can't open a directory as a regular file for writing.
+	_, err := getOutput(tmpDir)
+
+	if err == nil {
+		t.Error("getOutput() should return error when trying to open a directory as a file")
+	}
+
+	if !strings.Contains(err.Error(), "failed to open log file") {
+		t.Errorf("Error should mention failed to open log file, got: %v", err)
+	}
+}

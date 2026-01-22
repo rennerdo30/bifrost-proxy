@@ -6,6 +6,11 @@ import (
 	"strings"
 )
 
+// netDialer is a package-level variable that can be overridden for testing.
+var netDialer = func(network, address string) (net.Conn, error) {
+	return net.Dial(network, address)
+}
+
 // SplitHostPort splits a network address into host and port.
 // Unlike net.SplitHostPort, this handles addresses without ports.
 func SplitHostPort(addr string) (host string, port int, err error) {
@@ -58,7 +63,7 @@ func IsLocalAddress(addr string) bool {
 func GetOutboundIP() (net.IP, error) {
 	// Use UDP dial to find the preferred outbound IP
 	// This doesn't actually connect but determines the interface
-	conn, err := net.Dial("udp", "8.8.8.8:80")
+	conn, err := netDialer("udp", "8.8.8.8:80")
 	if err != nil {
 		return nil, err
 	}

@@ -38,18 +38,18 @@ services:
     container_name: bifrost-server
     restart: unless-stopped
     ports:
-      - "8080:8080"   # HTTP proxy
-      - "1080:1080"   # SOCKS5 proxy
-      - "9090:9090"   # Metrics
-      - "8081:8081"   # Web UI
-      - "8082:8082"   # API
+      - "8080:7080"   # HTTP proxy
+      - "1080:7180"   # SOCKS5 proxy
+      - "9090:7090"   # Metrics
+      - "8081:7081"   # Web UI
+      - "8082:7082"   # API
     volumes:
       - bifrost-data:/app/data
       - bifrost-logs:/var/log/bifrost
     environment:
       - TZ=UTC
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/metrics"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7090/metrics"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -418,7 +418,7 @@ New-NetFirewallRule -DisplayName "Bifrost Web UI" -Direction Inbound -LocalPort 
 ### HTTP Health Check
 
 ```bash
-curl http://localhost:8082/api/v1/health
+curl http://localhost:7082/api/v1/health
 ```
 
 Expected response:
@@ -429,7 +429,7 @@ Expected response:
 ### Prometheus Metrics
 
 ```bash
-curl http://localhost:9090/metrics
+curl http://localhost:7090/metrics
 ```
 
 ### Docker Health Check

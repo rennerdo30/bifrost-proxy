@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- TUN-based VPN mode with split tunneling support
+  - App-based rules (include/exclude applications by name)
+  - Domain-based rules with pattern matching
+  - IP/CIDR-based rules
+  - DNS interception and caching
+- OpenWrt compatibility with resource optimizations
+- Authentication plugin system with new providers:
+  - API Key authentication (`apikey`) - header-based token auth
+  - JWT token authentication (`jwt`) - with JWKS support and claims mapping
+  - TOTP one-time passwords (`totp`) - Google Authenticator compatible
+  - HOTP counter-based OTP (`hotp`) - YubiKey compatible
+  - mTLS certificate authentication (`mtls`) - client certificates, smart cards
+  - Kerberos/SPNEGO authentication (`kerberos`) - enterprise SSO
+  - NTLM authentication (`ntlm`) - Windows domain fallback
+  - MFA wrapper for two-factor auth (`mfa_wrapper`) - combine primary auth + OTP
+- Session management with memory and Redis stores
+- Negotiate handler for HTTP SPNEGO/NTLM handshakes
+- Desktop client application (Wails-based)
+  - Cross-platform support: Windows, macOS, Linux
+  - Native system tray integration
+  - Quick GUI for connection management
+  - Live connection statistics
+- Mobile client application (React Native/Expo)
+  - iOS and Android support
+  - Server selection and management
+  - Real-time VPN status and statistics
+  - Settings persistence
+- Web client enhancements
+  - VPN page with split tunneling management
+  - Settings page with configuration editor
+  - Logs page with SSE streaming for real-time logs
+
+### Fixed
+- Cross-compilation support for VPN mode on all platforms
+- Removed CGo dependency from darwin process lookup
+- Restored .gitkeep files for static directories
+
+### Changed
+- Authentication system refactored to plugin architecture
+- Auth providers now registered via `auth.RegisterPlugin()`
+- Enhanced VPNStatus API response with connection details
+
 ## [1.0.0] - 2026-01-16
 
 ### Added

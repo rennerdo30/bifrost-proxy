@@ -1,0 +1,349 @@
+# Mobile Client
+
+The Bifrost Mobile Client is a cross-platform application built with React Native and Expo, providing VPN management on iOS and Android devices.
+
+## Features
+
+- **Home Screen**: VPN connection status and quick toggle
+- **Servers Screen**: Server selection with latency indicators
+- **Stats Screen**: Real-time traffic statistics and connection details
+- **Settings Screen**: Configuration management and preferences
+
+## Installation
+
+### App Stores
+
+- **iOS**: [App Store](https://apps.apple.com/app/bifrost-vpn) (coming soon)
+- **Android**: [Google Play](https://play.google.com/store/apps/details?id=com.bifrost.vpn) (coming soon)
+
+### Building from Source
+
+#### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+- Expo CLI
+- For iOS: Xcode 14+ (macOS only)
+- For Android: Android Studio with SDK
+
+#### Setup
+
+```bash
+# Clone repository
+git clone https://github.com/rennerdo30/bifrost-proxy.git
+cd bifrost-proxy/mobile
+
+# Install dependencies
+npm install
+
+# Start development server
+npx expo start
+```
+
+#### Running on Device/Simulator
+
+```bash
+# iOS Simulator (macOS only)
+npx expo run:ios
+
+# Android Emulator
+npx expo run:android
+
+# On physical device
+npx expo start --tunnel
+# Then scan QR code with Expo Go app
+```
+
+#### Building for Production
+
+Using EAS Build (recommended):
+
+```bash
+# Install EAS CLI
+npm install -g eas-cli
+
+# Login to Expo account
+eas login
+
+# Build for iOS
+eas build --platform ios
+
+# Build for Android
+eas build --platform android
+
+# Build for both
+eas build --platform all
+```
+
+## Screens
+
+### Home Screen
+
+The main dashboard showing connection status:
+
+```
+┌─────────────────────────────────────┐
+│           Bifrost VPN               │
+├─────────────────────────────────────┤
+│                                     │
+│         ┌───────────────┐           │
+│         │               │           │
+│         │      🔒       │           │
+│         │   Connected   │           │
+│         │               │           │
+│         └───────────────┘           │
+│                                     │
+│         [  Disconnect  ]            │
+│                                     │
+│  ┌─────────────┐  ┌─────────────┐   │
+│  │  ↑ Sent     │  │  ↓ Received │   │
+│  │   1.2 GB    │  │    3.4 GB   │   │
+│  └─────────────┘  └─────────────┘   │
+│                                     │
+│  Server: us-west.example.com        │
+│  Connected: 2h 34m                  │
+│                                     │
+├─────────────────────────────────────┤
+│  🏠 Home │ 📡 Servers │ 📊 Stats │ ⚙️ │
+└─────────────────────────────────────┘
+```
+
+### Servers Screen
+
+Server selection with status indicators:
+
+```
+┌─────────────────────────────────────┐
+│         Available Servers           │
+├─────────────────────────────────────┤
+│                                     │
+│  ┌─────────────────────────────────┐│
+│  │ 🟢 US West           ✓  45ms   ││
+│  │    us-west.example.com         ││
+│  │    HTTP                        ││
+│  └─────────────────────────────────┘│
+│                                     │
+│  ┌─────────────────────────────────┐│
+│  │ 🟢 Europe            120ms     ││
+│  │    eu.example.com              ││
+│  │    HTTP                        ││
+│  └─────────────────────────────────┘│
+│                                     │
+│  ┌─────────────────────────────────┐│
+│  │ 🟡 Asia Pacific      200ms     ││
+│  │    asia.example.com            ││
+│  │    SOCKS5                      ││
+│  └─────────────────────────────────┘│
+│                                     │
+│  ┌─────────────────────────────────┐│
+│  │ 🔴 Development       offline   ││
+│  │    dev.example.com             ││
+│  │    HTTP                        ││
+│  └─────────────────────────────────┘│
+│                                     │
+├─────────────────────────────────────┤
+│  🏠 Home │ 📡 Servers │ 📊 Stats │ ⚙️ │
+└─────────────────────────────────────┘
+```
+
+Status indicators:
+- 🟢 Online - Server available
+- 🟡 Busy - High load
+- 🔴 Offline - Server unavailable
+
+### Stats Screen
+
+Detailed connection statistics:
+
+```
+┌─────────────────────────────────────┐
+│          Connection Stats           │
+├─────────────────────────────────────┤
+│                                     │
+│  ┌─────────────┐  ┌─────────────┐   │
+│  │  ↑ Sent     │  │  ↓ Received │   │
+│  │   1.2 GB    │  │    3.4 GB   │   │
+│  └─────────────┘  └─────────────┘   │
+│                                     │
+│  Current Session                    │
+│  ─────────────────────────────────  │
+│  Duration         2h 34m            │
+│  Total Data       4.6 GB            │
+│  Status           Connected         │
+│                                     │
+│  Connection Details                 │
+│  ─────────────────────────────────  │
+│  Protocol         WireGuard         │
+│  Encryption       ChaCha20-Poly1305 │
+│  Port             51820             │
+│  MTU              1420              │
+│                                     │
+│  Network                            │
+│  ─────────────────────────────────  │
+│  Local IP         10.0.0.2          │
+│  Gateway          10.0.0.1          │
+│  DNS              1.1.1.1, 8.8.8.8  │
+│  Interface        bifrost0          │
+│                                     │
+├─────────────────────────────────────┤
+│  🏠 Home │ 📡 Servers │ 📊 Stats │ ⚙️ │
+└─────────────────────────────────────┘
+```
+
+### Settings Screen
+
+Configuration and preferences:
+
+```
+┌─────────────────────────────────────┐
+│            Settings                 │
+├─────────────────────────────────────┤
+│                                     │
+│  Connection                         │
+│  ─────────────────────────────────  │
+│  Auto-connect              [  🔘  ] │
+│  Connect on app launch              │
+│                                     │
+│  Kill Switch               [🔘   ]  │
+│  Block traffic if VPN disconnects   │
+│                                     │
+│  Split Tunneling           [  🔘  ] │
+│  Exclude certain apps               │
+│                     [Configure →]   │
+│                                     │
+│  Server                             │
+│  ─────────────────────────────────  │
+│  ┌─────────────────────────────────┐│
+│  │ proxy.example.com:7080  [Save] ││
+│  └─────────────────────────────────┘│
+│                                     │
+│  Notifications                      │
+│  ─────────────────────────────────  │
+│  Connection Alerts         [🔘   ]  │
+│  Notify on connect/disconnect       │
+│                                     │
+│  Data & Privacy                     │
+│  ─────────────────────────────────  │
+│  [     Clear Cached Data     ]      │
+│                                     │
+│  About                              │
+│  ─────────────────────────────────  │
+│  Version              1.0.0         │
+│  Server Status        Connected     │
+│                                     │
+├─────────────────────────────────────┤
+│  🏠 Home │ 📡 Servers │ 📊 Stats │ ⚙️ │
+└─────────────────────────────────────┘
+```
+
+## Configuration
+
+The mobile client connects to a Bifrost client running on your network. Configure the server address in Settings.
+
+### Connecting to Client
+
+1. Start the Bifrost client on your computer/server
+2. Note the API address (default: `http://192.168.x.x:7383`)
+3. Enter this address in the mobile app Settings
+
+### API Configuration
+
+The mobile app uses these API endpoints:
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/v1/status` | Client status |
+| `GET /api/v1/vpn/status` | VPN connection status |
+| `POST /api/v1/vpn/enable` | Enable VPN |
+| `POST /api/v1/vpn/disable` | Disable VPN |
+| `GET /api/v1/servers` | Available servers |
+| `POST /api/v1/servers/{id}/select` | Select server |
+| `GET /api/v1/config` | Get configuration |
+| `PUT /api/v1/config` | Update configuration |
+
+## Development
+
+### Project Structure
+
+```
+mobile/
+├── src/
+│   ├── components/     # Reusable UI components
+│   ├── screens/        # Screen components
+│   │   ├── HomeScreen.tsx
+│   │   ├── ServersScreen.tsx
+│   │   ├── StatsScreen.tsx
+│   │   └── SettingsScreen.tsx
+│   ├── services/       # API and utilities
+│   │   └── api.ts
+│   └── App.tsx         # Main app component
+├── app.json            # Expo configuration
+├── package.json
+└── tsconfig.json
+```
+
+### Technology Stack
+
+- **React Native**: Cross-platform UI framework
+- **Expo**: Development and build tooling
+- **React Query**: Data fetching and caching
+- **React Navigation**: Screen navigation
+
+### Adding a New Screen
+
+1. Create screen component in `src/screens/`
+2. Add to navigation in `App.tsx`
+3. Add tab bar icon if needed
+
+### API Integration
+
+The app uses React Query for data fetching:
+
+```typescript
+import { useQuery, useMutation } from '@tanstack/react-query'
+import { api } from '../services/api'
+
+function MyScreen() {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['vpn-status'],
+    queryFn: api.getVPNStatus,
+    refetchInterval: 3000,
+  })
+
+  const mutation = useMutation({
+    mutationFn: api.enableVPN,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
+    },
+  })
+
+  // ...
+}
+```
+
+## Troubleshooting
+
+### Cannot Connect to Client
+
+1. Verify client is running and API is enabled
+2. Check network connectivity (same network)
+3. Ensure correct IP address and port
+4. Check firewall settings on client machine
+
+### App Crashes on Start
+
+1. Clear app data and reinstall
+2. Check for conflicting VPN apps
+3. Update to latest version
+
+### High Battery Usage
+
+1. Increase refetch intervals in settings
+2. Disable notifications if not needed
+3. Disconnect when not in use
+
+### Stats Not Updating
+
+1. Check network connection
+2. Verify client is running
+3. Pull down to refresh manually

@@ -1,4 +1,4 @@
-package auth
+package auth_test
 
 import (
 	"context"
@@ -6,75 +6,83 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/oauth"
 )
 
-func TestNewOAuthAuthenticator_MissingClientID(t *testing.T) {
-	cfg := OAuthConfig{
-		UserInfoURL: "https://example.com/userinfo",
-	}
+func createOAuthAuthenticator(t *testing.T, config map[string]any) (auth.Authenticator, error) {
+	t.Helper()
+	factory := auth.NewFactory()
+	return factory.Create(auth.ProviderConfig{
+		Name:    "oauth-test",
+		Type:    "oauth",
+		Enabled: true,
+		Config:  config,
+	})
+}
 
-	_, err := NewOAuthAuthenticator(cfg)
+func TestOAuthAuthenticator_MissingClientID(t *testing.T) {
+	_, err := createOAuthAuthenticator(t, map[string]any{
+		"userinfo_url": "https://example.com/userinfo",
+	})
 	if err == nil {
 		t.Fatal("expected error for missing client_id")
 	}
 }
 
-func TestNewOAuthAuthenticator_MissingEndpoint(t *testing.T) {
-	cfg := OAuthConfig{
-		ClientID: "client-id",
-	}
-
-	_, err := NewOAuthAuthenticator(cfg)
+func TestOAuthAuthenticator_MissingEndpoint(t *testing.T) {
+	_, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id": "client-id",
+	})
 	if err == nil {
 		t.Fatal("expected error for missing endpoints")
 	}
 }
 
-func TestNewOAuthAuthenticator_WithUserInfoURL(t *testing.T) {
-	cfg := OAuthConfig{
-		ClientID:    "client-id",
-		UserInfoURL: "https://example.com/userinfo",
-	}
-
-	auth, err := NewOAuthAuthenticator(cfg)
+func TestOAuthAuthenticator_WithUserInfoURL(t *testing.T) {
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":    "client-id",
+		"userinfo_url": "https://example.com/userinfo",
+	})
 	if err != nil {
-		t.Fatalf("NewOAuthAuthenticator failed: %v", err)
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	if auth == nil {
-		t.Fatal("auth is nil")
+	if authenticator == nil {
+		t.Fatal("authenticator is nil")
 	}
-	if auth.Name() != "oauth" {
-		t.Errorf("expected Name()=oauth, got %s", auth.Name())
+	if authenticator.Name() != "oauth" {
+		t.Errorf("expected Name()=oauth, got %s", authenticator.Name())
 	}
-	if auth.Type() != "oauth" {
-		t.Errorf("expected Type()=oauth, got %s", auth.Type())
+	if authenticator.Type() != "oauth" {
+		t.Errorf("expected Type()=oauth, got %s", authenticator.Type())
 	}
 }
 
-func TestNewOAuthAuthenticator_WithProvider(t *testing.T) {
-	cfg := OAuthConfig{
-		Provider:    "google",
-		ClientID:    "client-id",
-		UserInfoURL: "https://example.com/userinfo",
-	}
-
-	auth, err := NewOAuthAuthenticator(cfg)
+func TestOAuthAuthenticator_WithProvider(t *testing.T) {
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"provider":     "google",
+		"client_id":    "client-id",
+		"userinfo_url": "https://example.com/userinfo",
+	})
 	if err != nil {
-		t.Fatalf("NewOAuthAuthenticator failed: %v", err)
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	if auth.Name() != "oauth-google" {
-		t.Errorf("expected Name()=oauth-google, got %s", auth.Name())
+	if authenticator.Name() != "oauth-google" {
+		t.Errorf("expected Name()=oauth-google, got %s", authenticator.Name())
 	}
 }
 
 func TestOAuthAuthenticator_Authenticate_EmptyToken(t *testing.T) {
-	cfg := OAuthConfig{
-		ClientID:    "client-id",
-		UserInfoURL: "https://example.com/userinfo",
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":    "client-id",
+		"userinfo_url": "https://example.com/userinfo",
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
-	_, err := auth.Authenticate(context.Background(), "", "")
+	_, err = authenticator.Authenticate(context.Background(), "", "")
 	if err == nil {
 		t.Fatal("expected error for empty token")
 	}
@@ -105,13 +113,15 @@ func TestOAuthAuthenticator_Authenticate_UserInfo(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := OAuthConfig{
-		ClientID:    "client-id",
-		UserInfoURL: server.URL,
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":    "client-id",
+		"userinfo_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
-	user, err := auth.Authenticate(context.Background(), "bearer", "valid-token")
+	user, err := authenticator.Authenticate(context.Background(), "bearer", "valid-token")
 	if err != nil {
 		t.Fatalf("Authenticate failed: %v", err)
 	}
@@ -133,13 +143,15 @@ func TestOAuthAuthenticator_Authenticate_InvalidToken(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := OAuthConfig{
-		ClientID:    "client-id",
-		UserInfoURL: server.URL,
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":    "client-id",
+		"userinfo_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
-	_, err := auth.Authenticate(context.Background(), "", "invalid-token")
+	_, err = authenticator.Authenticate(context.Background(), "", "invalid-token")
 	if err == nil {
 		t.Fatal("expected error for invalid token")
 	}
@@ -169,14 +181,16 @@ func TestOAuthAuthenticator_Authenticate_Introspection(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := OAuthConfig{
-		ClientID:      "client-id",
-		ClientSecret:  "client-secret",
-		IntrospectURL: server.URL,
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":      "client-id",
+		"client_secret":  "client-secret",
+		"introspect_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
-	user, err := auth.Authenticate(context.Background(), "", "valid-token")
+	user, err := authenticator.Authenticate(context.Background(), "", "valid-token")
 	if err != nil {
 		t.Fatalf("Authenticate failed: %v", err)
 	}
@@ -193,14 +207,16 @@ func TestOAuthAuthenticator_Authenticate_IntrospectionInactive(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := OAuthConfig{
-		ClientID:      "client-id",
-		ClientSecret:  "client-secret",
-		IntrospectURL: server.URL,
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":      "client-id",
+		"client_secret":  "client-secret",
+		"introspect_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
-	_, err := auth.Authenticate(context.Background(), "", "invalid-token")
+	_, err = authenticator.Authenticate(context.Background(), "", "invalid-token")
 	if err == nil {
 		t.Fatal("expected error for inactive token")
 	}
@@ -217,15 +233,17 @@ func TestOAuthAuthenticator_Authenticate_RequiredScopes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := OAuthConfig{
-		ClientID:      "client-id",
-		ClientSecret:  "client-secret",
-		IntrospectURL: server.URL,
-		Scopes:        []string{"read", "write"}, // Require write scope
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":      "client-id",
+		"client_secret":  "client-secret",
+		"introspect_url": server.URL,
+		"scopes":         []string{"read", "write"}, // Require write scope
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
-	_, err := auth.Authenticate(context.Background(), "", "token-missing-scope")
+	_, err = authenticator.Authenticate(context.Background(), "", "token-missing-scope")
 	if err == nil {
 		t.Fatal("expected error for missing required scope")
 	}
@@ -242,14 +260,16 @@ func TestOAuthAuthenticator_Authenticate_Caching(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := OAuthConfig{
-		ClientID:    "client-id",
-		UserInfoURL: server.URL,
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":    "client-id",
+		"userinfo_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
 	// First call
-	_, err := auth.Authenticate(context.Background(), "", "cached-token")
+	_, err = authenticator.Authenticate(context.Background(), "", "cached-token")
 	if err != nil {
 		t.Fatalf("first Authenticate failed: %v", err)
 	}
@@ -258,7 +278,7 @@ func TestOAuthAuthenticator_Authenticate_Caching(t *testing.T) {
 	}
 
 	// Second call (should use cache)
-	_, err = auth.Authenticate(context.Background(), "", "cached-token")
+	_, err = authenticator.Authenticate(context.Background(), "", "cached-token")
 	if err != nil {
 		t.Fatalf("second Authenticate failed: %v", err)
 	}
@@ -276,14 +296,16 @@ func TestOAuthAuthenticator_Authenticate_TokenAsUsername(t *testing.T) {
 	}))
 	defer server.Close()
 
-	cfg := OAuthConfig{
-		ClientID:    "client-id",
-		UserInfoURL: server.URL,
+	authenticator, err := createOAuthAuthenticator(t, map[string]any{
+		"client_id":    "client-id",
+		"userinfo_url": server.URL,
+	})
+	if err != nil {
+		t.Fatalf("createOAuthAuthenticator failed: %v", err)
 	}
-	auth, _ := NewOAuthAuthenticator(cfg)
 
 	// Token as username, empty password
-	user, err := auth.Authenticate(context.Background(), "my-token", "")
+	user, err := authenticator.Authenticate(context.Background(), "my-token", "")
 	if err != nil {
 		t.Fatalf("Authenticate failed: %v", err)
 	}
@@ -292,65 +314,42 @@ func TestOAuthAuthenticator_Authenticate_TokenAsUsername(t *testing.T) {
 	}
 }
 
-func TestHashToken(t *testing.T) {
-	token1 := "test-token-1"
-	token2 := "test-token-2"
-
-	hash1 := hashToken(token1)
-	hash2 := hashToken(token2)
-
-	// Hashes should be deterministic
-	if hashToken(token1) != hash1 {
-		t.Error("hash is not deterministic")
+func TestOAuthPlugin_Registration(t *testing.T) {
+	plugin, ok := auth.GetPlugin("oauth")
+	if !ok {
+		t.Fatal("oauth plugin not registered")
 	}
-
-	// Different tokens should produce different hashes
-	if hash1 == hash2 {
-		t.Error("different tokens produced same hash")
-	}
-
-	// Hash should be hex string (64 chars for SHA256)
-	if len(hash1) != 64 {
-		t.Errorf("expected hash length 64, got %d", len(hash1))
+	if plugin.Type() != "oauth" {
+		t.Errorf("expected plugin type oauth, got %s", plugin.Type())
 	}
 }
 
-func TestDiscoverOIDCEndpoints(t *testing.T) {
-	config := map[string]interface{}{
-		"introspection_endpoint": "https://example.com/introspect",
-		"userinfo_endpoint":      "https://example.com/userinfo",
+func TestOAuthPlugin_ValidateConfig(t *testing.T) {
+	plugin, ok := auth.GetPlugin("oauth")
+	if !ok {
+		t.Fatal("oauth plugin not registered")
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/openid-configuration" {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		json.NewEncoder(w).Encode(config)
-	}))
-	defer server.Close()
-
-	introspect, userinfo, err := discoverOIDCEndpoints(server.URL)
-	if err != nil {
-		t.Fatalf("discoverOIDCEndpoints failed: %v", err)
-	}
-
-	if introspect != "https://example.com/introspect" {
-		t.Errorf("expected introspect endpoint, got %s", introspect)
-	}
-	if userinfo != "https://example.com/userinfo" {
-		t.Errorf("expected userinfo endpoint, got %s", userinfo)
-	}
-}
-
-func TestDiscoverOIDCEndpoints_NotFound(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	_, _, err := discoverOIDCEndpoints(server.URL)
+	// Missing client_id should fail
+	err := plugin.ValidateConfig(map[string]any{})
 	if err == nil {
-		t.Fatal("expected error for 404")
+		t.Error("expected validation error for missing client_id")
+	}
+
+	// Missing endpoints should fail
+	err = plugin.ValidateConfig(map[string]any{
+		"client_id": "test-client",
+	})
+	if err == nil {
+		t.Error("expected validation error for missing endpoints")
+	}
+
+	// Valid config should pass
+	err = plugin.ValidateConfig(map[string]any{
+		"client_id":    "test-client",
+		"userinfo_url": "https://example.com/userinfo",
+	})
+	if err != nil {
+		t.Errorf("unexpected validation error: %v", err)
 	}
 }

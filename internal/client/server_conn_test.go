@@ -15,13 +15,13 @@ import (
 
 func TestNewServerConnection(t *testing.T) {
 	cfg := ServerConnectionConfig{
-		Address:  "localhost:8080",
+		Address:  "localhost:7080",
 		Protocol: "http",
 	}
 
 	conn := NewServerConnection(cfg)
 	require.NotNil(t, conn)
-	assert.Equal(t, "localhost:8080", conn.config.Address)
+	assert.Equal(t, "localhost:7080", conn.config.Address)
 	assert.Equal(t, "http", conn.config.Protocol)
 	assert.Equal(t, 30*time.Second, conn.config.Timeout)
 	assert.Equal(t, 3, conn.config.RetryCount)
@@ -30,7 +30,7 @@ func TestNewServerConnection(t *testing.T) {
 
 func TestNewServerConnection_Defaults(t *testing.T) {
 	cfg := ServerConnectionConfig{
-		Address: "localhost:8080",
+		Address: "localhost:7080",
 	}
 
 	conn := NewServerConnection(cfg)
@@ -43,7 +43,7 @@ func TestNewServerConnection_Defaults(t *testing.T) {
 
 func TestNewServerConnection_CustomValues(t *testing.T) {
 	cfg := ServerConnectionConfig{
-		Address:    "localhost:8080",
+		Address:    "localhost:7080",
 		Protocol:   "socks5",
 		Username:   "user",
 		Password:   "pass",
@@ -93,7 +93,7 @@ func TestServerConnection_IsConnected_True(t *testing.T) {
 
 func TestServerConnection_Connect_UnsupportedProtocol(t *testing.T) {
 	conn := NewServerConnection(ServerConnectionConfig{
-		Address:    "localhost:8080",
+		Address:    "localhost:7080",
 		Protocol:   "invalid",
 		Timeout:    100 * time.Millisecond,
 		RetryCount: 1,                    // Set to 1 so it doesn't default to 3
@@ -427,7 +427,7 @@ func TestServerConnection_socks5Connect_IPv4(t *testing.T) {
 
 func TestServerConnection_socks5Connect_InvalidTarget(t *testing.T) {
 	conn := NewServerConnection(ServerConnectionConfig{
-		Address:  "localhost:8080",
+		Address:  "localhost:7080",
 		Protocol: "socks5",
 		Timeout:  time.Second,
 	})
@@ -495,7 +495,7 @@ func TestServerConnection_socks5Auth_Failure(t *testing.T) {
 
 func TestServerConnectionConfig_Struct(t *testing.T) {
 	cfg := ServerConnectionConfig{
-		Address:    "localhost:8080",
+		Address:    "localhost:7080",
 		Protocol:   "socks5",
 		Username:   "user",
 		Password:   "pass",
@@ -504,7 +504,7 @@ func TestServerConnectionConfig_Struct(t *testing.T) {
 		RetryDelay: 2 * time.Second,
 	}
 
-	assert.Equal(t, "localhost:8080", cfg.Address)
+	assert.Equal(t, "localhost:7080", cfg.Address)
 	assert.Equal(t, "socks5", cfg.Protocol)
 	assert.Equal(t, "user", cfg.Username)
 	assert.Equal(t, "pass", cfg.Password)
@@ -827,4 +827,325 @@ func TestServerConnection_Connect_FailAllRetries(t *testing.T) {
 	_, err := conn.Connect(ctx, "example.com:80")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), fmt.Sprintf("failed after %d attempts", 3)) // 0, 1, 2 = 3 attempts
+}
+
+func TestServerConnection_connectHTTP_DialError(t *testing.T) {
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  "127.0.0.1:1", // Invalid port
+		Protocol: "http",
+		Timeout:  100 * time.Millisecond,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := conn.connectHTTP(ctx, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "dial server")
+}
+
+func TestServerConnection_connectSOCKS5_DialError(t *testing.T) {
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  "127.0.0.1:1", // Invalid port
+		Protocol: "socks5",
+		Timeout:  100 * time.Millisecond,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err := conn.connectSOCKS5(ctx, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "dial server")
+}
+
+func TestServerConnection_connectSOCKS5_GreetingWriteError(t *testing.T) {
+	// Start a mock server that closes immediately
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Close immediately without reading
+			c.Close()
+		}
+	}()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  listener.Addr().String(),
+		Protocol: "socks5",
+		Timeout:  time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = conn.connectSOCKS5(ctx, "example.com:80")
+	assert.Error(t, err)
+}
+
+func TestServerConnection_connectSOCKS5_GreetingReadError(t *testing.T) {
+	// Start a mock server that accepts but doesn't respond
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Read greeting but don't respond
+			buf := make([]byte, 10)
+			c.Read(buf)
+			// Close without sending response
+			c.Close()
+		}
+	}()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  listener.Addr().String(),
+		Protocol: "socks5",
+		Timeout:  time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = conn.connectSOCKS5(ctx, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read greeting response")
+}
+
+func TestServerConnection_socks5Auth_WriteError(t *testing.T) {
+	client, server := net.Pipe()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Username: "testuser",
+		Password: "testpass",
+	})
+
+	// Close the server side immediately to cause write error
+	server.Close()
+
+	err := conn.socks5Auth(client)
+	assert.Error(t, err)
+
+	client.Close()
+}
+
+func TestServerConnection_socks5Auth_ReadError(t *testing.T) {
+	client, server := net.Pipe()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Username: "testuser",
+		Password: "testpass",
+	})
+
+	go func() {
+		// Read auth request
+		buf := make([]byte, 100)
+		server.Read(buf)
+		// Close without sending response
+		server.Close()
+	}()
+
+	err := conn.socks5Auth(client)
+	assert.Error(t, err)
+
+	client.Close()
+}
+
+func TestServerConnection_socks5Connect_WriteError(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+
+	conn := NewServerConnection(ServerConnectionConfig{})
+
+	// Close server to cause write error
+	server.Close()
+
+	err := conn.socks5Connect(client, "example.com:80")
+	assert.Error(t, err)
+}
+
+func TestServerConnection_socks5Connect_ReadError(t *testing.T) {
+	client, server := net.Pipe()
+
+	conn := NewServerConnection(ServerConnectionConfig{})
+
+	go func() {
+		// Read connect request
+		buf := make([]byte, 256)
+		server.Read(buf)
+		// Close without sending full response
+		server.Close()
+	}()
+
+	err := conn.socks5Connect(client, "example.com:80")
+	assert.Error(t, err)
+
+	client.Close()
+}
+
+func TestServerConnection_socks5Connect_InvalidPort(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	conn := NewServerConnection(ServerConnectionConfig{})
+
+	// Invalid port
+	err := conn.socks5Connect(client, "example.com:invalidport")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid port")
+}
+
+func TestServerConnection_connectHTTP_WriteError(t *testing.T) {
+	// Start a mock server that closes after accepting
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Close immediately to cause write error
+			c.Close()
+		}
+	}()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  listener.Addr().String(),
+		Protocol: "http",
+		Timeout:  time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = conn.connectHTTP(ctx, "example.com:80")
+	assert.Error(t, err)
+}
+
+func TestServerConnection_connectHTTP_ReadError(t *testing.T) {
+	// Start a mock server that accepts, receives request, but closes before response
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Read request but don't respond
+			buf := make([]byte, 1024)
+			c.Read(buf)
+			// Close without sending response
+			c.Close()
+		}
+	}()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  listener.Addr().String(),
+		Protocol: "http",
+		Timeout:  time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = conn.connectHTTP(ctx, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "read response")
+}
+
+func TestServerConnection_connectSOCKS5_AuthRequired_AuthFailed(t *testing.T) {
+	// Start a mock SOCKS5 server that requires auth but rejects it
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Read greeting
+			buf := make([]byte, 256)
+			c.Read(buf)
+			// Require auth
+			c.Write([]byte{0x05, 0x02}) // Username/password auth required
+
+			// Read auth
+			c.Read(buf)
+			// Reject auth
+			c.Write([]byte{0x01, 0x01}) // Auth failed
+			c.Close()
+		}
+	}()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  listener.Addr().String(),
+		Protocol: "socks5",
+		Username: "testuser",
+		Password: "testpass",
+		Timeout:  time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = conn.connectSOCKS5(ctx, "example.com:80")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "authentication failed")
+}
+
+func TestServerConnection_connectSOCKS5_ConnectRequestError(t *testing.T) {
+	// Start a mock SOCKS5 server that accepts auth but fails on connect
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	go func() {
+		for {
+			c, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			// Read greeting
+			buf := make([]byte, 256)
+			c.Read(buf)
+			// No auth required
+			c.Write([]byte{0x05, 0x00})
+			// Read connect request
+			c.Read(buf)
+			// Close without sending response - should cause read error
+			c.Close()
+		}
+	}()
+
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  listener.Addr().String(),
+		Protocol: "socks5",
+		Timeout:  time.Second,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	_, err = conn.connectSOCKS5(ctx, "example.com:80")
+	assert.Error(t, err)
 }

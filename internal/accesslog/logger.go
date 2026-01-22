@@ -107,13 +107,19 @@ func (l *NoopLogger) Close() error {
 
 // JSONLogger logs entries in JSON format.
 type JSONLogger struct {
-	writer io.WriteCloser
-	mu     sync.Mutex
+	writer   io.WriteCloser
+	mu       sync.Mutex
+	// marshaler is the JSON marshal function used for encoding entries.
+	// Defaults to json.Marshal. Can be overridden in tests to simulate errors.
+	marshaler func(v any) ([]byte, error)
 }
 
 // NewJSONLogger creates a new JSON access logger.
 func NewJSONLogger(w io.WriteCloser) *JSONLogger {
-	return &JSONLogger{writer: w}
+	return &JSONLogger{
+		writer:    w,
+		marshaler: json.Marshal,
+	}
 }
 
 // Log writes a log entry in JSON format.
@@ -121,7 +127,7 @@ func (l *JSONLogger) Log(entry Entry) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	data, err := json.Marshal(entry)
+	data, err := l.marshaler(entry)
 	if err != nil {
 		return err
 	}

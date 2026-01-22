@@ -6,14 +6,18 @@ A production-ready, MIT-licensed proxy server with support for WireGuard and Ope
 
 - **Multiple Proxy Protocols**: HTTP, HTTPS (CONNECT), SOCKS5
 - **VPN Tunnel Support**: WireGuard (userspace), OpenVPN
+- **TUN-based VPN Mode**: Full system traffic capture with split tunneling
 - **Upstream Proxy Support**: Chain through HTTP or SOCKS5 proxies
 - **Domain-Based Routing**: Route traffic through different backends based on domain patterns
 - **HTTP Cache**: LAN cache for game downloads, software updates (steamcache/lancache-inspired)
-- **Authentication Modes**: None, Native, System (PAM/Windows/macOS), LDAP, OAuth/OIDC
+- **Authentication Modes**: None, Native, System (PAM/macOS), LDAP, OAuth/OIDC, API Key, JWT, TOTP, HOTP, mTLS, Kerberos, NTLM
+- **MFA Support**: Combine primary authentication with OTP for two-factor auth
 - **Traffic Management**: Rate limiting, bandwidth throttling, health checks, load balancing
 - **Observability**: Prometheus metrics, structured logging, access logs
 - **Cross-Platform**: Windows, macOS, Linux
 - **Web Dashboard**: Real-time monitoring, config generator, setup guides
+- **Desktop Client**: Native GUI application with system tray integration
+- **Mobile Client**: iOS and Android app for remote management
 
 ## Architecture
 
@@ -52,7 +56,7 @@ make build-server
 make build-client
 
 # Generate a config file
-./bin/bifrost-client config init -s your-server:8080
+./bin/bifrost-client config init -s your-server:7080
 
 # Run with config
 ./bin/bifrost-client -c client-config.yaml
@@ -65,9 +69,9 @@ make build-client
 ```yaml
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
   socks5:
-    listen: ":1080"
+    listen: ":7180"
 
 backends:
   - name: direct
@@ -83,10 +87,10 @@ routes:
 ```yaml
 proxy:
   http:
-    listen: "127.0.0.1:3128"
+    listen: "127.0.0.1:7380"
 
 server:
-  address: "proxy.example.com:8080"
+  address: "proxy.example.com:7080"
 
 routes:
   - domains: ["*"]
@@ -95,7 +99,7 @@ routes:
 
 ## Web Dashboard
 
-The server includes a built-in web dashboard accessible at the configured web UI port (default: `:8081`).
+The server includes a built-in web dashboard accessible at the configured web UI port (default: `:7081`).
 
 Features:
 

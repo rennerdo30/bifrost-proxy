@@ -88,7 +88,7 @@ backends:
     type: http_proxy
     enabled: true
     config:
-      address: "proxy.example.com:8080"
+      address: "proxy.example.com:7080"
       username: "user"
       password: "pass"
       connect_timeout: "30s"
@@ -104,7 +104,7 @@ backends:
     type: socks5_proxy
     enabled: true
     config:
-      address: "socks.example.com:1080"
+      address: "socks.example.com:7180"
       username: "user"
       password: "pass"
       connect_timeout: "30s"

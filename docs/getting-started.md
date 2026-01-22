@@ -47,9 +47,9 @@ docker pull ghcr.io/bifrost-proxy/bifrost/client:latest
 ```yaml
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
   socks5:
-    listen: ":1080"
+    listen: ":7180"
 
 backends:
   - name: direct
@@ -62,7 +62,7 @@ routes:
 
 metrics:
   enabled: true
-  listen: ":9090"
+  listen: ":7090"
 ```
 
 2. Start the server:
@@ -74,7 +74,7 @@ metrics:
 3. Verify it's running:
 
 ```bash
-curl http://localhost:9090/metrics
+curl http://localhost:7090/metrics
 ```
 
 ### Client Setup
@@ -83,11 +83,11 @@ curl http://localhost:9090/metrics
 
 ```bash
 # Generate a config file with your server address
-./bifrost-client config init -s your-server:8080
+./bifrost-client config init -s your-server:7080
 
 # Or with custom options
 ./bifrost-client config init \
-  -s your-server:8080 \
+  -s your-server:7080 \
   -p socks5 \
   --http-listen 127.0.0.1:8888 \
   -o my-config.yaml
@@ -95,7 +95,7 @@ curl http://localhost:9090/metrics
 
 #### Option 2: Generate Config from Web Dashboard
 
-1. Open your server's web dashboard (e.g., `http://your-server:8081`)
+1. Open your server's web dashboard (e.g., `http://your-server:7081`)
 2. Click "Config Generator" tab
 3. Fill in the form and download the configuration
 
@@ -106,10 +106,10 @@ Create a configuration file `client-config.yaml`:
 ```yaml
 proxy:
   http:
-    listen: "127.0.0.1:3128"
+    listen: "127.0.0.1:7380"
 
 server:
-  address: "your-server:8080"
+  address: "your-server:7080"
 
 routes:
   - domains: ["*"]
@@ -127,17 +127,17 @@ routes:
 See the **Setup Guide** tab in the web dashboard for detailed instructions, or use these common methods:
 
 **Browser:**
-- Configure your browser to use `127.0.0.1:3128` as HTTP proxy
+- Configure your browser to use `127.0.0.1:7380` as HTTP proxy
 
 **Environment Variables:**
 ```bash
-export HTTP_PROXY=http://127.0.0.1:3128
-export HTTPS_PROXY=http://127.0.0.1:3128
+export HTTP_PROXY=http://127.0.0.1:7380
+export HTTPS_PROXY=http://127.0.0.1:7380
 ```
 
 **Command Line:**
 ```bash
-curl -x http://127.0.0.1:3128 https://example.com
+curl -x http://127.0.0.1:7380 https://example.com
 ```
 
 ## Testing the Setup
@@ -146,10 +146,10 @@ Test with curl:
 
 ```bash
 # HTTP proxy
-curl -x http://127.0.0.1:3128 http://httpbin.org/ip
+curl -x http://127.0.0.1:7380 http://httpbin.org/ip
 
 # SOCKS5 proxy
-curl --socks5 127.0.0.1:1081 http://httpbin.org/ip
+curl --socks5 127.0.0.1:7381 http://httpbin.org/ip
 ```
 
 ## Next Steps

@@ -79,7 +79,7 @@
 │                                                                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
 │  │   HTTP      │  │   SOCKS5    │  │   Web UI    │  │  Metrics    │        │
-│  │  :8080      │  │   :1080     │  │   :8081     │  │   :9090     │        │
+│  │  :7080      │  │   :7180     │  │   :7081     │  │   :7090     │        │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────────────┘        │
 │         │                │                │                                 │
 │         └────────────────┼────────────────┘                                 │
@@ -112,7 +112,7 @@
 │                                                                             │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐        │
 │  │   HTTP      │  │   SOCKS5    │  │   Web UI    │  │ System Tray │        │
-│  │  :3128      │  │   :1081     │  │   :3129     │  │             │        │
+│  │  :7380      │  │   :7381     │  │   :7382     │  │             │        │
 │  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └─────────────┘        │
 │         │                │                │                                 │
 │         └────────────────┼────────────────┘                                 │
@@ -1470,7 +1470,7 @@ Proxy-Authenticate: Basic realm="Bifrost Proxy"
 
 ### 8.2 Server REST API
 
-**Base URL:** `http://localhost:8081/api`
+**Base URL:** `http://localhost:7081/api`
 
 **Authentication:**
 - API uses same auth as proxy
@@ -1626,7 +1626,7 @@ bifrost-server
 
 ### 9.3 Client REST API
 
-**Base URL:** `http://localhost:3129/api`
+**Base URL:** `http://localhost:7382/api`
 
 **Endpoints:**
 
@@ -1730,12 +1730,12 @@ Bifrost Client
 
 | Item | Action |
 |------|--------|
-| Open Web UI | Open browser to http://localhost:3129 |
+| Open Web UI | Open browser to http://localhost:7382 |
 | Enable Proxy | Toggle proxy listeners on/off |
 | Route via Server | Toggle between server/direct default |
 | Quick Rules | Toggle individual rule enabled/disabled |
-| View Traffic | Open browser to http://localhost:3129/traffic |
-| Settings | Open browser to http://localhost:3129/settings |
+| View Traffic | Open browser to http://localhost:7382/traffic |
+| Settings | Open browser to http://localhost:7382/settings |
 | Quit | Graceful shutdown |
 
 ### 10.4 Notifications
@@ -1940,14 +1940,14 @@ services:
     sysctls:
       - net.ipv4.ip_forward=1
     ports:
-      - "8080:8080"
-      - "1080:1080"
-      - "8081:8081"
+      - "8080:7080"
+      - "1080:7180"
+      - "8081:7081"
     volumes:
       - ./config:/etc/bifrost
       - ./wireguard:/etc/wireguard:ro
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8081/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:7081/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2421,7 +2421,7 @@ Response 200:
 {
   "status": "running",
   "server": {
-    "address": "proxy.example.com:8080",
+    "address": "proxy.example.com:7080",
     "connected": true,
     "latency_ms": 50
   },
@@ -2683,7 +2683,7 @@ tray:
   autostart: false
 
 server:
-  address: "proxy.example.com:8080"
+  address: "proxy.example.com:7080"
   protocol: "http"
   auth:
     enabled: false

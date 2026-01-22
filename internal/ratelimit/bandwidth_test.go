@@ -379,3 +379,321 @@ func TestTokenBucket_RateAndCapacity(t *testing.T) {
 	assert.Equal(t, 10.5, bucket.Rate())
 	assert.Equal(t, 100, bucket.Capacity())
 }
+
+// mockErrorConn is a mock connection that returns errors
+type mockErrorConn struct {
+	readErr  error
+	writeErr error
+	readData []byte
+	readPos  int
+}
+
+func (m *mockErrorConn) Read(b []byte) (int, error) {
+	if m.readErr != nil {
+		// Return some data along with the error to test error handling
+		n := copy(b, m.readData[m.readPos:])
+		m.readPos += n
+		if n > 0 {
+			return n, nil
+		}
+		return 0, m.readErr
+	}
+	if m.readPos >= len(m.readData) {
+		return 0, io.EOF
+	}
+	n := copy(b, m.readData[m.readPos:])
+	m.readPos += n
+	return n, nil
+}
+
+func (m *mockErrorConn) Write(b []byte) (int, error) {
+	if m.writeErr != nil {
+		return 0, m.writeErr
+	}
+	return len(b), nil
+}
+
+func (m *mockErrorConn) Close() error                       { return nil }
+func (m *mockErrorConn) LocalAddr() net.Addr                { return nil }
+func (m *mockErrorConn) RemoteAddr() net.Addr               { return nil }
+func (m *mockErrorConn) SetDeadline(t time.Time) error      { return nil }
+func (m *mockErrorConn) SetReadDeadline(t time.Time) error  { return nil }
+func (m *mockErrorConn) SetWriteDeadline(t time.Time) error { return nil }
+
+// Test ThrottledConn.Read with limited tokens (available < maxRead path)
+func TestThrottledConn_ReadWithLimitedTokens(t *testing.T) {
+	// Create a large data buffer
+	data := make([]byte, 1000)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+	conn := newMockConn(data)
+
+	// Create throttled conn with small capacity - forces limited token scenario
+	tc := NewThrottledConn(conn, 100, 0) // 100 bytes/sec, capacity 100
+
+	// Consume most tokens first to trigger the limited tokens path
+	tc.readLimiter.AllowN(95) // Leave only 5 tokens
+
+	// Now read - should hit the available < maxRead path
+	buf := make([]byte, 100)
+	n, err := tc.Read(buf)
+	require.NoError(t, err)
+	assert.Greater(t, n, 0)
+	assert.LessOrEqual(t, n, 100) // Should be limited by tokens
+}
+
+// Test ThrottledConn.Read specifically targeting available > 0 && available < maxRead
+func TestThrottledConn_ReadWithPartialTokens(t *testing.T) {
+	// Create a large data buffer
+	data := make([]byte, 100)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	conn := newMockConn(data)
+
+	// Create with capacity 10
+	tc := NewThrottledConn(conn, 10, 0) // 10 bytes/sec, capacity 10
+
+	// Consume 7 tokens, leaving 3
+	tc.readLimiter.AllowN(7)
+
+	// Verify we have about 3 tokens
+	available := tc.readLimiter.Tokens()
+	assert.Greater(t, available, float64(0))
+	assert.Less(t, available, float64(5))
+
+	// Read with buffer size 50 - should be limited to ~3 due to available tokens
+	buf := make([]byte, 50)
+	n, err := tc.Read(buf)
+	require.NoError(t, err)
+	assert.Greater(t, n, 0)
+	assert.LessOrEqual(t, n, 5) // Should be limited to around available tokens
+}
+
+// Test ThrottledConn.Read when available tokens is 0 (maxRead becomes 1)
+func TestThrottledConn_ReadWithZeroTokens(t *testing.T) {
+	data := []byte("test data")
+	conn := newMockConn(data)
+
+	tc := NewThrottledConn(conn, 1000, 0)
+
+	// Exhaust all tokens
+	tc.readLimiter.AllowN(tc.readLimiter.Capacity())
+
+	// Read with no available tokens - when available <= 0, maxRead stays as len(b)
+	// but the code path where available > 0 && available < maxRead is not taken
+	buf := make([]byte, 100)
+	n, err := tc.Read(buf)
+	require.NoError(t, err)
+	// When available is 0, maxRead stays as len(b), so we read all available data
+	assert.Equal(t, len(data), n)
+}
+
+// Test ThrottledConn.Write with limited tokens (available < chunkSize path)
+func TestThrottledConn_WriteWithLimitedTokens(t *testing.T) {
+	conn := newMockConn(nil)
+
+	tc := NewThrottledConn(conn, 0, 100) // 100 bytes/sec
+
+	// Consume most tokens
+	tc.writeLimiter.AllowN(95)
+
+	// Write data - should be chunked due to limited tokens
+	data := make([]byte, 50)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	n, err := tc.Write(data)
+	require.NoError(t, err)
+	assert.Equal(t, len(data), n)
+}
+
+// Test ThrottledConn.Write when available tokens is 0
+func TestThrottledConn_WriteWithZeroTokens(t *testing.T) {
+	conn := newMockConn(nil)
+
+	tc := NewThrottledConn(conn, 0, 1000)
+
+	// Exhaust all tokens
+	tc.writeLimiter.AllowN(tc.writeLimiter.Capacity())
+
+	// Write with no available tokens
+	data := []byte("test")
+	n, err := tc.Write(data)
+	require.NoError(t, err)
+	assert.Equal(t, len(data), n)
+}
+
+// Test ThrottledConn.Write error from underlying connection
+func TestThrottledConn_WriteError(t *testing.T) {
+	expectedErr := io.ErrClosedPipe
+	conn := &mockErrorConn{writeErr: expectedErr}
+
+	tc := NewThrottledConn(conn, 0, 1000)
+
+	data := []byte("test data")
+	n, err := tc.Write(data)
+	assert.Error(t, err)
+	assert.Equal(t, expectedErr, err)
+	assert.Equal(t, 0, n)
+}
+
+// Test ThrottledReader.Read with limited tokens
+func TestThrottledReader_ReadWithLimitedTokens(t *testing.T) {
+	data := make([]byte, 100)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	reader := bytes.NewReader(data)
+
+	tr := NewThrottledReader(reader, 50) // 50 bytes/sec
+
+	// Consume most tokens
+	tr.limiter.AllowN(45)
+
+	// Read - should be limited by available tokens
+	buf := make([]byte, 100)
+	n, err := tr.Read(buf)
+	require.NoError(t, err)
+	assert.Greater(t, n, 0)
+	assert.LessOrEqual(t, n, 10) // Limited by remaining tokens
+}
+
+// Test ThrottledReader.Read with zero tokens
+func TestThrottledReader_ReadWithZeroTokens(t *testing.T) {
+	data := []byte("test data for reading")
+	reader := bytes.NewReader(data)
+
+	tr := NewThrottledReader(reader, 1000)
+
+	// Exhaust all tokens
+	tr.limiter.AllowN(tr.limiter.Capacity())
+
+	// Read with no available tokens - when available <= 0, maxRead stays as len(p)
+	buf := make([]byte, 100)
+	n, err := tr.Read(buf)
+	require.NoError(t, err)
+	// When available is 0, maxRead stays as len(p), so we read all available data
+	assert.Equal(t, len(data), n)
+}
+
+// mockErrorReader is a mock reader that returns errors
+type mockErrorReader struct {
+	err error
+}
+
+func (m *mockErrorReader) Read(p []byte) (int, error) {
+	return 0, m.err
+}
+
+// Test ThrottledReader.Read with underlying error
+func TestThrottledReader_ReadError(t *testing.T) {
+	expectedErr := io.ErrUnexpectedEOF
+	reader := &mockErrorReader{err: expectedErr}
+
+	tr := NewThrottledReader(reader, 1000)
+
+	buf := make([]byte, 100)
+	n, err := tr.Read(buf)
+	assert.Error(t, err)
+	assert.Equal(t, expectedErr, err)
+	assert.Equal(t, 0, n)
+}
+
+// Test ThrottledWriter.Write with limited tokens
+func TestThrottledWriter_WriteWithLimitedTokens(t *testing.T) {
+	writer := &bytes.Buffer{}
+
+	tw := NewThrottledWriter(writer, 50) // 50 bytes/sec
+
+	// Consume most tokens
+	tw.limiter.AllowN(45)
+
+	// Write data - should chunk due to limited tokens
+	data := make([]byte, 30)
+	for i := range data {
+		data[i] = byte(i)
+	}
+	n, err := tw.Write(data)
+	require.NoError(t, err)
+	assert.Equal(t, len(data), n)
+	assert.Equal(t, data, writer.Bytes())
+}
+
+// Test ThrottledWriter.Write with zero tokens
+func TestThrottledWriter_WriteWithZeroTokens(t *testing.T) {
+	writer := &bytes.Buffer{}
+
+	tw := NewThrottledWriter(writer, 1000)
+
+	// Exhaust all tokens
+	tw.limiter.AllowN(tw.limiter.Capacity())
+
+	// Write with no available tokens
+	data := []byte("test")
+	n, err := tw.Write(data)
+	require.NoError(t, err)
+	assert.Equal(t, len(data), n)
+	assert.Equal(t, data, writer.Bytes())
+}
+
+// mockErrorWriter is a mock writer that returns errors
+type mockErrorWriter struct {
+	err error
+}
+
+func (m *mockErrorWriter) Write(p []byte) (int, error) {
+	return 0, m.err
+}
+
+// Test ThrottledWriter.Write with underlying error
+func TestThrottledWriter_WriteError(t *testing.T) {
+	expectedErr := io.ErrClosedPipe
+	writer := &mockErrorWriter{err: expectedErr}
+
+	tw := NewThrottledWriter(writer, 1000)
+
+	data := []byte("test data")
+	n, err := tw.Write(data)
+	assert.Error(t, err)
+	assert.Equal(t, expectedErr, err)
+	assert.Equal(t, 0, n)
+}
+
+// Test ThrottledConn.Read with EOF from underlying conn
+func TestThrottledConn_ReadEOF(t *testing.T) {
+	conn := newMockConn([]byte{}) // Empty buffer
+	tc := NewThrottledConn(conn, 1000, 0)
+
+	buf := make([]byte, 100)
+	n, err := tc.Read(buf)
+	assert.Equal(t, io.EOF, err)
+	assert.Equal(t, 0, n)
+}
+
+// Test ThrottledReader.Read with EOF
+func TestThrottledReader_ReadEOF(t *testing.T) {
+	reader := bytes.NewReader([]byte{}) // Empty buffer
+	tr := NewThrottledReader(reader, 1000)
+
+	buf := make([]byte, 100)
+	n, err := tr.Read(buf)
+	assert.Equal(t, io.EOF, err)
+	assert.Equal(t, 0, n)
+}
+
+// Test ParseBandwidth with no unit suffix (numeric only)
+func TestParseBandwidth_NoUnit(t *testing.T) {
+	bw, err := ParseBandwidth("1024")
+	require.NoError(t, err)
+	assert.Equal(t, int64(1024), bw)
+}
+
+// Test ParseBandwidth with negative value
+func TestParseBandwidth_NegativeValue(t *testing.T) {
+	bw, err := ParseBandwidth("-10mbps")
+	require.NoError(t, err)
+	// Negative values are technically valid from parsing perspective
+	assert.Less(t, bw, int64(0))
+}

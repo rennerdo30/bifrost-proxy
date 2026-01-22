@@ -58,3 +58,4 @@ job-logs.txt
 
 # Documentation build
 site/
+node_modules

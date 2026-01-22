@@ -12,13 +12,13 @@
 
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
     read_timeout: "60s"
     write_timeout: "60s"
     idle_timeout: "120s"
     max_connections: 100  # Prevent OOM; use 25-50 for 32MB RAM devices
   socks5:
-    listen: ":1080"
+    listen: ":7180"
     max_connections: 100  # Prevent OOM; use 25-50 for 32MB RAM devices
   graceful_period: "10s"
 
@@ -46,7 +46,7 @@ metrics:
   enabled: false  # Disable for low-power devices
   # If you need metrics, enable with longer collection interval:
   # enabled: true
-  # listen: ":9090"
+  # listen: ":7090"
   # path: "/metrics"
   # collection_interval: "300s"  # 5 minutes instead of default 15s
 
@@ -60,7 +60,7 @@ web_ui:
 
 api:
   enabled: true  # Required for basic management
-  listen: ":8082"
+  listen: ":7082"
   enable_request_log: false  # Disable to save memory
   request_log_size: 50  # Reduced from default 1000
   websocket_max_clients: 5  # Reduced from default 100

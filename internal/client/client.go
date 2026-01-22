@@ -23,6 +23,7 @@ import (
 // Client is the Bifrost client.
 type Client struct {
 	config         *config.ClientConfig
+	configPath     string
 	router         *router.ClientRouter
 	serverConn     *ServerConnection
 	debugger       *debug.Logger
@@ -140,8 +141,15 @@ func (c *Client) Start(ctx context.Context) error {
 			ServerConnected: func() bool {
 				return c.serverConn.IsConnected(context.Background())
 			},
-			Token:      c.config.API.Token,
-			VPNManager: c.vpnManager,
+			Token:           c.config.API.Token,
+			VPNManager:      c.vpnManager,
+			ServerAddress:   c.config.Server.Address,
+			HTTPProxyAddr:   c.config.Proxy.HTTP.Listen,
+			SOCKS5ProxyAddr: c.config.Proxy.SOCKS5.Listen,
+			ConfigGetter: func() interface{} {
+				return c.config
+			},
+			ConfigUpdater: c.updateConfig,
 		})
 
 		c.apiServer = &http.Server{
@@ -335,4 +343,177 @@ func (c *Client) VPNManager() *vpn.Manager {
 
 func generateRequestID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// SetConfigPath sets the path to the config file for saving updates.
+func (c *Client) SetConfigPath(path string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.configPath = path
+}
+
+// Config returns the current configuration.
+func (c *Client) Config() *config.ClientConfig {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.config
+}
+
+// updateConfig updates the configuration with the given changes.
+func (c *Client) updateConfig(updates map[string]interface{}) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Apply updates to the config
+	if server, ok := updates["server"].(map[string]interface{}); ok {
+		if addr, ok := server["address"].(string); ok {
+			c.config.Server.Address = addr
+		}
+		if proto, ok := server["protocol"].(string); ok {
+			c.config.Server.Protocol = proto
+		}
+		if user, ok := server["username"].(string); ok {
+			c.config.Server.Username = user
+		}
+		if pass, ok := server["password"].(string); ok {
+			c.config.Server.Password = pass
+		}
+		if timeout, ok := server["timeout"].(string); ok {
+			c.config.Server.Timeout = config.Duration(parseDuration(timeout))
+		}
+		if retryCount, ok := server["retry_count"].(float64); ok {
+			c.config.Server.RetryCount = int(retryCount)
+		}
+	}
+
+	if proxy, ok := updates["proxy"].(map[string]interface{}); ok {
+		if httpCfg, ok := proxy["http"].(map[string]interface{}); ok {
+			if listen, ok := httpCfg["listen"].(string); ok {
+				c.config.Proxy.HTTP.Listen = listen
+			}
+			if rt, ok := httpCfg["read_timeout"].(string); ok {
+				c.config.Proxy.HTTP.ReadTimeout = config.Duration(parseDuration(rt))
+			}
+		}
+		if socks5Cfg, ok := proxy["socks5"].(map[string]interface{}); ok {
+			if listen, ok := socks5Cfg["listen"].(string); ok {
+				c.config.Proxy.SOCKS5.Listen = listen
+			}
+		}
+	}
+
+	if debug, ok := updates["debug"].(map[string]interface{}); ok {
+		if enabled, ok := debug["enabled"].(bool); ok {
+			c.config.Debug.Enabled = enabled
+		}
+		if maxEntries, ok := debug["max_entries"].(float64); ok {
+			c.config.Debug.MaxEntries = int(maxEntries)
+		}
+		if captureBody, ok := debug["capture_body"].(bool); ok {
+			c.config.Debug.CaptureBody = captureBody
+		}
+		if maxBodySize, ok := debug["max_body_size"].(float64); ok {
+			c.config.Debug.MaxBodySize = int(maxBodySize)
+		}
+	}
+
+	if logging, ok := updates["logging"].(map[string]interface{}); ok {
+		if level, ok := logging["level"].(string); ok {
+			c.config.Logging.Level = level
+		}
+		if format, ok := logging["format"].(string); ok {
+			c.config.Logging.Format = format
+		}
+		if output, ok := logging["output"].(string); ok {
+			c.config.Logging.Output = output
+		}
+	}
+
+	if tray, ok := updates["tray"].(map[string]interface{}); ok {
+		if enabled, ok := tray["enabled"].(bool); ok {
+			c.config.Tray.Enabled = enabled
+		}
+		if startMin, ok := tray["start_minimized"].(bool); ok {
+			c.config.Tray.StartMinimized = startMin
+		}
+		if showQuick, ok := tray["show_quick_gui"].(bool); ok {
+			c.config.Tray.ShowQuickGUI = showQuick
+		}
+		if autoConn, ok := tray["auto_connect"].(bool); ok {
+			c.config.Tray.AutoConnect = autoConn
+		}
+		if showNotif, ok := tray["show_notifications"].(bool); ok {
+			c.config.Tray.ShowNotifications = showNotif
+		}
+	}
+
+	if webUI, ok := updates["web_ui"].(map[string]interface{}); ok {
+		if enabled, ok := webUI["enabled"].(bool); ok {
+			c.config.WebUI.Enabled = enabled
+		}
+		if listen, ok := webUI["listen"].(string); ok {
+			c.config.WebUI.Listen = listen
+		}
+	}
+
+	if api, ok := updates["api"].(map[string]interface{}); ok {
+		if enabled, ok := api["enabled"].(bool); ok {
+			c.config.API.Enabled = enabled
+		}
+		if listen, ok := api["listen"].(string); ok {
+			c.config.API.Listen = listen
+		}
+		if token, ok := api["token"].(string); ok {
+			c.config.API.Token = token
+		}
+	}
+
+	if autoUpdate, ok := updates["auto_update"].(map[string]interface{}); ok {
+		if enabled, ok := autoUpdate["enabled"].(bool); ok {
+			c.config.AutoUpdate.Enabled = enabled
+		}
+		if channel, ok := autoUpdate["channel"].(string); ok {
+			c.config.AutoUpdate.Channel = channel
+		}
+	}
+
+	if vpnCfg, ok := updates["vpn"].(map[string]interface{}); ok {
+		if enabled, ok := vpnCfg["enabled"].(bool); ok {
+			c.config.VPN.Enabled = enabled
+		}
+	}
+
+	if meshCfg, ok := updates["mesh"].(map[string]interface{}); ok {
+		if enabled, ok := meshCfg["enabled"].(bool); ok {
+			c.config.Mesh.Enabled = enabled
+		}
+		if networkID, ok := meshCfg["network_id"].(string); ok {
+			c.config.Mesh.NetworkID = networkID
+		}
+		if networkCIDR, ok := meshCfg["network_cidr"].(string); ok {
+			c.config.Mesh.NetworkCIDR = networkCIDR
+		}
+		if peerName, ok := meshCfg["peer_name"].(string); ok {
+			c.config.Mesh.PeerName = peerName
+		}
+	}
+
+	// Save to file if path is set
+	if c.configPath != "" {
+		if err := config.Save(c.configPath, c.config); err != nil {
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+		logging.Info("Configuration saved", "path", c.configPath)
+	}
+
+	return nil
+}
+
+// parseDuration parses a duration string like "30s" or "5m".
+func parseDuration(s string) time.Duration {
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return 0
+	}
+	return d
 }

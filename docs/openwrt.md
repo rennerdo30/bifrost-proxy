@@ -120,10 +120,10 @@ For devices with 32MB RAM, use these conservative settings:
 ```yaml
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
     max_connections: 25
   socks5:
-    listen: ":1080"
+    listen: ":7180"
     max_connections: 25
 
 logging:
@@ -131,7 +131,7 @@ logging:
 
 api:
   enabled: true
-  listen: ":8082"
+  listen: ":7082"
   websocket_max_clients: 2
 
 metrics:
@@ -205,7 +205,7 @@ ps aux | grep bifrost
 free -m
 
 # Check open connections
-netstat -an | grep -E ':8080|:1080' | wc -l
+netstat -an | grep -E ':7080|:7180' | wc -l
 ```
 
 ## Firewall Configuration

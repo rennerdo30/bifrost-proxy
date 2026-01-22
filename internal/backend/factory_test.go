@@ -55,7 +55,7 @@ func TestFactory_Create_HTTPProxy(t *testing.T) {
 		Type:    "http_proxy",
 		Enabled: true,
 		Config: map[string]any{
-			"address":         "proxy.example.com:8080",
+			"address":         "proxy.example.com:7080",
 			"username":        "user",
 			"password":        "pass",
 			"connect_timeout": "10s",
@@ -91,7 +91,7 @@ func TestFactory_Create_SOCKS5Proxy(t *testing.T) {
 		Type:    "socks5_proxy",
 		Enabled: true,
 		Config: map[string]any{
-			"address":         "socks.example.com:1080",
+			"address":         "socks.example.com:7180",
 			"username":        "user",
 			"password":        "pass",
 			"connect_timeout": "10s",

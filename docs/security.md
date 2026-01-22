@@ -147,7 +147,7 @@ Always set an API token for production:
 ```yaml
 api:
   enabled: true
-  listen: ":8082"
+  listen: ":7082"
   token: "${BIFROST_API_TOKEN}"
 ```
 
@@ -162,10 +162,10 @@ openssl rand -hex 32
 
 ```bash
 # Header authentication (recommended)
-curl -H "Authorization: Bearer your-token" http://localhost:8082/api/v1/status
+curl -H "Authorization: Bearer your-token" http://localhost:7082/api/v1/status
 
 # Query parameter (less secure, avoid in production)
-curl "http://localhost:8082/api/v1/status?token=your-token"
+curl "http://localhost:7082/api/v1/status?token=your-token"
 ```
 
 ### Restrict API Access
@@ -174,7 +174,7 @@ Bind the API to localhost if only local access is needed:
 
 ```yaml
 api:
-  listen: "127.0.0.1:8082"  # Only localhost
+  listen: "127.0.0.1:7082"  # Only localhost
 ```
 
 ---

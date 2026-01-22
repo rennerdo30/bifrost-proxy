@@ -68,7 +68,7 @@ type RouteConfig struct {
 	Domains     []string `yaml:"domains" json:"domains"`
 	Backend     string   `yaml:"backend" json:"backend"`
 	Priority    int      `yaml:"priority" json:"priority"`
-	Backends    []string `yaml:"backends,omitempty" json:"backends,omitempty"`       // For load balancing
+	Backends    []string `yaml:"backends,omitempty" json:"backends,omitempty"`         // For load balancing
 	LoadBalance string   `yaml:"load_balance,omitempty" json:"load_balance,omitempty"` // round_robin, least_conn, ip_hash, weighted
 }
 
@@ -88,15 +88,19 @@ type AuthConfig struct {
 }
 
 // AuthProvider represents a single authentication provider.
+// Supports both the new plugin-based config (Config map) and legacy type-specific config.
 type AuthProvider struct {
-	Name     string      `yaml:"name" json:"name"`                     // Unique name for this provider
-	Type     string      `yaml:"type" json:"type"`                     // native, system, ldap, oauth
-	Enabled  bool        `yaml:"enabled" json:"enabled"`               // Whether this provider is active
-	Priority int         `yaml:"priority" json:"priority"`             // Lower priority is tried first
-	Native   *NativeAuth `yaml:"native,omitempty" json:"native,omitempty"`
-	System   *SystemAuth `yaml:"system,omitempty" json:"system,omitempty"`
-	LDAP     *LDAPAuth   `yaml:"ldap,omitempty" json:"ldap,omitempty"`
-	OAuth    *OAuthAuth  `yaml:"oauth,omitempty" json:"oauth,omitempty"`
+	Name     string         `yaml:"name" json:"name"`                         // Unique name for this provider
+	Type     string         `yaml:"type" json:"type"`                         // native, system, ldap, oauth, none
+	Enabled  bool           `yaml:"enabled" json:"enabled"`                   // Whether this provider is active
+	Priority int            `yaml:"priority" json:"priority"`                 // Lower priority is tried first
+	Config   map[string]any `yaml:"config,omitempty" json:"config,omitempty"` // Plugin-specific configuration (new format)
+
+	// Legacy type-specific config (for backward compatibility)
+	Native *NativeAuth `yaml:"native,omitempty" json:"native,omitempty"`
+	System *SystemAuth `yaml:"system,omitempty" json:"system,omitempty"`
+	LDAP   *LDAPAuth   `yaml:"ldap,omitempty" json:"ldap,omitempty"`
+	OAuth  *OAuthAuth  `yaml:"oauth,omitempty" json:"oauth,omitempty"`
 }
 
 // NativeAuth contains native authentication settings.
@@ -255,13 +259,13 @@ func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
 		Server: ServerSettings{
 			HTTP: ListenerConfig{
-				Listen:       ":8080",
+				Listen:       ":7080",
 				ReadTimeout:  Duration(30 * time.Second),
 				WriteTimeout: Duration(30 * time.Second),
 				IdleTimeout:  Duration(60 * time.Second),
 			},
 			SOCKS5: ListenerConfig{
-				Listen: ":1080",
+				Listen: ":7180",
 			},
 			GracefulPeriod: Duration(30 * time.Second),
 		},
@@ -278,13 +282,13 @@ func DefaultServerConfig() ServerConfig {
 		},
 		Metrics: MetricsConfig{
 			Enabled:            true,
-			Listen:             ":9090",
+			Listen:             ":7090",
 			Path:               "/metrics",
 			CollectionInterval: Duration(15 * time.Second),
 		},
 		API: APIConfig{
 			Enabled: true,
-			Listen:  ":8082",
+			Listen:  ":7082",
 		},
 		Logging: logging.DefaultConfig(),
 		AutoUpdate: AutoUpdateConfig{

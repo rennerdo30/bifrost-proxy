@@ -1,0 +1,23 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "bifrost-quick",
+  "outputfilename": "bifrost-quick",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Bifrost Team",
+    "email": "bifrost@example.com"
+  },
+  "info": {
+    "companyName": "Bifrost",
+    "productName": "Bifrost Quick Access",
+    "productVersion": "1.0.0",
+    "copyright": "MIT License",
+    "comments": "Quick access GUI for Bifrost VPN client"
+  },
+  "nsisType": "multiple",
+  "obfuscated": false,
+  "garbleargs": ""
+}

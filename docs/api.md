@@ -7,18 +7,18 @@ Both server and client expose REST APIs for management and monitoring.
 If API token is configured:
 
 ```bash
-curl -H "Authorization: Bearer your-token" http://localhost:8082/api/v1/status
+curl -H "Authorization: Bearer your-token" http://localhost:7082/api/v1/status
 ```
 
 Or via query parameter:
 
 ```bash
-curl "http://localhost:8082/api/v1/status?token=your-token"
+curl "http://localhost:7082/api/v1/status?token=your-token"
 ```
 
 ## Server API
 
-Default: `http://localhost:8082`
+Default: `http://localhost:7082`
 
 ### Health Check
 
@@ -420,7 +420,7 @@ The PAC file contains JavaScript that browsers use for automatic proxy configura
 ```javascript
 function FindProxyForURL(url, host) {
     if (shExpMatch(host, "*.internal.company.com")) {
-        return "PROXY bifrost.example.com:8080; DIRECT";
+        return "PROXY bifrost.example.com:7080; DIRECT";
     }
     return "DIRECT";
 }
@@ -435,7 +435,7 @@ function FindProxyForURL(url, host) {
 
 ## Client API
 
-Default: `http://localhost:3130`
+Default: `http://localhost:7383`
 
 ### Status
 
@@ -496,12 +496,168 @@ Response:
 }
 ```
 
+### VPN Status
+
+Get VPN connection status:
+```http
+GET /api/v1/vpn/status
+```
+
+Response:
+```json
+{
+  "status": "connected",
+  "enabled": true,
+  "tunnel_type": "WireGuard",
+  "interface_name": "bifrost0",
+  "local_ip": "10.0.0.2",
+  "gateway": "10.0.0.1",
+  "dns_servers": ["1.1.1.1", "8.8.8.8"],
+  "mtu": 1420,
+  "port": 51820,
+  "encryption": "ChaCha20-Poly1305",
+  "bytes_sent": 1048576,
+  "bytes_received": 2097152,
+  "connected_since": "2024-01-15T10:00:00Z"
+}
+```
+
+### Enable/Disable VPN
+
+```http
+POST /api/v1/vpn/enable
+POST /api/v1/vpn/disable
+```
+
+Response:
+```json
+{
+  "status": "ok"
+}
+```
+
+### VPN Connections
+
+Get active VPN connections:
+```http
+GET /api/v1/vpn/connections
+```
+
+Response:
+```json
+[
+  {
+    "id": "conn-123",
+    "remote_addr": "example.com:443",
+    "local_addr": "10.0.0.2:54321",
+    "protocol": "tcp",
+    "started_at": "2024-01-15T10:00:00Z",
+    "bytes_sent": 1024,
+    "bytes_received": 2048
+  }
+]
+```
+
+### Split Tunnel Rules
+
+Get split tunnel configuration:
+```http
+GET /api/v1/vpn/split/rules
+```
+
+Response:
+```json
+{
+  "mode": "exclude",
+  "apps": [
+    {"name": "Slack", "path": "/Applications/Slack.app"}
+  ],
+  "domains": ["*.local", "localhost"],
+  "ips": ["192.168.0.0/16", "10.0.0.0/8"]
+}
+```
+
+### Add Split Tunnel App
+
+```http
+POST /api/v1/vpn/split/apps
+Content-Type: application/json
+
+{
+  "name": "Discord",
+  "path": "/Applications/Discord.app"
+}
+```
+
+### Remove Split Tunnel App
+
+```http
+DELETE /api/v1/vpn/split/apps/{name}
+```
+
+### Add Split Tunnel Domain
+
+```http
+POST /api/v1/vpn/split/domains
+Content-Type: application/json
+
+{
+  "pattern": "*.internal.company.com"
+}
+```
+
+### Add Split Tunnel IP
+
+```http
+POST /api/v1/vpn/split/ips
+Content-Type: application/json
+
+{
+  "cidr": "172.16.0.0/12"
+}
+```
+
+### Servers
+
+List available servers:
+```http
+GET /api/v1/servers
+```
+
+Response:
+```json
+[
+  {
+    "id": "us-west",
+    "name": "US West",
+    "address": "us-west.example.com:7080",
+    "protocol": "HTTP",
+    "is_default": true,
+    "latency_ms": 45,
+    "status": "online"
+  }
+]
+```
+
+### Select Server
+
+```http
+POST /api/v1/servers/{id}/select
+```
+
+Response:
+```json
+{
+  "status": "ok"
+}
+```
+
 ## WebSocket API
 
 Real-time updates are available via WebSocket:
 
 ```javascript
-const ws = new WebSocket('ws://localhost:8082/api/v1/ws');
+const ws = new WebSocket('ws://localhost:7082/api/v1/ws');
 
 ws.onmessage = function(event) {
   const data = JSON.parse(event.data);

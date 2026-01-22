@@ -253,6 +253,40 @@ func TestIPMatcher_AddInvalid(t *testing.T) {
 
 	err := m.Add("invalid-ip")
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid IP")
+}
+
+func TestIPMatcher_AddInvalidCIDR(t *testing.T) {
+	m := NewIPMatcher()
+
+	// Test invalid CIDR format
+	err := m.Add("192.168.1.0/99")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid CIDR")
+
+	// Test another invalid CIDR
+	err = m.Add("not-a-cidr/24")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid CIDR")
+}
+
+func TestIPMatcher_AddEmptyString(t *testing.T) {
+	m := NewIPMatcher()
+
+	// Empty string should be silently ignored (returns nil)
+	err := m.Add("")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, m.Count())
+
+	// Whitespace-only string should also be ignored
+	err = m.Add("   ")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, m.Count())
+
+	// String with only tabs/newlines
+	err = m.Add("\t\n")
+	assert.NoError(t, err)
+	assert.Equal(t, 0, m.Count())
 }
 
 func TestIPMatcher_AddAll_Invalid(t *testing.T) {

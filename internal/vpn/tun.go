@@ -5,27 +5,13 @@ import (
 	"fmt"
 	"net/netip"
 	"runtime"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/device"
 )
 
 // TUNDevice represents a TUN network interface.
-type TUNDevice interface {
-	// Name returns the interface name (e.g., "bifrost0", "utun5").
-	Name() string
-
-	// Read reads a packet from the TUN device.
-	// Returns the number of bytes read.
-	Read(packet []byte) (int, error)
-
-	// Write writes a packet to the TUN device.
-	// Returns the number of bytes written.
-	Write(packet []byte) (int, error)
-
-	// Close closes the TUN device.
-	Close() error
-
-	// MTU returns the MTU of the interface.
-	MTU() int
-}
+// This is an alias to the device.NetworkDevice interface for backwards compatibility.
+type TUNDevice = device.NetworkDevice
 
 // TUNConfig contains TUN device configuration.
 type TUNConfig struct {
@@ -78,34 +64,32 @@ func defaultTUNName() string {
 	}
 }
 
-// CreateTUN creates a new TUN device.
+// CreateTUN creates a new TUN device using the unified device package.
 // The implementation is platform-specific.
 func CreateTUN(cfg TUNConfig) (TUNDevice, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	return createPlatformTUN(cfg)
+	// Convert to device.Config and create using the device package
+	deviceCfg := device.Config{
+		Type:    device.DeviceTUN,
+		Name:    cfg.Name,
+		Address: cfg.Address,
+		MTU:     cfg.MTU,
+	}
+
+	return device.Create(deviceCfg)
 }
 
 // TUNError represents a TUN-specific error.
-type TUNError struct {
-	Op  string // Operation that failed
-	Err error  // Underlying error
-}
+// This is an alias to device.DeviceError for backwards compatibility.
+type TUNError = device.DeviceError
 
-func (e *TUNError) Error() string {
-	return fmt.Sprintf("tun %s: %v", e.Op, e.Err)
-}
-
-func (e *TUNError) Unwrap() error {
-	return e.Err
-}
-
-// Common TUN errors.
+// Common TUN errors - re-exported from device package.
 var (
-	ErrTUNNotSupported    = errors.New("TUN not supported on this platform")
-	ErrTUNPermissionDenied = errors.New("permission denied: TUN creation requires root/admin privileges")
-	ErrTUNAlreadyExists   = errors.New("TUN interface already exists")
-	ErrTUNClosed          = errors.New("TUN device is closed")
+	ErrTUNNotSupported     = device.ErrDeviceNotSupported
+	ErrTUNPermissionDenied = device.ErrPermissionDenied
+	ErrTUNAlreadyExists    = device.ErrDeviceAlreadyExists
+	ErrTUNClosed           = device.ErrDeviceClosed
 )

@@ -139,92 +139,155 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 }
 
 func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
+	factory := auth.NewFactory()
+
 	// Check if using new multi-provider configuration
 	if len(cfg.Providers) > 0 {
-		return createChainAuthenticator(cfg.Providers)
+		providers := convertProvidersConfig(cfg.Providers)
+		return factory.CreateChain(providers)
 	}
 
-	// Legacy single-mode configuration
-	return createSingleAuthenticator(cfg.Mode, cfg.Native, cfg.System, cfg.LDAP, cfg.OAuth)
+	// Legacy single-mode configuration - convert to new format
+	provider := convertLegacyConfig(cfg)
+	return factory.Create(provider)
 }
 
-func createChainAuthenticator(providers []config.AuthProvider) (auth.Authenticator, error) {
-	chain := auth.NewChainAuthenticator()
+// convertProvidersConfig converts config.AuthProvider slice to auth.ProviderConfig slice.
+func convertProvidersConfig(providers []config.AuthProvider) []auth.ProviderConfig {
+	result := make([]auth.ProviderConfig, 0, len(providers))
 
 	for _, p := range providers {
-		if !p.Enabled {
-			continue
+		providerCfg := auth.ProviderConfig{
+			Name:     p.Name,
+			Type:     p.Type,
+			Enabled:  p.Enabled,
+			Priority: p.Priority,
 		}
 
-		authenticator, err := createSingleAuthenticator(p.Type, p.Native, p.System, p.LDAP, p.OAuth)
-		if err != nil {
-			return nil, fmt.Errorf("create provider %q: %w", p.Name, err)
+		// Use new Config map if provided, otherwise convert legacy config
+		if p.Config != nil {
+			providerCfg.Config = p.Config
+		} else {
+			providerCfg.Config = convertLegacyProviderConfig(p)
 		}
 
-		chain.AddAuthenticator(p.Name, p.Priority, authenticator)
+		result = append(result, providerCfg)
 	}
 
-	if chain.Count() == 0 {
-		// No enabled providers, return NoneAuthenticator
-		return auth.NewNoneAuthenticator(), nil
-	}
-
-	return chain, nil
+	return result
 }
 
-func createSingleAuthenticator(mode string, native *config.NativeAuth, system *config.SystemAuth, ldap *config.LDAPAuth, oauth *config.OAuthAuth) (auth.Authenticator, error) {
-	switch mode {
-	case "none", "":
-		return auth.NewNoneAuthenticator(), nil
-	case "native":
-		if native == nil {
-			return nil, fmt.Errorf("native auth config required")
-		}
-		nativeCfg := auth.NativeConfig{}
-		for _, u := range native.Users {
-			nativeCfg.Users = append(nativeCfg.Users, auth.NativeUserConfig{
-				Username:     u.Username,
-				PasswordHash: u.PasswordHash,
-			})
-		}
-		return auth.NewNativeAuthenticator(nativeCfg), nil
-	case "ldap":
-		if ldap == nil {
-			return nil, fmt.Errorf("ldap auth config required")
-		}
-		return auth.NewLDAPAuthenticator(auth.LDAPConfig{
-			URL:                ldap.URL,
-			BaseDN:             ldap.BaseDN,
-			BindDN:             ldap.BindDN,
-			BindPassword:       ldap.BindPassword,
-			UserFilter:         ldap.UserFilter,
-			GroupFilter:        ldap.GroupFilter,
-			RequireGroup:       ldap.RequireGroup,
-			TLS:                ldap.TLS,
-			InsecureSkipVerify: ldap.InsecureSkipVerify,
-		})
-	case "oauth":
-		if oauth == nil {
-			return nil, fmt.Errorf("oauth auth config required")
-		}
-		return auth.NewOAuthAuthenticator(auth.OAuthConfig{
-			Provider:     oauth.Provider,
-			ClientID:     oauth.ClientID,
-			ClientSecret: oauth.ClientSecret,
-			IssuerURL:    oauth.IssuerURL,
-			Scopes:       oauth.Scopes,
-		})
-	case "system":
-		systemCfg := auth.SystemConfig{}
-		if system != nil {
-			systemCfg.Service = system.Service
-			systemCfg.AllowedUsers = system.AllowedUsers
-			systemCfg.AllowedGroups = system.AllowedGroups
-		}
-		return auth.NewSystemAuthenticator(systemCfg)
-	default:
-		return nil, fmt.Errorf("unknown auth mode: %s", mode)
+// convertLegacyConfig converts legacy single-mode config to ProviderConfig.
+func convertLegacyConfig(cfg config.AuthConfig) auth.ProviderConfig {
+	mode := cfg.Mode
+	if mode == "" {
+		mode = "none"
 	}
+
+	provider := auth.ProviderConfig{
+		Name:     mode,
+		Type:     mode,
+		Enabled:  true,
+		Priority: 1,
+	}
+
+	switch mode {
+	case "native":
+		if cfg.Native != nil {
+			users := make([]map[string]any, 0, len(cfg.Native.Users))
+			for _, u := range cfg.Native.Users {
+				users = append(users, map[string]any{
+					"username":      u.Username,
+					"password_hash": u.PasswordHash,
+				})
+			}
+			provider.Config = map[string]any{"users": users}
+		}
+	case "system":
+		if cfg.System != nil {
+			provider.Config = map[string]any{
+				"service":        cfg.System.Service,
+				"allowed_users":  cfg.System.AllowedUsers,
+				"allowed_groups": cfg.System.AllowedGroups,
+			}
+		}
+	case "ldap":
+		if cfg.LDAP != nil {
+			provider.Config = map[string]any{
+				"url":                  cfg.LDAP.URL,
+				"base_dn":              cfg.LDAP.BaseDN,
+				"bind_dn":              cfg.LDAP.BindDN,
+				"bind_password":        cfg.LDAP.BindPassword,
+				"user_filter":          cfg.LDAP.UserFilter,
+				"group_filter":         cfg.LDAP.GroupFilter,
+				"require_group":        cfg.LDAP.RequireGroup,
+				"tls":                  cfg.LDAP.TLS,
+				"insecure_skip_verify": cfg.LDAP.InsecureSkipVerify,
+			}
+		}
+	case "oauth":
+		if cfg.OAuth != nil {
+			provider.Config = map[string]any{
+				"provider":      cfg.OAuth.Provider,
+				"client_id":     cfg.OAuth.ClientID,
+				"client_secret": cfg.OAuth.ClientSecret,
+				"issuer_url":    cfg.OAuth.IssuerURL,
+				"scopes":        cfg.OAuth.Scopes,
+			}
+		}
+	}
+
+	return provider
+}
+
+// convertLegacyProviderConfig converts legacy type-specific config to map[string]any.
+func convertLegacyProviderConfig(p config.AuthProvider) map[string]any {
+	switch p.Type {
+	case "native":
+		if p.Native != nil {
+			users := make([]map[string]any, 0, len(p.Native.Users))
+			for _, u := range p.Native.Users {
+				users = append(users, map[string]any{
+					"username":      u.Username,
+					"password_hash": u.PasswordHash,
+				})
+			}
+			return map[string]any{"users": users}
+		}
+	case "system":
+		if p.System != nil {
+			return map[string]any{
+				"service":        p.System.Service,
+				"allowed_users":  p.System.AllowedUsers,
+				"allowed_groups": p.System.AllowedGroups,
+			}
+		}
+	case "ldap":
+		if p.LDAP != nil {
+			return map[string]any{
+				"url":                  p.LDAP.URL,
+				"base_dn":              p.LDAP.BaseDN,
+				"bind_dn":              p.LDAP.BindDN,
+				"bind_password":        p.LDAP.BindPassword,
+				"user_filter":          p.LDAP.UserFilter,
+				"group_filter":         p.LDAP.GroupFilter,
+				"require_group":        p.LDAP.RequireGroup,
+				"tls":                  p.LDAP.TLS,
+				"insecure_skip_verify": p.LDAP.InsecureSkipVerify,
+			}
+		}
+	case "oauth":
+		if p.OAuth != nil {
+			return map[string]any{
+				"provider":      p.OAuth.Provider,
+				"client_id":     p.OAuth.ClientID,
+				"client_secret": p.OAuth.ClientSecret,
+				"issuer_url":    p.OAuth.IssuerURL,
+				"scopes":        p.OAuth.Scopes,
+			}
+		}
+	}
+	return nil
 }
 
 // Start starts the server.

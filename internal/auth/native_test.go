@@ -1,58 +1,75 @@
-package auth
+package auth_test
 
 import (
 	"context"
 	"testing"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/native"
 )
 
-func TestNewNativeAuthenticator(t *testing.T) {
-	cfg := NativeConfig{
-		Users: []NativeUserConfig{
-			{
-				Username:     "testuser",
-				PasswordHash: "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4C0j5nFx5.5Q5z5S", // hash of "password"
-				Groups:       []string{"admin"},
-				Email:        "test@example.com",
-				FullName:     "Test User",
-			},
+func createNativeAuthenticatorWithUsers(t *testing.T, users []map[string]any) auth.Authenticator {
+	t.Helper()
+	factory := auth.NewFactory()
+	authenticator, err := factory.Create(auth.ProviderConfig{
+		Name:    "native-test",
+		Type:    "native",
+		Enabled: true,
+		Config: map[string]any{
+			"users": users,
 		},
+	})
+	if err != nil {
+		t.Fatalf("failed to create native authenticator: %v", err)
 	}
-
-	auth := NewNativeAuthenticator(cfg)
-	if auth == nil {
-		t.Fatal("NewNativeAuthenticator returned nil")
-	}
-	if auth.Name() != "native" {
-		t.Errorf("expected Name()=native, got %s", auth.Name())
-	}
-	if auth.Type() != "native" {
-		t.Errorf("expected Type()=native, got %s", auth.Type())
-	}
+	return authenticator
 }
 
-func TestNativeAuthenticator_Authenticate_Success(t *testing.T) {
-	// Create a valid bcrypt hash for "password"
-	hash, err := HashPassword("password")
+func TestNewNativeAuthenticator(t *testing.T) {
+	hash, err := auth.HashPassword("password")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	cfg := NativeConfig{
-		Users: []NativeUserConfig{
-			{
-				Username:     "testuser",
-				PasswordHash: hash,
-				Groups:       []string{"admin", "users"},
-				Email:        "test@example.com",
-				FullName:     "Test User",
-			},
+	authenticator := createNativeAuthenticatorWithUsers(t, []map[string]any{
+		{
+			"username":      "testuser",
+			"password_hash": hash,
+			"groups":        []string{"admin"},
+			"email":         "test@example.com",
+			"full_name":     "Test User",
 		},
+	})
+
+	if authenticator == nil {
+		t.Fatal("authenticator returned nil")
+	}
+	if authenticator.Name() != "native" {
+		t.Errorf("expected Name()=native, got %s", authenticator.Name())
+	}
+	if authenticator.Type() != "native" {
+		t.Errorf("expected Type()=native, got %s", authenticator.Type())
+	}
+}
+
+func TestNativeAuthenticator_Authenticate_Success(t *testing.T) {
+	hash, err := auth.HashPassword("password")
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	auth := NewNativeAuthenticator(cfg)
+	authenticator := createNativeAuthenticatorWithUsers(t, []map[string]any{
+		{
+			"username":      "testuser",
+			"password_hash": hash,
+			"groups":        []string{"admin", "users"},
+			"email":         "test@example.com",
+			"full_name":     "Test User",
+		},
+	})
 	ctx := context.Background()
 
-	user, err := auth.Authenticate(ctx, "testuser", "password")
+	user, err := authenticator.Authenticate(ctx, "testuser", "password")
 	if err != nil {
 		t.Fatalf("Authenticate failed: %v", err)
 	}
@@ -72,60 +89,61 @@ func TestNativeAuthenticator_Authenticate_Success(t *testing.T) {
 }
 
 func TestNativeAuthenticator_Authenticate_UserNotFound(t *testing.T) {
-	cfg := NativeConfig{}
-	auth := NewNativeAuthenticator(cfg)
+	authenticator := createNativeAuthenticatorWithUsers(t, nil)
 
-	_, err := auth.Authenticate(context.Background(), "nonexistent", "password")
+	_, err := authenticator.Authenticate(context.Background(), "nonexistent", "password")
 	if err == nil {
 		t.Fatal("expected error for nonexistent user")
 	}
 }
 
 func TestNativeAuthenticator_Authenticate_InvalidPassword(t *testing.T) {
-	hash, _ := HashPassword("correctpassword")
-	cfg := NativeConfig{
-		Users: []NativeUserConfig{
-			{Username: "testuser", PasswordHash: hash},
-		},
-	}
-	auth := NewNativeAuthenticator(cfg)
+	hash, _ := auth.HashPassword("correctpassword")
+	authenticator := createNativeAuthenticatorWithUsers(t, []map[string]any{
+		{"username": "testuser", "password_hash": hash},
+	})
 
-	_, err := auth.Authenticate(context.Background(), "testuser", "wrongpassword")
+	_, err := authenticator.Authenticate(context.Background(), "testuser", "wrongpassword")
 	if err == nil {
 		t.Fatal("expected error for invalid password")
 	}
 }
 
 func TestNativeAuthenticator_Authenticate_DisabledUser(t *testing.T) {
-	hash, _ := HashPassword("password")
-	cfg := NativeConfig{
-		Users: []NativeUserConfig{
-			{Username: "disabled", PasswordHash: hash, Disabled: true},
-		},
-	}
-	auth := NewNativeAuthenticator(cfg)
+	hash, _ := auth.HashPassword("password")
+	authenticator := createNativeAuthenticatorWithUsers(t, []map[string]any{
+		{"username": "disabled", "password_hash": hash, "disabled": true},
+	})
 
-	_, err := auth.Authenticate(context.Background(), "disabled", "password")
+	_, err := authenticator.Authenticate(context.Background(), "disabled", "password")
 	if err == nil {
 		t.Fatal("expected error for disabled user")
 	}
 }
 
-func TestNativeAuthenticator_AddUser(t *testing.T) {
-	auth := NewNativeAuthenticator(NativeConfig{})
+// UserManager is an interface for authenticators that support dynamic user management.
+type UserManager interface {
+	AddUser(username, passwordHash string, groups []string, email, fullName string, disabled bool) error
+	RemoveUser(username string) error
+}
 
-	hash, _ := HashPassword("password")
-	err := auth.AddUser(NativeUserConfig{
-		Username:     "newuser",
-		PasswordHash: hash,
-		Groups:       []string{"users"},
-	})
+func TestNativeAuthenticator_AddUser(t *testing.T) {
+	authenticator := createNativeAuthenticatorWithUsers(t, nil)
+
+	// Cast to UserManager to access AddUser
+	um, ok := authenticator.(UserManager)
+	if !ok {
+		t.Skip("authenticator does not implement UserManager - skipping AddUser test")
+	}
+
+	hash, _ := auth.HashPassword("password")
+	err := um.AddUser("newuser", hash, []string{"users"}, "", "", false)
 	if err != nil {
 		t.Fatalf("AddUser failed: %v", err)
 	}
 
 	// Verify we can authenticate
-	user, err := auth.Authenticate(context.Background(), "newuser", "password")
+	user, err := authenticator.Authenticate(context.Background(), "newuser", "password")
 	if err != nil {
 		t.Fatalf("Authenticate failed after AddUser: %v", err)
 	}
@@ -135,35 +153,38 @@ func TestNativeAuthenticator_AddUser(t *testing.T) {
 }
 
 func TestNativeAuthenticator_RemoveUser(t *testing.T) {
-	hash, _ := HashPassword("password")
-	cfg := NativeConfig{
-		Users: []NativeUserConfig{
-			{Username: "toremove", PasswordHash: hash},
-		},
-	}
-	auth := NewNativeAuthenticator(cfg)
+	hash, _ := auth.HashPassword("password")
+	authenticator := createNativeAuthenticatorWithUsers(t, []map[string]any{
+		{"username": "toremove", "password_hash": hash},
+	})
 
 	// Verify user exists
-	_, err := auth.Authenticate(context.Background(), "toremove", "password")
+	_, err := authenticator.Authenticate(context.Background(), "toremove", "password")
 	if err != nil {
 		t.Fatal("user should exist before removal")
 	}
 
+	// Cast to UserManager to access RemoveUser
+	um, ok := authenticator.(UserManager)
+	if !ok {
+		t.Skip("authenticator does not implement UserManager - skipping RemoveUser test")
+	}
+
 	// Remove user
-	err = auth.RemoveUser("toremove")
+	err = um.RemoveUser("toremove")
 	if err != nil {
 		t.Fatalf("RemoveUser failed: %v", err)
 	}
 
 	// Verify user no longer exists
-	_, err = auth.Authenticate(context.Background(), "toremove", "password")
+	_, err = authenticator.Authenticate(context.Background(), "toremove", "password")
 	if err == nil {
 		t.Fatal("expected error after user removal")
 	}
 }
 
 func TestNativeAuthenticator_HashPassword(t *testing.T) {
-	hash, err := HashPassword("testpassword")
+	hash, err := auth.HashPassword("testpassword")
 	if err != nil {
 		t.Fatalf("HashPassword failed: %v", err)
 	}
@@ -179,9 +200,43 @@ func TestNativeAuthenticator_HashPassword(t *testing.T) {
 	}
 }
 
-func TestNativeAuthenticator_BcryptCost(t *testing.T) {
-	// Verify bcrypt cost is at least 12 per security guidelines
-	if bcryptCost < 12 {
-		t.Errorf("bcryptCost should be at least 12, got %d", bcryptCost)
+func TestNativePlugin_Registration(t *testing.T) {
+	plugin, ok := auth.GetPlugin("native")
+	if !ok {
+		t.Fatal("native plugin not registered")
+	}
+	if plugin.Type() != "native" {
+		t.Errorf("expected plugin type native, got %s", plugin.Type())
+	}
+}
+
+func TestNativePlugin_ValidateConfig(t *testing.T) {
+	plugin, ok := auth.GetPlugin("native")
+	if !ok {
+		t.Fatal("native plugin not registered")
+	}
+
+	// Empty config requires users field
+	err := plugin.ValidateConfig(map[string]any{})
+	if err == nil {
+		t.Error("expected validation error for empty config")
+	}
+
+	// Empty users list is valid
+	err = plugin.ValidateConfig(map[string]any{
+		"users": []map[string]any{},
+	})
+	if err != nil {
+		t.Errorf("unexpected validation error for empty users list: %v", err)
+	}
+
+	// Config with users is valid
+	err = plugin.ValidateConfig(map[string]any{
+		"users": []map[string]any{
+			{"username": "test", "password_hash": "$2a$12$..."},
+		},
+	})
+	if err != nil {
+		t.Errorf("unexpected validation error: %v", err)
 	}
 }

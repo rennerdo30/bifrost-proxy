@@ -4,16 +4,16 @@
 # Local proxy settings
 proxy:
   http:
-    listen: "0.0.0.0:3128"
+    listen: "0.0.0.0:7380"
     read_timeout: "30s"
     write_timeout: "30s"
     idle_timeout: "60s"
   socks5:
-    listen: "0.0.0.0:1081"
+    listen: "0.0.0.0:7381"
 
 # Bifrost server connection
 server:
-  address: "bifrost-server:8080"
+  address: "bifrost-server:7080"
   protocol: http  # http, socks5
   timeout: "30s"
   retry_count: 3
@@ -51,12 +51,12 @@ logging:
 # Web UI (local dashboard)
 web_ui:
   enabled: true
-  listen: "0.0.0.0:3129"
+  listen: "0.0.0.0:7382"
 
 # REST API
 api:
   enabled: true
-  listen: "0.0.0.0:3130"
+  listen: "0.0.0.0:7383"
 
 # System tray - disabled in Docker
 tray:

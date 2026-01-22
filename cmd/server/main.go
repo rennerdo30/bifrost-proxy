@@ -20,6 +20,21 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/server"
 	"github.com/rennerdo30/bifrost-proxy/internal/updater"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
+
+	// Auth plugins - blank imports to register via init()
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/mfa"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/apikey"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/hotp"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/jwt"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/kerberos"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/ldap"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/mtls"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/native"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/none"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/ntlm"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/oauth"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/system"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/totp"
 )
 
 var (

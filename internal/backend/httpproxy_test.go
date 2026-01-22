@@ -16,7 +16,7 @@ import (
 func TestNewHTTPProxyBackend(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -28,7 +28,7 @@ func TestNewHTTPProxyBackend(t *testing.T) {
 func TestHTTPProxyBackend_WithAuth(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:     "test-http",
-		Address:  "proxy.example.com:8080",
+		Address:  "proxy.example.com:7080",
 		Username: "user",
 		Password: "pass",
 	}
@@ -41,7 +41,7 @@ func TestHTTPProxyBackend_WithAuth(t *testing.T) {
 func TestHTTPProxyBackend_Start(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -59,7 +59,7 @@ func TestHTTPProxyBackend_Start(t *testing.T) {
 func TestHTTPProxyBackend_Stop(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -74,7 +74,7 @@ func TestHTTPProxyBackend_Stop(t *testing.T) {
 func TestHTTPProxyBackend_Stats(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -95,7 +95,7 @@ func TestHTTPProxyBackend_Stats(t *testing.T) {
 func TestHTTPProxyBackend_Dial_NotStarted(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -109,7 +109,7 @@ func TestHTTPProxyBackend_Dial_NotStarted(t *testing.T) {
 func TestHTTPProxyBackend_DialTimeout(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -134,7 +134,7 @@ func TestHTTPProxyBackend_Dial_WithAuth(t *testing.T) {
 	// Test that auth credentials are set in config
 	cfg := HTTPProxyConfig{
 		Name:     "test-http",
-		Address:  "proxy.example.com:8080",
+		Address:  "proxy.example.com:7080",
 		Username: "user",
 		Password: "pass",
 	}
@@ -181,7 +181,7 @@ func TestHTTPProxyBackend_Dial_ProxyError(t *testing.T) {
 func TestHTTPProxyBackend_IsHealthy(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -198,7 +198,7 @@ func TestHTTPProxyBackend_IsHealthy(t *testing.T) {
 func TestHTTPProxyBackend_recordError(t *testing.T) {
 	cfg := HTTPProxyConfig{
 		Name:    "test-http",
-		Address: "proxy.example.com:8080",
+		Address: "proxy.example.com:7080",
 	}
 
 	backend := NewHTTPProxyBackend(cfg)
@@ -389,6 +389,110 @@ func TestHTTPProxyBackend_TrackedConn_OnClose(t *testing.T) {
 
 	stats = backend.Stats()
 	assert.Equal(t, int64(0), stats.ActiveConnections)
+
+	backend.Stop(ctx)
+}
+
+// startMockHTTPProxyWithWriteError starts a proxy that accepts connection but closes it during CONNECT write
+func startMockHTTPProxyWithWriteError(t *testing.T) (string, func()) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				close(done)
+				return
+			}
+			// Close immediately to simulate write error
+			conn.Close()
+		}
+	}()
+
+	return listener.Addr().String(), func() {
+		listener.Close()
+		<-done
+	}
+}
+
+func TestHTTPProxyBackend_Dial_WriteConnectError(t *testing.T) {
+	proxyAddr, cleanup := startMockHTTPProxyWithWriteError(t)
+	defer cleanup()
+
+	cfg := HTTPProxyConfig{
+		Name:    "test-http",
+		Address: proxyAddr,
+	}
+
+	backend := NewHTTPProxyBackend(cfg)
+	ctx := context.Background()
+
+	err := backend.Start(ctx)
+	require.NoError(t, err)
+
+	_, err = backend.Dial(ctx, "tcp", "example.com:80")
+	require.Error(t, err)
+	// Either write or read error
+	assert.True(t, strings.Contains(err.Error(), "write CONNECT") || strings.Contains(err.Error(), "read CONNECT"))
+
+	stats := backend.Stats()
+	assert.Greater(t, stats.Errors, int64(0))
+
+	backend.Stop(ctx)
+}
+
+// startMockHTTPProxyWithInvalidResponse sends invalid HTTP response
+func startMockHTTPProxyWithInvalidResponse(t *testing.T) (string, func()) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				close(done)
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				// Read request but send invalid response
+				buf := make([]byte, 1024)
+				c.Read(buf)
+				c.Write([]byte("INVALID HTTP RESPONSE\r\n\r\n"))
+			}(conn)
+		}
+	}()
+
+	return listener.Addr().String(), func() {
+		listener.Close()
+		<-done
+	}
+}
+
+func TestHTTPProxyBackend_Dial_InvalidResponse(t *testing.T) {
+	proxyAddr, cleanup := startMockHTTPProxyWithInvalidResponse(t)
+	defer cleanup()
+
+	cfg := HTTPProxyConfig{
+		Name:    "test-http",
+		Address: proxyAddr,
+	}
+
+	backend := NewHTTPProxyBackend(cfg)
+	ctx := context.Background()
+
+	err := backend.Start(ctx)
+	require.NoError(t, err)
+
+	_, err = backend.Dial(ctx, "tcp", "example.com:80")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read CONNECT response")
+
+	stats := backend.Stats()
+	assert.Greater(t, stats.Errors, int64(0))
 
 	backend.Stop(ctx)
 }

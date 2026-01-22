@@ -6,11 +6,11 @@ services:
     container_name: bifrost-server
     restart: unless-stopped
     ports:
-      - "8080:8080"   # HTTP proxy
-      - "1080:1080"   # SOCKS5 proxy
-      - "9090:9090"   # Metrics
-      - "8081:8081"   # Web UI
-      - "8082:8082"   # API
+      - "7080:7080"   # HTTP proxy
+      - "7180:7180"   # SOCKS5 proxy
+      - "7090:7090"   # Metrics
+      - "7081:7081"   # Web UI
+      - "7082:7082"   # API
     volumes:
       - bifrost-data:/app/data
       - bifrost-logs:/var/log/bifrost
@@ -20,7 +20,7 @@ services:
       - bifrost-network
     healthcheck:
       # Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9090/metrics"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:7090/metrics"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -33,10 +33,10 @@ services:
     container_name: bifrost-client
     restart: unless-stopped
     ports:
-      - "3128:3128"   # HTTP proxy
-      - "1081:1081"   # SOCKS5 proxy
-      - "3129:3129"   # Web UI
-      - "3130:3130"   # API
+      - "7380:7380"   # HTTP proxy
+      - "7381:7381"   # SOCKS5 proxy
+      - "7382:7382"   # Web UI
+      - "7383:7383"   # API
     volumes:
       - bifrost-client-data:/app/data
     environment:
@@ -47,7 +47,7 @@ services:
       - bifrost-network
     healthcheck:
       # Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3130/api/v1/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:7383/api/v1/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -58,7 +58,7 @@ services:
     container_name: bifrost-prometheus
     restart: unless-stopped
     ports:
-      - "9091:9090"
+      - "7190:9090"
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -75,7 +75,7 @@ services:
     container_name: bifrost-grafana
     restart: unless-stopped
     ports:
-      - "3001:3000"
+      - "7300:3000"
     volumes:
       - grafana-data:/var/lib/grafana
     environment:

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
+	"github.com/rennerdo30/bifrost-proxy/internal/mesh"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
@@ -21,6 +22,7 @@ type ClientConfig struct {
 	Tray       TrayConfig          `yaml:"tray" json:"tray"`
 	AutoUpdate AutoUpdateConfig    `yaml:"auto_update" json:"auto_update"`
 	VPN        vpn.Config          `yaml:"vpn" json:"vpn"`
+	Mesh       mesh.Config         `yaml:"mesh" json:"mesh"`
 }
 
 // ClientProxySettings contains client proxy listener settings.
@@ -61,8 +63,13 @@ type DebugConfig struct {
 
 // TrayConfig contains system tray settings.
 type TrayConfig struct {
-	Enabled        bool `yaml:"enabled" json:"enabled"`
-	StartMinimized bool `yaml:"start_minimized" json:"start_minimized"`
+	Enabled           bool `yaml:"enabled" json:"enabled"`
+	StartMinimized    bool `yaml:"start_minimized" json:"start_minimized"`
+	ShowQuickGUI      bool `yaml:"show_quick_gui" json:"show_quick_gui"`
+	AutoConnect       bool `yaml:"auto_connect" json:"auto_connect"`
+	ShowNotifications bool `yaml:"show_notifications" json:"show_notifications"`
+	WindowX           int  `yaml:"window_x" json:"window_x"`
+	WindowY           int  `yaml:"window_y" json:"window_y"`
 }
 
 // DefaultClientConfig returns a client configuration with sensible defaults.
@@ -70,13 +77,13 @@ func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		Proxy: ClientProxySettings{
 			HTTP: ListenerConfig{
-				Listen:       "127.0.0.1:3128",
+				Listen:       "127.0.0.1:7380",
 				ReadTimeout:  Duration(30 * time.Second),
 				WriteTimeout: Duration(30 * time.Second),
 				IdleTimeout:  Duration(60 * time.Second),
 			},
 			SOCKS5: ListenerConfig{
-				Listen: "127.0.0.1:1081",
+				Listen: "127.0.0.1:7381",
 			},
 		},
 		Server: ServerConnection{
@@ -94,22 +101,28 @@ func DefaultClientConfig() ClientConfig {
 		Logging: logging.DefaultConfig(),
 		WebUI: WebUIConfig{
 			Enabled: true,
-			Listen:  "127.0.0.1:3129",
+			Listen:  "127.0.0.1:7382",
 		},
 		API: APIConfig{
 			Enabled: true,
-			Listen:  "127.0.0.1:3130",
+			Listen:  "127.0.0.1:7383",
 		},
 		Tray: TrayConfig{
-			Enabled:        true,
-			StartMinimized: false,
+			Enabled:           true,
+			StartMinimized:    false,
+			ShowQuickGUI:      true,
+			AutoConnect:       false,
+			ShowNotifications: true,
+			WindowX:           -1,
+			WindowY:           -1,
 		},
 		AutoUpdate: AutoUpdateConfig{
 			Enabled:       false,
 			CheckInterval: Duration(24 * time.Hour),
 			Channel:       "stable",
 		},
-		VPN: vpn.DefaultConfig(),
+		VPN:  vpn.DefaultConfig(),
+		Mesh: mesh.DefaultConfig(),
 	}
 }
 
@@ -119,13 +132,12 @@ func (c *ClientConfig) Validate() error {
 		return fmt.Errorf("at least one proxy listener (HTTP or SOCKS5) must be configured")
 	}
 
-	if c.Server.Address == "" {
-		return fmt.Errorf("server address is required")
-	}
-
-	// Validate server address has host:port format
-	if _, _, err := net.SplitHostPort(c.Server.Address); err != nil {
-		return fmt.Errorf("server address must be in host:port format (e.g., '192.168.1.1:8080'): %w", err)
+	// Server address is optional - client can work in direct-only mode
+	// Validate server address has host:port format if provided
+	if c.Server.Address != "" {
+		if _, _, err := net.SplitHostPort(c.Server.Address); err != nil {
+			return fmt.Errorf("server address must be in host:port format (e.g., '192.168.1.1:8080'): %w", err)
+		}
 	}
 
 	for _, r := range c.Routes {
@@ -148,6 +160,13 @@ func (c *ClientConfig) Validate() error {
 	if c.VPN.Enabled {
 		if err := c.VPN.Validate(); err != nil {
 			return fmt.Errorf("invalid VPN config: %w", err)
+		}
+	}
+
+	// Validate mesh config if enabled
+	if c.Mesh.Enabled {
+		if err := c.Mesh.Validate(); err != nil {
+			return fmt.Errorf("invalid mesh config: %w", err)
 		}
 	}
 

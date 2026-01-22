@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/mesh"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -18,7 +20,7 @@ func TestLoad(t *testing.T) {
 	content := `
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
 backends:
   - name: direct
     type: direct
@@ -34,7 +36,7 @@ routes:
 	err = Load(configFile, &cfg)
 	require.NoError(t, err)
 
-	assert.Equal(t, ":8080", cfg.Server.HTTP.Listen)
+	assert.Equal(t, ":7080", cfg.Server.HTTP.Listen)
 	assert.Len(t, cfg.Backends, 1)
 	assert.Equal(t, "direct", cfg.Backends[0].Name)
 }
@@ -49,7 +51,7 @@ func TestServerConfigValidation(t *testing.T) {
 			name: "valid minimal config",
 			config: ServerConfig{
 				Server: ServerSettings{
-					HTTP: ListenerConfig{Listen: ":8080"},
+					HTTP: ListenerConfig{Listen: ":7080"},
 				},
 				Backends: []BackendConfig{
 					{Name: "direct", Type: "direct", Enabled: true},
@@ -74,7 +76,7 @@ func TestServerConfigValidation(t *testing.T) {
 			name: "no backends",
 			config: ServerConfig{
 				Server: ServerSettings{
-					HTTP: ListenerConfig{Listen: ":8080"},
+					HTTP: ListenerConfig{Listen: ":7080"},
 				},
 			},
 			wantErr: true,
@@ -83,7 +85,7 @@ func TestServerConfigValidation(t *testing.T) {
 			name: "duplicate backend name",
 			config: ServerConfig{
 				Server: ServerSettings{
-					HTTP: ListenerConfig{Listen: ":8080"},
+					HTTP: ListenerConfig{Listen: ":7080"},
 				},
 				Backends: []BackendConfig{
 					{Name: "direct", Type: "direct", Enabled: true},
@@ -96,7 +98,7 @@ func TestServerConfigValidation(t *testing.T) {
 			name: "route references unknown backend",
 			config: ServerConfig{
 				Server: ServerSettings{
-					HTTP: ListenerConfig{Listen: ":8080"},
+					HTTP: ListenerConfig{Listen: ":7080"},
 				},
 				Backends: []BackendConfig{
 					{Name: "direct", Type: "direct", Enabled: true},
@@ -131,10 +133,10 @@ func TestClientConfigValidation(t *testing.T) {
 			name: "valid config",
 			config: ClientConfig{
 				Proxy: ClientProxySettings{
-					HTTP: ListenerConfig{Listen: "127.0.0.1:3128"},
+					HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
 				},
 				Server: ServerConnection{
-					Address: "proxy.example.com:8080",
+					Address: "proxy.example.com:7080",
 				},
 				Routes: []ClientRouteConfig{
 					{Domains: []string{"*"}, Action: "server"},
@@ -146,16 +148,28 @@ func TestClientConfigValidation(t *testing.T) {
 			name: "no proxy listeners",
 			config: ClientConfig{
 				Server: ServerConnection{
-					Address: "proxy.example.com:8080",
+					Address: "proxy.example.com:7080",
 				},
 			},
 			wantErr: true,
 		},
 		{
-			name: "no server address",
+			name: "no server address (direct-only mode)",
 			config: ClientConfig{
 				Proxy: ClientProxySettings{
-					HTTP: ListenerConfig{Listen: "127.0.0.1:3128"},
+					HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+				},
+			},
+			wantErr: false, // Server address is optional - client can work in direct-only mode
+		},
+		{
+			name: "invalid server address format",
+			config: ClientConfig{
+				Proxy: ClientProxySettings{
+					HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+				},
+				Server: ServerConnection{
+					Address: "invalid-no-port",
 				},
 			},
 			wantErr: true,
@@ -164,10 +178,10 @@ func TestClientConfigValidation(t *testing.T) {
 			name: "invalid route action",
 			config: ClientConfig{
 				Proxy: ClientProxySettings{
-					HTTP: ListenerConfig{Listen: "127.0.0.1:3128"},
+					HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
 				},
 				Server: ServerConnection{
-					Address: "proxy.example.com:8080",
+					Address: "proxy.example.com:7080",
 				},
 				Routes: []ClientRouteConfig{
 					{Domains: []string{"*"}, Action: "invalid"},
@@ -247,7 +261,7 @@ func TestSave(t *testing.T) {
 
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Name: "direct", Type: "direct", Enabled: true},
@@ -265,7 +279,7 @@ func TestSave(t *testing.T) {
 	var loaded ServerConfig
 	err = Load(configFile, &loaded)
 	require.NoError(t, err)
-	assert.Equal(t, ":8080", loaded.Server.HTTP.Listen)
+	assert.Equal(t, ":7080", loaded.Server.HTTP.Listen)
 }
 
 func TestSave_NestedDirectory(t *testing.T) {
@@ -274,7 +288,7 @@ func TestSave_NestedDirectory(t *testing.T) {
 
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 	}
 
@@ -295,7 +309,7 @@ func TestSave_InvalidPath(t *testing.T) {
 func TestValidateConfig_WithValidator(t *testing.T) {
 	cfg := &ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Name: "direct", Type: "direct", Enabled: true},
@@ -331,7 +345,7 @@ func TestLoadAndValidate_Valid(t *testing.T) {
 	content := `
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
 backends:
   - name: direct
     type: direct
@@ -343,7 +357,7 @@ backends:
 	var cfg ServerConfig
 	err = LoadAndValidate(configFile, &cfg)
 	require.NoError(t, err)
-	assert.Equal(t, ":8080", cfg.Server.HTTP.Listen)
+	assert.Equal(t, ":7080", cfg.Server.HTTP.Listen)
 }
 
 func TestLoadAndValidate_LoadError(t *testing.T) {
@@ -360,7 +374,7 @@ func TestLoadAndValidate_ValidationError(t *testing.T) {
 	content := `
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
 `
 	err := os.WriteFile(configFile, []byte(content), 0644)
 	require.NoError(t, err)
@@ -375,7 +389,7 @@ func TestBackup(t *testing.T) {
 	configFile := filepath.Join(dir, "config.yaml")
 
 	// Create original file
-	content := "server:\n  http:\n    listen: ':8080'\n"
+	content := "server:\n  http:\n    listen: ':7080'\n"
 	err := os.WriteFile(configFile, []byte(content), 0644)
 	require.NoError(t, err)
 
@@ -403,22 +417,22 @@ func TestBackup_FileNotFound(t *testing.T) {
 func TestDefaultServerConfig(t *testing.T) {
 	cfg := DefaultServerConfig()
 
-	assert.Equal(t, ":8080", cfg.Server.HTTP.Listen)
-	assert.Equal(t, ":1080", cfg.Server.SOCKS5.Listen)
+	assert.Equal(t, ":7080", cfg.Server.HTTP.Listen)
+	assert.Equal(t, ":7180", cfg.Server.SOCKS5.Listen)
 	assert.Equal(t, "none", cfg.Auth.Mode)
 	assert.False(t, cfg.RateLimit.Enabled)
 	assert.True(t, cfg.AccessLog.Enabled)
 	assert.Equal(t, "json", cfg.AccessLog.Format)
 	assert.True(t, cfg.Metrics.Enabled)
-	assert.Equal(t, ":9090", cfg.Metrics.Listen)
+	assert.Equal(t, ":7090", cfg.Metrics.Listen)
 	assert.True(t, cfg.API.Enabled)
 }
 
 func TestDefaultClientConfig(t *testing.T) {
 	cfg := DefaultClientConfig()
 
-	assert.Equal(t, "127.0.0.1:3128", cfg.Proxy.HTTP.Listen)
-	assert.Equal(t, "127.0.0.1:1081", cfg.Proxy.SOCKS5.Listen)
+	assert.Equal(t, "127.0.0.1:7380", cfg.Proxy.HTTP.Listen)
+	assert.Equal(t, "127.0.0.1:7381", cfg.Proxy.SOCKS5.Listen)
 	assert.Equal(t, "http", cfg.Server.Protocol)
 	assert.Equal(t, 3, cfg.Server.RetryCount)
 	assert.True(t, cfg.Debug.Enabled)
@@ -501,7 +515,7 @@ func TestDuration_MarshalYAML(t *testing.T) {
 func TestServerConfigValidation_BackendWithoutName(t *testing.T) {
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Type: "direct", Enabled: true}, // Missing name
@@ -516,7 +530,7 @@ func TestServerConfigValidation_BackendWithoutName(t *testing.T) {
 func TestServerConfigValidation_BackendWithoutType(t *testing.T) {
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Name: "test", Enabled: true}, // Missing type
@@ -531,7 +545,7 @@ func TestServerConfigValidation_BackendWithoutType(t *testing.T) {
 func TestServerConfigValidation_RouteWithoutDomains(t *testing.T) {
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Name: "direct", Type: "direct", Enabled: true},
@@ -549,7 +563,7 @@ func TestServerConfigValidation_RouteWithoutDomains(t *testing.T) {
 func TestServerConfigValidation_RouteWithoutBackend(t *testing.T) {
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Name: "direct", Type: "direct", Enabled: true},
@@ -567,7 +581,7 @@ func TestServerConfigValidation_RouteWithoutBackend(t *testing.T) {
 func TestServerConfigValidation_RouteWithMultipleBackends(t *testing.T) {
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Name: "backend1", Type: "direct", Enabled: true},
@@ -585,7 +599,7 @@ func TestServerConfigValidation_RouteWithMultipleBackends(t *testing.T) {
 func TestServerConfigValidation_RouteWithUnknownMultipleBackend(t *testing.T) {
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			HTTP: ListenerConfig{Listen: ":8080"},
+			HTTP: ListenerConfig{Listen: ":7080"},
 		},
 		Backends: []BackendConfig{
 			{Name: "backend1", Type: "direct", Enabled: true},
@@ -603,7 +617,7 @@ func TestServerConfigValidation_RouteWithUnknownMultipleBackend(t *testing.T) {
 func TestServerConfigValidation_SOCKS5OnlyListener(t *testing.T) {
 	cfg := ServerConfig{
 		Server: ServerSettings{
-			SOCKS5: ListenerConfig{Listen: ":1080"},
+			SOCKS5: ListenerConfig{Listen: ":7180"},
 		},
 		Backends: []BackendConfig{
 			{Name: "direct", Type: "direct", Enabled: true},
@@ -617,10 +631,10 @@ func TestServerConfigValidation_SOCKS5OnlyListener(t *testing.T) {
 func TestClientConfigValidation_NegativeMaxEntries(t *testing.T) {
 	cfg := ClientConfig{
 		Proxy: ClientProxySettings{
-			HTTP: ListenerConfig{Listen: "127.0.0.1:3128"},
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
 		},
 		Server: ServerConnection{
-			Address: "proxy.example.com:8080",
+			Address: "proxy.example.com:7080",
 		},
 		Debug: DebugConfig{
 			MaxEntries: -1,
@@ -635,10 +649,10 @@ func TestClientConfigValidation_NegativeMaxEntries(t *testing.T) {
 func TestClientConfigValidation_RouteWithoutAction(t *testing.T) {
 	cfg := ClientConfig{
 		Proxy: ClientProxySettings{
-			HTTP: ListenerConfig{Listen: "127.0.0.1:3128"},
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
 		},
 		Server: ServerConnection{
-			Address: "proxy.example.com:8080",
+			Address: "proxy.example.com:7080",
 		},
 		Routes: []ClientRouteConfig{
 			{Domains: []string{"*"}}, // Missing action
@@ -653,10 +667,10 @@ func TestClientConfigValidation_RouteWithoutAction(t *testing.T) {
 func TestClientConfigValidation_SOCKS5OnlyProxy(t *testing.T) {
 	cfg := ClientConfig{
 		Proxy: ClientProxySettings{
-			SOCKS5: ListenerConfig{Listen: "127.0.0.1:1081"},
+			SOCKS5: ListenerConfig{Listen: "127.0.0.1:7381"},
 		},
 		Server: ServerConnection{
-			Address: "proxy.example.com:8080",
+			Address: "proxy.example.com:7080",
 		},
 	}
 
@@ -766,7 +780,7 @@ func TestHealthCheckConfig_Fields(t *testing.T) {
 
 func TestServerConnection_Fields(t *testing.T) {
 	cfg := ServerConnection{
-		Address:    "proxy.example.com:8080",
+		Address:    "proxy.example.com:7080",
 		Protocol:   "http",
 		Username:   "user",
 		Password:   "pass",
@@ -775,7 +789,7 @@ func TestServerConnection_Fields(t *testing.T) {
 		RetryDelay: Duration(1 * time.Second),
 	}
 
-	assert.Equal(t, "proxy.example.com:8080", cfg.Address)
+	assert.Equal(t, "proxy.example.com:7080", cfg.Address)
 	assert.Equal(t, "http", cfg.Protocol)
 	assert.Equal(t, 3, cfg.RetryCount)
 }
@@ -783,7 +797,7 @@ func TestServerConnection_Fields(t *testing.T) {
 func TestClientConfigValidation_ServerAddressMissingPort(t *testing.T) {
 	cfg := ClientConfig{
 		Proxy: ClientProxySettings{
-			HTTP: ListenerConfig{Listen: "127.0.0.1:3128"},
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
 		},
 		Server: ServerConnection{
 			Address: "192.168.1.1", // Missing port
@@ -798,13 +812,469 @@ func TestClientConfigValidation_ServerAddressMissingPort(t *testing.T) {
 func TestClientConfigValidation_ServerAddressWithPort(t *testing.T) {
 	cfg := ClientConfig{
 		Proxy: ClientProxySettings{
-			HTTP: ListenerConfig{Listen: "127.0.0.1:3128"},
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
 		},
 		Server: ServerConnection{
-			Address: "192.168.1.1:8080", // With port - should pass
+			Address: "192.168.1.1:7080", // With port - should pass
 		},
 	}
 
 	err := cfg.Validate()
 	assert.NoError(t, err)
+}
+
+func TestClientConfigValidation_RouteWithEmptyDomains(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Routes: []ClientRouteConfig{
+			{Domains: []string{}, Action: "server"}, // Empty domains
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "route must have at least one domain pattern")
+}
+
+func TestClientConfigValidation_DirectAction(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Routes: []ClientRouteConfig{
+			{Domains: []string{"*.local"}, Action: "direct"},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.NoError(t, err)
+}
+
+func TestClientConfigValidation_VPNEnabled_Valid(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		VPN: vpn.Config{
+			Enabled: true,
+			TUN: vpn.TUNConfig{
+				Name:    "test0",
+				Address: "10.255.0.1/24",
+				MTU:     1400,
+			},
+			SplitTunnel: vpn.SplitTunnelConfig{
+				Mode: "exclude",
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.NoError(t, err)
+}
+
+func TestClientConfigValidation_VPNEnabled_Invalid(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		VPN: vpn.Config{
+			Enabled: true,
+			TUN: vpn.TUNConfig{
+				Name:    "test0",
+				Address: "invalid-address", // Invalid address format
+				MTU:     1400,
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid VPN config")
+}
+
+func TestClientConfigValidation_MeshEnabled_Valid(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Mesh: mesh.Config{
+			Enabled:     true,
+			NetworkID:   "test-network",
+			NetworkCIDR: "10.100.0.0/16",
+			Device: mesh.DeviceConfig{
+				Type: "tap",
+				Name: "mesh0",
+				MTU:  1400,
+			},
+			Discovery: mesh.DiscoveryConfig{
+				Server: "discovery.example.com:7080",
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.NoError(t, err)
+}
+
+func TestClientConfigValidation_MeshEnabled_Invalid(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Mesh: mesh.Config{
+			Enabled:     true,
+			NetworkID:   "", // Missing required network_id
+			NetworkCIDR: "10.100.0.0/16",
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid mesh config")
+}
+
+func TestDuration_UnmarshalYAML_Invalid(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "duration_invalid.yaml")
+
+	// Invalid duration string
+	content := `timeout: invalid-duration`
+	err := os.WriteFile(configFile, []byte(content), 0644)
+	require.NoError(t, err)
+
+	type TestStruct struct {
+		Timeout Duration `yaml:"timeout"`
+	}
+
+	var cfg TestStruct
+	err = Load(configFile, &cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse config file")
+}
+
+func TestDuration_UnmarshalYAML_DecodeError(t *testing.T) {
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "duration_decode_error.yaml")
+
+	// YAML value that can't be decoded to string (complex object)
+	content := `timeout:
+  nested: value
+  another: key`
+	err := os.WriteFile(configFile, []byte(content), 0644)
+	require.NoError(t, err)
+
+	type TestStruct struct {
+		Timeout Duration `yaml:"timeout"`
+	}
+
+	var cfg TestStruct
+	err = Load(configFile, &cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to parse config file")
+}
+
+func TestDuration_UnmarshalJSON_InvalidJSON(t *testing.T) {
+	var d Duration
+	// Invalid JSON - not a string
+	err := d.UnmarshalJSON([]byte(`123`))
+	assert.Error(t, err)
+}
+
+// Test Backup when write fails (use a directory path as the backup destination)
+func TestBackup_WriteError(t *testing.T) {
+	// On Unix, we can try to write to a read-only directory
+	dir := t.TempDir()
+	configFile := filepath.Join(dir, "config.yaml")
+	subDir := filepath.Join(dir, "readonly")
+
+	// Create the config file first
+	content := "test: value\n"
+	err := os.WriteFile(configFile, []byte(content), 0644)
+	require.NoError(t, err)
+
+	// Create a read-only directory to force write failure
+	err = os.MkdirAll(subDir, 0755)
+	require.NoError(t, err)
+
+	// Create a file with the backup name pattern inside readonly dir
+	// to trigger write failure when backup tries to create the file
+	readonlyConfig := filepath.Join(subDir, "config.yaml")
+	err = os.WriteFile(readonlyConfig, []byte(content), 0644)
+	require.NoError(t, err)
+
+	// Make the directory read-only
+	err = os.Chmod(subDir, 0555)
+	require.NoError(t, err)
+	defer os.Chmod(subDir, 0755) // Restore permissions for cleanup
+
+	// Attempt to backup - this should fail on write
+	_, err = Backup(readonlyConfig)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to write backup")
+}
+
+// Test Save to a path with no write permission
+func TestSave_WriteError(t *testing.T) {
+	dir := t.TempDir()
+	subDir := filepath.Join(dir, "readonly")
+
+	err := os.MkdirAll(subDir, 0755)
+	require.NoError(t, err)
+
+	// Make the directory read-only
+	err = os.Chmod(subDir, 0555)
+	require.NoError(t, err)
+	defer os.Chmod(subDir, 0755) // Restore permissions for cleanup
+
+	configFile := filepath.Join(subDir, "config.yaml")
+	cfg := ServerConfig{
+		Server: ServerSettings{
+			HTTP: ListenerConfig{Listen: ":7080"},
+		},
+	}
+
+	err = Save(configFile, &cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to write config file")
+}
+
+// Additional auth config tests
+func TestAuthConfig_LDAPFields(t *testing.T) {
+	cfg := AuthConfig{
+		Mode: "ldap",
+		LDAP: &LDAPAuth{
+			URL:                "ldap://ldap.example.com:389",
+			BaseDN:             "dc=example,dc=com",
+			BindDN:             "cn=admin,dc=example,dc=com",
+			BindPassword:       "secret",
+			UserFilter:         "(uid={{.Username}})",
+			GroupFilter:        "(member={{.DN}})",
+			RequireGroup:       "cn=vpnusers,ou=groups,dc=example,dc=com",
+			TLS:                true,
+			InsecureSkipVerify: false,
+		},
+	}
+
+	assert.Equal(t, "ldap", cfg.Mode)
+	assert.NotNil(t, cfg.LDAP)
+	assert.Equal(t, "ldap://ldap.example.com:389", cfg.LDAP.URL)
+	assert.True(t, cfg.LDAP.TLS)
+}
+
+func TestAuthConfig_OAuthFields(t *testing.T) {
+	cfg := AuthConfig{
+		Mode: "oauth",
+		OAuth: &OAuthAuth{
+			Provider:     "google",
+			ClientID:     "client-id",
+			ClientSecret: "client-secret",
+			IssuerURL:    "https://accounts.google.com",
+			RedirectURL:  "https://app.example.com/oauth/callback",
+			Scopes:       []string{"openid", "profile", "email"},
+		},
+	}
+
+	assert.Equal(t, "oauth", cfg.Mode)
+	assert.NotNil(t, cfg.OAuth)
+	assert.Equal(t, "google", cfg.OAuth.Provider)
+	assert.Len(t, cfg.OAuth.Scopes, 3)
+}
+
+func TestAuthConfig_SystemFields(t *testing.T) {
+	cfg := AuthConfig{
+		Mode: "system",
+		System: &SystemAuth{
+			Service:       "bifrost",
+			AllowedUsers:  []string{"admin", "user1"},
+			AllowedGroups: []string{"vpnusers", "admins"},
+		},
+	}
+
+	assert.Equal(t, "system", cfg.Mode)
+	assert.NotNil(t, cfg.System)
+	assert.Equal(t, "bifrost", cfg.System.Service)
+	assert.Len(t, cfg.System.AllowedUsers, 2)
+	assert.Len(t, cfg.System.AllowedGroups, 2)
+}
+
+func TestAuthProvider_Fields(t *testing.T) {
+	provider := AuthProvider{
+		Name:     "primary-ldap",
+		Type:     "ldap",
+		Enabled:  true,
+		Priority: 10,
+		Config: map[string]any{
+			"url":     "ldap://ldap.example.com:389",
+			"base_dn": "dc=example,dc=com",
+		},
+	}
+
+	assert.Equal(t, "primary-ldap", provider.Name)
+	assert.Equal(t, "ldap", provider.Type)
+	assert.True(t, provider.Enabled)
+	assert.Equal(t, 10, provider.Priority)
+	assert.NotNil(t, provider.Config)
+}
+
+func TestListenerConfig_Fields(t *testing.T) {
+	cfg := ListenerConfig{
+		Listen:         ":8443",
+		ReadTimeout:    Duration(60 * time.Second),
+		WriteTimeout:   Duration(60 * time.Second),
+		IdleTimeout:    Duration(120 * time.Second),
+		MaxConnections: 1000,
+		TLS: &TLSConfig{
+			Enabled:  true,
+			CertFile: "/etc/ssl/cert.pem",
+			KeyFile:  "/etc/ssl/key.pem",
+		},
+	}
+
+	assert.Equal(t, ":8443", cfg.Listen)
+	assert.Equal(t, Duration(60*time.Second), cfg.ReadTimeout)
+	assert.Equal(t, 1000, cfg.MaxConnections)
+	assert.NotNil(t, cfg.TLS)
+	assert.True(t, cfg.TLS.Enabled)
+}
+
+func TestAccessLogConfig_Fields(t *testing.T) {
+	cfg := AccessLogConfig{
+		Enabled: true,
+		Format:  "apache",
+		Output:  "/var/log/bifrost/access.log",
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, "apache", cfg.Format)
+	assert.Equal(t, "/var/log/bifrost/access.log", cfg.Output)
+}
+
+func TestMetricsConfig_Fields(t *testing.T) {
+	cfg := MetricsConfig{
+		Enabled:            true,
+		Listen:             ":7090",
+		Path:               "/metrics",
+		CollectionInterval: Duration(60 * time.Second),
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, ":7090", cfg.Listen)
+	assert.Equal(t, "/metrics", cfg.Path)
+	assert.Equal(t, Duration(60*time.Second), cfg.CollectionInterval)
+}
+
+func TestWebUIConfig_Fields(t *testing.T) {
+	cfg := WebUIConfig{
+		Enabled:  true,
+		Listen:   ":7081",
+		BasePath: "/admin",
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, ":7081", cfg.Listen)
+	assert.Equal(t, "/admin", cfg.BasePath)
+}
+
+func TestAPIConfig_Fields(t *testing.T) {
+	cfg := APIConfig{
+		Enabled:             true,
+		Listen:              ":7082",
+		Token:               "secret-token",
+		EnableRequestLog:    true,
+		RequestLogSize:      5000,
+		WebSocketMaxClients: 50,
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, ":7082", cfg.Listen)
+	assert.Equal(t, "secret-token", cfg.Token)
+	assert.True(t, cfg.EnableRequestLog)
+	assert.Equal(t, 5000, cfg.RequestLogSize)
+	assert.Equal(t, 50, cfg.WebSocketMaxClients)
+}
+
+func TestAutoUpdateConfig_Fields(t *testing.T) {
+	cfg := AutoUpdateConfig{
+		Enabled:       true,
+		CheckInterval: Duration(12 * time.Hour),
+		Channel:       "prerelease",
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, Duration(12*time.Hour), cfg.CheckInterval)
+	assert.Equal(t, "prerelease", cfg.Channel)
+}
+
+func TestDebugConfig_Fields(t *testing.T) {
+	cfg := DebugConfig{
+		Enabled:       true,
+		MaxEntries:    500,
+		CaptureBody:   true,
+		MaxBodySize:   128 * 1024,
+		FilterDomains: []string{"*.example.com", "api.test.com"},
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, 500, cfg.MaxEntries)
+	assert.True(t, cfg.CaptureBody)
+	assert.Equal(t, 128*1024, cfg.MaxBodySize)
+	assert.Len(t, cfg.FilterDomains, 2)
+}
+
+func TestTrayConfig_Fields(t *testing.T) {
+	cfg := TrayConfig{
+		Enabled:           true,
+		StartMinimized:    true,
+		ShowQuickGUI:      false,
+		AutoConnect:       true,
+		ShowNotifications: false,
+		WindowX:           100,
+		WindowY:           200,
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.True(t, cfg.StartMinimized)
+	assert.False(t, cfg.ShowQuickGUI)
+	assert.True(t, cfg.AutoConnect)
+	assert.False(t, cfg.ShowNotifications)
+	assert.Equal(t, 100, cfg.WindowX)
+	assert.Equal(t, 200, cfg.WindowY)
+}
+
+func TestClientRouteConfig_Fields(t *testing.T) {
+	cfg := ClientRouteConfig{
+		Name:     "internal-route",
+		Domains:  []string{"*.internal.example.com"},
+		Action:   "direct",
+		Priority: 50,
+	}
+
+	assert.Equal(t, "internal-route", cfg.Name)
+	assert.Len(t, cfg.Domains, 1)
+	assert.Equal(t, "direct", cfg.Action)
+	assert.Equal(t, 50, cfg.Priority)
+}
+
+func TestNativeUser_Fields(t *testing.T) {
+	user := NativeUser{
+		Username:     "testuser",
+		PasswordHash: "$2a$12$...",
+	}
+
+	assert.Equal(t, "testuser", user.Username)
+	assert.Equal(t, "$2a$12$...", user.PasswordHash)
+}
+
+func TestBandwidthConfig_Fields(t *testing.T) {
+	cfg := BandwidthConfig{
+		Enabled:  true,
+		Upload:   "50Mbps",
+		Download: "200Mbps",
+	}
+
+	assert.True(t, cfg.Enabled)
+	assert.Equal(t, "50Mbps", cfg.Upload)
+	assert.Equal(t, "200Mbps", cfg.Download)
 }

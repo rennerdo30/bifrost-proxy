@@ -9,7 +9,7 @@ Bifrost uses YAML configuration files. Environment variables can be used with `$
 ```yaml
 server:
   http:
-    listen: ":8080"
+    listen: ":7080"
     read_timeout: "30s"
     write_timeout: "30s"
     idle_timeout: "60s"
@@ -18,7 +18,7 @@ server:
       cert_file: "/path/to/cert.pem"
       key_file: "/path/to/key.pem"
   socks5:
-    listen: ":1080"
+    listen: ":7180"
   graceful_period: "30s"
 
 backends:
@@ -70,7 +70,7 @@ access_log:
 
 metrics:
   enabled: true
-  listen: ":9090"
+  listen: ":7090"
   path: "/metrics"
 
 logging:
@@ -83,8 +83,8 @@ logging:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `server.http.listen` | string | `:8080` | HTTP proxy listen address |
-| `server.socks5.listen` | string | `:1080` | SOCKS5 proxy listen address |
+| `server.http.listen` | string | `:7080` | HTTP proxy listen address |
+| `server.socks5.listen` | string | `:7180` | SOCKS5 proxy listen address |
 | `server.graceful_period` | duration | `30s` | Graceful shutdown period |
 
 ### Backend Types
@@ -122,12 +122,12 @@ Pattern formats:
 ```yaml
 proxy:
   http:
-    listen: "127.0.0.1:3128"
+    listen: "127.0.0.1:7380"
   socks5:
-    listen: "127.0.0.1:1081"
+    listen: "127.0.0.1:7381"
 
 server:
-  address: "proxy.example.com:8080"
+  address: "proxy.example.com:7080"
   protocol: http
   username: "${PROXY_USER}"
   password: "${PROXY_PASS}"
@@ -150,7 +150,7 @@ debug:
 
 web_ui:
   enabled: true
-  listen: "127.0.0.1:3129"
+  listen: "127.0.0.1:7382"
 
 tray:
   enabled: true

@@ -60,7 +60,7 @@ func TestHandleGetFullConfig(t *testing.T) {
 		GetFullConfig: func() *config.ServerConfig {
 			return &config.ServerConfig{
 				Server: config.ServerSettings{
-					HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+					HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 				},
 			}
 		},
@@ -114,7 +114,7 @@ func TestHandleSaveConfig(t *testing.T) {
 	// Valid config with listener and backend
 	body := strings.NewReader(`{
 		"config": {
-			"server": {"http": {"listen": "0.0.0.0:8080"}},
+			"server": {"http": {"listen": "0.0.0.0:7080"}},
 			"backends": [{"name": "default", "type": "direct", "enabled": true}]
 		},
 		"create_backup": false
@@ -187,7 +187,7 @@ func TestHandleSaveConfig_SaveError(t *testing.T) {
 	// Valid config that passes validation but save fails
 	body := strings.NewReader(`{
 		"config": {
-			"server": {"http": {"listen": "0.0.0.0:8080"}},
+			"server": {"http": {"listen": "0.0.0.0:7080"}},
 			"backends": [{"name": "default", "type": "direct", "enabled": true}]
 		}
 	}`)
@@ -213,7 +213,7 @@ func TestHandleValidateConfig(t *testing.T) {
 
 	// Valid config with listener and backend
 	body := strings.NewReader(`{
-		"server": {"http": {"listen": "0.0.0.0:8080"}},
+		"server": {"http": {"listen": "0.0.0.0:7080"}},
 		"backends": [{"name": "default", "type": "direct", "enabled": true}]
 	}`)
 	w := httptest.NewRecorder()
@@ -247,7 +247,7 @@ func TestHandleValidateConfig_Invalid(t *testing.T) {
 func TestDetectChangedSections(t *testing.T) {
 	current := &config.ServerConfig{
 		Server: config.ServerSettings{
-			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 		},
 		Routes: []config.RouteConfig{
 			{Backend: "default"},
@@ -271,13 +271,13 @@ func TestDetectChangedSections(t *testing.T) {
 func TestDetectChangedSections_AllSame(t *testing.T) {
 	current := &config.ServerConfig{
 		Server: config.ServerSettings{
-			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 		},
 	}
 
 	new := &config.ServerConfig{
 		Server: config.ServerSettings{
-			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 		},
 	}
 
@@ -288,7 +288,7 @@ func TestDetectChangedSections_AllSame(t *testing.T) {
 func TestDetectChangedSections_MultipleChanged(t *testing.T) {
 	current := &config.ServerConfig{
 		Server: config.ServerSettings{
-			HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+			HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 		},
 		Routes: []config.RouteConfig{
 			{Backend: "default"},
@@ -389,13 +389,13 @@ func TestConfigSaveRequest_Struct(t *testing.T) {
 	req := ConfigSaveRequest{
 		Config: config.ServerConfig{
 			Server: config.ServerSettings{
-				HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+				HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 			},
 		},
 		CreateBackup: true,
 	}
 
-	assert.Equal(t, "0.0.0.0:8080", req.Config.Server.HTTP.Listen)
+	assert.Equal(t, "0.0.0.0:7080", req.Config.Server.HTTP.Listen)
 	assert.True(t, req.CreateBackup)
 }
 
@@ -451,7 +451,7 @@ func TestHandleSaveConfig_WithWebSocket(t *testing.T) {
 
 	body := strings.NewReader(`{
 		"config": {
-			"server": {"http": {"listen": "0.0.0.0:8080"}},
+			"server": {"http": {"listen": "0.0.0.0:7080"}},
 			"backends": [{"name": "default", "type": "direct", "enabled": true}]
 		},
 		"create_backup": false
@@ -475,7 +475,7 @@ func TestHandleSaveConfig_WithAutoReload(t *testing.T) {
 		GetFullConfig: func() *config.ServerConfig {
 			return &config.ServerConfig{
 				Server: config.ServerSettings{
-					HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+					HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 				},
 				Backends: []config.BackendConfig{
 					{Name: "default", Type: "direct", Enabled: true},
@@ -496,7 +496,7 @@ func TestHandleSaveConfig_WithAutoReload(t *testing.T) {
 	// Change only routes (hot-reloadable) while keeping server and backends valid
 	body := strings.NewReader(`{
 		"config": {
-			"server": {"http": {"listen": "0.0.0.0:8080"}},
+			"server": {"http": {"listen": "0.0.0.0:7080"}},
 			"backends": [{"name": "default", "type": "direct", "enabled": true}],
 			"routes": [{"domains": ["*.newdomain.com"], "backend": "default"}]
 		},
@@ -522,7 +522,7 @@ func TestHandleSaveConfig_NoAutoReloadForRestartRequired(t *testing.T) {
 		GetFullConfig: func() *config.ServerConfig {
 			return &config.ServerConfig{
 				Server: config.ServerSettings{
-					HTTP: config.ListenerConfig{Listen: "0.0.0.0:8080"},
+					HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
 				},
 				Backends: []config.BackendConfig{
 					{Name: "default", Type: "direct", Enabled: true},

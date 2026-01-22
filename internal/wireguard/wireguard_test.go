@@ -1,13 +1,36 @@
 package wireguard
 
 import (
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// errorReader is a reader that returns an error after reading some content
+type errorReader struct {
+	content   string
+	readCount int
+	errAfter  int
+}
+
+func (r *errorReader) Read(p []byte) (n int, err error) {
+	r.readCount++
+	if r.readCount > r.errAfter {
+		return 0, errors.New("simulated read error")
+	}
+	if r.content == "" {
+		return 0, io.EOF
+	}
+	n = copy(p, r.content)
+	r.content = r.content[n:]
+	return n, nil
+}
 
 func TestParseFile(t *testing.T) {
 	// Create a temporary config file
@@ -505,4 +528,267 @@ func TestPeerConfig_Struct(t *testing.T) {
 	assert.Equal(t, "vpn.example.com:51820", peer.Endpoint)
 	assert.Len(t, peer.AllowedIPs, 1)
 	assert.Equal(t, 25, peer.PersistentKeepalive)
+}
+
+func TestParseFile_InvalidPresharedKey(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+PresharedKey = invalid-psk-key
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid preshared key")
+}
+
+func TestParseFile_InvalidListenPortOutOfRange(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+ListenPort = 70000
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid listen port")
+}
+
+func TestParseFile_InvalidMTUOutOfRange(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+MTU = 70000
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid MTU")
+}
+
+func TestParseFile_InvalidPersistentKeepaliveOutOfRange(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = -1
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid persistent keepalive")
+}
+
+func TestParseFile_PlainIPAddress(t *testing.T) {
+	// Test parsing an IP address without CIDR notation
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10.0.0.2"}, config.Interface.Address)
+}
+
+func TestParseFile_CommentsAndEmptyLines(t *testing.T) {
+	content := `# This is a comment
+[Interface]
+# Another comment
+PrivateKey = WGExample1234567890123456789012345678901234=
+
+# Empty lines above and below
+Address = 10.0.0.2/24
+
+[Peer]
+# Peer comment
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+	assert.NotNil(t, config)
+	assert.Equal(t, "WGExample1234567890123456789012345678901234=", config.Interface.PrivateKey)
+}
+
+func TestParseFile_NoInterface(t *testing.T) {
+	// Config with only a Peer section (no Interface)
+	content := `[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+	// Interface will have zero values but peers should be parsed
+	assert.Len(t, config.Peers, 1)
+}
+
+func TestParseFile_UnknownSection(t *testing.T) {
+	// Config with an unknown section
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Unknown]
+SomeKey = SomeValue
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	config, err := ParseFile(configPath)
+	require.NoError(t, err)
+	assert.Len(t, config.Peers, 1)
+}
+
+func TestParseFile_NegativeListenPort(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+ListenPort = -1
+`
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "wg0.conf")
+	err := os.WriteFile(configPath, []byte(content), 0600)
+	require.NoError(t, err)
+
+	_, err = ParseFile(configPath)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid listen port")
+}
+
+func TestHexKey(t *testing.T) {
+	// Test the hexKey function with a valid base64 key
+	key := "WGExample1234567890123456789012345678901234="
+	result := hexKey(key)
+	assert.NotEmpty(t, result)
+	// The result should be a hex string (64 characters for 32 bytes)
+	assert.Len(t, result, 64)
+}
+
+func TestHexKey_InvalidBase64(t *testing.T) {
+	// Test hexKey with invalid base64 - should return empty hex
+	key := "not-valid-base64!"
+	result := hexKey(key)
+	// When base64 decode fails, decoded will be empty, so hex will be empty
+	assert.Equal(t, "", result)
+}
+
+func TestConfig_ToIPC_MultiplePeers(t *testing.T) {
+	config := Config{
+		Interface: InterfaceConfig{
+			PrivateKey: "WGExample1234567890123456789012345678901234=",
+			ListenPort: 51820,
+		},
+		Peers: []PeerConfig{
+			{
+				PublicKey:  "WGExample1234567890123456789012345678901234=",
+				AllowedIPs: []string{"10.0.0.0/8"},
+			},
+			{
+				PublicKey:           "WGExample1234567890123456789012345678901234=",
+				PresharedKey:        "WGExample1234567890123456789012345678901234=",
+				Endpoint:            "vpn2.example.com:51820",
+				AllowedIPs:          []string{"192.168.0.0/16", "172.16.0.0/12"},
+				PersistentKeepalive: 30,
+			},
+		},
+	}
+
+	ipc := config.ToIPC()
+
+	// Check that all expected keys are present
+	assert.Contains(t, ipc, "private_key=")
+	assert.Contains(t, ipc, "listen_port=51820")
+	// First peer
+	assert.Contains(t, ipc, "allowed_ip=10.0.0.0/8")
+	// Second peer
+	assert.Contains(t, ipc, "endpoint=vpn2.example.com:51820")
+	assert.Contains(t, ipc, "allowed_ip=192.168.0.0/16")
+	assert.Contains(t, ipc, "allowed_ip=172.16.0.0/12")
+	assert.Contains(t, ipc, "persistent_keepalive_interval=30")
+}
+
+func TestParse_FromReader(t *testing.T) {
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+
+[Peer]
+PublicKey = WGExample1234567890123456789012345678901234=
+AllowedIPs = 0.0.0.0/0
+`
+	reader := strings.NewReader(content)
+	config, err := Parse(reader)
+	require.NoError(t, err)
+	assert.Equal(t, "WGExample1234567890123456789012345678901234=", config.Interface.PrivateKey)
+	assert.Len(t, config.Peers, 1)
+}
+
+func TestParse_ScannerError(t *testing.T) {
+	// Create a reader that returns an error after reading some content
+	// This tests the scanner.Err() branch
+	content := `[Interface]
+PrivateKey = WGExample1234567890123456789012345678901234=
+Address = 10.0.0.2/24
+`
+	reader := &errorReader{content: content, errAfter: 1}
+	_, err := Parse(reader)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "scan config")
+}
+
+func TestParse_EmptyReader(t *testing.T) {
+	reader := strings.NewReader("")
+	config, err := Parse(reader)
+	require.NoError(t, err)
+	assert.NotNil(t, config)
+	assert.Empty(t, config.Interface.PrivateKey)
+	assert.Empty(t, config.Peers)
 }

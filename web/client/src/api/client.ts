@@ -41,6 +41,250 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
 
 export { APIError }
 
+// VPN Types
+export interface VPNStatus {
+  status: string
+  enabled: boolean
+  tunnel_type?: string
+  interface_name?: string
+  local_ip?: string
+  gateway?: string
+  dns_servers?: string[]
+  bytes_sent: number
+  bytes_received: number
+  connected_since?: string
+  last_error?: string
+}
+
+export interface VPNConnection {
+  id: string
+  remote_addr: string
+  local_addr: string
+  protocol: string
+  started_at: string
+  bytes_sent: number
+  bytes_received: number
+}
+
+export interface SplitTunnelConfig {
+  mode: string
+  apps: AppRule[]
+  domains: string[]
+  ips: string[]
+}
+
+export interface AppRule {
+  name: string
+  path?: string
+}
+
+// Config Types
+export interface ClientConfig {
+  proxy: ProxySettings
+  server: ServerConnection
+  routes: RouteConfig[]
+  debug: DebugSettings
+  logging: LoggingSettings
+  web_ui: WebUISettings
+  api: APISettings
+  tray: TraySettings
+  auto_update: AutoUpdateSettings
+  vpn: VPNSettings
+  mesh: MeshSettings
+}
+
+export interface ProxySettings {
+  http: ListenerConfig
+  socks5: ListenerConfig
+}
+
+export interface ListenerConfig {
+  listen: string
+  tls?: TLSConfig
+  read_timeout?: string
+  write_timeout?: string
+  idle_timeout?: string
+  max_connections?: number
+}
+
+export interface TLSConfig {
+  enabled: boolean
+  cert_file?: string
+  key_file?: string
+}
+
+export interface ServerConnection {
+  address: string
+  protocol: string
+  tls?: TLSConfig
+  username?: string
+  password?: string
+  timeout?: string
+  retry_count?: number
+  retry_delay?: string
+  health_check?: HealthCheckConfig
+}
+
+export interface HealthCheckConfig {
+  type: string
+  interval?: string
+  timeout?: string
+  target?: string
+}
+
+export interface RouteConfig {
+  name?: string
+  domains: string[]
+  action: string
+  priority: number
+}
+
+export interface DebugSettings {
+  enabled: boolean
+  max_entries: number
+  capture_body: boolean
+  max_body_size?: number
+  filter_domains?: string[]
+}
+
+export interface LoggingSettings {
+  level: string
+  format: string
+  output: string
+  time_format?: string
+}
+
+export interface WebUISettings {
+  enabled: boolean
+  listen: string
+  base_path?: string
+}
+
+export interface APISettings {
+  enabled: boolean
+  listen: string
+  token?: string
+  request_log_size?: number
+}
+
+export interface TraySettings {
+  enabled: boolean
+  start_minimized: boolean
+  show_quick_gui: boolean
+  auto_connect: boolean
+  show_notifications: boolean
+  window_x?: number
+  window_y?: number
+}
+
+export interface AutoUpdateSettings {
+  enabled: boolean
+  check_interval?: string
+  channel?: string
+}
+
+export interface VPNSettings {
+  enabled: boolean
+  tun?: TunConfig
+  split_tunnel?: SplitTunnelSettings
+  dns?: DNSSettings
+}
+
+export interface TunConfig {
+  name?: string
+  address?: string
+  mtu?: number
+}
+
+export interface SplitTunnelSettings {
+  mode: string
+  apps?: AppRule[]
+  domains?: string[]
+  ips?: string[]
+  always_bypass?: string[]
+}
+
+export interface DNSSettings {
+  enabled: boolean
+  listen?: string
+  upstream?: string[]
+  cache_ttl?: string
+  intercept_mode?: string
+}
+
+export interface MeshSettings {
+  enabled: boolean
+  network_id?: string
+  network_cidr?: string
+  peer_name?: string
+  device?: MeshDeviceConfig
+  discovery?: MeshDiscoveryConfig
+  stun_servers?: string[]
+  turn_servers?: TurnServerConfig[]
+  connection?: MeshConnectionConfig
+  security?: MeshSecurityConfig
+}
+
+export interface MeshDeviceConfig {
+  type: string
+  name?: string
+  mtu?: number
+}
+
+export interface MeshDiscoveryConfig {
+  server?: string
+  heartbeat?: string
+  timeout?: string
+  token?: string
+}
+
+export interface TurnServerConfig {
+  url: string
+  username?: string
+  password?: string
+}
+
+export interface MeshConnectionConfig {
+  dial_timeout?: string
+  keepalive?: string
+  max_retries?: number
+}
+
+export interface MeshSecurityConfig {
+  encryption?: string
+  allowed_peers?: string[]
+}
+
+// Config update response
+export interface ConfigUpdateResponse {
+  status: string
+  restart_required: boolean
+  restart_fields?: string[]
+  warnings?: string[]
+}
+
+// Config validation result
+export interface ConfigValidationResult {
+  valid: boolean
+  errors?: string[]
+  warnings?: string[]
+}
+
+// Log Types
+export interface LogEntry {
+  timestamp: string
+  level: string
+  message: string
+  fields?: Record<string, unknown>
+}
+
+export interface LogsResponse {
+  entries: LogEntry[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export const api = {
   getHealth: () => fetchJSON<{ status: string }>('/health'),
   getVersion: () => fetchJSON<VersionInfo>('/version'),
@@ -55,4 +299,66 @@ export const api = {
   // Routes
   getRoutes: () => fetchJSON<Route[]>('/routes'),
   testRoute: (domain: string) => fetchJSON<RouteTestResult>(`/routes/test?domain=${encodeURIComponent(domain)}`),
+
+  // Config
+  getConfig: () => fetchJSON<ClientConfig>('/config'),
+  updateConfig: (updates: Partial<ClientConfig>) =>
+    fetchJSON<ConfigUpdateResponse>('/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }),
+  reloadConfig: () => fetchJSON<{ status: string }>('/config/reload', { method: 'POST' }),
+  validateConfig: (updates: Partial<ClientConfig>) =>
+    fetchJSON<ConfigValidationResult>('/config/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    }),
+  getConfigDefaults: () => fetchJSON<ClientConfig>('/config/defaults'),
+  exportConfig: async (format: 'json' | 'yaml' = 'yaml') => {
+    const res = await fetch(`${API_BASE}/config/export?format=${format}`, { method: 'POST' })
+    if (!res.ok) throw new APIError(res.status, 'Failed to export config')
+    return res.blob()
+  },
+  importConfig: (config: string, format: 'json' | 'yaml' = 'yaml') =>
+    fetchJSON<ConfigUpdateResponse>(`/config/import?format=${format}`, {
+      method: 'POST',
+      headers: { 'Content-Type': format === 'yaml' ? 'application/x-yaml' : 'application/json' },
+      body: config,
+    }),
+
+  // Logs
+  getLogs: (limit = 100, offset = 0, level?: string) => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    if (level) params.set('level', level)
+    return fetchJSON<LogsResponse>(`/logs?${params}`)
+  },
+
+  // VPN
+  getVPNStatus: () => fetchJSON<VPNStatus>('/vpn/status'),
+  enableVPN: () => fetchJSON<{ status: string }>('/vpn/enable', { method: 'POST' }),
+  disableVPN: () => fetchJSON<{ status: string }>('/vpn/disable', { method: 'POST' }),
+  getVPNConnections: () => fetchJSON<VPNConnection[]>('/vpn/connections'),
+  getSplitTunnelRules: () => fetchJSON<SplitTunnelConfig>('/vpn/split/rules'),
+  addSplitTunnelApp: (app: AppRule) =>
+    fetchJSON<{ status: string }>('/vpn/split/apps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(app),
+    }),
+  removeSplitTunnelApp: (name: string) =>
+    fetchJSON<{ status: string }>(`/vpn/split/apps/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  addSplitTunnelDomain: (pattern: string) =>
+    fetchJSON<{ status: string }>('/vpn/split/domains', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pattern }),
+    }),
+  addSplitTunnelIP: (cidr: string) =>
+    fetchJSON<{ status: string }>('/vpn/split/ips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cidr }),
+    }),
 }

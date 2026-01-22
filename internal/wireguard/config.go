@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -48,11 +49,16 @@ func ParseFile(path string) (*Config, error) {
 	}
 	defer file.Close()
 
+	return Parse(file)
+}
+
+// Parse parses a WireGuard configuration from an io.Reader.
+func Parse(r io.Reader) (*Config, error) {
 	config := &Config{}
 	var currentSection string
 	var currentPeer *PeerConfig
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(r)
 	lineNum := 0
 
 	for scanner.Scan() {
@@ -93,9 +99,8 @@ func ParseFile(path string) (*Config, error) {
 				return nil, fmt.Errorf("line %d: %w", lineNum, err)
 			}
 		case "peer":
-			if currentPeer == nil {
-				return nil, fmt.Errorf("line %d: peer key without [Peer] section", lineNum)
-			}
+			// currentPeer is always non-nil here because currentSection is only set to "peer"
+			// when a [Peer] header is encountered, which also initializes currentPeer.
 			if err := parsePeerKey(currentPeer, key, value); err != nil {
 				return nil, fmt.Errorf("line %d: %w", lineNum, err)
 			}

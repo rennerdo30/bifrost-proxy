@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  background-color: #0a0e17;
+  color: #f9fafb;
+  overflow: hidden;
+}
+
+/* macOS title bar safe area - add padding for window controls */
+@supports (-webkit-app-region: drag) {
+  .macos-drag-region {
+    -webkit-app-region: drag;
+  }
+  .macos-no-drag {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* Safe area for macOS title bar */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #111827;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
+}
+
+/* Custom component classes */
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-bifrost-bg;
+  }
+
+  .btn-primary {
+    @apply bg-bifrost-accent hover:bg-bifrost-accent-hover text-white focus:ring-bifrost-accent;
+  }
+
+  .btn-secondary {
+    @apply bg-bifrost-card border border-bifrost-border text-bifrost-text hover:bg-bifrost-border focus:ring-gray-500;
+  }
+
+  .btn-success {
+    @apply bg-bifrost-success hover:bg-green-600 text-white focus:ring-bifrost-success;
+  }
+
+  .btn-danger {
+    @apply bg-bifrost-error hover:bg-red-600 text-white focus:ring-bifrost-error;
+  }
+
+  .card {
+    @apply bg-bifrost-card border border-bifrost-border rounded-xl p-4;
+  }
+
+  .toggle {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors;
+  }
+
+  .toggle-dot {
+    @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform;
+  }
+}
+
+/* Status indicator animations */
+@keyframes status-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-connecting {
+  animation: status-pulse 1.5s ease-in-out infinite;
+}
+
+/* Connect button glow effect */
+.connect-button {
+  transition: all 0.3s ease;
+  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
+}
+
+.connect-button:hover:not(:disabled) {
+  box-shadow: 0 0 20px 5px rgba(59, 130, 246, 0.3);
+}
+
+.connect-button.connected {
+  box-shadow: 0 0 15px 3px rgba(34, 197, 94, 0.3);
+}
+
+.connect-button.connected:hover:not(:disabled) {
+  box-shadow: 0 0 20px 5px rgba(34, 197, 94, 0.4);
+}
+
+.connect-button.error {
+  box-shadow: 0 0 15px 3px rgba(239, 68, 68, 0.3);
+}

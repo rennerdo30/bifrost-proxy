@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -506,4 +507,610 @@ func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)
 	assert.True(t, errorCalled.Load())
+}
+
+func TestHTTPHandler_ServeConn_ReadRequestError(t *testing.T) {
+	// Test early connection close (not EOF) - malformed request
+	clientConn, serverConn := net.Pipe()
+
+	var errorCalled atomic.Bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled.Store(true)
+		},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Write malformed HTTP request (not valid HTTP)
+	_, err := clientConn.Write([]byte("NOT A VALID HTTP REQUEST\r\n\r\n"))
+	require.NoError(t, err)
+	clientConn.Close()
+
+	<-done
+	assert.True(t, errorCalled.Load())
+}
+
+func TestHTTPHandler_ServeConn_EOF(t *testing.T) {
+	// Test immediate EOF - should not call error callback
+	clientConn, serverConn := net.Pipe()
+
+	var errorCalled atomic.Bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled.Store(true)
+		},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Close immediately to trigger EOF
+	clientConn.Close()
+
+	<-done
+	// EOF should not trigger error callback
+	assert.False(t, errorCalled.Load())
+}
+
+func TestHTTPHandler_ServeConn_EmptyHost(t *testing.T) {
+	// Test request with empty Host header - should use URL host
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	}))
+	defer targetServer.Close()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		DialTimeout: 5 * time.Second,
+	})
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Create a request manually with Host in URL
+	requestLine := fmt.Sprintf("GET %s HTTP/1.1\r\n\r\n", targetServer.URL)
+	_, err := clientConn.Write([]byte(requestLine))
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, nil)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestHTTPHandler_handleConnect_DialFailure(t *testing.T) {
+	// Test when dial fails
+	clientConn, serverConn := net.Pipe()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	var errorCalled atomic.Bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		DialTimeout: 100 * time.Millisecond,
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled.Store(true)
+		},
+	})
+
+	// CONNECT to an unreachable address
+	req, err := http.NewRequest("CONNECT", "http://192.0.2.1:12345", nil) // TEST-NET-1, RFC 5737
+	require.NoError(t, err)
+	req.Host = "192.0.2.1:12345"
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+
+	time.Sleep(200 * time.Millisecond)
+	assert.True(t, errorCalled.Load())
+}
+
+func TestHTTPHandler_handleHTTP_DialFailure(t *testing.T) {
+	// Test HTTP forward proxy when dial fails
+	clientConn, serverConn := net.Pipe()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	var errorCalled atomic.Bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		DialTimeout: 100 * time.Millisecond,
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled.Store(true)
+		},
+	})
+
+	// GET to an unreachable address
+	req, err := http.NewRequest("GET", "http://192.0.2.1:12345/path", nil)
+	require.NoError(t, err)
+	req.Host = "192.0.2.1:12345"
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
+
+	time.Sleep(200 * time.Millisecond)
+	assert.True(t, errorCalled.Load())
+}
+
+func TestHTTPHandler_handleHTTP_EmptyHostFromRequest(t *testing.T) {
+	// Test when Host is empty but URL.Host is set
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer targetServer.Close()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+	})
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Write raw HTTP request with Host in URL only (typical proxy request)
+	rawRequest := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\n\r\n",
+		targetServer.URL, targetServer.Listener.Addr().String())
+	_, err := clientConn.Write([]byte(rawRequest))
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, nil)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func TestHTTPHandler_sendResponse_WriteError(t *testing.T) {
+	// Test sendResponse when write fails
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+	})
+
+	// Create a pipe and close the read end to cause write error
+	clientConn, serverConn := net.Pipe()
+	clientConn.Close() // Close client side to cause write error
+
+	// This should not panic and should handle the error gracefully
+	handler.sendResponse(serverConn, http.StatusOK, "OK")
+	serverConn.Close()
+}
+
+func TestHTTPHandler_sendHTTPError_WriteError(t *testing.T) {
+	// Test sendHTTPError when write fails
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+	})
+
+	clientConn, serverConn := net.Pipe()
+	clientConn.Close()
+
+	// This should not panic
+	handler.sendHTTPError(serverConn, http.StatusBadGateway, "Error")
+	serverConn.Close()
+}
+
+func TestHTTPHandler_handleError_NilCallback(t *testing.T) {
+	// Test handleError when callback is nil
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		OnError: nil, // No error callback
+	})
+
+	// Should not panic
+	handler.handleError(context.Background(), nil, "test", assert.AnError)
+}
+
+func TestHTTPHandler_DefaultDialTimeout(t *testing.T) {
+	// Test that default dial timeout is set when not specified
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return nil
+		},
+		// DialTimeout not set
+	})
+
+	assert.Equal(t, 30*time.Second, handler.dialTimeout)
+}
+
+func TestHTTPHandler_handleHTTP_WriteRequestError(t *testing.T) {
+	// Test when writing request to target fails
+	// Create a server that closes connection immediately after accepting
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	serverAddr := listener.Addr().String()
+
+	// Server that accepts then immediately closes
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		conn.Close() // Close immediately
+	}()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	var errorCalled atomic.Bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled.Store(true)
+		},
+	})
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	req, err := http.NewRequest("GET", "http://"+serverAddr+"/path", nil)
+	require.NoError(t, err)
+	req.Host = serverAddr
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	// Wait for handler to process
+	time.Sleep(100 * time.Millisecond)
+	clientConn.Close()
+
+	// Error should be called due to write/read failure
+	time.Sleep(50 * time.Millisecond)
+	// Connection might complete or fail depending on timing
+}
+
+func TestCopyBidirectional_WithTCPConn(t *testing.T) {
+	// Test with real TCP connections to hit CloseWrite paths
+	listener1, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener1.Close()
+
+	listener2, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener2.Close()
+
+	// Accept connections on both listeners
+	var server1Conn, server2Conn net.Conn
+	acceptDone := make(chan struct{})
+
+	go func() {
+		var err error
+		server1Conn, err = listener1.Accept()
+		if err != nil {
+			return
+		}
+		server2Conn, err = listener2.Accept()
+		if err != nil {
+			return
+		}
+		close(acceptDone)
+	}()
+
+	// Connect to both listeners
+	client1Conn, err := net.Dial("tcp", listener1.Addr().String())
+	require.NoError(t, err)
+	defer client1Conn.Close()
+
+	client2Conn, err := net.Dial("tcp", listener2.Addr().String())
+	require.NoError(t, err)
+	defer client2Conn.Close()
+
+	<-acceptDone
+
+	// Start bidirectional copy between the server sides
+	done := make(chan struct{})
+	go func() {
+		CopyBidirectional(context.Background(), server1Conn, server2Conn)
+		close(done)
+	}()
+
+	// Write from client1, should appear on client2
+	testData := []byte("Hello")
+	go func() {
+		client1Conn.Write(testData)
+		time.Sleep(50 * time.Millisecond)
+		client1Conn.Close()
+	}()
+
+	buf := make([]byte, 100)
+	n, _ := client2Conn.Read(buf)
+	assert.Equal(t, testData, buf[:n])
+
+	client2Conn.Close()
+	server1Conn.Close()
+	server2Conn.Close()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout")
+	}
+}
+
+func TestCopyWithContext_EOF(t *testing.T) {
+	// Test that io.EOF is handled correctly by copyWithContext
+	client1, server1 := net.Pipe()
+	client2, server2 := net.Pipe()
+	defer client1.Close()
+	defer client2.Close()
+
+	done := make(chan struct{})
+	go func() {
+		// Copy will return io.EOF when one side closes
+		CopyBidirectional(context.Background(), server1, server2)
+		close(done)
+	}()
+
+	// Write data, then close to generate EOF
+	_, err := client1.Write([]byte("test"))
+	require.NoError(t, err)
+	client1.Close()
+
+	// Read on the other side
+	buf := make([]byte, 100)
+	_, _ = client2.Read(buf)
+	client2.Close()
+
+	<-done
+}
+
+func TestHTTPHandler_ServeConn_NonTCPAddr(t *testing.T) {
+	// Test with net.Pipe (non-TCP address) to cover the non-TCPAddr branch
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer targetServer.Close()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	// net.Pipe doesn't return a TCPAddr
+	clientConn, serverConn := net.Pipe()
+
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Write HTTP request
+	req, err := http.NewRequest("GET", targetServer.URL, nil)
+	require.NoError(t, err)
+	req.Host = targetServer.Listener.Addr().String()
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	// Read response
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	clientConn.Close()
+	<-done
+}
+
+func TestHTTPHandler_handleHTTP_EmptyHostFallbackToURLHost(t *testing.T) {
+	// Test the case where req.Host is empty but req.URL.Host has the host
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer targetServer.Close()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+	})
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Create a request where Host header is empty but URL has the host
+	rawRequest := fmt.Sprintf("GET %s HTTP/1.1\r\nHost: %s\r\n\r\n",
+		targetServer.URL, targetServer.Listener.Addr().String())
+	_, err := clientConn.Write([]byte(rawRequest))
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, nil)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	clientConn.Close()
+}
+
+func TestHTTPHandler_handleHTTP_WriteResponseError(t *testing.T) {
+	// Test when writing response to client fails
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Response body"))
+	}))
+	defer targetServer.Close()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	var errorCalled atomic.Bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled.Store(true)
+		},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	// Write request then close immediately before response can be written back
+	req, err := http.NewRequest("GET", targetServer.URL, nil)
+	require.NoError(t, err)
+	req.Host = targetServer.Listener.Addr().String()
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	// Close before response comes back
+	time.Sleep(10 * time.Millisecond)
+	clientConn.Close()
+
+	<-done
+	// Error may or may not be called depending on timing
+}
+
+func TestHTTPHandler_handleHTTP_ReadResponseError(t *testing.T) {
+	// Test when reading response from target fails
+	// Create a server that closes connection after sending partial response
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	serverAddr := listener.Addr().String()
+
+	// Server that sends a partial response then closes
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		// Read the request
+		buf := make([]byte, 1024)
+		conn.Read(buf)
+		// Send partial response then close
+		conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n"))
+		conn.Close() // Close before sending full body
+	}()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background())
+
+	clientConn, serverConn := net.Pipe()
+
+	var errorCalled atomic.Bool
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		OnError: func(ctx context.Context, conn net.Conn, host string, err error) {
+			errorCalled.Store(true)
+		},
+	})
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	req, err := http.NewRequest("GET", "http://"+serverAddr+"/path", nil)
+	require.NoError(t, err)
+	req.Host = serverAddr
+
+	err = req.Write(clientConn)
+	require.NoError(t, err)
+
+	// Read response (may be partial)
+	reader := bufio.NewReader(clientConn)
+	_, _ = http.ReadResponse(reader, req)
+
+	time.Sleep(100 * time.Millisecond)
+	clientConn.Close()
 }
