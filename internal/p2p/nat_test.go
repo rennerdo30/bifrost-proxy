@@ -146,7 +146,7 @@ func TestCanTraverse(t *testing.T) {
 		{"symmetric-restricted", NATTypeSymmetric, NATTypeRestrictedCone, false},
 		{"symmetric-portrestricted", NATTypeSymmetric, NATTypePortRestricted, false},
 		{"symmetric-symmetric", NATTypeSymmetric, NATTypeSymmetric, false},
-		{"symmetric-none", NATTypeSymmetric, NATTypeNone, false}, // none is not full cone
+		{"symmetric-none", NATTypeSymmetric, NATTypeNone, true}, // symmetric can connect to public IP
 
 		// Mixed friendly types
 		{"none-restricted", NATTypeNone, NATTypeRestrictedCone, true},

@@ -21,6 +21,19 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
+// VPNManager defines the interface for VPN management operations
+type VPNManager interface {
+	Status() vpn.VPNStats
+	Start(ctx context.Context) error
+	Stop(ctx context.Context) error
+	Connections() []vpn.ConnectionInfo
+	SplitTunnelRules() vpn.SplitTunnelConfig
+	AddSplitTunnelApp(app vpn.AppRule) error
+	RemoveSplitTunnelApp(name string) error
+	AddSplitTunnelDomain(pattern string) error
+	AddSplitTunnelIP(cidr string) error
+}
+
 // ServerInfo represents a configured server.
 type ServerInfo struct {
 	Name      string `json:"name"`
@@ -73,7 +86,7 @@ type API struct {
 	debugger        *debug.Logger
 	serverConnected func() bool
 	token           string
-	vpnManager      *vpn.Manager
+	vpnManager      VPNManager
 	configGetter    func() interface{}
 	configUpdater   func(map[string]interface{}) error
 	configReloader  func() error
@@ -98,9 +111,9 @@ type API struct {
 
 // LogEntry represents a log entry for streaming.
 type LogEntry struct {
-	Timestamp string `json:"timestamp"`
-	Level     string `json:"level"`
-	Message   string `json:"message"`
+	Timestamp string                 `json:"timestamp"`
+	Level     string                 `json:"level"`
+	Message   string                 `json:"message"`
 	Fields    map[string]interface{} `json:"fields,omitempty"`
 }
 
@@ -110,7 +123,7 @@ type Config struct {
 	Debugger        *debug.Logger
 	ServerConnected func() bool
 	Token           string
-	VPNManager      *vpn.Manager
+	VPNManager      VPNManager
 	ConfigGetter    func() interface{}
 	ConfigUpdater   func(map[string]interface{}) error
 	ConfigReloader  func() error
@@ -353,8 +366,8 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 			token = r.URL.Query().Get("token")
 		}
 
-		// Remove "Bearer " prefix if present
-		if len(token) > 7 && token[:7] == "Bearer " {
+		// Remove "Bearer " prefix if present (case-insensitive)
+		if len(token) > 7 && strings.EqualFold(token[:7], "Bearer ") {
 			token = token[7:]
 		}
 
@@ -603,8 +616,13 @@ func (a *API) handleTestRoute(w http.ResponseWriter, r *http.Request) {
 
 func (a *API) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
+	buf, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	w.Write(buf)
 }
 
 // VPN handlers

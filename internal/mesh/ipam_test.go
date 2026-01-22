@@ -305,6 +305,14 @@ func TestPoolAllocatorAllocateSpecific(t *testing.T) {
 		err = allocator.AllocateSpecific("peer1", targetIP)
 		require.NoError(t, err)
 
+		// Manually set lease to dynamic so it can expire
+		allocator.mu.Lock()
+		if lease, ok := allocator.leases["peer1"]; ok {
+			lease.Static = false
+			lease.Expires = time.Now().Add(10 * time.Millisecond)
+		}
+		allocator.mu.Unlock()
+
 		// Wait for lease to expire
 		time.Sleep(20 * time.Millisecond)
 

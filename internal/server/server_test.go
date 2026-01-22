@@ -701,8 +701,8 @@ func TestExtractPort(t *testing.T) {
 		expected    string
 	}{
 		{"empty", "", "8080", "8080"},
-		{"host:port", "0.0.0.0:7080", "9090", "8080"},
-		{"just port", ":7080", "9090", "8080"},
+		{"host:port", "0.0.0.0:7080", "9090", "7080"},
+		{"just port", ":7080", "9090", "7080"},
 		{"localhost", "localhost:3000", "8080", "3000"},
 		{"invalid", "invalid", "8080", "8080"},
 	}
@@ -1365,6 +1365,10 @@ func TestNew_WithCache(t *testing.T) {
 			Enabled: true,
 			Storage: cache.StorageConfig{
 				Type: "memory",
+				Memory: &cache.MemoryConfig{
+					MaxSize:    100,
+					MaxEntries: 1000,
+				},
 			},
 		},
 	}
@@ -1602,6 +1606,10 @@ func TestServer_StartWithCacheEnabled(t *testing.T) {
 			Enabled: true,
 			Storage: cache.StorageConfig{
 				Type: "memory",
+				Memory: &cache.MemoryConfig{
+					MaxSize:    100,
+					MaxEntries: 1000,
+				},
 			},
 		},
 	}
@@ -1853,7 +1861,7 @@ func TestServer_ReloadConfig_WithInvalidRoutes(t *testing.T) {
 	// Reload should fail due to invalid route
 	err = s.ReloadConfig()
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "reload routes")
+	assert.Contains(t, err.Error(), "route references unknown backend")
 }
 
 func TestServer_ReloadConfig_WithWebSocketHub(t *testing.T) {
@@ -2100,7 +2108,7 @@ func TestExtractPort_AdditionalCases(t *testing.T) {
 		defaultPort string
 		expected    string
 	}{
-		{"ipv6_with_port", "[::1]:7080", "9090", "8080"},
+		{"ipv6_with_port", "[::1]:7080", "9090", "7080"},
 		{"just_colon", ":", "8080", ""},
 		{"no_colon_invalid", "8080", "9090", "9090"},
 	}

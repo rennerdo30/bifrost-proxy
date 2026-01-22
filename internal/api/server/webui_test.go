@@ -53,7 +53,7 @@ func TestStaticHandler_ServeJS(t *testing.T) {
 	handler := StaticHandler()
 
 	// Look for actual JS file in static directory
-	req := httptest.NewRequest("GET", "/assets/index-CauYGJby.js", nil)
+	req := httptest.NewRequest("GET", "/assets/index-DMqB_1NC.js", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -108,7 +108,7 @@ func TestStaticHandler_ContentTypeHeaders(t *testing.T) {
 		{"/", "text/html"},
 		{"/index.html", "text/html"},
 		{"/assets/index-KAVITblg.css", "text/css"},
-		{"/assets/index-CauYGJby.js", "application/javascript"},
+		{"/assets/index-DMqB_1NC.js", "application/javascript"},
 		{"/favicon.svg", "image/svg+xml"},
 	}
 
@@ -139,7 +139,7 @@ func TestStaticHandler_EmptyPath(t *testing.T) {
 	handler := StaticHandler()
 
 	// Empty path should serve index.html
-	req := httptest.NewRequest("GET", "", nil)
+	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 

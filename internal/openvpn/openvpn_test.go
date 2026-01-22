@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -850,6 +851,9 @@ func TestProcess_handleManagement_ContextCancelled(t *testing.T) {
 	defer server.Close()
 	defer client.Close()
 
+	// Need to read from server side because net.Pipe is unbuffered and Write blocks
+	go io.Copy(io.Discard, server)
+
 	proc := &Process{
 		stateCh: make(chan State, 10),
 		logger:  slog.Default(),
@@ -882,6 +886,8 @@ func TestProcess_handleManagement_EOF(t *testing.T) {
 	}
 
 	ctx := context.Background()
+	// Need to read from server side because net.Pipe is unbuffered and Write blocks
+	go io.Copy(io.Discard, server)
 
 	done := make(chan struct{})
 	go func() {
@@ -912,6 +918,15 @@ func TestProcess_handleManagement_StateLines(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
+
+	// Need to read from server side because net.Pipe is unbuffered and Write blocks
+	// Use a goroutine that can be stopped
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			server.Read(buf)
+		}
+	}()
 
 	done := make(chan struct{})
 	go func() {

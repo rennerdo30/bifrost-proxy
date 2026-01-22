@@ -379,7 +379,7 @@ func TestOpenVPNBackend_Dial_WithLocalAddr(t *testing.T) {
 	// Set running and localAddr
 	b.mu.Lock()
 	b.running = true
-	b.localAddr = "10.8.0.2"
+	b.localAddr = "127.0.0.1"
 	b.mu.Unlock()
 
 	// Start a test server

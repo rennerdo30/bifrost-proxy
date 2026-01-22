@@ -23,6 +23,18 @@ func (r *ServerRouter) LoadRoutes(routes []config.RouteConfig) error {
 	r.Clear()
 
 	for i, routeCfg := range routes {
+		// Validate backends exist
+		if routeCfg.Backend != "" {
+			if _, err := r.backendManager.Get(routeCfg.Backend); err != nil {
+				return err
+			}
+		}
+		for _, name := range routeCfg.Backends {
+			if _, err := r.backendManager.Get(name); err != nil {
+				return err
+			}
+		}
+
 		route := &Route{
 			Name:        routeCfg.Name,
 			Matcher:     matcher.New(routeCfg.Domains),

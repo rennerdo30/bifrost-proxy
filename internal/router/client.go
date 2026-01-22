@@ -1,6 +1,8 @@
 package router
 
 import (
+	"fmt"
+
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/matcher"
 )
@@ -43,6 +45,10 @@ func (r *ClientRouter) LoadRoutes(routes []config.ClientRouteConfig) error {
 			Matcher:  matcher.New(routeCfg.Domains),
 			Action:   ClientAction(routeCfg.Action),
 			Priority: routeCfg.Priority,
+		}
+
+		if len(routeCfg.Domains) == 0 {
+			return fmt.Errorf("route %d must have at least one domain", i)
 		}
 
 		// Use domains as default name

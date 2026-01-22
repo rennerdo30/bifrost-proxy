@@ -306,6 +306,9 @@ func (a *Authenticator) connectWithContext(ctx context.Context) (*ldap.Conn, err
 	dialer := &net.Dialer{
 		Timeout: 30 * time.Second, // Connection timeout
 	}
+	if deadline, ok := ctx.Deadline(); ok {
+		dialer.Deadline = deadline
+	}
 
 	// Build dial options
 	dialOpts := []ldap.DialOpt{

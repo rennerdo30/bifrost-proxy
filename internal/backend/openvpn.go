@@ -16,17 +16,17 @@ import (
 
 // OpenVPNBackend provides connections through an OpenVPN tunnel.
 type OpenVPNBackend struct {
-	name          string
-	config        OpenVPNConfig
-	cmd           *exec.Cmd
-	mgmtConn      net.Conn
-	localAddr     string
-	startTime     time.Time
-	healthy       atomic.Bool
-	stats         openvpnStats
-	mu            sync.RWMutex
-	running       bool
-	stopChan      chan struct{}
+	name           string
+	config         OpenVPNConfig
+	cmd            *exec.Cmd
+	mgmtConn       net.Conn
+	localAddr      string
+	startTime      time.Time
+	healthy        atomic.Bool
+	stats          openvpnStats
+	mu             sync.RWMutex
+	running        bool
+	stopChan       chan struct{}
 	tempConfigFile string // Temporary config file created from ConfigContent
 	tempAuthFile   string // Temporary auth file created from Username/Password
 }
@@ -45,15 +45,15 @@ type openvpnStats struct {
 // OpenVPNConfig holds configuration for an OpenVPN backend.
 type OpenVPNConfig struct {
 	Name           string        `yaml:"name"`
-	ConfigFile     string        `yaml:"config_file"`       // Path to .ovpn file
-	ConfigContent  string        `yaml:"config_content"`    // Inline OpenVPN config content (alternative to ConfigFile)
-	AuthFile       string        `yaml:"auth_file"`         // Path to auth credentials file
-	Username       string        `yaml:"username"`          // Inline username (alternative to AuthFile)
-	Password       string        `yaml:"password"`          // Inline password (alternative to AuthFile)
-	ManagementAddr string        `yaml:"management_addr"`   // Management interface address
-	ManagementPort int           `yaml:"management_port"`   // Management interface port
-	Binary         string        `yaml:"binary"`            // Path to openvpn binary
-	ExtraArgs      []string      `yaml:"extra_args"`        // Extra command line arguments
+	ConfigFile     string        `yaml:"config_file"`     // Path to .ovpn file
+	ConfigContent  string        `yaml:"config_content"`  // Inline OpenVPN config content (alternative to ConfigFile)
+	AuthFile       string        `yaml:"auth_file"`       // Path to auth credentials file
+	Username       string        `yaml:"username"`        // Inline username (alternative to AuthFile)
+	Password       string        `yaml:"password"`        // Inline password (alternative to AuthFile)
+	ManagementAddr string        `yaml:"management_addr"` // Management interface address
+	ManagementPort int           `yaml:"management_port"` // Management interface port
+	Binary         string        `yaml:"binary"`          // Path to openvpn binary
+	ExtraArgs      []string      `yaml:"extra_args"`      // Extra command line arguments
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
 }
 
@@ -110,7 +110,8 @@ func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net
 
 	// If we have a local address from the VPN, use it
 	if localAddr != "" {
-		laddr, err := net.ResolveTCPAddr(network, localAddr+":0")
+		hostPort := net.JoinHostPort(localAddr, "0")
+		laddr, err := net.ResolveTCPAddr(network, hostPort)
 		if err == nil {
 			dialer.LocalAddr = laddr
 		}
@@ -256,7 +257,7 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 
 func (b *OpenVPNBackend) waitForManagement(ctx context.Context) error {
 	deadline := time.Now().Add(b.config.ConnectTimeout)
-	addr := fmt.Sprintf("%s:%d", b.config.ManagementAddr, b.config.ManagementPort)
+	addr := net.JoinHostPort(b.config.ManagementAddr, fmt.Sprintf("%d", b.config.ManagementPort))
 
 	for time.Now().Before(deadline) {
 		select {

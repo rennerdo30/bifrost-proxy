@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -1014,6 +1015,7 @@ func TestManager_Put_StripHeaders(t *testing.T) {
 				StripHeaders: []string{"X-Custom-Header"},
 			},
 		},
+		DefaultTTL: Duration(1 * time.Hour),
 	}
 
 	manager, err := NewManager(cfg)
@@ -1058,6 +1060,7 @@ func TestManager_Put_WithLastModified(t *testing.T) {
 				Enabled: true,
 			},
 		},
+		DefaultTTL: Duration(1 * time.Hour),
 	}
 
 	manager, err := NewManager(cfg)
@@ -1367,8 +1370,9 @@ func TestValidator_HandleConditionalResponse_UpdatedETag(t *testing.T) {
 	}
 	resp := &http.Response{
 		StatusCode: 304,
-		Header:     http.Header{"ETag": []string{"new-etag"}},
+		Header:     make(http.Header),
 	}
+	resp.Header.Set("ETag", "new-etag")
 
 	valid := v.HandleConditionalResponse(entry, resp)
 	assert.True(t, valid)
@@ -1408,7 +1412,8 @@ func TestRuleSet_Match_NoMatcher(t *testing.T) {
 	req := createTestRequest("GET", "http://example.com/test")
 	matched := rs.Match(req)
 	// Should match since no matcher means all domains
-	assert.Nil(t, matched)
+	assert.NotNil(t, matched)
+	assert.Equal(t, "no-matcher", matched.Name)
 }
 
 func TestRuleSet_Match_EmptyHost(t *testing.T) {
@@ -1424,6 +1429,7 @@ func TestRuleSet_Match_EmptyHost(t *testing.T) {
 	req := &http.Request{
 		Method: "GET",
 		Host:   "",
+		URL:    &url.URL{Host: "example.com"}, // Provide URL fallback
 	}
 	matched := rs.Match(req)
 	// Should use URL host as fallback

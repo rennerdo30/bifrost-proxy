@@ -1382,7 +1382,7 @@ func TestHOTPAuthenticator_LargeCounter(t *testing.T) {
 
 	authenticator := createHOTPAuthenticatorDirect(t, map[string]any{
 		"secrets": []map[string]any{
-			{"username": "testuser", "secret": secret, "counter": largeCounter},
+			{"username": "testuser", "secret": secret, "counter": int(largeCounter)},
 		},
 	})
 

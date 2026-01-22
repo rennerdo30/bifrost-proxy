@@ -1,6 +1,7 @@
 package mesh
 
 import (
+	"fmt"
 	"net/netip"
 	"sync"
 	"testing"
@@ -224,6 +225,7 @@ func TestMeshRouterUpdateExistingRoute(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -260,6 +262,7 @@ func TestMeshRouterMultipleRoutesToSameDestination(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -301,6 +304,7 @@ func TestMeshRouterGetNextHop(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -407,6 +411,7 @@ func TestMeshRouterRemoveRoutesViaDisconnectedPeer(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -463,6 +468,7 @@ func TestMeshRouterGetStats(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -510,6 +516,7 @@ func TestMeshRouterGetBestRoutes(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -536,6 +543,7 @@ func TestMeshRouterGetForwardingTable(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -562,6 +570,7 @@ func TestMeshRouterGetAllRoutes(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -582,6 +591,7 @@ func TestMeshRouterIsDirect(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -598,6 +608,7 @@ func TestMeshRouterConcurrentAccess(t *testing.T) {
 	config := RouterConfig{
 		LocalPeerID: "local-peer",
 		LocalIP:     netip.MustParseAddr("10.100.0.1"),
+		MaxHops:     8,
 	}
 
 	router := NewMeshRouter(config)
@@ -609,7 +620,7 @@ func TestMeshRouterConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			peerID := "peer" + string(rune('A'+i%26))
-			ip := netip.MustParseAddr("10.100.0." + string(rune('2'+i%200)))
+			ip := netip.MustParseAddr(fmt.Sprintf("10.100.0.%d", 2+i%200))
 			router.AddDirectRoute(peerID, ip, time.Duration(i)*time.Millisecond)
 		}(i)
 	}

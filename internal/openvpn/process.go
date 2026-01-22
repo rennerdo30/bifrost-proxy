@@ -187,7 +187,7 @@ func (p *Process) monitorManagement(ctx context.Context) {
 	// Wait a bit for OpenVPN to start
 	time.Sleep(500 * time.Millisecond)
 
-	addr := fmt.Sprintf("%s:%d", p.config.Management.Address, p.config.Management.Port)
+	addr := net.JoinHostPort(p.config.Management.Address, fmt.Sprintf("%d", p.config.Management.Port))
 
 	for i := 0; i < 30; i++ {
 		select {

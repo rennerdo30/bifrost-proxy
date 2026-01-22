@@ -193,9 +193,9 @@ func CanTraverse(nat1, nat2 NATType) bool {
 		return true
 	}
 
-	// One symmetric - only works with full cone on the other side
+	// One symmetric - only works with full cone or no NAT on the other side
 	if nat1 == NATTypeSymmetric || nat2 == NATTypeSymmetric {
-		return nat1 == NATTypeFullCone || nat2 == NATTypeFullCone
+		return nat1 == NATTypeFullCone || nat1 == NATTypeNone || nat2 == NATTypeFullCone || nat2 == NATTypeNone
 	}
 
 	// Both restricted but not symmetric - usually works with hole punching
