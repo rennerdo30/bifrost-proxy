@@ -36,7 +36,7 @@ clean:
 	rm -f coverage.out coverage.html
 
 # Testing
-test:
+test: web-sync
 	@echo "Running tests..."
 	go test -race -v ./...
 
