@@ -3,6 +3,7 @@ package tray
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -375,10 +376,10 @@ func TestTray_onReady_SetsUpMenu(t *testing.T) {
 
 func TestTray_onReady_ConnectClick(t *testing.T) {
 	adapter := newMockAdapter()
-	var connectCalled bool
+	var connectCalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnConnect: func() { connectCalled = true },
+		OnConnect: func() { connectCalled.Store(true) },
 	}, adapter)
 
 	tray.Run(context.Background())
@@ -392,7 +393,7 @@ func TestTray_onReady_ConnectClick(t *testing.T) {
 	// Wait for the click to be processed
 	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, connectCalled, "OnConnect should have been called")
+	assert.True(t, connectCalled.Load(), "OnConnect should have been called")
 	assert.False(t, adapter.GetMenuItem(1).IsVisible(), "Connect should be hidden after click")
 	assert.True(t, adapter.GetMenuItem(2).IsVisible(), "Disconnect should be visible after click")
 	assert.Equal(t, "Status: Connected", adapter.GetMenuItem(0).GetTitle())
@@ -401,10 +402,10 @@ func TestTray_onReady_ConnectClick(t *testing.T) {
 
 func TestTray_onReady_DisconnectClick(t *testing.T) {
 	adapter := newMockAdapter()
-	var disconnectCalled bool
+	var disconnectCalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnDisconnect: func() { disconnectCalled = true },
+		OnDisconnect: func() { disconnectCalled.Store(true) },
 	}, adapter)
 
 	tray.Run(context.Background())
@@ -420,7 +421,7 @@ func TestTray_onReady_DisconnectClick(t *testing.T) {
 	adapter.GetMenuItem(2).Click()
 	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, disconnectCalled, "OnDisconnect should have been called")
+	assert.True(t, disconnectCalled.Load(), "OnDisconnect should have been called")
 	assert.True(t, adapter.GetMenuItem(1).IsVisible(), "Connect should be visible after disconnect")
 	assert.False(t, adapter.GetMenuItem(2).IsVisible(), "Disconnect should be hidden after click")
 	assert.Equal(t, "Status: Disconnected", adapter.GetMenuItem(0).GetTitle())
@@ -429,10 +430,10 @@ func TestTray_onReady_DisconnectClick(t *testing.T) {
 
 func TestTray_onReady_OpenQuickClick(t *testing.T) {
 	adapter := newMockAdapter()
-	var openQuickCalled bool
+	var openQuickCalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnOpenQuick: func() { openQuickCalled = true },
+		OnOpenQuick: func() { openQuickCalled.Store(true) },
 	}, adapter)
 
 	tray.Run(context.Background())
@@ -442,15 +443,15 @@ func TestTray_onReady_OpenQuickClick(t *testing.T) {
 	adapter.GetMenuItem(3).Click()
 	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, openQuickCalled, "OnOpenQuick should have been called")
+	assert.True(t, openQuickCalled.Load(), "OnOpenQuick should have been called")
 }
 
 func TestTray_onReady_OpenUIClick(t *testing.T) {
 	adapter := newMockAdapter()
-	var openUICalled bool
+	var openUICalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnOpenUI: func() { openUICalled = true },
+		OnOpenUI: func() { openUICalled.Store(true) },
 	}, adapter)
 
 	tray.Run(context.Background())
@@ -460,15 +461,15 @@ func TestTray_onReady_OpenUIClick(t *testing.T) {
 	adapter.GetMenuItem(4).Click()
 	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, openUICalled, "OnOpenUI should have been called")
+	assert.True(t, openUICalled.Load(), "OnOpenUI should have been called")
 }
 
 func TestTray_onReady_QuitClick(t *testing.T) {
 	adapter := newMockAdapter()
-	var quitCalled bool
+	var quitCalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnQuit: func() { quitCalled = true },
+		OnQuit: func() { quitCalled.Store(true) },
 	}, adapter)
 
 	tray.Run(context.Background())
@@ -478,7 +479,7 @@ func TestTray_onReady_QuitClick(t *testing.T) {
 	adapter.GetMenuItem(5).Click()
 	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, quitCalled, "OnQuit should have been called")
+	assert.True(t, quitCalled.Load(), "OnQuit should have been called")
 	assert.True(t, adapter.IsQuitCalled(), "adapter.Quit should have been called")
 }
 
