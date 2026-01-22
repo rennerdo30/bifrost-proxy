@@ -741,9 +741,9 @@ services:
       - "7180:7180"   # SOCKS5 proxy
       - "7081:7081"   # Web UI
     volumes:
-      - ./config:/etc/simple-proxy
-      - ./wireguard:/etc/wireguard:ro  # WireGuard configs
-      - ./openvpn:/etc/openvpn:ro      # OpenVPN configs
+      - ./server-config.yaml:/app/data/config.yaml:ro
+      - bifrost-data:/app/data
+      - bifrost-logs:/var/log/bifrost
     devices:
       - /dev/net/tun:/dev/net/tun      # TUN device for VPN
     environment:

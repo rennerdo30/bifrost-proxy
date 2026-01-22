@@ -6,12 +6,13 @@ services:
     container_name: bifrost-server
     restart: unless-stopped
     ports:
-      - "7080:7080"   # HTTP proxy
-      - "7180:7180"   # SOCKS5 proxy
-      - "7090:7090"   # Metrics
-      - "7081:7081"   # Web UI
-      - "7082:7082"   # API
+      - "7080:7080" # HTTP proxy
+      - "7180:7180" # SOCKS5 proxy
+      - "7090:7090" # Metrics
+      - "7081:7081" # Web UI
+      - "7082:7082" # API
     volumes:
+      - ./server-config.yaml:/app/data/config.yaml:ro
       - bifrost-data:/app/data
       - bifrost-logs:/var/log/bifrost
     environment:
@@ -20,7 +21,7 @@ services:
       - bifrost-network
     healthcheck:
       # Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:7090/metrics"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:7090/metrics" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -33,11 +34,12 @@ services:
     container_name: bifrost-client
     restart: unless-stopped
     ports:
-      - "7380:7380"   # HTTP proxy
-      - "7381:7381"   # SOCKS5 proxy
-      - "7382:7382"   # Web UI
-      - "7383:7383"   # API
+      - "7380:7380" # HTTP proxy
+      - "7381:7381" # SOCKS5 proxy
+      - "7382:7382" # Web UI
+      - "7383:7383" # API
     volumes:
+      - ./client-config.yaml:/app/data/config.yaml:ro
       - bifrost-client-data:/app/data
     environment:
       - TZ=UTC
@@ -47,7 +49,7 @@ services:
       - bifrost-network
     healthcheck:
       # Use 127.0.0.1 instead of localhost to avoid IPv6 resolution issues
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:7383/api/v1/health"]
+      test: [ "CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:7383/api/v1/health" ]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -93,6 +95,7 @@ volumes:
   bifrost-logs:
   prometheus-data:
   grafana-data:
+
 
 networks:
   bifrost-network:
