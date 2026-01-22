@@ -287,11 +287,12 @@ func (a *API) securityHeadersMiddleware(next http.Handler) http.Handler {
 		// Referrer policy
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		// Content Security Policy
-		// Allow self, inline styles/scripts for React/Vite, Google Fonts, and WebSockets
+		// Allow self, inline styles/scripts for React/Vite, and WebSockets
+		// All assets (including fonts) are now served from 'self'
 		csp := "default-src 'self'; " +
 			"script-src 'self' 'unsafe-inline'; " +
-			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-			"font-src 'self' https://fonts.gstatic.com; " +
+			"style-src 'self' 'unsafe-inline'; " +
+			"font-src 'self'; " +
 			"img-src 'self' data: https:; " +
 			"connect-src 'self' ws: wss:; " +
 			"frame-ancestors 'none'"
