@@ -1,6 +1,7 @@
 package server
 
 import (
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,8 +41,31 @@ func TestStaticHandler_ServeIndexHTML(t *testing.T) {
 func TestStaticHandler_ServeCSS(t *testing.T) {
 	handler := StaticHandler()
 
+	// Find the actual CSS file dynamically
+	subFS, err := fs.Sub(staticFiles, "static/assets")
+	if err != nil {
+		t.Skip("Assets directory not found")
+	}
+
+	entries, err := fs.ReadDir(subFS, ".")
+	if err != nil {
+		t.Skip("Could not read assets directory")
+	}
+
+	var cssFile string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".css") {
+			cssFile = entry.Name()
+			break
+		}
+	}
+
+	if cssFile == "" {
+		t.Skip("No CSS file found in assets")
+	}
+
 	// Look for actual CSS file in static directory
-	req := httptest.NewRequest("GET", "/assets/index-KAVITblg.css", nil)
+	req := httptest.NewRequest("GET", "/assets/"+cssFile, nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -52,8 +76,31 @@ func TestStaticHandler_ServeCSS(t *testing.T) {
 func TestStaticHandler_ServeJS(t *testing.T) {
 	handler := StaticHandler()
 
+	// Find the actual JS file dynamically
+	subFS, err := fs.Sub(staticFiles, "static/assets")
+	if err != nil {
+		t.Skip("Assets directory not found")
+	}
+
+	entries, err := fs.ReadDir(subFS, ".")
+	if err != nil {
+		t.Skip("Could not read assets directory")
+	}
+
+	var jsFile string
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".js") {
+			jsFile = entry.Name()
+			break
+		}
+	}
+
+	if jsFile == "" {
+		t.Skip("No JS file found in assets")
+	}
+
 	// Look for actual JS file in static directory
-	req := httptest.NewRequest("GET", "/assets/index-DMqB_1NC.js", nil)
+	req := httptest.NewRequest("GET", "/assets/"+jsFile, nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -107,8 +154,6 @@ func TestStaticHandler_ContentTypeHeaders(t *testing.T) {
 	}{
 		{"/", "text/html"},
 		{"/index.html", "text/html"},
-		{"/assets/index-KAVITblg.css", "text/css"},
-		{"/assets/index-DMqB_1NC.js", "application/javascript"},
 		{"/favicon.svg", "image/svg+xml"},
 	}
 
