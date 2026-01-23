@@ -4,7 +4,7 @@ go 1.24.0
 
 require (
 	fyne.io/systray v1.12.0
-	github.com/go-chi/chi/v5 v5.0.12
+	github.com/go-chi/chi/v5 v5.2.4
 	github.com/go-ldap/ldap/v3 v3.4.6
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/miekg/dns v1.1.70
