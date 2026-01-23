@@ -16,7 +16,7 @@ import (
 func run(name string, runner Runner) error {
 	isService, err := svc.IsWindowsService()
 	if err != nil {
-		logging.Warn("Failed to detect if running as Windows Service, assuming interactive: %v", err)
+		logging.Warn("Failed to detect if running as Windows Service, assuming interactive", "error", err)
 		return runInteractive(name, runner)
 	}
 
@@ -39,7 +39,7 @@ func runInteractive(name string, runner Runner) error {
 	}
 
 	sig := <-sigChan
-	logging.Info("Received shutdown signal: %v", sig)
+	logging.Info("Received shutdown signal", "signal", sig)
 	cancel()
 	return runner.Stop(context.Background())
 }
@@ -57,7 +57,7 @@ func (h *serviceHandler) Execute(args []string, r <-chan svc.ChangeRequest, s ch
 	defer cancel()
 
 	if err := h.runner.Start(ctx); err != nil {
-		logging.Error("Failed to start service: %v", err)
+		logging.Error("Failed to start service", "error", err)
 		return true, 1 // specificExitCode
 	}
 
@@ -73,11 +73,11 @@ loop:
 			s <- svc.Status{State: svc.StopPending}
 			cancel()
 			if err := h.runner.Stop(context.Background()); err != nil {
-				logging.Error("Error stopping service: %v", err)
+				logging.Error("Error stopping service", "error", err)
 			}
 			break loop
 		default:
-			logging.Warn("Unexpected service control request #%d", c)
+			logging.Warn("Unexpected service control request", "cmd", c)
 		}
 	}
 

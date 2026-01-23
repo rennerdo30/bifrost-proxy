@@ -69,6 +69,7 @@ func Setup(cfg Config) error {
 
 	loggerMu.Lock()
 	defaultLogger = slog.New(handler)
+	slog.SetDefault(defaultLogger)
 	loggerMu.Unlock()
 
 	return nil

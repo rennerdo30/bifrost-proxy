@@ -46,6 +46,16 @@ export function MetricsSection({ config, onChange }: MetricsSectionProps) {
                 className="input"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Collection Interval</label>
+              <input
+                type="text"
+                value={config.collection_interval || ''}
+                onChange={(e) => update('collection_interval', e.target.value)}
+                placeholder="15s"
+                className="input"
+              />
+            </div>
           </div>
         )}
       </div>

@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bytes"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -326,5 +327,48 @@ func TestGetOutput_OpenFileError(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "failed to open log file") {
 		t.Errorf("Error should mention failed to open log file, got: %v", err)
+	}
+}
+
+func TestSlogDefaultUpdated(t *testing.T) {
+	// Original default logger
+	oldDefault := slog.Default()
+	defer slog.SetDefault(oldDefault)
+
+	// Create a pipe to capture stdout
+	r, w, _ := os.Pipe()
+	oldStdout := os.Stdout
+	os.Stdout = w
+
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	err := Setup(Config{
+		Level:  "info",
+		Format: "json",
+		Output: "stdout",
+	})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+
+	// Use slog.Info, which should now use the JSON handler
+	slog.Info("test message", "key", "value")
+
+	// Close write end of pipe and restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Read from pipe
+	var out bytes.Buffer
+	io.Copy(&out, r)
+	output := out.String()
+
+	if !strings.Contains(output, `"level":"INFO"`) {
+		t.Errorf("Output should contain JSON level field, got: %s", output)
+	}
+	if !strings.Contains(output, `"msg":"test message"`) {
+		t.Errorf("Output should contain JSON msg field, got: %s", output)
 	}
 }

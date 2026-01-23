@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, ClientConfig, ConfigUpdateResponse } from '../api/client'
+import { api, ClientConfig, ConfigUpdateResponse, ListenerConfig, TunConfig, DNSSettings, MeshDeviceConfig, MeshDiscoveryConfig, STUNConfig, MeshConnectionConfig, MeshSecurityConfig } from '../api/client'
 import {
   FormInput,
   FormNumber,
@@ -165,6 +165,17 @@ export function Settings() {
     const configSection = config?.[section] as Record<string, unknown> | undefined
     return configSection?.[field] ?? defaultValue
   }, [config, pendingChanges])
+
+  // Nested config helpers
+  const httpProxy = getValue('proxy', 'http', {}) as ListenerConfig
+  const socks5Proxy = getValue('proxy', 'socks5', {}) as ListenerConfig
+  const tunConfig = getValue('vpn', 'tun', {}) as TunConfig
+  const vpnDns = getValue('vpn', 'dns', {}) as DNSSettings
+  const meshDevice = getValue('mesh', 'device', {}) as MeshDeviceConfig
+  const meshDiscovery = getValue('mesh', 'discovery', {}) as MeshDiscoveryConfig
+  const meshStun = getValue('mesh', 'stun', {}) as STUNConfig
+  const meshConnection = getValue('mesh', 'connection', {}) as MeshConnectionConfig
+  const meshSecurity = getValue('mesh', 'security', {}) as MeshSecurityConfig
 
   // Save changes
   const saveChanges = () => {
@@ -399,6 +410,79 @@ export function Settings() {
             min={0}
             max={10}
           />
+          <FormDuration
+            label="Retry Delay"
+            value={getValue('server', 'retry_delay', '1s') as string}
+            onChange={(v) => updateField('server', 'retry_delay', v)}
+          />
+        </div>
+
+        <div className="mt-4 border-t border-bifrost-border pt-4">
+          <h4 className="text-sm font-medium text-bifrost-text mb-3">Health Check</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormSelect
+              label="Type"
+              value={(config?.server?.health_check?.type || 'tcp') as string}
+              onChange={(v) => {
+                setPendingChanges(prev => ({
+                  ...prev,
+                  server: {
+                    ...prev.server,
+                    health_check: { ...(prev.server?.health_check || config?.server?.health_check || {}), type: v }
+                  } as ClientConfig['server']
+                }))
+                setHasChanges(true)
+              }}
+              options={[
+                { value: 'tcp', label: 'TCP' },
+                { value: 'http', label: 'HTTP' },
+                { value: 'ping', label: 'Ping' },
+              ]}
+            />
+            <FormDuration
+              label="Interval"
+              value={(config?.server?.health_check?.interval || '30s') as string}
+              onChange={(v) => {
+                setPendingChanges(prev => ({
+                  ...prev,
+                  server: {
+                    ...prev.server,
+                    health_check: { ...(prev.server?.health_check || config?.server?.health_check || {}), interval: v }
+                  } as ClientConfig['server']
+                }))
+                setHasChanges(true)
+              }}
+            />
+            <FormDuration
+              label="Timeout"
+              value={(config?.server?.health_check?.timeout || '5s') as string}
+              onChange={(v) => {
+                setPendingChanges(prev => ({
+                  ...prev,
+                  server: {
+                    ...prev.server,
+                    health_check: { ...(prev.server?.health_check || config?.server?.health_check || {}), timeout: v }
+                  } as ClientConfig['server']
+                }))
+                setHasChanges(true)
+              }}
+            />
+            <FormInput
+              label="Target"
+              placeholder="e.g., google.com:80"
+              value={(config?.server?.health_check?.target || '') as string}
+              onChange={(v) => {
+                setPendingChanges(prev => ({
+                  ...prev,
+                  server: {
+                    ...prev.server,
+                    health_check: { ...(prev.server?.health_check || config?.server?.health_check || {}), target: v }
+                  } as ClientConfig['server']
+                }))
+                setHasChanges(true)
+              }}
+            />
+          </div>
         </div>
       </ConfigSection>
 
@@ -416,31 +500,23 @@ export function Settings() {
               <FormInput
                 label="Listen Address"
                 placeholder="127.0.0.1:3128"
-                value={(config?.proxy?.http?.listen || '') as string}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    proxy: {
-                      ...prev.proxy,
-                      http: { ...(prev.proxy?.http || config?.proxy?.http || {}), listen: v }
-                    } as ClientConfig['proxy']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={httpProxy.listen || ''}
+                onChange={(v) => updateField('proxy', 'http', { ...httpProxy, listen: v })}
               />
               <FormDuration
                 label="Read Timeout"
-                value={(config?.proxy?.http?.read_timeout || '30s') as string}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    proxy: {
-                      ...prev.proxy,
-                      http: { ...(prev.proxy?.http || config?.proxy?.http || {}), read_timeout: v }
-                    } as ClientConfig['proxy']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={httpProxy.read_timeout || '30s'}
+                onChange={(v) => updateField('proxy', 'http', { ...httpProxy, read_timeout: v })}
+              />
+              <FormDuration
+                label="Write Timeout"
+                value={httpProxy.write_timeout || '30s'}
+                onChange={(v) => updateField('proxy', 'http', { ...httpProxy, write_timeout: v })}
+              />
+              <FormDuration
+                label="Idle Timeout"
+                value={httpProxy.idle_timeout || '60s'}
+                onChange={(v) => updateField('proxy', 'http', { ...httpProxy, idle_timeout: v })}
               />
             </div>
           </div>
@@ -450,31 +526,19 @@ export function Settings() {
               <FormInput
                 label="Listen Address"
                 placeholder="127.0.0.1:1081"
-                value={(config?.proxy?.socks5?.listen || '') as string}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    proxy: {
-                      ...prev.proxy,
-                      socks5: { ...(prev.proxy?.socks5 || config?.proxy?.socks5 || {}), listen: v }
-                    } as ClientConfig['proxy']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={socks5Proxy.listen || ''}
+                onChange={(v) => updateField('proxy', 'socks5', { ...socks5Proxy, listen: v })}
               />
               <FormDuration
                 label="Read Timeout"
-                value={(config?.proxy?.socks5?.read_timeout || '30s') as string}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    proxy: {
-                      ...prev.proxy,
-                      socks5: { ...(prev.proxy?.socks5 || config?.proxy?.socks5 || {}), read_timeout: v }
-                    } as ClientConfig['proxy']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={socks5Proxy.read_timeout || '30s'}
+                onChange={(v) => updateField('proxy', 'socks5', { ...socks5Proxy, read_timeout: v })}
+              />
+              <FormNumber
+                label="Max Connections"
+                value={socks5Proxy.max_connections || 0}
+                onChange={(v) => updateField('proxy', 'socks5', { ...socks5Proxy, max_connections: v })}
+                min={0}
               />
             </div>
           </div>
@@ -515,19 +579,18 @@ export function Settings() {
                       </div>
                     </td>
                     <td className="py-2">
-                      <span className={`px-2 py-0.5 text-xs rounded ${
-                        route.action === 'direct' ? 'bg-bifrost-success/20 text-bifrost-success' : 'bg-bifrost-accent/20 text-bifrost-accent'
-                      }`}>
+                      <span className={`px-2 py-0.5 text-xs rounded ${route.action === 'direct' ? 'bg-bifrost-success/20 text-bifrost-success' : 'bg-bifrost-accent/20 text-bifrost-accent'
+                        }`}>
                         {route.action}
                       </span>
                     </td>
                     <td className="py-2 text-bifrost-muted">{route.priority}</td>
                   </tr>
                 )) || (
-                  <tr>
-                    <td colSpan={4} className="py-4 text-center text-bifrost-muted">No routes configured</td>
-                  </tr>
-                )}
+                    <tr>
+                      <td colSpan={4} className="py-4 text-center text-bifrost-muted">No routes configured</td>
+                    </tr>
+                  )}
               </tbody>
             </table>
           </div>
@@ -622,6 +685,12 @@ export function Settings() {
               { value: 'file', label: 'File' },
             ]}
           />
+          <FormInput
+            label="Time Format"
+            placeholder="2006-01-02T15:04:05.000Z07:00"
+            value={getValue('logging', 'time_format', '') as string}
+            onChange={(v) => updateField('logging', 'time_format', v)}
+          />
         </div>
       </ConfigSection>
 
@@ -714,6 +783,25 @@ export function Settings() {
                   onChange={(v) => updateField('api', 'token', v)}
                 />
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormToggle
+                  label="Enable Request Logging"
+                  checked={getValue('api', 'enable_request_log', false) as boolean}
+                  onChange={(v) => updateField('api', 'enable_request_log', v)}
+                />
+                <FormNumber
+                  label="Request Log Size"
+                  value={getValue('api', 'request_log_size', 1000) as number}
+                  onChange={(v) => updateField('api', 'request_log_size', v)}
+                  min={0}
+                />
+                <FormNumber
+                  label="Max WebSocket Clients"
+                  value={getValue('api', 'websocket_max_clients', 100) as number}
+                  onChange={(v) => updateField('api', 'websocket_max_clients', v)}
+                  min={1}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -775,46 +863,19 @@ export function Settings() {
               <FormInput
                 label="Device Name"
                 placeholder="bifrost0"
-                value={(config?.vpn?.tun?.name || '') as string}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    vpn: {
-                      ...prev.vpn,
-                      tun: { ...(prev.vpn?.tun || config?.vpn?.tun || {}), name: v }
-                    } as ClientConfig['vpn']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={tunConfig.name || ''}
+                onChange={(v) => updateField('vpn', 'tun', { ...tunConfig, name: v })}
               />
               <FormInput
                 label="Address"
                 placeholder="10.255.0.2/24"
-                value={(config?.vpn?.tun?.address || '') as string}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    vpn: {
-                      ...prev.vpn,
-                      tun: { ...(prev.vpn?.tun || config?.vpn?.tun || {}), address: v }
-                    } as ClientConfig['vpn']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={tunConfig.address || ''}
+                onChange={(v) => updateField('vpn', 'tun', { ...tunConfig, address: v })}
               />
               <FormNumber
                 label="MTU"
-                value={(config?.vpn?.tun?.mtu || 1500) as number}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    vpn: {
-                      ...prev.vpn,
-                      tun: { ...(prev.vpn?.tun || config?.vpn?.tun || {}), mtu: v }
-                    } as ClientConfig['vpn']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={tunConfig.mtu || 1500}
+                onChange={(v) => updateField('vpn', 'tun', { ...tunConfig, mtu: v })}
                 min={576}
                 max={9000}
               />
@@ -837,14 +898,46 @@ export function Settings() {
                   }))
                   setHasChanges(true)
                 }}
-                options={[
-                  { value: 'exclude', label: 'Exclude (bypass specified)' },
-                  { value: 'include', label: 'Include (only specified)' },
-                ]}
+              options={[
+                { value: 'exclude', label: 'Exclude (bypass specified)' },
+                { value: 'include', label: 'Include (only specified)' },
+              ]}
               />
               <FormTagInput
-                label="Bypass Domains"
-                description="Domains to always bypass the VPN"
+                label="Split Tunnel Domains"
+                description="Domains to include/exclude based on mode"
+                value={(config?.vpn?.split_tunnel?.domains || []) as string[]}
+                onChange={(v) => {
+                  setPendingChanges(prev => ({
+                    ...prev,
+                    vpn: {
+                      ...prev.vpn,
+                      split_tunnel: { ...(prev.vpn?.split_tunnel || config?.vpn?.split_tunnel || {}), domains: v }
+                    } as ClientConfig['vpn']
+                  }))
+                  setHasChanges(true)
+                }}
+                placeholder="e.g., internal.example.com"
+              />
+              <FormTagInput
+                label="Split Tunnel IPs"
+                description="IPs/CIDRs to include/exclude based on mode"
+                value={(config?.vpn?.split_tunnel?.ips || []) as string[]}
+                onChange={(v) => {
+                  setPendingChanges(prev => ({
+                    ...prev,
+                    vpn: {
+                      ...prev.vpn,
+                      split_tunnel: { ...(prev.vpn?.split_tunnel || config?.vpn?.split_tunnel || {}), ips: v }
+                    } as ClientConfig['vpn']
+                  }))
+                  setHasChanges(true)
+                }}
+                placeholder="e.g., 10.0.0.0/8"
+              />
+              <FormTagInput
+                label="Always Bypass"
+                description="Destinations that ALWAYS bypass VPN (regardless of mode)"
                 value={(config?.vpn?.split_tunnel?.always_bypass || []) as string[]}
                 onChange={(v) => {
                   setPendingChanges(prev => ({
@@ -856,6 +949,7 @@ export function Settings() {
                   }))
                   setHasChanges(true)
                 }}
+                placeholder="e.g., 8.8.8.8"
               />
             </div>
           </div>
@@ -865,33 +959,37 @@ export function Settings() {
             <div className="space-y-4">
               <FormToggle
                 label="Enable DNS Interception"
-                checked={(config?.vpn?.dns?.enabled || false) as boolean}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    vpn: {
-                      ...prev.vpn,
-                      dns: { ...(prev.vpn?.dns || config?.vpn?.dns || {}), enabled: v }
-                    } as ClientConfig['vpn']
-                  }))
-                  setHasChanges(true)
-                }}
+                checked={vpnDns.enabled !== false}
+                onChange={(v) => updateField('vpn', 'dns', { ...vpnDns, enabled: v })}
               />
               <FormTagInput
                 label="Upstream DNS Servers"
-                value={(config?.vpn?.dns?.upstream || []) as string[]}
-                onChange={(v) => {
-                  setPendingChanges(prev => ({
-                    ...prev,
-                    vpn: {
-                      ...prev.vpn,
-                      dns: { ...(prev.vpn?.dns || config?.vpn?.dns || {}), upstream: v }
-                    } as ClientConfig['vpn']
-                  }))
-                  setHasChanges(true)
-                }}
+                value={vpnDns.upstream || []}
+                onChange={(v) => updateField('vpn', 'dns', { ...vpnDns, upstream: v })}
                 placeholder="e.g., 8.8.8.8"
               />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <FormInput
+                  label="Listen Address"
+                  placeholder="10.255.0.1:53"
+                  value={vpnDns.listen || ''}
+                  onChange={(v) => updateField('vpn', 'dns', { ...vpnDns, listen: v })}
+                />
+                <FormDuration
+                  label="Cache TTL"
+                  value={vpnDns.cache_ttl || '5m'}
+                  onChange={(v) => updateField('vpn', 'dns', { ...vpnDns, cache_ttl: v })}
+                />
+                <FormSelect
+                  label="Intercept Mode"
+                  value={vpnDns.intercept_mode || 'all'}
+                  onChange={(v) => updateField('vpn', 'dns', { ...vpnDns, intercept_mode: v })}
+                  options={[
+                    { value: 'all', label: 'All Queries' },
+                    { value: 'tunnel_only', label: 'Tunnel Only' },
+                  ]}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -938,22 +1036,98 @@ export function Settings() {
           </div>
 
           <div>
-            <h4 className="text-sm font-medium text-bifrost-text mb-3">STUN Servers</h4>
-            <FormTagInput
-              label="STUN Server URLs"
-              description="STUN servers for NAT traversal"
-              value={(config?.mesh?.stun_servers || []) as string[]}
-              onChange={(v) => {
-                setPendingChanges(prev => ({
-                  ...prev,
-                  mesh: { ...prev.mesh, stun_servers: v } as ClientConfig['mesh']
-                }))
-                setHasChanges(true)
-              }}
-              placeholder="e.g., stun:stun.l.google.com:19302"
+            <h4 className="text-sm font-medium text-bifrost-text mb-3">Discovery</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormInput
+              label="Discovery Server"
+              placeholder="https://discovery.bifrost.com"
+              value={meshDiscovery.server || ''}
+              onChange={(v) => updateField('mesh', 'discovery', { ...meshDiscovery, server: v })}
+            />
+            <FormInput
+              label="Discovery Token"
+              placeholder="Optional"
+              type="password"
+              value={meshDiscovery.token || ''}
+              onChange={(v) => updateField('mesh', 'discovery', { ...meshDiscovery, token: v })}
+            />
+            <FormDuration
+              label="Heartbeat Interval"
+              value={meshDiscovery.heartbeat_interval || '30s'}
+              onChange={(v) => updateField('mesh', 'discovery', { ...meshDiscovery, heartbeat_interval: v })}
+            />
+            <FormDuration
+              label="Peer Timeout"
+              value={meshDiscovery.peer_timeout || '120s'}
+              onChange={(v) => updateField('mesh', 'discovery', { ...meshDiscovery, peer_timeout: v })}
             />
           </div>
         </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-bifrost-text mb-3">Common Settings</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormToggle
+              label="Require Encryption"
+              checked={meshSecurity.require_encryption !== false}
+              onChange={(v) => updateField('mesh', 'security', { ...meshSecurity, require_encryption: v })}
+            />
+            <FormSelect
+              label="Device Type"
+              value={meshDevice.type || 'tun'}
+              onChange={(v) => updateField('mesh', 'device', { ...meshDevice, type: v })}
+              options={[
+                { value: 'tun', label: 'TUN' },
+                { value: 'tap', label: 'TAP' },
+              ]}
+            />
+            <FormNumber
+              label="Device MTU"
+              value={meshDevice.mtu || 1350}
+              onChange={(v) => updateField('mesh', 'device', { ...meshDevice, mtu: v })}
+              min={576}
+              max={9000}
+            />
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-bifrost-text mb-3">Connection</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <FormToggle
+              label="Allow Relay"
+              checked={meshConnection.relay_enabled !== false}
+              onChange={(v) => updateField('mesh', 'connection', { ...meshConnection, relay_enabled: v })}
+            />
+            <FormToggle
+              label="Direct Connect"
+              checked={meshConnection.direct_connect !== false}
+              onChange={(v) => updateField('mesh', 'connection', { ...meshConnection, direct_connect: v })}
+            />
+            <FormDuration
+              label="Keepalive"
+              value={meshConnection.keepalive_interval || '15s'}
+              onChange={(v) => updateField('mesh', 'connection', { ...meshConnection, keepalive_interval: v })}
+            />
+            <FormDuration
+              label="Connect Timeout"
+              value={meshConnection.connect_timeout || '10s'}
+              onChange={(v) => updateField('mesh', 'connection', { ...meshConnection, connect_timeout: v })}
+            />
+          </div>
+        </div>
+
+        <div>
+          <h4 className="text-sm font-medium text-bifrost-text mb-3">STUN Servers</h4>
+          <FormTagInput
+            label="STUN Server URLs"
+            description="STUN servers for NAT traversal"
+            value={meshStun.servers || []}
+            onChange={(v) => updateField('mesh', 'stun', { ...meshStun, servers: v })}
+            placeholder="e.g., stun:stun.l.google.com:19302"
+          />
+        </div>
+      </div>
       </ConfigSection>
     </div>
   )

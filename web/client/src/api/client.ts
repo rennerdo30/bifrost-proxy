@@ -164,7 +164,9 @@ export interface APISettings {
   enabled: boolean
   listen: string
   token?: string
+  enable_request_log?: boolean
   request_log_size?: number
+  websocket_max_clients?: number
 }
 
 export interface TraySettings {
@@ -219,8 +221,8 @@ export interface MeshSettings {
   peer_name?: string
   device?: MeshDeviceConfig
   discovery?: MeshDiscoveryConfig
-  stun_servers?: string[]
-  turn_servers?: TurnServerConfig[]
+  stun?: STUNConfig
+  turn?: TURNConfig
   connection?: MeshConnectionConfig
   security?: MeshSecurityConfig
 }
@@ -229,30 +231,44 @@ export interface MeshDeviceConfig {
   type: string
   name?: string
   mtu?: number
+  mac_address?: string
 }
 
 export interface MeshDiscoveryConfig {
   server?: string
-  heartbeat?: string
-  timeout?: string
+  heartbeat_interval?: string
+  peer_timeout?: string
   token?: string
 }
 
-export interface TurnServerConfig {
+export interface STUNConfig {
+  servers?: string[]
+  timeout?: string
+}
+
+export interface TURNConfig {
+  enabled: boolean
+  servers?: TURNServerConfig[]
+}
+
+export interface TURNServerConfig {
   url: string
   username?: string
   password?: string
 }
 
 export interface MeshConnectionConfig {
-  dial_timeout?: string
-  keepalive?: string
-  max_retries?: number
+  direct_connect?: boolean
+  relay_enabled?: boolean
+  relay_via_peers?: boolean
+  connect_timeout?: string
+  keepalive_interval?: string
 }
 
 export interface MeshSecurityConfig {
-  encryption?: string
+  private_key?: string
   allowed_peers?: string[]
+  require_encryption?: boolean
 }
 
 // Config update response

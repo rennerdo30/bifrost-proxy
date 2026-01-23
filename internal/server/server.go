@@ -600,7 +600,7 @@ func (s *Server) ReloadConfig() error {
 	// Parse new config
 	newCfg := config.DefaultServerConfig()
 	if err := config.LoadAndValidate(s.configPath, &newCfg); err != nil {
-		logging.Error("Failed to reload config: %v", err)
+		logging.Error("Failed to reload config", "error", err)
 		return fmt.Errorf("parse config: %w", err)
 	}
 
@@ -612,11 +612,11 @@ func (s *Server) ReloadConfig() error {
 
 	// Reload routes (safe to do)
 	if err := s.router.LoadRoutes(newCfg.Routes); err != nil {
-		logging.Error("Failed to reload routes: %v", err)
+		logging.Error("Failed to reload routes", "error", err)
 		return fmt.Errorf("reload routes: %w", err)
 	}
 	reloaded = append(reloaded, "routes")
-	logging.Info("Reloaded %d routes", len(newCfg.Routes))
+	logging.Info("Reloaded routes", "count", len(newCfg.Routes))
 
 	// Update rate limiter settings if changed
 	if newCfg.RateLimit.Enabled && s.rateLimiter != nil {
@@ -625,8 +625,9 @@ func (s *Server) ReloadConfig() error {
 			BurstSize:         newCfg.RateLimit.BurstSize,
 		})
 		reloaded = append(reloaded, "rate_limits")
-		logging.Info("Reloaded rate limits: %.2f req/s, burst %d",
-			newCfg.RateLimit.RequestsPerSecond, newCfg.RateLimit.BurstSize)
+		logging.Info("Reloaded rate limits",
+			"requests_per_second", newCfg.RateLimit.RequestsPerSecond,
+			"burst_size", newCfg.RateLimit.BurstSize)
 	}
 
 	// Update config reference (for sanitized config endpoint)
@@ -641,7 +642,7 @@ func (s *Server) ReloadConfig() error {
 		})
 	}
 
-	logging.Info("Configuration reloaded successfully: %v", reloaded)
+	logging.Info("Configuration reloaded successfully", "reloaded", reloaded)
 	return nil
 }
 

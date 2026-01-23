@@ -103,6 +103,7 @@ export interface ListenerConfig {
   read_timeout?: string
   write_timeout?: string
   idle_timeout?: string
+  max_connections?: number
 }
 
 // Server Settings
@@ -264,6 +265,61 @@ export interface RateLimitConfig {
   bandwidth?: BandwidthConfig
 }
 
+// Auto Update Configuration
+export interface AutoUpdateConfig {
+  enabled: boolean
+  check_interval: string
+  channel: 'stable' | 'prerelease'
+}
+
+// Cache Configuration
+export interface MemoryStorageConfig {
+  max_size: string
+  max_entries: number
+  evict_policy: 'lru' | 'lfu' | 'fifo'
+}
+
+export interface DiskStorageConfig {
+  path: string
+  max_size: string
+  cleanup_interval: string
+  shard_count?: number
+}
+
+export interface TieredStorageConfig {
+  memory_threshold: string
+}
+
+export interface CacheStorageConfig {
+  type: 'memory' | 'disk' | 'tiered'
+  tiered?: TieredStorageConfig
+  memory?: MemoryStorageConfig
+  disk?: DiskStorageConfig
+}
+
+export interface CacheRuleConfig {
+  name: string
+  domains: string[]
+  enabled: boolean
+  ttl: string
+  max_size?: string
+  priority: number
+  methods?: string[]
+  content_types?: string[]
+  ignore_query?: boolean
+  respect_cache_control?: boolean
+  strip_headers?: string[]
+}
+
+export interface CacheConfig {
+  enabled: boolean
+  default_ttl: string
+  max_file_size: string
+  storage: CacheStorageConfig
+  presets?: string[]
+  rules?: CacheRuleConfig[]
+}
+
 // Access Log Configuration
 export interface AccessLogConfig {
   enabled: boolean
@@ -276,6 +332,7 @@ export interface MetricsConfig {
   enabled: boolean
   listen: string
   path: string
+  collection_interval?: string
 }
 
 // Logging Configuration
@@ -300,6 +357,7 @@ export interface APIConfig {
   token?: string
   enable_request_log?: boolean
   request_log_size?: number
+  websocket_max_clients?: number
 }
 
 // Full Server Configuration
@@ -315,6 +373,8 @@ export interface ServerConfig {
   web_ui: WebUIConfig
   api: APIConfig
   health_check?: HealthCheckConfig
+  auto_update: AutoUpdateConfig
+  cache: CacheConfig
 }
 
 // Config metadata

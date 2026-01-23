@@ -7,14 +7,14 @@ interface ServerSectionProps {
 }
 
 export function ServerSection({ config, onChange }: ServerSectionProps) {
-  const updateHTTP = (field: string, value: string) => {
+  const updateHTTP = (field: string, value: unknown) => {
     onChange({
       ...config,
       http: { ...(config.http || {}), [field]: value },
     })
   }
 
-  const updateSOCKS5 = (field: string, value: string) => {
+  const updateSOCKS5 = (field: string, value: unknown) => {
     onChange({
       ...config,
       socks5: { ...(config.socks5 || {}), [field]: value },
@@ -80,6 +80,16 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
                 value={config.http?.idle_timeout || ''}
                 onChange={(e) => updateHTTP('idle_timeout', e.target.value)}
                 placeholder="60s"
+                className="input"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Max Connections</label>
+              <input
+                type="number"
+                value={config.http?.max_connections || 0}
+                onChange={(e) => updateHTTP('max_connections', parseInt(e.target.value))}
+                placeholder="0 (unlimited)"
                 className="input"
               />
             </div>
@@ -167,6 +177,77 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
                 className="input"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-1">Max Connections</label>
+              <input
+                type="number"
+                value={config.socks5?.max_connections || 0}
+                onChange={(e) => updateSOCKS5('max_connections', parseInt(e.target.value))}
+                placeholder="0 (unlimited)"
+                className="input"
+              />
+            </div>
+          </div>
+
+          {/* SOCKS5 TLS */}
+          <div className="mt-4 p-4 bg-bifrost-bg rounded-lg">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={config.socks5?.tls?.enabled || false}
+                onChange={(e) => {
+                  const tls = e.target.checked
+                    ? { enabled: true, cert_file: '', key_file: '' }
+                    : undefined
+                  onChange({
+                    ...config,
+                    socks5: { ...(config.socks5 || {}), tls },
+                  })
+                }}
+                className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
+              />
+              <span className="text-sm font-medium text-gray-300">Enable TLS for SOCKS5</span>
+            </label>
+            {config.socks5?.tls?.enabled && (
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Certificate File</label>
+                  <input
+                    type="text"
+                    value={config.socks5.tls.cert_file || ''}
+                    onChange={(e) =>
+                      onChange({
+                        ...config,
+                        socks5: {
+                          ...(config.socks5 || {}),
+                          tls: { ...config.socks5.tls!, cert_file: e.target.value },
+                        },
+                      })
+                    }
+                    placeholder="/path/to/cert.pem"
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Key File</label>
+                  <input
+                    type="text"
+                    value={config.socks5.tls.key_file || ''}
+                    onChange={(e) =>
+                      onChange({
+                        ...config,
+                        socks5: {
+                          ...(config.socks5 || {}),
+                          tls: { ...config.socks5.tls!, key_file: e.target.value },
+                        },
+                      })
+                    }
+                    placeholder="/path/to/key.pem"
+                    className="input"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

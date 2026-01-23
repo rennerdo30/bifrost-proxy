@@ -30,7 +30,7 @@ func run(name string, runner Runner) error {
 			logging.Info("Received SIGHUP, reloading configuration...")
 			if reloader, ok := runner.(Reloader); ok {
 				if err := reloader.ReloadConfig(); err != nil {
-					logging.Error("Config reload failed: %v", err)
+					logging.Error("Config reload failed", "error", err)
 				}
 			} else {
 				logging.Info("SIGHUP received but service does not support reload")

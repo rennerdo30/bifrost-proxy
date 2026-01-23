@@ -11,6 +11,8 @@ import { LoggingSection } from './sections/LoggingSection'
 import { WebUISection } from './sections/WebUISection'
 import { APISection } from './sections/APISection'
 import { HealthCheckSection } from './sections/HealthCheckSection'
+import { AutoUpdateSection } from './sections/AutoUpdateSection'
+import { CacheSection } from './sections/CacheSection'
 
 interface ConfigEditorProps {
   config: ServerConfig | undefined
@@ -62,6 +64,35 @@ const defaultAPI = {
   listen: ':8082',
 }
 
+const defaultAutoUpdate = {
+  enabled: false,
+  check_interval: '24h',
+  channel: 'stable' as const,
+}
+
+const defaultCache = {
+  enabled: false,
+  default_ttl: '30d',
+  max_file_size: '50GB',
+  storage: {
+    type: 'tiered' as const,
+    tiered: {
+      memory_threshold: '10MB',
+    },
+    memory: {
+      max_size: '2GB',
+      max_entries: 50000,
+      evict_policy: 'lru' as const,
+    },
+    disk: {
+      path: '/var/cache/bifrost',
+      max_size: '500GB',
+      cleanup_interval: '1h',
+      shard_count: 256,
+    },
+  },
+}
+
 const defaultConfig: ServerConfig = {
   server: defaultServer,
   backends: [],
@@ -73,6 +104,8 @@ const defaultConfig: ServerConfig = {
   logging: defaultLogging,
   web_ui: defaultWebUI,
   api: defaultAPI,
+  auto_update: defaultAutoUpdate,
+  cache: defaultCache,
 }
 
 export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEditorProps) {
@@ -215,6 +248,18 @@ export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEdit
       <HealthCheckSection
         config={currentConfig.health_check}
         onChange={(health_check) => updateConfig({ health_check })}
+      />
+
+      {/* Auto Update */}
+      <AutoUpdateSection
+        config={currentConfig.auto_update || defaultAutoUpdate}
+        onChange={(auto_update) => updateConfig({ auto_update })}
+      />
+
+      {/* Cache */}
+      <CacheSection
+        config={currentConfig.cache || defaultCache}
+        onChange={(cache) => updateConfig({ cache })}
       />
 
       {/* Actions */}
