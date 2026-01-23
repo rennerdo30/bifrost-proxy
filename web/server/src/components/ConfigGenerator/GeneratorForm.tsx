@@ -210,6 +210,7 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
               <input
                 type="password"
                 className="input"
+                autoComplete="current-password"
                 value={config.auth?.password || ''}
                 onChange={(e) =>
                   updateConfig({

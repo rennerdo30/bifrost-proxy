@@ -11,22 +11,22 @@ This guide will help you get Bifrost up and running quickly.
 
 ### From Binary
 
-Download the latest release from the [releases page](https://github.com/bifrost-proxy/bifrost/releases).
+Download the latest release from the [releases page](https://github.com/rennerdo30/bifrost-proxy/releases).
 
 ```bash
 # Linux (amd64)
-curl -LO https://github.com/bifrost-proxy/bifrost/releases/latest/download/bifrost_linux_amd64.tar.gz
+curl -LO https://github.com/rennerdo30/bifrost-proxy/releases/latest/download/bifrost_linux_amd64.tar.gz
 tar -xzf bifrost_linux_amd64.tar.gz
 
 # macOS (arm64)
-curl -LO https://github.com/bifrost-proxy/bifrost/releases/latest/download/bifrost_darwin_arm64.tar.gz
+curl -LO https://github.com/rennerdo30/bifrost-proxy/releases/latest/download/bifrost_darwin_arm64.tar.gz
 tar -xzf bifrost_darwin_arm64.tar.gz
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/bifrost-proxy/bifrost.git
+git clone https://github.com/rennerdo30/bifrost-proxy.git
 cd bifrost
 make build
 ```

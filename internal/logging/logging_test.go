@@ -257,7 +257,10 @@ func TestGetOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			w, err := getOutput(tt.output)
+			w, f, err := getOutput(tt.output)
+			if f != nil {
+				defer f.Close()
+			}
 
 			if tt.wantErr {
 				if err == nil {
@@ -282,7 +285,7 @@ func TestGetOutput_FileCreation(t *testing.T) {
 	tmpDir := t.TempDir()
 	logFile := filepath.Join(tmpDir, "output.log")
 
-	w, err := getOutput(logFile)
+	w, f, err := getOutput(logFile)
 
 	if err != nil {
 		t.Errorf("getOutput() error = %v", err)
@@ -293,8 +296,12 @@ func TestGetOutput_FileCreation(t *testing.T) {
 		t.Error("getOutput() returned nil writer")
 	}
 
+	if f == nil {
+		t.Error("getOutput() should return file handle for file output")
+	}
+
 	// Close the file
-	if f, ok := w.(*os.File); ok {
+	if f != nil {
 		f.Close()
 	}
 }
@@ -319,7 +326,7 @@ func TestGetOutput_OpenFileError(t *testing.T) {
 
 	// Use the temp directory itself as the "file" to open.
 	// This will fail because we can't open a directory as a regular file for writing.
-	_, err := getOutput(tmpDir)
+	_, _, err := getOutput(tmpDir)
 
 	if err == nil {
 		t.Error("getOutput() should return error when trying to open a directory as a file")
@@ -370,5 +377,92 @@ func TestSlogDefaultUpdated(t *testing.T) {
 	}
 	if !strings.Contains(output, `"msg":"test message"`) {
 		t.Errorf("Output should contain JSON msg field, got: %s", output)
+	}
+}
+
+func TestClose(t *testing.T) {
+	// Test closing when no file is open
+	err := Close()
+	if err != nil {
+		t.Errorf("Close() with no file should not error, got: %v", err)
+	}
+
+	// Setup with a file
+	tmpDir := t.TempDir()
+	logFile := filepath.Join(tmpDir, "test.log")
+
+	err = Setup(Config{
+		Level:  "info",
+		Format: "text",
+		Output: logFile,
+	})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+
+	// Write something to verify file is open
+	Info("test message")
+
+	// Close the log file
+	err = Close()
+	if err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+
+	// Verify file was written
+	content, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatalf("Failed to read log file: %v", err)
+	}
+	if !strings.Contains(string(content), "test message") {
+		t.Error("Log file should contain test message")
+	}
+
+	// Close again should be safe (no-op)
+	err = Close()
+	if err != nil {
+		t.Errorf("Second Close() should not error, got: %v", err)
+	}
+}
+
+func TestSetup_ClosePreviousFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	logFile1 := filepath.Join(tmpDir, "log1.log")
+	logFile2 := filepath.Join(tmpDir, "log2.log")
+
+	// Setup with first file
+	err := Setup(Config{
+		Level:  "info",
+		Format: "text",
+		Output: logFile1,
+	})
+	if err != nil {
+		t.Fatalf("Setup() error = %v", err)
+	}
+	Info("message to file 1")
+
+	// Setup with second file (should close first)
+	err = Setup(Config{
+		Level:  "info",
+		Format: "text",
+		Output: logFile2,
+	})
+	if err != nil {
+		t.Fatalf("Second Setup() error = %v", err)
+	}
+	Info("message to file 2")
+
+	// Cleanup
+	Close()
+
+	// Verify both files were written
+	content1, _ := os.ReadFile(logFile1)
+	if !strings.Contains(string(content1), "message to file 1") {
+		t.Error("First log file should contain its message")
+	}
+
+	content2, _ := os.ReadFile(logFile2)
+	if !strings.Contains(string(content2), "message to file 2") {
+		t.Error("Second log file should contain its message")
 	}
 }

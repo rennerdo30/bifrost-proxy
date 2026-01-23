@@ -37,6 +37,9 @@ func NewClientRouter() *ClientRouter {
 
 // LoadRoutes loads routes from configuration.
 func (r *ClientRouter) LoadRoutes(routes []config.ClientRouteConfig) error {
+	if r == nil {
+		return nil
+	}
 	r.routes = nil
 
 	for i, routeCfg := range routes {
@@ -72,7 +75,13 @@ func (r *ClientRouter) LoadRoutes(routes []config.ClientRouteConfig) error {
 
 // Match finds the action for a given domain.
 func (r *ClientRouter) Match(domain string) ClientAction {
+	if r == nil {
+		return ActionServer
+	}
 	for _, route := range r.routes {
+		if route == nil || route.Matcher == nil {
+			continue
+		}
 		if route.Matcher.Match(domain) {
 			return route.Action
 		}
@@ -84,6 +93,9 @@ func (r *ClientRouter) Match(domain string) ClientAction {
 
 // Routes returns all routes.
 func (r *ClientRouter) Routes() []*ClientRoute {
+	if r == nil {
+		return nil
+	}
 	routes := make([]*ClientRoute, len(r.routes))
 	copy(routes, r.routes)
 	return routes

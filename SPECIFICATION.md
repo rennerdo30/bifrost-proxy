@@ -257,6 +257,47 @@ backends:
       username: ""
       password: ""
 
+  # NordVPN - automatic server selection with WireGuard
+  - name: "nordvpn-us"
+    type: "nordvpn"
+    nordvpn:
+      country: "US"              # ISO country code
+      city: "New York"           # Optional: specific city
+      protocol: "wireguard"      # wireguard or openvpn
+      auto_select: true          # Auto-select best server
+      max_load: 50               # Skip servers above 50% load
+
+  # Mullvad - account number authentication
+  - name: "mullvad-de"
+    type: "mullvad"
+    mullvad:
+      account_id: "1234567890123456"  # 16-digit account number
+      country: "DE"
+      city: ""                   # Optional
+      protocol: "wireguard"
+      auto_select: true
+
+  # PIA (Private Internet Access) - username/password auth
+  - name: "pia-uk"
+    type: "pia"
+    pia:
+      username: "p1234567"
+      password: "${PIA_PASSWORD}"  # Use env var for security
+      country: "UK"
+      protocol: "wireguard"
+      port_forwarding: true      # Enable PIA port forwarding
+
+  # ProtonVPN - OpenVPN credentials from account portal
+  - name: "proton-ch"
+    type: "protonvpn"
+    protonvpn:
+      username: "username+pmp"   # OpenVPN/IKEv2 username from account.protonvpn.com
+      password: "${PROTON_PASSWORD}"
+      country: "CH"
+      tier: "plus"               # free, basic, plus, visionary
+      secure_core: false         # Enable Secure Core routing
+      protocol: "openvpn"        # Currently OpenVPN only
+
 # Routing rules (evaluated in order, first match wins)
 rules:
   - name: "Crunchyroll via Germany"

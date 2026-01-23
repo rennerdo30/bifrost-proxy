@@ -77,6 +77,9 @@ func (r *Router) Match(domain string) RouteResult {
 	defer r.mu.RUnlock()
 
 	for _, route := range r.routes {
+		if route == nil || route.Matcher == nil {
+			continue
+		}
 		if route.Matcher.Match(domain) {
 			result := RouteResult{
 				Matched: true,
@@ -84,16 +87,18 @@ func (r *Router) Match(domain string) RouteResult {
 			}
 
 			// Get backend(s)
-			if route.Backend != "" {
-				if b, err := r.backendManager.Get(route.Backend); err == nil {
-					result.Backend = b
+			if r.backendManager != nil {
+				if route.Backend != "" {
+					if b, err := r.backendManager.Get(route.Backend); err == nil {
+						result.Backend = b
+					}
 				}
-			}
 
-			if len(route.Backends) > 0 {
-				for _, name := range route.Backends {
-					if b, err := r.backendManager.Get(name); err == nil && b.IsHealthy() {
-						result.Backends = append(result.Backends, b)
+				if len(route.Backends) > 0 {
+					for _, name := range route.Backends {
+						if b, err := r.backendManager.Get(name); err == nil && b.IsHealthy() {
+							result.Backends = append(result.Backends, b)
+						}
 					}
 				}
 			}
@@ -113,7 +118,7 @@ func (r *Router) SelectBackend(result RouteResult, clientIP string) backend.Back
 	}
 
 	// Multiple backends - use load balancer
-	if len(result.Backends) > 0 {
+	if len(result.Backends) > 0 && result.Route != nil {
 		r.mu.RLock()
 		lb, exists := r.loadBalancers[result.Route.Name]
 		r.mu.RUnlock()

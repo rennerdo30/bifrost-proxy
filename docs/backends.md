@@ -110,6 +110,30 @@ backends:
       connect_timeout: "30s"
 ```
 
+## VPN Provider Backends
+
+Bifrost supports native integration with major VPN providers:
+
+- **NordVPN** - Automatic server selection with WireGuard/OpenVPN
+- **Mullvad** - Account number authentication
+- **PIA** - Username/password with port forwarding support
+- **ProtonVPN** - OpenVPN with Secure Core support
+
+See the [VPN Providers](vpn-providers.md) documentation for detailed setup guides.
+
+Quick example:
+
+```yaml
+backends:
+  - name: nordvpn-us
+    type: nordvpn
+    enabled: true
+    config:
+      country: "US"
+      protocol: "wireguard"
+      auto_select: true
+```
+
 ## Load Balancing
 
 Route to multiple backends with load balancing:

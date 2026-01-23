@@ -57,19 +57,20 @@ func (p *plugin) ValidateConfig(config map[string]any) error {
 // DefaultConfig returns the default configuration.
 func (p *plugin) DefaultConfig() map[string]any {
 	return map[string]any{
-		"url":                  "ldaps://ldap.example.com:636",
-		"base_dn":              "dc=example,dc=com",
-		"bind_dn":              "cn=service,dc=example,dc=com",
-		"bind_password":        "",
-		"user_filter":          "(uid=%s)",
-		"group_filter":         "(memberUid=%s)",
-		"require_group":        "",
-		"user_attribute":       "uid",
-		"email_attribute":      "mail",
-		"full_name_attribute":  "cn",
-		"group_attribute":      "cn",
-		"tls":                  true,
-		"insecure_skip_verify": false,
+		"url":                      "ldaps://ldap.example.com:636",
+		"base_dn":                  "dc=example,dc=com",
+		"bind_dn":                  "cn=service,dc=example,dc=com",
+		"bind_password":            "",
+		"user_filter":              "(uid=%s)",
+		"group_filter":             "(memberUid=%s)",
+		"require_group":            "",
+		"user_attribute":           "uid",
+		"email_attribute":          "mail",
+		"full_name_attribute":      "cn",
+		"group_attribute":          "cn",
+		"tls":                      true,
+		"insecure_skip_verify":     false,
+		"group_lookup_fail_closed": false,
 	}
 }
 
@@ -130,6 +131,10 @@ func (p *plugin) ConfigSchema() string {
     "insecure_skip_verify": {
       "type": "boolean",
       "description": "Skip TLS certificate verification (not recommended)"
+    },
+    "group_lookup_fail_closed": {
+      "type": "boolean",
+      "description": "If true, fail authentication when group lookup fails; if false (default), continue with empty groups"
     }
   },
   "required": ["url", "base_dn"]
@@ -137,19 +142,20 @@ func (p *plugin) ConfigSchema() string {
 }
 
 type ldapConfig struct {
-	url                string
-	baseDN             string
-	bindDN             string
-	bindPassword       string
-	userFilter         string
-	groupFilter        string
-	requireGroup       string
-	userAttribute      string
-	emailAttribute     string
-	fullNameAttribute  string
-	groupAttribute     string
-	useTLS             bool
-	insecureSkipVerify bool
+	url                   string
+	baseDN                string
+	bindDN                string
+	bindPassword          string
+	userFilter            string
+	groupFilter           string
+	requireGroup          string
+	userAttribute         string
+	emailAttribute        string
+	fullNameAttribute     string
+	groupAttribute        string
+	useTLS                bool
+	insecureSkipVerify    bool
+	groupLookupFailClosed bool // If true, fail auth when group lookup fails; if false (default), continue with empty groups
 }
 
 func parseConfig(config map[string]any) (*ldapConfig, error) {
@@ -212,6 +218,9 @@ func parseConfig(config map[string]any) (*ldapConfig, error) {
 	if insecure, ok := config["insecure_skip_verify"].(bool); ok {
 		cfg.insecureSkipVerify = insecure
 	}
+	if groupLookupFailClosed, ok := config["group_lookup_fail_closed"].(bool); ok {
+		cfg.groupLookupFailClosed = groupLookupFailClosed
+	}
 
 	return cfg, nil
 }
@@ -273,7 +282,11 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 	if a.config.groupFilter != "" {
 		groups, err = a.getUserGroups(conn, username)
 		if err != nil {
-			// Log error but don't fail auth
+			if a.config.groupLookupFailClosed {
+				// Fail authentication when group lookup fails (fail-closed behavior)
+				return nil, auth.NewAuthError("ldap", "groups", fmt.Errorf("group lookup failed: %w", err))
+			}
+			// Continue with empty groups (fail-open behavior, default)
 			groups = nil
 		}
 	}

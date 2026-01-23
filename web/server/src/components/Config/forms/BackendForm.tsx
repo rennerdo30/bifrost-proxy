@@ -6,7 +6,22 @@ import { HTTPProxyBackendForm } from '../backend-forms/HTTPProxyBackendForm'
 import { SOCKS5ProxyBackendForm } from '../backend-forms/SOCKS5ProxyBackendForm'
 import { WireGuardBackendForm } from '../backend-forms/WireGuardBackendForm'
 import { OpenVPNBackendForm } from '../backend-forms/OpenVPNBackendForm'
-import type { BackendConfig } from '../../../api/types'
+import { NordVPNBackendForm } from '../backend-forms/NordVPNBackendForm'
+import { MullvadBackendForm } from '../backend-forms/MullvadBackendForm'
+import { PIABackendForm } from '../backend-forms/PIABackendForm'
+import { ProtonVPNBackendForm } from '../backend-forms/ProtonVPNBackendForm'
+import type {
+  BackendConfig,
+  DirectBackendConfig,
+  HTTPProxyBackendConfig,
+  SOCKS5ProxyBackendConfig,
+  WireGuardBackendConfig,
+  OpenVPNBackendConfig,
+  NordVPNBackendConfig,
+  MullvadBackendConfig,
+  PIABackendConfig,
+  ProtonVPNBackendConfig,
+} from '../../../api/types'
 
 interface BackendFormProps {
   backend?: BackendConfig
@@ -21,6 +36,10 @@ const backendTypes = [
   { value: 'socks5_proxy', label: 'SOCKS5 Proxy', description: 'Route through SOCKS5 proxy' },
   { value: 'wireguard', label: 'WireGuard', description: 'Route through WireGuard VPN' },
   { value: 'openvpn', label: 'OpenVPN', description: 'Route through OpenVPN tunnel' },
+  { value: 'nordvpn', label: 'NordVPN', description: 'Route through NordVPN servers' },
+  { value: 'mullvad', label: 'Mullvad', description: 'Route through Mullvad VPN servers' },
+  { value: 'pia', label: 'PIA', description: 'Route through Private Internet Access' },
+  { value: 'protonvpn', label: 'ProtonVPN', description: 'Route through ProtonVPN servers' },
 ]
 
 export function BackendForm({ backend, existingNames, onSave, onCancel }: BackendFormProps) {
@@ -66,22 +85,72 @@ export function BackendForm({ backend, existingNames, onSave, onCancel }: Backen
   }
 
   const renderTypeForm = () => {
-    const props = {
-      config: form.config || {},
-      onChange: (config: Record<string, unknown>) => updateForm('config', config),
-    }
+    const config = form.config || {}
 
     switch (form.type) {
       case 'direct':
-        return <DirectBackendForm {...props} />
+        return (
+          <DirectBackendForm
+            config={config as DirectBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
       case 'http_proxy':
-        return <HTTPProxyBackendForm {...props} />
+        return (
+          <HTTPProxyBackendForm
+            config={config as HTTPProxyBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
       case 'socks5_proxy':
-        return <SOCKS5ProxyBackendForm {...props} />
+        return (
+          <SOCKS5ProxyBackendForm
+            config={config as SOCKS5ProxyBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
       case 'wireguard':
-        return <WireGuardBackendForm {...props} />
+        return (
+          <WireGuardBackendForm
+            config={config as WireGuardBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
       case 'openvpn':
-        return <OpenVPNBackendForm {...props} />
+        return (
+          <OpenVPNBackendForm
+            config={config as OpenVPNBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'nordvpn':
+        return (
+          <NordVPNBackendForm
+            config={config as NordVPNBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'mullvad':
+        return (
+          <MullvadBackendForm
+            config={config as MullvadBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'pia':
+        return (
+          <PIABackendForm
+            config={config as PIABackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'protonvpn':
+        return (
+          <ProtonVPNBackendForm
+            config={config as ProtonVPNBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
       default:
         return null
     }

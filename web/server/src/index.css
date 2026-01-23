@@ -53,6 +53,10 @@
     @apply w-full px-4 py-2.5 bg-bifrost-bg border border-bifrost-border rounded-lg text-gray-100 placeholder-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent transition-all duration-200;
   }
 
+  .input-error {
+    @apply border-bifrost-error focus:ring-bifrost-error/50 focus:border-bifrost-error;
+  }
+
   .select {
     @apply w-full px-4 py-2.5 bg-bifrost-bg border border-bifrost-border rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent transition-all duration-200 cursor-pointer;
   }

@@ -12,6 +12,7 @@ var (
 	ErrBackendUnavailable = errors.New("backend unavailable")
 	ErrBackendNotStarted  = errors.New("backend not started")
 	ErrBackendStopped     = errors.New("backend stopped")
+	ErrBackendInvalid     = errors.New("invalid backend")
 	ErrConnectionFailed   = errors.New("connection failed")
 	ErrDialTimeout        = errors.New("dial timeout")
 	ErrNoHealthyBackend   = errors.New("no healthy backend available")

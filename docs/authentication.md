@@ -42,7 +42,7 @@ htpasswd -bnBC 10 "" password | tr -d ':\n'
 python3 -c "import bcrypt; print(bcrypt.hashpw(b'password', bcrypt.gensalt()).decode())"
 
 # Using Go
-go run -mod=mod github.com/bifrost-proxy/bifrost/tools/hashpw password
+go run -mod=mod github.com/rennerdo30/bifrost-proxy/tools/hashpw password
 ```
 
 ## LDAP Authentication

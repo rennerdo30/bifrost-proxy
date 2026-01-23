@@ -1,5 +1,8 @@
 import { useState } from 'react'
 import { Section } from '../Section'
+import { ValidatedInput } from '../../ui/ValidatedInput'
+import { useValidation } from '../../../hooks/useValidation'
+import { validators } from '../../../utils/validation'
 import type { APIConfig } from '../../../api/types'
 
 interface APISectionProps {
@@ -7,10 +10,25 @@ interface APISectionProps {
   onChange: (config: APIConfig) => void
 }
 
+type APIValidationKeys = {
+  listen: string
+  websocket_max_clients: number
+  request_log_size: number
+}
+
 export function APISection({ config, onChange }: APISectionProps) {
   const [showToken, setShowToken] = useState(false)
 
+  const { errors, handleFieldChange } = useValidation<APIValidationKeys>({
+    listen: [validators.listenAddress()],
+    websocket_max_clients: [validators.positiveInteger(), validators.min(1, 'Must be at least 1')],
+    request_log_size: [validators.positiveInteger()],
+  })
+
   const update = (field: string, value: unknown) => {
+    if (field in errors || field === 'listen' || field === 'websocket_max_clients' || field === 'request_log_size') {
+      handleFieldChange(field as keyof APIValidationKeys, value as never)
+    }
     onChange({ ...config, [field]: value })
   }
 
@@ -30,16 +48,14 @@ export function APISection({ config, onChange }: APISectionProps) {
         {config.enabled && (
           <div className="space-y-4 pl-7">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Listen Address</label>
-                <input
-                  type="text"
-                  value={config.listen || ''}
-                  onChange={(e) => update('listen', e.target.value)}
-                  placeholder=":8082"
-                  className="input"
-                />
-              </div>
+              <ValidatedInput
+                label="Listen Address"
+                value={config.listen || ''}
+                onChange={(e) => update('listen', e.target.value)}
+                placeholder=":8082"
+                error={errors.listen}
+                helpText="Format: :port or host:port"
+              />
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-1">API Token</label>
                 <div className="relative">
@@ -48,12 +64,14 @@ export function APISection({ config, onChange }: APISectionProps) {
                     value={config.token || ''}
                     onChange={(e) => update('token', e.target.value)}
                     placeholder="Optional authentication token"
+                    autoComplete="off"
                     className="input pr-10"
                   />
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-white"
+                    aria-label={showToken ? 'Hide token' : 'Show token'}
                   >
                     {showToken ? (
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -69,15 +87,14 @@ export function APISection({ config, onChange }: APISectionProps) {
                 </div>
                 <p className="text-xs text-bifrost-muted mt-1">Leave empty to disable token auth</p>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">WebSocket Max Clients</label>
-                <input
-                  type="number"
-                  value={config.websocket_max_clients || 100}
-                  onChange={(e) => update('websocket_max_clients', parseInt(e.target.value))}
-                  className="input"
-                />
-              </div>
+              <ValidatedInput
+                label="WebSocket Max Clients"
+                type="number"
+                value={config.websocket_max_clients || 100}
+                onChange={(e) => update('websocket_max_clients', parseInt(e.target.value) || 100)}
+                error={errors.websocket_max_clients}
+                helpText="Maximum concurrent WebSocket connections"
+              />
             </div>
 
             <div className="p-4 bg-bifrost-bg rounded-lg space-y-3">
@@ -92,12 +109,14 @@ export function APISection({ config, onChange }: APISectionProps) {
               </label>
               {config.enable_request_log !== false && (
                 <div className="pl-7">
-                  <label className="block text-sm font-medium text-gray-300 mb-1">Max Requests to Keep</label>
-                  <input
+                  <ValidatedInput
+                    label="Max Requests to Keep"
                     type="number"
                     value={config.request_log_size || 1000}
-                    onChange={(e) => update('request_log_size', parseInt(e.target.value))}
-                    className="input max-w-xs"
+                    onChange={(e) => update('request_log_size', parseInt(e.target.value) || 0)}
+                    className="max-w-xs"
+                    error={errors.request_log_size}
+                    helpText="Number of recent requests to store in memory"
                   />
                 </div>
               )}

@@ -1,6 +1,6 @@
 [Unit]
 Description=Bifrost Proxy Client
-Documentation=https://github.com/bifrost-proxy/bifrost
+Documentation=https://github.com/rennerdo30/bifrost-proxy
 After=network-online.target
 Wants=network-online.target
 

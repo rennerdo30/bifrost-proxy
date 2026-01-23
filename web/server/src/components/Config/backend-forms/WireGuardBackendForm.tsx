@@ -1,11 +1,13 @@
 import { useState, useRef } from 'react'
 import { ArrayInput } from '../ArrayInput'
+import { WireGuardBackendConfig, WireGuardPeerConfig } from '../../../api/types'
 
 interface WireGuardBackendFormProps {
-  config: Record<string, unknown>
-  onChange: (config: Record<string, unknown>) => void
+  config: WireGuardBackendConfig
+  onChange: (config: WireGuardBackendConfig) => void
 }
 
+// Internal type for parsing WireGuard config files
 interface ParsedWireGuardConfig {
   privateKey: string
   address: string[]
@@ -99,19 +101,39 @@ function parseWireGuardConfig(content: string): ParsedWireGuardConfig | null {
   return config
 }
 
+// Helper type for peer with all fields guaranteed
+interface PeerWithDefaults {
+  public_key: string
+  endpoint: string
+  allowed_ips: string[]
+  preshared_key?: string
+  persistent_keepalive?: number
+}
+
+// Helper to ensure peer object has required fields with defaults
+function ensurePeer(peer: Partial<WireGuardPeerConfig> | undefined): PeerWithDefaults {
+  return {
+    public_key: peer?.public_key ?? '',
+    endpoint: peer?.endpoint ?? '',
+    allowed_ips: peer?.allowed_ips ?? [],
+    preshared_key: peer?.preshared_key,
+    persistent_keepalive: peer?.persistent_keepalive,
+  }
+}
+
 export function WireGuardBackendForm({ config, onChange }: WireGuardBackendFormProps) {
   const [showImport, setShowImport] = useState(false)
   const [configText, setConfigText] = useState('')
   const [parseError, setParseError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const peer = (config.peer as Record<string, unknown>) || {}
+  const peer = ensurePeer(config.peer)
 
-  const update = (field: string, value: unknown) => {
+  const update = <K extends keyof WireGuardBackendConfig>(field: K, value: WireGuardBackendConfig[K]) => {
     onChange({ ...config, [field]: value })
   }
 
-  const updatePeer = (field: string, value: unknown) => {
+  const updatePeer = <K extends keyof PeerWithDefaults>(field: K, value: PeerWithDefaults[K]) => {
     onChange({ ...config, peer: { ...peer, [field]: value } })
   }
 
@@ -246,7 +268,7 @@ AllowedIPs = 0.0.0.0/0`}
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-gray-300 mb-1">Private Key</label>
             <textarea
-              value={(config.private_key as string) || ''}
+              value={config.private_key || ''}
               onChange={(e) => update('private_key', e.target.value)}
               placeholder="Base64-encoded private key"
               rows={2}
@@ -257,7 +279,7 @@ AllowedIPs = 0.0.0.0/0`}
             <label className="block text-sm font-medium text-gray-300 mb-1">Address</label>
             <input
               type="text"
-              value={(config.address as string) || ''}
+              value={config.address || ''}
               onChange={(e) => update('address', e.target.value)}
               placeholder="10.0.0.2/24"
               className="input"
@@ -267,7 +289,7 @@ AllowedIPs = 0.0.0.0/0`}
             <label className="block text-sm font-medium text-gray-300 mb-1">MTU</label>
             <input
               type="number"
-              value={(config.mtu as number) || ''}
+              value={config.mtu ?? ''}
               onChange={(e) => update('mtu', parseInt(e.target.value) || undefined)}
               placeholder="1420"
               className="input"
@@ -276,7 +298,7 @@ AllowedIPs = 0.0.0.0/0`}
           <div className="md:col-span-2">
             <ArrayInput
               label="DNS Servers"
-              values={(config.dns as string[]) || []}
+              values={config.dns ?? []}
               onChange={(dns) => update('dns', dns)}
               placeholder="1.1.1.1"
             />
@@ -292,7 +314,7 @@ AllowedIPs = 0.0.0.0/0`}
             <label className="block text-sm font-medium text-gray-300 mb-1">Public Key</label>
             <input
               type="text"
-              value={(peer.public_key as string) || ''}
+              value={peer.public_key || ''}
               onChange={(e) => updatePeer('public_key', e.target.value)}
               placeholder="Base64-encoded public key"
               className="input font-mono text-xs"
@@ -302,7 +324,7 @@ AllowedIPs = 0.0.0.0/0`}
             <label className="block text-sm font-medium text-gray-300 mb-1">Endpoint</label>
             <input
               type="text"
-              value={(peer.endpoint as string) || ''}
+              value={peer.endpoint || ''}
               onChange={(e) => updatePeer('endpoint', e.target.value)}
               placeholder="vpn.example.com:51820"
               className="input"
@@ -312,7 +334,7 @@ AllowedIPs = 0.0.0.0/0`}
             <label className="block text-sm font-medium text-gray-300 mb-1">Persistent Keepalive</label>
             <input
               type="number"
-              value={(peer.persistent_keepalive as number) || ''}
+              value={peer.persistent_keepalive ?? ''}
               onChange={(e) => updatePeer('persistent_keepalive', parseInt(e.target.value) || undefined)}
               placeholder="25"
               className="input"
@@ -323,7 +345,7 @@ AllowedIPs = 0.0.0.0/0`}
             <label className="block text-sm font-medium text-gray-300 mb-1">Preshared Key</label>
             <input
               type="text"
-              value={(peer.preshared_key as string) || ''}
+              value={peer.preshared_key || ''}
               onChange={(e) => updatePeer('preshared_key', e.target.value)}
               placeholder="Optional: base64-encoded preshared key"
               className="input font-mono text-xs"
@@ -332,7 +354,7 @@ AllowedIPs = 0.0.0.0/0`}
           <div className="md:col-span-2">
             <ArrayInput
               label="Allowed IPs"
-              values={(peer.allowed_ips as string[]) || ['0.0.0.0/0']}
+              values={peer.allowed_ips?.length ? peer.allowed_ips : ['0.0.0.0/0']}
               onChange={(ips) => updatePeer('allowed_ips', ips)}
               placeholder="0.0.0.0/0"
             />

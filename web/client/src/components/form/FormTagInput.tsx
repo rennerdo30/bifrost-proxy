@@ -8,6 +8,7 @@ interface FormTagInputProps {
   onChange: (value: string[]) => void
   placeholder?: string
   disabled?: boolean
+  validate?: (value: string) => string | null // Returns error message or null if valid
 }
 
 export function FormTagInput({
@@ -18,20 +19,43 @@ export function FormTagInput({
   onChange,
   placeholder = 'Type and press Enter',
   disabled = false,
+  validate,
 }: FormTagInputProps) {
   const [inputValue, setInputValue] = useState('')
+  const [validationError, setValidationError] = useState<string | null>(null)
 
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && inputValue.trim()) {
       e.preventDefault()
-      if (!value.includes(inputValue.trim())) {
-        onChange([...value, inputValue.trim()])
+      const trimmed = inputValue.trim()
+
+      // Run validation if provided
+      if (validate) {
+        const validationResult = validate(trimmed)
+        if (validationResult) {
+          setValidationError(validationResult)
+          return
+        }
+      }
+
+      setValidationError(null)
+      if (!value.includes(trimmed)) {
+        onChange([...value, trimmed])
       }
       setInputValue('')
     } else if (e.key === 'Backspace' && !inputValue && value.length > 0) {
       onChange(value.slice(0, -1))
     }
   }
+
+  const handleInputChange = (newValue: string) => {
+    setInputValue(newValue)
+    if (validationError) {
+      setValidationError(null) // Clear validation error when user starts typing
+    }
+  }
+
+  const displayError = validationError || error
 
   const removeTag = (index: number) => {
     onChange(value.filter((_, i) => i !== index))
@@ -45,7 +69,7 @@ export function FormTagInput({
       )}
       <div
         className={`min-h-[42px] p-2 rounded-lg border bg-bifrost-card flex flex-wrap gap-2 items-center ${
-          error ? 'border-bifrost-error' : 'border-bifrost-border'
+          displayError ? 'border-bifrost-error' : 'border-bifrost-border'
         } focus-within:ring-2 focus-within:ring-bifrost-accent focus-within:border-bifrost-accent`}
       >
         {value.map((tag, index) => (
@@ -59,6 +83,7 @@ export function FormTagInput({
                 type="button"
                 onClick={() => removeTag(index)}
                 className="hover:text-bifrost-error"
+                aria-label="Remove tag"
               >
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -70,15 +95,15 @@ export function FormTagInput({
         <input
           type="text"
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
+          onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={value.length === 0 ? placeholder : ''}
           disabled={disabled}
           className="flex-1 min-w-[120px] bg-transparent border-none outline-none text-sm text-bifrost-text placeholder-bifrost-muted"
         />
       </div>
-      {error && (
-        <p className="text-xs text-bifrost-error">{error}</p>
+      {displayError && (
+        <p className="text-xs text-bifrost-error">{displayError}</p>
       )}
     </div>
   )

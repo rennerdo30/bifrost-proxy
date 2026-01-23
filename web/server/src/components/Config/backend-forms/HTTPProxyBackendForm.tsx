@@ -1,14 +1,15 @@
 import { useState } from 'react'
+import { HTTPProxyBackendConfig } from '../../../api/types'
 
 interface HTTPProxyBackendFormProps {
-  config: Record<string, unknown>
-  onChange: (config: Record<string, unknown>) => void
+  config: HTTPProxyBackendConfig
+  onChange: (config: HTTPProxyBackendConfig) => void
 }
 
 export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormProps) {
   const [showPassword, setShowPassword] = useState(false)
 
-  const update = (field: string, value: string) => {
+  const update = <K extends keyof HTTPProxyBackendConfig>(field: K, value: HTTPProxyBackendConfig[K]) => {
     onChange({ ...config, [field]: value })
   }
 
@@ -23,7 +24,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
           <label className="block text-sm font-medium text-gray-300 mb-1">Proxy Address</label>
           <input
             type="text"
-            value={(config.address as string) || ''}
+            value={config.address || ''}
             onChange={(e) => update('address', e.target.value)}
             placeholder="proxy.example.com:8080"
             className="input"
@@ -33,7 +34,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
           <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
           <input
             type="text"
-            value={(config.username as string) || ''}
+            value={config.username || ''}
             onChange={(e) => update('username', e.target.value)}
             placeholder="Optional"
             className="input"
@@ -44,7 +45,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
-              value={(config.password as string) || ''}
+              value={config.password || ''}
               onChange={(e) => update('password', e.target.value)}
               placeholder="Optional"
               className="input pr-10"
@@ -71,7 +72,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
           <label className="block text-sm font-medium text-gray-300 mb-1">Connect Timeout</label>
           <input
             type="text"
-            value={(config.connect_timeout as string) || ''}
+            value={config.connect_timeout || ''}
             onChange={(e) => update('connect_timeout', e.target.value)}
             placeholder="10s"
             className="input"

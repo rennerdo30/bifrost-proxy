@@ -297,7 +297,14 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 	}
 	port := binary.BigEndian.Uint16(portBytes)
 
-	target := fmt.Sprintf("%s:%d", host, port)
+	// Format target address - wrap IPv6 in brackets
+	var target string
+	if ip := net.ParseIP(host); ip != nil && ip.To4() == nil {
+		// IPv6 address - wrap in brackets
+		target = fmt.Sprintf("[%s]:%d", host, port)
+	} else {
+		target = fmt.Sprintf("%s:%d", host, port)
+	}
 	ctx = util.WithDomain(ctx, util.GetHostFromRequest(host))
 
 	// Handle command

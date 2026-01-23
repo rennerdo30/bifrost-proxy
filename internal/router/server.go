@@ -20,18 +20,23 @@ func NewServerRouter(backendManager *backend.Manager) *ServerRouter {
 
 // LoadRoutes loads routes from configuration.
 func (r *ServerRouter) LoadRoutes(routes []config.RouteConfig) error {
+	if r == nil || r.Router == nil {
+		return nil
+	}
 	r.Clear()
 
 	for i, routeCfg := range routes {
 		// Validate backends exist
-		if routeCfg.Backend != "" {
-			if _, err := r.backendManager.Get(routeCfg.Backend); err != nil {
-				return err
+		if r.backendManager != nil {
+			if routeCfg.Backend != "" {
+				if _, err := r.backendManager.Get(routeCfg.Backend); err != nil {
+					return err
+				}
 			}
-		}
-		for _, name := range routeCfg.Backends {
-			if _, err := r.backendManager.Get(name); err != nil {
-				return err
+			for _, name := range routeCfg.Backends {
+				if _, err := r.backendManager.Get(name); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -65,6 +70,9 @@ func (r *ServerRouter) LoadRoutes(routes []config.RouteConfig) error {
 
 // GetBackendForDomain returns the appropriate backend for a domain.
 func (r *ServerRouter) GetBackendForDomain(domain, clientIP string) backend.Backend {
+	if r == nil || r.Router == nil {
+		return nil
+	}
 	result := r.Match(domain)
 	if !result.Matched {
 		return nil

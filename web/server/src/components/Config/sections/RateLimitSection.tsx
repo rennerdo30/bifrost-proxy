@@ -1,4 +1,7 @@
 import { Section } from '../Section'
+import { ValidatedInput } from '../../ui/ValidatedInput'
+import { useValidation } from '../../../hooks/useValidation'
+import { validators } from '../../../utils/validation'
 import type { RateLimitConfig } from '../../../api/types'
 
 interface RateLimitSectionProps {
@@ -6,12 +9,30 @@ interface RateLimitSectionProps {
   onChange: (config: RateLimitConfig) => void
 }
 
+type RateLimitValidationKeys = {
+  requests_per_second: number
+  burst_size: number
+  'bandwidth.upload': string
+  'bandwidth.download': string
+}
+
 export function RateLimitSection({ config, onChange }: RateLimitSectionProps) {
+  const { errors, handleFieldChange } = useValidation<RateLimitValidationKeys>({
+    requests_per_second: [validators.min(0.1, 'Must be at least 0.1')],
+    burst_size: [validators.positiveInteger(), validators.min(1, 'Must be at least 1')],
+    'bandwidth.upload': [validators.byteSize()],
+    'bandwidth.download': [validators.byteSize()],
+  })
+
   const update = (field: string, value: unknown) => {
+    if (field === 'requests_per_second' || field === 'burst_size') {
+      handleFieldChange(field as keyof RateLimitValidationKeys, value as never)
+    }
     onChange({ ...config, [field]: value })
   }
 
   const updateBandwidth = (field: string, value: unknown) => {
+    handleFieldChange(`bandwidth.${field}` as keyof RateLimitValidationKeys, value as never)
     onChange({
       ...config,
       bandwidth: { ...(config.bandwidth || {}), [field]: value } as RateLimitConfig['bandwidth'],
@@ -45,24 +66,22 @@ export function RateLimitSection({ config, onChange }: RateLimitSectionProps) {
         {config.enabled && (
           <div className="space-y-4 pl-7">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Requests per Second</label>
-                <input
-                  type="number"
-                  value={config.requests_per_second || 100}
-                  onChange={(e) => update('requests_per_second', parseFloat(e.target.value))}
-                  className="input"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Burst Size</label>
-                <input
-                  type="number"
-                  value={config.burst_size || 200}
-                  onChange={(e) => update('burst_size', parseInt(e.target.value))}
-                  className="input"
-                />
-              </div>
+              <ValidatedInput
+                label="Requests per Second"
+                type="number"
+                value={config.requests_per_second || 100}
+                onChange={(e) => update('requests_per_second', parseFloat(e.target.value) || 100)}
+                error={errors.requests_per_second}
+                helpText="Maximum requests allowed per second"
+              />
+              <ValidatedInput
+                label="Burst Size"
+                type="number"
+                value={config.burst_size || 200}
+                onChange={(e) => update('burst_size', parseInt(e.target.value) || 0)}
+                error={errors.burst_size}
+                helpText="Maximum burst of requests allowed"
+              />
             </div>
 
             <div className="flex flex-wrap gap-6">
@@ -99,26 +118,22 @@ export function RateLimitSection({ config, onChange }: RateLimitSectionProps) {
               </label>
               {config.bandwidth?.enabled && (
                 <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Upload Limit</label>
-                    <input
-                      type="text"
-                      value={config.bandwidth.upload || ''}
-                      onChange={(e) => updateBandwidth('upload', e.target.value)}
-                      placeholder="10Mbps"
-                      className="input"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-1">Download Limit</label>
-                    <input
-                      type="text"
-                      value={config.bandwidth.download || ''}
-                      onChange={(e) => updateBandwidth('download', e.target.value)}
-                      placeholder="100Mbps"
-                      className="input"
-                    />
-                  </div>
+                  <ValidatedInput
+                    label="Upload Limit"
+                    value={config.bandwidth.upload || ''}
+                    onChange={(e) => updateBandwidth('upload', e.target.value)}
+                    placeholder="10Mbps"
+                    error={errors['bandwidth.upload']}
+                    helpText="e.g., 10Mbps, 1Gbps, 100KB"
+                  />
+                  <ValidatedInput
+                    label="Download Limit"
+                    value={config.bandwidth.download || ''}
+                    onChange={(e) => updateBandwidth('download', e.target.value)}
+                    placeholder="100Mbps"
+                    error={errors['bandwidth.download']}
+                    helpText="e.g., 100Mbps, 1Gbps, 500KB"
+                  />
                 </div>
               )}
             </div>

@@ -119,7 +119,8 @@ func UpdateNode(node *yaml.Node, updates map[string]interface{}) error {
 }
 
 func valueToNode(v interface{}) (*yaml.Node, error) {
-	// Quick hack: marshal to yaml bytes then unmarshal to node
+	// Convert value to YAML node by marshaling to bytes then unmarshaling.
+	// This approach ensures proper YAML node structure for any Go value.
 	data, err := yaml.Marshal(v)
 	if err != nil {
 		return nil, err

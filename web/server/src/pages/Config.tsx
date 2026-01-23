@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { ConfigEditor } from '../components/Config/ConfigEditor'
+import { useToast } from '../components/Toast'
 import type { ServerConfig } from '../api/types'
 
 export function Config() {
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
 
   const { data: config, isLoading } = useQuery({
     queryKey: ['config'],
@@ -18,13 +20,13 @@ export function Config() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['config'] })
       if (data.requires_restart) {
-        alert('Configuration saved. Server restart required for changes to take effect.')
+        showToast('Configuration saved. Server restart required for changes to take effect.', 'warning')
       } else {
-        alert('Configuration saved and reloaded successfully.')
+        showToast('Configuration saved and reloaded successfully.', 'success')
       }
     },
     onError: (error) => {
-      alert(`Failed to save configuration: ${error}`)
+      showToast(`Failed to save configuration: ${error}`, 'error')
     },
   })
 
@@ -32,10 +34,10 @@ export function Config() {
     mutationFn: api.reloadConfig,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['config'] })
-      alert('Configuration reloaded successfully.')
+      showToast('Configuration reloaded successfully.', 'success')
     },
     onError: (error) => {
-      alert(`Failed to reload configuration: ${error}`)
+      showToast(`Failed to reload configuration: ${error}`, 'error')
     },
   })
 

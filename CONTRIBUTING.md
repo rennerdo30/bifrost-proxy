@@ -108,7 +108,7 @@ go test -cover ./...
 
 ## Security Issues
 
-If you discover a security vulnerability, please email security@example.com instead of opening a public issue.
+If you discover a security vulnerability, please report it through [GitHub Security Advisories](https://github.com/rennerdo30/bifrost-proxy/security/advisories/new) instead of opening a public issue.
 
 ## Code of Conduct
 

@@ -8,10 +8,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 	"golang.org/x/sys/windows/svc"
 )
+
+// ShutdownTimeout is the maximum time allowed for graceful shutdown.
+const ShutdownTimeout = 30 * time.Second
 
 func run(name string, runner Runner) error {
 	isService, err := svc.IsWindowsService()
@@ -41,7 +45,10 @@ func runInteractive(name string, runner Runner) error {
 	sig := <-sigChan
 	logging.Info("Received shutdown signal", "signal", sig)
 	cancel()
-	return runner.Stop(context.Background())
+	// Use timeout context for graceful shutdown
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), ShutdownTimeout)
+	defer stopCancel()
+	return runner.Stop(stopCtx)
 }
 
 type serviceHandler struct {
@@ -72,9 +79,12 @@ loop:
 			logging.Info("Service stopping...")
 			s <- svc.Status{State: svc.StopPending}
 			cancel()
-			if err := h.runner.Stop(context.Background()); err != nil {
+			// Use timeout context for graceful shutdown
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), ShutdownTimeout)
+			if err := h.runner.Stop(stopCtx); err != nil {
 				logging.Error("Error stopping service", "error", err)
 			}
+			stopCancel()
 			break loop
 		default:
 			logging.Warn("Unexpected service control request", "cmd", c)

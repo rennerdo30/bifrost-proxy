@@ -702,7 +702,12 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	}
 
 	// Rate limiting
-	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
+	tcpAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		logging.Warn("Non-TCP connection to HTTP proxy", "addr", conn.RemoteAddr().String())
+		conn.Close()
+		return
+	}
 	clientIP := tcpAddr.IP.String()
 	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
 
@@ -787,7 +792,12 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 	}
 
 	// Rate limiting
-	tcpAddr := conn.RemoteAddr().(*net.TCPAddr)
+	tcpAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		logging.Warn("Non-TCP connection to SOCKS5 proxy", "addr", conn.RemoteAddr().String())
+		conn.Close()
+		return
+	}
 	clientIP := tcpAddr.IP.String()
 	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
 

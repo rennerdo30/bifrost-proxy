@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider/mullvad"
 )
 
 // Factory creates backends from configuration.
@@ -29,6 +30,14 @@ func (f *Factory) Create(cfg config.BackendConfig) (Backend, error) {
 		return f.createWireGuard(cfg)
 	case "openvpn":
 		return f.createOpenVPN(cfg)
+	case "nordvpn":
+		return f.createNordVPN(cfg)
+	case "mullvad":
+		return f.createMullvad(cfg)
+	case "pia":
+		return f.createPIA(cfg)
+	case "protonvpn":
+		return f.createProtonVPN(cfg)
 	default:
 		return nil, fmt.Errorf("%w: %s", ErrInvalidBackendType, cfg.Type)
 	}
@@ -225,6 +234,252 @@ func (f *Factory) createOpenVPN(cfg config.BackendConfig) (Backend, error) {
 	}
 
 	return NewOpenVPNBackend(ovpnCfg), nil
+}
+
+func (f *Factory) createNordVPN(cfg config.BackendConfig) (Backend, error) {
+	nordCfg := NordVPNConfig{
+		Name: cfg.Name,
+	}
+
+	if v, ok := cfg.Config["country"].(string); ok {
+		nordCfg.Country = v
+	}
+
+	if v, ok := cfg.Config["city"].(string); ok {
+		nordCfg.City = v
+	}
+
+	if v, ok := cfg.Config["protocol"].(string); ok {
+		nordCfg.Protocol = v
+	}
+
+	if v, ok := cfg.Config["auto_select"].(bool); ok {
+		nordCfg.AutoSelect = v
+	}
+
+	if v, ok := cfg.Config["max_load"].(int); ok {
+		nordCfg.MaxLoad = v
+	}
+
+	if v, ok := cfg.Config["refresh_interval"].(string); ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			nordCfg.RefreshInterval = d
+		}
+	}
+
+	if v, ok := cfg.Config["features"].([]any); ok {
+		for _, f := range v {
+			if s, ok := f.(string); ok {
+				nordCfg.Features = append(nordCfg.Features, s)
+			}
+		}
+	}
+
+	// Authentication
+	if v, ok := cfg.Config["access_token"].(string); ok {
+		nordCfg.AccessToken = v
+	}
+	if v, ok := cfg.Config["username"].(string); ok {
+		nordCfg.Username = v
+	}
+	if v, ok := cfg.Config["password"].(string); ok {
+		nordCfg.Password = v
+	}
+
+	// Validate credentials based on protocol
+	protocol := nordCfg.Protocol
+	if protocol == "" {
+		protocol = "wireguard"
+	}
+	if protocol == "wireguard" || protocol == "nordlynx" {
+		if nordCfg.AccessToken == "" {
+			return nil, fmt.Errorf("nordvpn wireguard backend requires 'access_token' (private key) config")
+		}
+	} else if protocol == "openvpn" {
+		if nordCfg.Username == "" || nordCfg.Password == "" {
+			return nil, fmt.Errorf("nordvpn openvpn backend requires 'username' and 'password' config")
+		}
+	}
+
+	return NewNordVPNBackend(nordCfg), nil
+}
+
+func (f *Factory) createMullvad(cfg config.BackendConfig) (Backend, error) {
+	mullvadCfg := MullvadConfig{
+		Name: cfg.Name,
+	}
+
+	// Account ID is required
+	if v, ok := cfg.Config["account_id"].(string); ok {
+		mullvadCfg.AccountID = v
+	} else {
+		return nil, fmt.Errorf("mullvad backend requires 'account_id' config")
+	}
+
+	if v, ok := cfg.Config["country"].(string); ok {
+		mullvadCfg.Country = v
+	}
+
+	if v, ok := cfg.Config["city"].(string); ok {
+		mullvadCfg.City = v
+	}
+
+	if v, ok := cfg.Config["protocol"].(string); ok {
+		mullvadCfg.Protocol = v
+	}
+
+	if v, ok := cfg.Config["auto_select"].(bool); ok {
+		mullvadCfg.AutoSelect = v
+	}
+
+	if v, ok := cfg.Config["max_load"].(int); ok {
+		mullvadCfg.MaxLoad = v
+	}
+
+	if v, ok := cfg.Config["refresh_interval"].(string); ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			mullvadCfg.RefreshInterval = d
+		}
+	}
+
+	if v, ok := cfg.Config["features"].([]any); ok {
+		for _, f := range v {
+			if s, ok := f.(string); ok {
+				mullvadCfg.Features = append(mullvadCfg.Features, s)
+			}
+		}
+	}
+
+	// Create Mullvad client with account ID
+	client, err := mullvad.NewClient(mullvadCfg.AccountID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create mullvad client: %w", err)
+	}
+
+	return NewMullvadBackend(mullvadCfg, client), nil
+}
+
+func (f *Factory) createPIA(cfg config.BackendConfig) (Backend, error) {
+	piaCfg := PIAConfig{
+		Name: cfg.Name,
+	}
+
+	// Credentials are required
+	if v, ok := cfg.Config["username"].(string); ok {
+		piaCfg.Username = v
+	} else {
+		return nil, fmt.Errorf("pia backend requires 'username' config")
+	}
+
+	if v, ok := cfg.Config["password"].(string); ok {
+		piaCfg.Password = v
+	} else {
+		return nil, fmt.Errorf("pia backend requires 'password' config")
+	}
+
+	if v, ok := cfg.Config["country"].(string); ok {
+		piaCfg.Country = v
+	}
+
+	if v, ok := cfg.Config["city"].(string); ok {
+		piaCfg.City = v
+	}
+
+	if v, ok := cfg.Config["protocol"].(string); ok {
+		piaCfg.Protocol = v
+	}
+
+	if v, ok := cfg.Config["auto_select"].(bool); ok {
+		piaCfg.AutoSelect = v
+	}
+
+	if v, ok := cfg.Config["max_load"].(int); ok {
+		piaCfg.MaxLoad = v
+	}
+
+	if v, ok := cfg.Config["refresh_interval"].(string); ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			piaCfg.RefreshInterval = d
+		}
+	}
+
+	if v, ok := cfg.Config["port_forwarding"].(bool); ok {
+		piaCfg.PortForwarding = v
+	}
+
+	if v, ok := cfg.Config["features"].([]any); ok {
+		for _, f := range v {
+			if s, ok := f.(string); ok {
+				piaCfg.Features = append(piaCfg.Features, s)
+			}
+		}
+	}
+
+	return NewPIABackend(piaCfg), nil
+}
+
+func (f *Factory) createProtonVPN(cfg config.BackendConfig) (Backend, error) {
+	protonCfg := ProtonVPNConfig{
+		Name: cfg.Name,
+	}
+
+	// Credentials are required (OpenVPN credentials from Proton account)
+	if v, ok := cfg.Config["username"].(string); ok {
+		protonCfg.Username = v
+	} else {
+		return nil, fmt.Errorf("protonvpn backend requires 'username' config (OpenVPN credentials)")
+	}
+
+	if v, ok := cfg.Config["password"].(string); ok {
+		protonCfg.Password = v
+	} else {
+		return nil, fmt.Errorf("protonvpn backend requires 'password' config (OpenVPN credentials)")
+	}
+
+	if v, ok := cfg.Config["country"].(string); ok {
+		protonCfg.Country = v
+	}
+
+	if v, ok := cfg.Config["city"].(string); ok {
+		protonCfg.City = v
+	}
+
+	// Tier: 0=free, 1=basic, 2=plus
+	if v, ok := cfg.Config["tier"].(int); ok {
+		protonCfg.Tier = v
+	}
+
+	if v, ok := cfg.Config["protocol"].(string); ok {
+		protonCfg.Protocol = v
+	}
+
+	if v, ok := cfg.Config["auto_select"].(bool); ok {
+		protonCfg.AutoSelect = v
+	}
+
+	if v, ok := cfg.Config["max_load"].(int); ok {
+		protonCfg.MaxLoad = v
+	}
+
+	if v, ok := cfg.Config["refresh_interval"].(string); ok {
+		if d, err := time.ParseDuration(v); err == nil {
+			protonCfg.RefreshInterval = d
+		}
+	}
+
+	if v, ok := cfg.Config["secure_core"].(bool); ok {
+		protonCfg.SecureCore = v
+	}
+
+	if v, ok := cfg.Config["features"].([]any); ok {
+		for _, f := range v {
+			if s, ok := f.(string); ok {
+				protonCfg.Features = append(protonCfg.Features, s)
+			}
+		}
+	}
+
+	return NewProtonVPNBackend(protonCfg), nil
 }
 
 // CreateAll creates all backends from configuration.

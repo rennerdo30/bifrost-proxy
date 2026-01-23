@@ -1,4 +1,7 @@
 import { Section } from '../Section'
+import { ValidatedInput } from '../../ui/ValidatedInput'
+import { useValidation } from '../../../hooks/useValidation'
+import { validators } from '../../../utils/validation'
 import type { WebUIConfig } from '../../../api/types'
 
 interface WebUISectionProps {
@@ -6,8 +9,21 @@ interface WebUISectionProps {
   onChange: (config: WebUIConfig) => void
 }
 
+type WebUIValidationKeys = {
+  listen: string
+  base_path: string
+}
+
 export function WebUISection({ config, onChange }: WebUISectionProps) {
+  const { errors, handleFieldChange } = useValidation<WebUIValidationKeys>({
+    listen: [validators.listenAddress()],
+    base_path: [validators.pattern(/^\//, 'Path must start with /')],
+  })
+
   const update = (field: string, value: unknown) => {
+    if (field === 'listen' || field === 'base_path') {
+      handleFieldChange(field as keyof WebUIValidationKeys, value as never)
+    }
     onChange({ ...config, [field]: value })
   }
 
@@ -26,27 +42,22 @@ export function WebUISection({ config, onChange }: WebUISectionProps) {
 
         {config.enabled && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-7">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Listen Address</label>
-              <input
-                type="text"
-                value={config.listen || ''}
-                onChange={(e) => update('listen', e.target.value)}
-                placeholder=":8081"
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Base Path</label>
-              <input
-                type="text"
-                value={config.base_path || ''}
-                onChange={(e) => update('base_path', e.target.value)}
-                placeholder="/"
-                className="input"
-              />
-              <p className="text-xs text-bifrost-muted mt-1">URL path prefix for the Web UI</p>
-            </div>
+            <ValidatedInput
+              label="Listen Address"
+              value={config.listen || ''}
+              onChange={(e) => update('listen', e.target.value)}
+              placeholder=":8081"
+              error={errors.listen}
+              helpText="Format: :port or host:port"
+            />
+            <ValidatedInput
+              label="Base Path"
+              value={config.base_path || ''}
+              onChange={(e) => update('base_path', e.target.value)}
+              placeholder="/"
+              error={errors.base_path}
+              helpText="URL path prefix for the Web UI"
+            />
           </div>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { Section } from '../Section'
+import { ValidatedInput, ValidatedSelect } from '../../ui/ValidatedInput'
 import type { AccessLogConfig } from '../../../api/types'
 
 interface AccessLogSectionProps {
@@ -26,28 +27,22 @@ export function AccessLogSection({ config, onChange }: AccessLogSectionProps) {
 
         {config.enabled && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-7">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Format</label>
-              <select
-                value={config.format || 'json'}
-                onChange={(e) => update('format', e.target.value)}
-                className="input"
-              >
-                <option value="json">JSON</option>
-                <option value="apache">Apache (Combined)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Output</label>
-              <input
-                type="text"
-                value={config.output || ''}
-                onChange={(e) => update('output', e.target.value)}
-                placeholder="stdout, stderr, or file path"
-                className="input"
-              />
-              <p className="text-xs text-bifrost-muted mt-1">Use stdout, stderr, or a file path</p>
-            </div>
+            <ValidatedSelect
+              label="Format"
+              value={config.format || 'json'}
+              onChange={(e) => update('format', e.target.value)}
+              helpText="Access log output format"
+            >
+              <option value="json">JSON</option>
+              <option value="apache">Apache (Combined)</option>
+            </ValidatedSelect>
+            <ValidatedInput
+              label="Output"
+              value={config.output || ''}
+              onChange={(e) => update('output', e.target.value)}
+              placeholder="stdout, stderr, or file path"
+              helpText="Use stdout, stderr, or a file path"
+            />
           </div>
         )}
       </div>

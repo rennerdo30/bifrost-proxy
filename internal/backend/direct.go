@@ -73,6 +73,7 @@ func (b *DirectBackend) Type() string {
 }
 
 // Dial creates a direct connection to the target.
+// The context deadline is respected and takes precedence over the configured timeout.
 func (b *DirectBackend) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	b.mu.RLock()
 	if !b.running {
@@ -81,7 +82,24 @@ func (b *DirectBackend) Dial(ctx context.Context, network, address string) (net.
 	}
 	b.mu.RUnlock()
 
-	conn, err := b.dialer.DialContext(ctx, network, address)
+	// Check if context is already cancelled
+	if err := ctx.Err(); err != nil {
+		return nil, NewBackendError(b.name, "dial", err)
+	}
+
+	// Use the context deadline if it's sooner than the configured timeout
+	dialer := b.dialer
+	if deadline, ok := ctx.Deadline(); ok {
+		remaining := time.Until(deadline)
+		if remaining < dialer.Timeout {
+			// Create a new dialer with the shorter timeout
+			dialerCopy := *b.dialer
+			dialerCopy.Timeout = remaining
+			dialer = &dialerCopy
+		}
+	}
+
+	conn, err := dialer.DialContext(ctx, network, address)
 	if err != nil {
 		b.recordError(err)
 		return nil, NewBackendError(b.name, "dial", err)

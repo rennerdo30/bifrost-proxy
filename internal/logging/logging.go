@@ -32,6 +32,7 @@ func DefaultConfig() Config {
 var (
 	defaultLogger *slog.Logger
 	loggerMu      sync.RWMutex
+	currentLogFile *os.File // Track current log file for cleanup
 )
 
 func init() {
@@ -41,6 +42,20 @@ func init() {
 	}))
 }
 
+// Close closes the current log file if one is open.
+// This should be called during application shutdown.
+func Close() error {
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
+
+	if currentLogFile != nil {
+		err := currentLogFile.Close()
+		currentLogFile = nil
+		return err
+	}
+	return nil
+}
+
 // Setup initializes the logging system with the given configuration.
 func Setup(cfg Config) error {
 	level, err := parseLevel(cfg.Level)
@@ -48,10 +63,18 @@ func Setup(cfg Config) error {
 		return err
 	}
 
-	output, err := getOutput(cfg.Output)
+	output, logFile, err := getOutput(cfg.Output)
 	if err != nil {
 		return err
 	}
+
+	// Close previous log file if one exists
+	loggerMu.Lock()
+	if currentLogFile != nil {
+		currentLogFile.Close()
+	}
+	currentLogFile = logFile
+	loggerMu.Unlock()
 
 	opts := &slog.HandlerOptions{
 		Level: level,
@@ -92,23 +115,24 @@ func parseLevel(level string) (slog.Level, error) {
 }
 
 // getOutput returns an io.Writer for the given output specification.
-func getOutput(output string) (io.Writer, error) {
+// Returns the writer, the file handle (if a file was opened, nil otherwise), and any error.
+func getOutput(output string) (io.Writer, *os.File, error) {
 	switch strings.ToLower(output) {
 	case "stdout", "":
-		return os.Stdout, nil
+		return os.Stdout, nil, nil
 	case "stderr":
-		return os.Stderr, nil
+		return os.Stderr, nil, nil
 	default:
 		// Treat as file path
 		dir := filepath.Dir(output)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create log directory: %w", err)
+			return nil, nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
 		f, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open log file: %w", err)
+			return nil, nil, fmt.Errorf("failed to open log file: %w", err)
 		}
-		return f, nil
+		return f, f, nil
 	}
 }
 

@@ -33,7 +33,7 @@ linters-settings:
       - G104  # Audit errors not checked (we use errcheck)
 
   goimports:
-    local-prefixes: github.com/bifrost-proxy/bifrost
+    local-prefixes: github.com/rennerdo30/bifrost-proxy
 
   misspell:
     locale: US

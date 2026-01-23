@@ -125,7 +125,7 @@ export interface HealthCheckConfig {
 // Backend Configuration
 export interface BackendConfig {
   name: string
-  type: 'direct' | 'wireguard' | 'openvpn' | 'http_proxy' | 'socks5_proxy'
+  type: 'direct' | 'wireguard' | 'openvpn' | 'http_proxy' | 'socks5_proxy' | 'nordvpn' | 'mullvad' | 'pia' | 'protonvpn'
   enabled: boolean
   priority: number
   weight: number
@@ -134,6 +134,8 @@ export interface BackendConfig {
 }
 
 // Backend type-specific configs
+
+// WireGuard peer configuration
 export interface WireGuardPeerConfig {
   public_key: string
   endpoint: string
@@ -142,17 +144,28 @@ export interface WireGuardPeerConfig {
   persistent_keepalive?: number
 }
 
+// WireGuard backend configuration (for forms - all fields optional during editing)
 export interface WireGuardBackendConfig {
-  private_key: string
-  address: string
+  private_key?: string
+  address?: string
   dns?: string[]
   mtu?: number
-  peer: WireGuardPeerConfig
+  peer?: Partial<WireGuardPeerConfig>
+  // File-based configuration (alternative to inline fields)
+  config_file?: string
+  config_content?: string
 }
 
+// OpenVPN backend configuration
 export interface OpenVPNBackendConfig {
-  config_file: string
+  // Configuration source (one of these should be set)
+  config_file?: string
+  config_content?: string
+  // Authentication
   auth_file?: string
+  username?: string
+  password?: string
+  // Advanced settings
   binary?: string
   management_addr?: string
   management_port?: number
@@ -160,18 +173,90 @@ export interface OpenVPNBackendConfig {
   extra_args?: string[]
 }
 
+// HTTP/SOCKS5 proxy backend configuration (for forms - address optional during editing)
 export interface ProxyBackendConfig {
-  address: string
+  address?: string
   username?: string
   password?: string
   connect_timeout?: string
 }
 
+// Type alias for clarity - HTTP and SOCKS5 use same config structure
+export type HTTPProxyBackendConfig = ProxyBackendConfig
+export type SOCKS5ProxyBackendConfig = ProxyBackendConfig
+
+// Direct connection backend configuration
 export interface DirectBackendConfig {
   connect_timeout?: string
   keep_alive?: string
   local_addr?: string
 }
+
+// NordVPN backend configuration
+export interface NordVPNBackendConfig {
+  country?: string
+  city?: string
+  protocol?: 'wireguard' | 'openvpn'
+  auto_select?: boolean
+  max_load?: number
+  refresh_interval?: string
+  features?: string[]
+  access_token?: string  // WireGuard private key
+  username?: string      // OpenVPN
+  password?: string      // OpenVPN
+}
+
+// Mullvad backend configuration
+export interface MullvadBackendConfig {
+  account_id?: string
+  country?: string
+  city?: string
+  protocol?: 'wireguard' | 'openvpn'
+  auto_select?: boolean
+  max_load?: number
+  refresh_interval?: string
+  features?: string[]
+}
+
+// PIA (Private Internet Access) backend configuration
+export interface PIABackendConfig {
+  username?: string
+  password?: string
+  country?: string
+  city?: string
+  protocol?: 'wireguard' | 'openvpn'
+  auto_select?: boolean
+  max_load?: number
+  refresh_interval?: string
+  port_forwarding?: boolean
+  features?: string[]
+}
+
+// ProtonVPN backend configuration
+export interface ProtonVPNBackendConfig {
+  username?: string
+  password?: string
+  country?: string
+  city?: string
+  tier?: number  // 0=free, 1=basic, 2=plus
+  protocol?: 'openvpn'
+  auto_select?: boolean
+  max_load?: number
+  refresh_interval?: string
+  secure_core?: boolean
+  features?: string[]
+}
+
+// Union type of all backend-specific configs
+export type AnyBackendConfig =
+  | WireGuardBackendConfig
+  | OpenVPNBackendConfig
+  | ProxyBackendConfig
+  | DirectBackendConfig
+  | NordVPNBackendConfig
+  | MullvadBackendConfig
+  | PIABackendConfig
+  | ProtonVPNBackendConfig
 
 // Route Configuration
 export interface RouteConfig {

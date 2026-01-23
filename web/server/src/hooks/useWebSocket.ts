@@ -26,7 +26,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       const ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        console.log('WebSocket connected')
         setIsConnected(true)
       }
 
@@ -35,17 +34,16 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           const data = JSON.parse(event.data) as WSEvent
           setLastMessage(data)
           onMessage?.(data)
-        } catch (err) {
-          console.error('WebSocket parse error:', err)
+        } catch {
+          // Silently ignore parse errors in production
         }
       }
 
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
+      ws.onerror = () => {
+        // Error handling done via onclose
       }
 
       ws.onclose = () => {
-        console.log('WebSocket disconnected')
         setIsConnected(false)
         wsRef.current = null
 
@@ -54,8 +52,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       wsRef.current = ws
-    } catch (err) {
-      console.error('WebSocket connection failed:', err)
+    } catch {
+      // Connection failed, attempt reconnect
       reconnectTimeoutRef.current = setTimeout(connect, reconnectDelay)
     }
   }, [enabled, onMessage, reconnectDelay])

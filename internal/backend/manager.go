@@ -3,8 +3,25 @@ package backend
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sync"
 )
+
+// backendNamePattern matches valid backend names: alphanumeric, hyphens, underscores.
+var backendNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
+
+// ValidateName validates a backend name.
+// Valid names contain only alphanumeric characters, hyphens, and underscores,
+// and must start with an alphanumeric character.
+func ValidateName(name string) error {
+	if name == "" {
+		return fmt.Errorf("%w: backend name cannot be empty", ErrBackendInvalid)
+	}
+	if !backendNamePattern.MatchString(name) {
+		return fmt.Errorf("%w: backend name %q must contain only alphanumeric characters, hyphens, and underscores, and must start with alphanumeric", ErrBackendInvalid, name)
+	}
+	return nil
+}
 
 // Manager manages multiple backends.
 type Manager struct {
@@ -24,11 +41,18 @@ func (m *Manager) Add(backend Backend) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, exists := m.backends[backend.Name()]; exists {
-		return fmt.Errorf("%w: %s", ErrBackendExists, backend.Name())
+	name := backend.Name()
+
+	// Validate backend name
+	if err := ValidateName(name); err != nil {
+		return err
 	}
 
-	m.backends[backend.Name()] = backend
+	if _, exists := m.backends[name]; exists {
+		return fmt.Errorf("%w: %s", ErrBackendExists, name)
+	}
+
+	m.backends[name] = backend
 	return nil
 }
 

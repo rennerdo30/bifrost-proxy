@@ -50,12 +50,42 @@ type ConnTracker struct {
 	done        chan struct{}
 }
 
-// NewConnTracker creates a new connection tracker.
+// ConnTrackerConfig holds configuration for the connection tracker.
+type ConnTrackerConfig struct {
+	// IdleTimeout is the maximum time a connection can be idle before being cleaned up.
+	// Default: 5 minutes.
+	IdleTimeout time.Duration
+	// CleanupInterval is the interval between cleanup runs.
+	// Default: 30 seconds.
+	CleanupInterval time.Duration
+}
+
+// DefaultConnTrackerConfig returns the default configuration.
+func DefaultConnTrackerConfig() ConnTrackerConfig {
+	return ConnTrackerConfig{
+		IdleTimeout:     5 * time.Minute,
+		CleanupInterval: 30 * time.Second,
+	}
+}
+
+// NewConnTracker creates a new connection tracker with default configuration.
 func NewConnTracker() *ConnTracker {
+	return NewConnTrackerWithConfig(DefaultConnTrackerConfig())
+}
+
+// NewConnTrackerWithConfig creates a new connection tracker with the given configuration.
+func NewConnTrackerWithConfig(cfg ConnTrackerConfig) *ConnTracker {
+	if cfg.IdleTimeout <= 0 {
+		cfg.IdleTimeout = 5 * time.Minute
+	}
+	if cfg.CleanupInterval <= 0 {
+		cfg.CleanupInterval = 30 * time.Second
+	}
+
 	ct := &ConnTracker{
 		connections: make(map[ConnKey]*TrackedConnection),
-		idleTimeout: 5 * time.Minute,
-		cleanupTick: 30 * time.Second,
+		idleTimeout: cfg.IdleTimeout,
+		cleanupTick: cfg.CleanupInterval,
 		done:        make(chan struct{}),
 	}
 

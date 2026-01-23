@@ -1,4 +1,7 @@
 import { Section } from '../Section'
+import { ValidatedInput, ValidatedSelect } from '../../ui/ValidatedInput'
+import { useValidation } from '../../../hooks/useValidation'
+import { validators } from '../../../utils/validation'
 import type { HealthCheckConfig } from '../../../api/types'
 
 interface HealthCheckSectionProps {
@@ -6,23 +9,42 @@ interface HealthCheckSectionProps {
   onChange: (config: HealthCheckConfig | undefined) => void
 }
 
+type HealthCheckValidationKeys = {
+  interval: string
+  timeout: string
+  target: string
+  path: string
+}
+
 export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps) {
   const enabled = !!config
 
+  const { errors, handleFieldChange, clearErrors } = useValidation<HealthCheckValidationKeys>({
+    interval: [validators.duration()],
+    timeout: [validators.duration()],
+    target: [validators.pattern(/^[\w.-]+:\d+$/, 'Format: host:port')],
+    path: [validators.pattern(/^\//, 'Path must start with /')],
+  })
+
   const toggleEnabled = (enable: boolean) => {
     if (enable) {
+      clearErrors()
       onChange({
         type: 'tcp',
         interval: '10s',
         timeout: '5s',
       })
     } else {
+      clearErrors()
       onChange(undefined)
     }
   }
 
   const update = (field: string, value: unknown) => {
     if (config) {
+      if (field === 'interval' || field === 'timeout' || field === 'target' || field === 'path') {
+        handleFieldChange(field as keyof HealthCheckValidationKeys, value as never)
+      }
       onChange({ ...config, [field]: value })
     }
   }
@@ -45,57 +67,48 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
 
         {enabled && config && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-7">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
-              <select
-                value={config.type || 'tcp'}
-                onChange={(e) => update('type', e.target.value)}
-                className="input"
-              >
-                <option value="tcp">TCP</option>
-                <option value="http">HTTP</option>
-                <option value="ping">Ping</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Interval</label>
-              <input
-                type="text"
-                value={config.interval || ''}
-                onChange={(e) => update('interval', e.target.value)}
-                placeholder="10s"
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Timeout</label>
-              <input
-                type="text"
-                value={config.timeout || ''}
-                onChange={(e) => update('timeout', e.target.value)}
-                placeholder="5s"
-                className="input"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Target</label>
-              <input
-                type="text"
-                value={config.target || ''}
-                onChange={(e) => update('target', e.target.value)}
-                placeholder="host:port"
-                className="input"
-              />
-            </div>
+            <ValidatedSelect
+              label="Type"
+              value={config.type || 'tcp'}
+              onChange={(e) => update('type', e.target.value)}
+            >
+              <option value="tcp">TCP</option>
+              <option value="http">HTTP</option>
+              <option value="ping">Ping</option>
+            </ValidatedSelect>
+            <ValidatedInput
+              label="Interval"
+              value={config.interval || ''}
+              onChange={(e) => update('interval', e.target.value)}
+              placeholder="10s"
+              error={errors.interval}
+              helpText="Time between checks (e.g., 10s, 1m)"
+            />
+            <ValidatedInput
+              label="Timeout"
+              value={config.timeout || ''}
+              onChange={(e) => update('timeout', e.target.value)}
+              placeholder="5s"
+              error={errors.timeout}
+              helpText="Maximum time to wait for response"
+            />
+            <ValidatedInput
+              label="Target"
+              value={config.target || ''}
+              onChange={(e) => update('target', e.target.value)}
+              placeholder="host:port"
+              error={errors.target}
+              helpText="Health check endpoint (optional)"
+            />
             {config.type === 'http' && (
               <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-300 mb-1">HTTP Path</label>
-                <input
-                  type="text"
+                <ValidatedInput
+                  label="HTTP Path"
                   value={config.path || ''}
                   onChange={(e) => update('path', e.target.value)}
                   placeholder="/health"
-                  className="input"
+                  error={errors.path}
+                  helpText="URL path for HTTP health checks"
                 />
               </div>
             )}

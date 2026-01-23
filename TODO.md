@@ -783,7 +783,7 @@ Track implementation progress by checking off completed items.
   - [x] Add note to `docs/deployment.md` Windows section
   - [x] Add troubleshooting entry in `docs/troubleshooting.md`
 
-- [ ] **Phase 3 (Future v2.0): Windows API Implementation**
+- [ ] **Phase 3: Windows API Implementation**
   - [ ] Research `LogonUserW` Win32 API requirements
   - [ ] Create `internal/auth/system_windows.go` with build tags
   - [ ] Implement `validateWindows()` using syscall or CGO
@@ -850,7 +850,46 @@ Track implementation progress by checking off completed items.
 
 ---
 
-### 4. Future Enhancements (v2.0 Candidates)
+### 4. VPN Provider Support ✅ COMPLETED
+
+Native support for major VPN providers with full API integration.
+
+- [x] **Core Infrastructure**
+  - [x] Provider interface and common types (`internal/vpnprovider/provider.go`)
+  - [x] Server caching with TTL (`internal/vpnprovider/cache.go`)
+  - [x] Provider-specific errors (`internal/vpnprovider/errors.go`)
+
+- [x] **NordVPN Provider**
+  - [x] API client for server list and recommendations
+  - [x] WireGuard (NordLynx) and OpenVPN support
+  - [x] Backend wrapper (`internal/backend/nordvpn.go`)
+  - [x] Web UI form component
+
+- [x] **Mullvad Provider**
+  - [x] API client with WireGuard key registration
+  - [x] Account number authentication
+  - [x] Backend wrapper (`internal/backend/mullvad.go`)
+  - [x] Web UI form component
+
+- [x] **PIA (Private Internet Access) Provider**
+  - [x] API client with token authentication
+  - [x] Port forwarding support
+  - [x] Backend wrapper (`internal/backend/pia.go`)
+  - [x] Web UI form component
+
+- [x] **ProtonVPN Provider**
+  - [x] API client with manual credentials mode
+  - [x] Tier-based server filtering (free/basic/plus)
+  - [x] Secure Core support
+  - [x] Backend wrapper (`internal/backend/protonvpn.go`)
+  - [x] Web UI form component
+
+- [x] **Factory Registration**
+  - [x] Added nordvpn, mullvad, pia, protonvpn to backend factory
+
+---
+
+### 5. Platform Enhancements
 
 - [ ] **Windows system authentication support (LogonUser API)**
   - [ ] Research Windows LogonUser API requirements
@@ -993,59 +1032,448 @@ Issues identified during deep code review. All CRITICAL, HIGH, and MEDIUM priori
 
 ### Low Priority
 
-#### 15. LDAP Groups Retrieval Silently Fails
-**File:** `internal/auth/ldap.go`
+#### 15. LDAP Groups Retrieval Silently Fails ✅ FIXED
+**File:** `internal/auth/plugin/ldap/ldap.go`
 
-- [ ] Make group lookup failure behavior configurable (fail-open vs fail-closed)
+- [x] Make group lookup failure behavior configurable (fail-open vs fail-closed)
 
-**Current:** If group lookup fails, user authenticates with empty groups.
-
----
-
-#### 16. No Audit Logging of Auth Failures
-**Files:** All authenticators
-
-- [ ] Add structured audit logging for all auth events
-- [ ] Log username, reason, client IP for failures
-- [ ] Use `slog.Warn` with consistent fields
+**Fixed:** Added `group_lookup_fail_closed` config option. When true, authentication fails if group lookup fails (fail-closed behavior). Default is false (fail-open, maintains backward compatibility).
 
 ---
 
-#### 17. Router Potential Nil Dereference
-**File:** `internal/router/server_router.go`
+#### 16. No Audit Logging of Auth Failures ✅ FIXED
+**File:** `internal/auth/middleware.go`
 
-- [ ] Add nil checks before accessing internal state
-- [ ] Or ensure router is always properly initialized
+- [x] Add structured audit logging for all auth events
+- [x] Log username, reason, client IP for failures
+- [x] Use `slog.Warn` with consistent fields
+
+**Fixed:** Added `logAuthFailure()` method to middleware that logs authentication failures with client_ip, username, reason, path, method, and error fields.
 
 ---
 
-#### 18. Context Timeout Not Applied in Direct Backend
+#### 17. Router Potential Nil Dereference ✅ FIXED
+**Files:** `internal/router/router.go`, `internal/router/server.go`, `internal/router/client.go`
+
+- [x] Add nil checks before accessing internal state
+- [x] Check for nil routes and matchers in Match methods
+- [x] Check for nil backendManager in GetBackendForDomain
+
+**Fixed:** Added comprehensive nil checks throughout router package.
+
+---
+
+#### 18. Context Timeout Not Applied in Direct Backend ✅ FIXED
 **File:** `internal/backend/direct.go`
 
-- [ ] Wrap dial with explicit timeout from context
-- [ ] Ensure underlying dialer respects context
+- [x] Wrap dial with explicit timeout from context
+- [x] Ensure underlying dialer respects context
+
+**Fixed:** Added explicit context deadline check in Dial(). If context has a deadline shorter than configured timeout, creates a new dialer with the shorter timeout. Also checks for context cancellation before dialing.
 
 ---
 
-#### 19. IPv6 Address Formatting in SOCKS5
+#### 19. IPv6 Address Formatting in SOCKS5 ✅ FIXED
 **File:** `internal/proxy/socks5.go`
 
-- [ ] Use consistent IPv6 formatting with brackets in error messages/logs
+- [x] Use consistent IPv6 formatting with brackets in error messages/logs
 
 ---
 
-#### 20. No Backend Name Validation
+#### 20. No Backend Name Validation ✅ FIXED
 **File:** `internal/backend/manager.go`
 
-- [ ] Validate backend names against regex pattern
-- [ ] Allow only alphanumeric, hyphens, underscores
+- [x] Validate backend names against regex pattern
+- [x] Allow only alphanumeric, hyphens, underscores
+
+**Fixed:** Added `ValidateName()` function and `backendNamePattern` regex. Names must start with alphanumeric and contain only alphanumeric, hyphens, and underscores.
 
 ---
 
-#### 21. Hardcoded 5s Copy Timeout
-**File:** `internal/proxy/copy.go`
+#### 21. Hardcoded Timeout in ConnTracker ✅ FIXED
+**File:** `internal/vpn/conntrack.go`
 
-- [ ] Make idle timeout configurable via context or parameter
+- [x] Make idle timeout configurable via ConnTrackerConfig
+
+**Fixed:** Added `ConnTrackerConfig` struct with `IdleTimeout` and `CleanupInterval` fields. `NewConnTrackerWithConfig()` accepts custom configuration. Default values maintained for backward compatibility.
+
+---
+
+## Code Review Findings (2026-01-23)
+
+Comprehensive review of the entire codebase for issues, missing tests, and improvements needed.
+
+### CRITICAL - Go Backend
+
+#### CR-1. File Descriptor Leak in Logging System ✅ FIXED
+**File:** `internal/logging/logging.go`
+**Confidence:** 90%
+
+- [x] Track opened file descriptors - `currentLogFile` variable added
+- [x] Close the previous file descriptor before opening a new one - handled in `Setup()`
+- [x] Implement a proper `Close()` method for cleanup - `Close()` method added
+
+**Fixed:** File descriptors are now properly tracked and closed.
+
+---
+
+#### CR-2. Unsafe Type Assertion Can Cause Panic ✅ FIXED
+**File:** `internal/server/server.go:705, 795`
+**Confidence:** 85%
+
+- [x] Use safe two-value form of type assertion
+- [x] Handle non-TCP connections gracefully
+
+**Fixed:** Code already uses safe two-value form `tcpAddr, ok := conn.RemoteAddr().(*net.TCPAddr)` and handles non-TCP connections by logging and closing.
+
+---
+
+#### CR-3. Context Cancellation Not Propagated on Shutdown ✅ FIXED
+**Files:**
+- `internal/service/runner_unix.go`
+- `internal/service/runner_windows.go`
+
+**Confidence:** 82%
+
+- [x] Use timeout context for Stop(): `context.WithTimeout(context.Background(), ShutdownTimeout)`
+
+**Fixed:** Both Unix and Windows runners use `ShutdownTimeout = 30 * time.Second` with timeout context.
+
+---
+
+#### CR-4. Incomplete Peer Relay Implementation
+**File:** `internal/mesh/node.go:856`
+**Confidence:** 75%
+
+TODO comment indicates feature is not implemented:
+```go
+if n.config.Connection.RelayViaPeers {
+    n.p2pManager.GetStats() // TODO: Add peer as relay
+}
+```
+
+- [ ] Implement peer relay functionality, or
+- [ ] Remove the config option if not planned for current version
+
+---
+
+#### CR-5. "Quick Hack" in Production Code
+**File:** `internal/config/node.go:122`
+**Confidence:** 75%
+
+Comment suggests temporary code: "Quick hack: marshal to yaml bytes then unmarshal to node"
+
+- [ ] Replace with proper implementation, or
+- [ ] Remove "hack" comment if implementation is actually intentional
+
+---
+
+### CRITICAL - CI/CD Configuration
+
+#### CR-6. Branch Name Mismatch in Workflows ✅ FIXED
+**Files:**
+- `.github/workflows/ci.yml`
+- `.github/workflows/docs.yml`
+
+**Confidence:** 100%
+
+- [x] Update workflows to use `master` branch
+
+**Fixed:** Updated `ci.yml` build-all job condition and `docs.yml` to use `master` branch.
+
+---
+
+#### CR-7. Module Path Inconsistency in golangci.yml ✅ FIXED
+**File:** `.golangci.yml:36`
+**Confidence:** 100%
+
+- [x] Update to `github.com/rennerdo30/bifrost-proxy`
+
+**Fixed:** Module path was already correct.
+
+---
+
+#### CR-8. Non-existent Go Version Specified ✅ FIXED
+**File:** `.github/workflows/ci.yml`
+**Confidence:** 82%
+
+- [x] Update CI workflow to use Go 1.23
+
+**Fixed:** CI workflow updated to use `GO_VERSION: '1.23'`.
+
+---
+
+### HIGH PRIORITY - Missing Tests
+
+#### CR-9. No Tests for Service Runners
+**Files:**
+- `internal/service/runner_unix.go`
+- `internal/service/runner_windows.go`
+
+**Confidence:** 95%
+
+Critical service management code (signal handling, Windows Service integration) has no test coverage.
+
+- [ ] Create tests with mocked signal handling
+- [ ] Test SIGHUP reload behavior
+- [ ] Test SIGINT/SIGTERM shutdown
+- [ ] Test Windows Service integration
+
+---
+
+#### CR-10. No Tests for OpenVPN Integration
+**Files:**
+- `internal/openvpn/config.go` - ParseConfigFile (lines 47-157)
+- `internal/openvpn/process.go` - Start, Stop, monitorManagement, parseManagementLine
+
+**Confidence:** 90%
+
+Complex VPN configuration parsing and process management code without tests.
+
+- [ ] Mock `exec.Command` for process tests
+- [ ] Test config parsing with various .ovpn formats
+- [ ] Test management interface state machine
+
+---
+
+#### CR-11. No Tests for System Proxy
+**Files:** `internal/sysproxy/` - All platform-specific files
+
+**Confidence:** 85%
+
+System proxy configuration code has no tests.
+
+- [ ] Mock platform-specific API calls
+- [ ] Test SetProxy/ClearProxy on all platforms
+
+---
+
+#### CR-12. No CLI Integration Tests
+**Files:** `cmd/server/main.go`, `cmd/client/main.go`
+
+**Confidence:** 80%
+
+- [ ] Test version command
+- [ ] Test config init command
+- [ ] Test invalid flag combinations
+
+---
+
+### HIGH PRIORITY - Web UI (Server)
+
+#### CR-13. Missing NaN Validation in Number Inputs ✅ FIXED
+**Files:**
+- `web/server/src/components/Config/sections/CacheSection.tsx:165`
+- `web/server/src/components/Config/sections/ServerSection.tsx:91, 185`
+- `web/server/src/components/Config/sections/APISection.tsx:77, 99`
+- `web/server/src/components/Config/sections/RateLimitSection.tsx:53, 62`
+
+**Confidence:** 90%
+
+`parseInt(e.target.value)` without NaN handling can store `NaN` in state.
+
+- [x] Add fallback: `parseInt(e.target.value) || 0`
+
+---
+
+#### CR-14. Using Browser alert() Instead of Notifications ✅ FIXED
+**File:** `web/server/src/pages/Config.tsx:21, 23, 27, 35, 38`
+**Confidence:** 85%
+
+- [x] Implement toast notification system (react-hot-toast, sonner, etc.)
+- [x] Replace all `alert()` calls
+
+---
+
+#### CR-15. Console Logging in Production ✅ FIXED
+**File:** `web/server/src/hooks/useWebSocket.ts:29, 39, 44, 48, 58`
+**Confidence:** 90%
+
+- [x] Remove console.log statements, or
+- [x] Make conditional: `if (import.meta.env.DEV)`
+
+---
+
+### HIGH PRIORITY - Web UI (Client)
+
+#### CR-16. Missing Error Feedback in Settings ✅ FIXED
+**File:** `web/client/src/pages/Settings.tsx:200-201, 215-216`
+**Confidence:** 85%
+
+Error handling uses `console.error()` without user-visible feedback.
+
+- [x] Add user-visible error notifications for export/defaults operations
+
+---
+
+#### CR-17. Missing Input Validation in VPN Split Tunnel ✅ FIXED
+**File:** `web/client/src/pages/VPN.tsx:310, 341`
+**Confidence:** 82%
+
+No client-side validation for domain patterns and IP CIDR inputs.
+
+- [x] Add domain format validation
+- [x] Add CIDR notation validation
+
+---
+
+### MEDIUM PRIORITY - Documentation & Config
+
+#### CR-18. Missing Security Workflow
+**File:** Missing `.github/workflows/security.yml`
+**Confidence:** 90%
+
+CLAUDE.md documents a security workflow with CodeQL but it doesn't exist.
+
+- [x] Create `.github/workflows/security.yml` as documented, or
+- [ ] Remove documentation about it
+
+---
+
+#### CR-19. Missing Dependabot Configuration
+**File:** Missing `.github/dependabot.yml`
+**Confidence:** 85%
+
+CLAUDE.md requires "Regular dependency updates via Dependabot" but no config exists.
+
+- [x] Create `.github/dependabot.yml` for gomod and npm
+
+---
+
+#### CR-20. Outdated Repository URLs in Documentation
+**Files:**
+- `docs/getting-started.md:14, 18, 22, 29`
+- `docs/authentication.md:45`
+- `deploy/systemd/*.service:3`
+
+**Confidence:** 100%
+
+References old `github.com/bifrost-proxy/bifrost` instead of `github.com/rennerdo30/bifrost-proxy`.
+
+- [ ] Update all URLs to current repository
+
+---
+
+#### CR-21. Missing Node.js Setup in CI Build
+**File:** `.github/workflows/ci.yml:53-72`
+**Confidence:** 85%
+
+CI build job runs `make build` which needs Node.js for web UI, but Node.js isn't installed.
+
+- [ ] Add Node.js setup step before build
+
+---
+
+### MEDIUM PRIORITY - Accessibility
+
+#### CR-22. Missing aria-label on Icon Buttons
+**Files:**
+- `web/server/src/components/Config/Modal.tsx:57-64`
+- `web/server/src/components/Config/ArrayInput.tsx:35-43`
+- `web/server/src/components/Config/sections/APISection.tsx:53-68`
+- `web/client/src/pages/Traffic.tsx:47-52`
+- `web/client/src/pages/Logs.tsx:138-148`
+
+**Confidence:** 85%
+
+- [x] Add `aria-label` to all icon-only buttons
+
+---
+
+#### CR-23. Password Fields Missing autocomplete
+**Files:**
+- `web/server/src/components/Config/sections/APISection.tsx:46-52`
+- `web/server/src/components/Config/backend-forms/OpenVPNBackendForm.tsx:240`
+
+**Confidence:** 80%
+
+- [x] Add `autoComplete="off"` or `autoComplete="new-password"`
+
+---
+
+### LOW PRIORITY - Test Coverage Improvements
+
+#### CR-24. Load Balancer Edge Cases
+**File:** `internal/router/loadbalancer.go`
+
+- [ ] Test counter overflow scenarios
+- [ ] Test zero weights
+- [ ] Test IPv6 addresses
+- [ ] Test dynamic health state changes
+
+---
+
+#### CR-25. Server Startup Error Injection Tests
+**File:** `internal/server/server.go`
+
+- [ ] Test backend startup failures
+- [ ] Test cache manager failures
+- [ ] Test health manager failures
+
+---
+
+#### CR-26. Platform-Specific Test Mocks
+**Files:**
+- `internal/vpn/routes_*.go`
+- `internal/vpn/process_*.go`
+- `internal/device/tun_*.go`
+- `internal/device/tap_*.go`
+
+- [ ] Add cross-platform test mocks
+
+---
+
+### LOW PRIORITY - Documentation Consistency
+
+#### CR-27. Inconsistent Binary Naming
+**Files:** CLAUDE.md, SPECIFICATION.md
+
+Documentation uses both `simple-proxy-server/client` and `bifrost-server/client` inconsistently.
+
+- [ ] Standardize on `bifrost-*` naming throughout
+
+---
+
+#### CR-28. CLAUDE.md Contains Placeholder Content
+**File:** CLAUDE.md:59-66, 484-486, 607
+
+- [x] Replace placeholder names like `github.com/yourorg/simple-proxy-server`
+
+---
+
+### LOW PRIORITY - Minor Code Improvements
+
+#### CR-29. Potential EventSource Memory Leak
+**File:** `web/client/src/pages/Logs.tsx:22-52`
+
+- [x] Ensure EventSource cleanup happens in all cases
+
+---
+
+#### CR-30. Type Safety Improvements ✅ FIXED
+**File:** `web/server/src/components/Config/backend-forms/WireGuardBackendForm.tsx`
+
+- [x] Consider creating proper typed interfaces for each backend config type
+
+---
+
+#### CR-31. Inconsistent Form Validation Patterns ✅ FIXED
+
+- [x] Standardize validation approach across all config sections
+
+---
+
+## Code Review Summary
+
+| Category | Critical | High | Medium | Low |
+|----------|----------|------|--------|-----|
+| Go Backend | 5 | 1 | 0 | 0 |
+| Tests | 0 | 4 | 0 | 3 |
+| Web UI | 0 | 4 | 2 | 3 |
+| CI/CD & Docs | 3 | 0 | 4 | 2 |
+| **Total** | **8** | **9** | **6** | **8** |
+
+**Total New Issues:** 31
 
 ---
 

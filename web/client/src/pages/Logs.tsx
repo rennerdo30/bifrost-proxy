@@ -37,11 +37,13 @@ export function Logs() {
 
       es.onerror = () => {
         es.close()
+        eventSourceRef.current = null
         setStreaming(false)
       }
 
       return () => {
         es.close()
+        eventSourceRef.current = null
       }
     } else {
       if (eventSourceRef.current) {
@@ -50,6 +52,16 @@ export function Logs() {
       }
     }
   }, [streaming])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close()
+        eventSourceRef.current = null
+      }
+    }
+  }, [])
 
   // Auto-scroll
   useEffect(() => {

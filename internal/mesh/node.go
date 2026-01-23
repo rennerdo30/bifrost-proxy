@@ -851,9 +851,15 @@ func (n *MeshNode) onPeerConnected(peerID string, conn p2p.P2PConnection) {
 		n.protocol.NotifyPeerConnected(peerID, peer.VirtualIP, conn.Latency())
 	}
 
-	// Add as potential relay
+	// Add as potential relay (feature planned for future release)
+	// When RelayViaPeers is enabled, connected peers can act as relays
+	// for other peers that cannot establish direct connections.
 	if n.config.Connection.RelayViaPeers {
-		n.p2pManager.GetStats() // TODO: Add peer as relay
+		// Currently logs relay capability; full relay implementation
+		// will be added in a future version
+		slog.Debug("Peer relay enabled, peer available as relay candidate",
+			"peer", peerID,
+			"stats", n.p2pManager.GetStats())
 	}
 }
 

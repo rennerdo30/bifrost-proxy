@@ -65,6 +65,7 @@ nav:
   - Configuration:
       - Overview: configuration.md
       - Backends: backends.md
+      - VPN Providers: vpn-providers.md
       - Authentication: authentication.md
       - VPN Mode: vpn-mode.md
       - Mesh Networking: mesh-networking.md

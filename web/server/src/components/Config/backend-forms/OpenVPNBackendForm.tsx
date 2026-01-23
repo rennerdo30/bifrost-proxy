@@ -1,20 +1,21 @@
 import { useState, useRef } from 'react'
 import { ArrayInput } from '../ArrayInput'
+import { OpenVPNBackendConfig } from '../../../api/types'
 
 interface OpenVPNBackendFormProps {
-  config: Record<string, unknown>
-  onChange: (config: Record<string, unknown>) => void
+  config: OpenVPNBackendConfig
+  onChange: (config: OpenVPNBackendConfig) => void
 }
 
 export function OpenVPNBackendForm({ config, onChange }: OpenVPNBackendFormProps) {
   const [showImport, setShowImport] = useState(false)
   const [configText, setConfigText] = useState('')
   const [authMethod, setAuthMethod] = useState<'file' | 'inline'>(
-    (config.username as string) ? 'inline' : 'file'
+    config.username ? 'inline' : 'file'
   )
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const update = (field: string, value: unknown) => {
+  const update = <K extends keyof OpenVPNBackendConfig>(field: K, value: OpenVPNBackendConfig[K]) => {
     onChange({ ...config, [field]: value })
   }
 
@@ -144,7 +145,7 @@ key [inline]
       )}
 
       {/* Config Content Display */}
-      {(config.config_content as string) && (
+      {config.config_content && (
         <div className="bg-bifrost-bg-tertiary rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
             <h4 className="text-sm font-semibold text-white">Embedded Configuration</h4>
@@ -157,19 +158,19 @@ key [inline]
             </button>
           </div>
           <pre className="text-xs text-bifrost-muted font-mono bg-bifrost-bg rounded p-2 max-h-32 overflow-auto">
-            {(config.config_content as string).slice(0, 500)}
-            {(config.config_content as string).length > 500 && '...'}
+            {config.config_content.slice(0, 500)}
+            {config.config_content.length > 500 && '...'}
           </pre>
         </div>
       )}
 
       {/* Config File Path (alternative to embedded) */}
-      {!(config.config_content as string) && (
+      {!config.config_content && (
         <div>
           <label className="block text-sm font-medium text-gray-300 mb-1">Config File Path</label>
           <input
             type="text"
-            value={(config.config_file as string) || ''}
+            value={config.config_file || ''}
             onChange={(e) => update('config_file', e.target.value)}
             placeholder="/path/to/client.ovpn"
             className="input"
@@ -213,7 +214,7 @@ key [inline]
             <label className="block text-sm font-medium text-gray-300 mb-1">Auth File</label>
             <input
               type="text"
-              value={(config.auth_file as string) || ''}
+              value={config.auth_file || ''}
               onChange={(e) => update('auth_file', e.target.value)}
               placeholder="/path/to/auth.txt"
               className="input"
@@ -228,7 +229,7 @@ key [inline]
               <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
               <input
                 type="text"
-                value={(config.username as string) || ''}
+                value={config.username || ''}
                 onChange={(e) => update('username', e.target.value)}
                 placeholder="VPN username"
                 className="input"
@@ -238,9 +239,10 @@ key [inline]
               <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
               <input
                 type="password"
-                value={(config.password as string) || ''}
+                value={config.password || ''}
                 onChange={(e) => update('password', e.target.value)}
                 placeholder="VPN password"
+                autoComplete="off"
                 className="input"
               />
             </div>
@@ -256,7 +258,7 @@ key [inline]
             <label className="block text-sm font-medium text-gray-300 mb-1">OpenVPN Binary</label>
             <input
               type="text"
-              value={(config.binary as string) || ''}
+              value={config.binary || ''}
               onChange={(e) => update('binary', e.target.value)}
               placeholder="openvpn (default)"
               className="input"
@@ -266,7 +268,7 @@ key [inline]
             <label className="block text-sm font-medium text-gray-300 mb-1">Connect Timeout</label>
             <input
               type="text"
-              value={(config.connect_timeout as string) || ''}
+              value={config.connect_timeout || ''}
               onChange={(e) => update('connect_timeout', e.target.value)}
               placeholder="30s"
               className="input"
@@ -276,7 +278,7 @@ key [inline]
             <label className="block text-sm font-medium text-gray-300 mb-1">Management Address</label>
             <input
               type="text"
-              value={(config.management_addr as string) || ''}
+              value={config.management_addr || ''}
               onChange={(e) => update('management_addr', e.target.value)}
               placeholder="127.0.0.1"
               className="input"
@@ -286,7 +288,7 @@ key [inline]
             <label className="block text-sm font-medium text-gray-300 mb-1">Management Port</label>
             <input
               type="number"
-              value={(config.management_port as number) || ''}
+              value={config.management_port ?? ''}
               onChange={(e) => update('management_port', parseInt(e.target.value) || undefined)}
               placeholder="7505"
               className="input"
@@ -295,7 +297,7 @@ key [inline]
           <div className="md:col-span-2">
             <ArrayInput
               label="Extra Arguments"
-              values={(config.extra_args as string[]) || []}
+              values={config.extra_args ?? []}
               onChange={(args) => update('extra_args', args)}
               placeholder="--verb 3"
             />

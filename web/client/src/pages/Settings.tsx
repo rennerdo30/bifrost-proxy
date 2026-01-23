@@ -11,6 +11,7 @@ import {
   FormTagInput,
   ConfigSection,
 } from '../components/form'
+import { useToast } from '../components/Toast'
 
 // Icons
 const ServerIcon = () => (
@@ -79,8 +80,70 @@ const ExportIcon = () => (
   </svg>
 )
 
+// Validation functions for split tunnel inputs
+const validateDomain = (value: string): string | null => {
+  // Allow wildcards like *.example.com
+  const domainPattern = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/
+  if (!domainPattern.test(value)) {
+    return 'Invalid domain format. Use format like "example.com" or "*.example.com"'
+  }
+  return null
+}
+
+const validateIP = (value: string): string | null => {
+  // IPv4 pattern
+  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
+  // IPv6 pattern (simplified)
+  const ipv6Pattern = /^([0-9a-fA-F:]+)(\/\d{1,3})?$/
+
+  if (ipv4Pattern.test(value)) {
+    // Validate IPv4 octets
+    const parts = value.split('/')[0].split('.')
+    for (const part of parts) {
+      const num = parseInt(part, 10)
+      if (num < 0 || num > 255) {
+        return 'Invalid IPv4 address. Each octet must be 0-255'
+      }
+    }
+    // Validate CIDR if present
+    if (value.includes('/')) {
+      const cidr = parseInt(value.split('/')[1], 10)
+      if (cidr < 0 || cidr > 32) {
+        return 'Invalid CIDR notation. IPv4 prefix must be 0-32'
+      }
+    }
+    return null
+  }
+
+  if (ipv6Pattern.test(value)) {
+    // Validate IPv6 CIDR if present
+    if (value.includes('/')) {
+      const cidr = parseInt(value.split('/')[1], 10)
+      if (cidr < 0 || cidr > 128) {
+        return 'Invalid CIDR notation. IPv6 prefix must be 0-128'
+      }
+    }
+    return null
+  }
+
+  return 'Invalid IP format. Use IPv4 (e.g., "10.0.0.0/8") or IPv6'
+}
+
+const validateDomainOrIP = (value: string): string | null => {
+  // Try domain first, then IP
+  const domainError = validateDomain(value)
+  const ipError = validateIP(value)
+
+  if (domainError === null || ipError === null) {
+    return null // Valid if either is valid
+  }
+
+  return 'Invalid format. Enter a domain (e.g., "example.com") or IP/CIDR (e.g., "10.0.0.0/8")'
+}
+
 export function Settings() {
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [pendingChanges, setPendingChanges] = useState<Partial<ClientConfig>>({})
   const [hasChanges, setHasChanges] = useState(false)
@@ -99,10 +162,12 @@ export function Settings() {
       setPendingChanges({})
       setHasChanges(false)
       setSaveStatus('saved')
+      showToast('Configuration saved successfully', 'success')
       setTimeout(() => setSaveStatus('idle'), 3000)
     },
-    onError: () => {
+    onError: (err) => {
       setSaveStatus('error')
+      showToast(`Failed to save configuration: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     },
   })
@@ -113,6 +178,10 @@ export function Settings() {
       queryClient.invalidateQueries({ queryKey: ['config'] })
       setPendingChanges({})
       setHasChanges(false)
+      showToast('Configuration reloaded successfully', 'success')
+    },
+    onError: (err) => {
+      showToast(`Failed to reload configuration: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     },
   })
 
@@ -197,7 +266,8 @@ export function Settings() {
       const defaults = await api.getConfigDefaults()
       updateMutation.mutate(defaults)
     } catch (err) {
-      console.error('Failed to get defaults:', err)
+      console.error('Failed to reset to defaults:', err)
+      showToast(`Failed to reset to defaults: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }
 
@@ -205,14 +275,21 @@ export function Settings() {
   const exportConfig = async (format: 'json' | 'yaml') => {
     try {
       const blob = await api.exportConfig(format)
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `bifrost-client-config.${format}`
-      a.click()
-      URL.revokeObjectURL(url)
+      try {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `bifrost-client-config.${format}`
+        a.click()
+        URL.revokeObjectURL(url)
+        showToast('Configuration exported successfully', 'success')
+      } catch (downloadErr) {
+        console.error('Failed to download exported configuration:', downloadErr)
+        showToast('Failed to download file. Please check your browser settings.', 'error')
+      }
     } catch (err) {
-      console.error('Failed to export:', err)
+      console.error('Failed to export configuration:', err)
+      showToast(`Failed to export configuration: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }
 
@@ -225,7 +302,15 @@ export function Settings() {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
 
-      const content = await file.text()
+      let content: string
+      try {
+        content = await file.text()
+      } catch (readErr) {
+        console.error('Failed to read configuration file:', readErr)
+        showToast('Failed to read the selected file. Please ensure the file is accessible.', 'error')
+        return
+      }
+
       const format = file.name.endsWith('.json') ? 'json' : 'yaml'
 
       try {
@@ -233,9 +318,11 @@ export function Settings() {
         setLastResponse(response)
         queryClient.invalidateQueries({ queryKey: ['config'] })
         setSaveStatus('saved')
+        showToast('Configuration imported successfully', 'success')
         setTimeout(() => setSaveStatus('idle'), 3000)
       } catch (err) {
-        console.error('Failed to import:', err)
+        console.error('Failed to import configuration:', err)
+        showToast(`Failed to import configuration: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
         setSaveStatus('error')
         setTimeout(() => setSaveStatus('idle'), 3000)
       }
@@ -918,6 +1005,7 @@ export function Settings() {
                   setHasChanges(true)
                 }}
                 placeholder="e.g., internal.example.com"
+                validate={validateDomain}
               />
               <FormTagInput
                 label="Split Tunnel IPs"
@@ -934,6 +1022,7 @@ export function Settings() {
                   setHasChanges(true)
                 }}
                 placeholder="e.g., 10.0.0.0/8"
+                validate={validateIP}
               />
               <FormTagInput
                 label="Always Bypass"
@@ -950,6 +1039,7 @@ export function Settings() {
                   setHasChanges(true)
                 }}
                 placeholder="e.g., 8.8.8.8"
+                validate={validateDomainOrIP}
               />
             </div>
           </div>
@@ -1048,6 +1138,7 @@ export function Settings() {
               label="Discovery Token"
               placeholder="Optional"
               type="password"
+              autoComplete="off"
               value={meshDiscovery.token || ''}
               onChange={(v) => updateField('mesh', 'discovery', { ...meshDiscovery, token: v })}
             />

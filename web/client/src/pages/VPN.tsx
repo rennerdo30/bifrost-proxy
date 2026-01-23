@@ -2,6 +2,40 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, VPNConnection } from '../api/client'
 
+// Validation functions for split tunnel inputs
+function validateDomain(value: string): string | null {
+  if (!value.trim()) return null
+  // Allow wildcards like *.example.com or exact domains
+  const domainPattern = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/
+  if (!domainPattern.test(value)) {
+    return 'Invalid domain format. Use format like "example.com" or "*.example.com"'
+  }
+  return null
+}
+
+function validateCIDR(value: string): string | null {
+  if (!value.trim()) return null
+  // Match IPv4 CIDR notation (e.g., 192.168.1.0/24) or plain IP
+  const cidrPattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
+  if (!cidrPattern.test(value)) {
+    return 'Invalid IP/CIDR format. Use format like "192.168.1.0/24" or "10.0.0.1"'
+  }
+  // Validate IP octets are in range
+  const ipPart = value.split('/')[0]
+  const octets = ipPart.split('.').map(Number)
+  if (octets.some(o => o < 0 || o > 255)) {
+    return 'Invalid IP address. Each octet must be 0-255'
+  }
+  // Validate CIDR prefix if present
+  if (value.includes('/')) {
+    const prefix = parseInt(value.split('/')[1])
+    if (prefix < 0 || prefix > 32) {
+      return 'Invalid CIDR prefix. Must be 0-32'
+    }
+  }
+  return null
+}
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
   const k = 1024
@@ -15,6 +49,8 @@ export function VPN() {
   const [newDomain, setNewDomain] = useState('')
   const [newIP, setNewIP] = useState('')
   const [newAppName, setNewAppName] = useState('')
+  const [domainError, setDomainError] = useState<string | null>(null)
+  const [ipError, setIpError] = useState<string | null>(null)
 
   const { data: vpnStatus, isLoading: statusLoading } = useQuery({
     queryKey: ['vpn-status'],
@@ -62,6 +98,7 @@ export function VPN() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
       setNewDomain('')
+      setDomainError(null)
     },
   })
 
@@ -70,6 +107,7 @@ export function VPN() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
       setNewIP('')
+      setIpError(null)
     },
   })
 
@@ -282,6 +320,7 @@ export function VPN() {
                   <button
                     onClick={() => removeAppMutation.mutate(app.name)}
                     className="text-bifrost-muted hover:text-bifrost-error"
+                    aria-label={`Remove ${app.name}`}
                   >
                     <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -302,18 +341,32 @@ export function VPN() {
               <input
                 type="text"
                 value={newDomain}
-                onChange={(e) => setNewDomain(e.target.value)}
+                onChange={(e) => {
+                  setNewDomain(e.target.value)
+                  setDomainError(null)
+                }}
                 placeholder="*.example.com"
-                className="input flex-1"
+                className={`input flex-1 ${domainError ? 'border-bifrost-error' : ''}`}
               />
               <button
-                onClick={() => newDomain && addDomainMutation.mutate(newDomain)}
+                onClick={() => {
+                  if (!newDomain) return
+                  const error = validateDomain(newDomain)
+                  if (error) {
+                    setDomainError(error)
+                    return
+                  }
+                  addDomainMutation.mutate(newDomain)
+                }}
                 disabled={!newDomain || addDomainMutation.isPending}
                 className="btn btn-primary"
               >
                 Add
               </button>
             </div>
+            {domainError && (
+              <p className="text-xs text-bifrost-error mt-1">{domainError}</p>
+            )}
             <div className="flex flex-wrap gap-2">
               {splitRules?.domains?.map((domain) => (
                 <span key={domain} className="px-2 py-1 bg-bifrost-card border border-bifrost-border rounded text-sm font-mono">
@@ -333,18 +386,32 @@ export function VPN() {
               <input
                 type="text"
                 value={newIP}
-                onChange={(e) => setNewIP(e.target.value)}
+                onChange={(e) => {
+                  setNewIP(e.target.value)
+                  setIpError(null)
+                }}
                 placeholder="192.168.1.0/24"
-                className="input flex-1"
+                className={`input flex-1 ${ipError ? 'border-bifrost-error' : ''}`}
               />
               <button
-                onClick={() => newIP && addIPMutation.mutate(newIP)}
+                onClick={() => {
+                  if (!newIP) return
+                  const error = validateCIDR(newIP)
+                  if (error) {
+                    setIpError(error)
+                    return
+                  }
+                  addIPMutation.mutate(newIP)
+                }}
                 disabled={!newIP || addIPMutation.isPending}
                 className="btn btn-primary"
               >
                 Add
               </button>
             </div>
+            {ipError && (
+              <p className="text-xs text-bifrost-error mt-1">{ipError}</p>
+            )}
             <div className="flex flex-wrap gap-2">
               {splitRules?.ips?.map((ip) => (
                 <span key={ip} className="px-2 py-1 bg-bifrost-card border border-bifrost-border rounded text-sm font-mono">

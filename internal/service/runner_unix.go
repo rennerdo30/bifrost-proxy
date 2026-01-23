@@ -8,9 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 )
+
+// ShutdownTimeout is the maximum time allowed for graceful shutdown.
+const ShutdownTimeout = 30 * time.Second
 
 func run(name string, runner Runner) error {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -38,7 +42,10 @@ func run(name string, runner Runner) error {
 		case syscall.SIGINT, syscall.SIGTERM:
 			logging.Info("Received shutdown signal")
 			cancel()
-			return runner.Stop(context.Background())
+			// Use timeout context for graceful shutdown
+			stopCtx, stopCancel := context.WithTimeout(context.Background(), ShutdownTimeout)
+			defer stopCancel()
+			return runner.Stop(stopCtx)
 		}
 	}
 }
