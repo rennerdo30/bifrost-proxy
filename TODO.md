@@ -1396,19 +1396,33 @@ CI build job runs `make build` which needs Node.js for web UI, but Node.js isn't
 
 ### LOW PRIORITY - Test Coverage Improvements
 
-#### CR-24. Load Balancer Edge Cases
+#### CR-24. Load Balancer Edge Cases ✅ FIXED
 **File:** `internal/router/loadbalancer.go`
 
-- [ ] Test counter overflow scenarios
-- [ ] Test zero weights
-- [ ] Test IPv6 addresses
-- [ ] Test dynamic health state changes
+- [x] Test counter overflow scenarios
+- [x] Test zero weights
+- [x] Test negative weights
+- [x] Test IPv6 addresses
+- [x] Test dynamic health state changes
+- [x] Test concurrent access
+- [x] Test IP distribution
+
+**Fixed:** Created `internal/router/loadbalancer_test.go` with comprehensive edge case tests including counter overflow at uint64 max, zero/negative weights, IPv6 address hashing, dynamic health changes, concurrent access safety, and distribution verification.
 
 ---
 
 #### CR-25. Server Startup Error Injection Tests
 **File:** `internal/server/server.go`
 
+**Note:** The server already has 83 tests covering many error paths including HTTP/SOCKS5 listener failures. Testing backend/cache/health manager startup failures would require dependency injection refactoring to allow mock injection, which is a larger architectural change.
+
+Existing coverage:
+- [x] HTTP listener startup failure (`TestServer_StartHTTPListenerError`)
+- [x] SOCKS5 listener startup failure (`TestServer_StartSOCKS5ListenerError`)
+- [x] API listener startup failure (tested)
+- [x] Metrics listener startup failure (tested)
+
+Deferred (requires refactoring):
 - [ ] Test backend startup failures
 - [ ] Test cache manager failures
 - [ ] Test health manager failures
@@ -1422,7 +1436,9 @@ CI build job runs `make build` which needs Node.js for web UI, but Node.js isn't
 - `internal/device/tun_*.go`
 - `internal/device/tap_*.go`
 
-- [ ] Add cross-platform test mocks
+**Note:** Platform-specific mocks require build tags and conditional compilation. These would benefit from a dedicated mocking framework or interface-based design.
+
+- [ ] Add cross-platform test mocks (deferred - requires interface refactoring)
 
 ---
 
