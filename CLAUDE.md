@@ -55,8 +55,14 @@ go test -tags=integration ./... # Integration tests
 cd web/server && npm run build  # Server dashboard
 cd web/client && npm run build  # Client dashboard
 
-# Docker
-make docker-build            # Verify Docker builds work
+# Docker (ALWAYS use make targets, not raw docker commands!)
+make docker-build            # Build Docker images (REQUIRED before commit if Docker-related changes)
+make docker-rebuild          # Rebuild and start services
+make docker-rebuild-clean    # Rebuild without cache (use after Dockerfile changes)
+make docker-up               # Start services
+make docker-down             # Stop and remove services
+make docker-logs             # Follow container logs
+make docker-status           # Show service status
 ```
 
 ## Project Structure (Key Paths)
@@ -148,4 +154,6 @@ All PRs require:
 - All tests passing
 - Lint passing
 - Security scan (gosec, govulncheck)
-- Docker build verification
+- Docker build verification (`make docker-build`)
+
+**IMPORTANT:** Always use `make docker-*` commands instead of raw `docker` commands to ensure proper build steps and configurations.

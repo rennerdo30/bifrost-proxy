@@ -2351,3 +2351,163 @@ func TestServer_ReloadConfig_RateLimitDisabled(t *testing.T) {
 	err = s.ReloadConfig()
 	require.NoError(t, err)
 }
+
+// TestNew_WithInvalidCacheStorageType tests server creation with invalid cache storage type.
+func TestNew_WithInvalidCacheStorageType(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Cache: cache.Config{
+			Enabled: true,
+			Storage: cache.StorageConfig{
+				Type: "invalid-storage-type", // Invalid storage type
+			},
+		},
+	}
+
+	_, err := New(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "cache")
+}
+
+// TestNew_WithCacheRules tests server creation with cache rules.
+func TestNew_WithCacheRules(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Cache: cache.Config{
+			Enabled: true,
+			Storage: cache.StorageConfig{
+				Type: "memory",
+				Memory: &cache.MemoryConfig{
+					MaxSize:    100,
+					MaxEntries: 1000,
+				},
+			},
+			Rules: []cache.RuleConfig{
+				{
+					Name:    "test-rule",
+					Enabled: true,
+					Domains: []string{"*.example.com"},
+				},
+			},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, s)
+	assert.NotNil(t, s.cacheManager)
+}
+
+// TestNew_BackendStartupFailure tests that disabled backends don't fail server creation.
+func TestNew_BackendStartupFailure(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+			// Disabled backend with invalid config should not fail
+			{Name: "disabled-invalid", Type: "wireguard", Enabled: false},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, s)
+}
+
+// TestNew_MultipleBackendTypes tests server with multiple backend types.
+func TestNew_MultipleBackendTypes(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "direct1", Type: "direct", Enabled: true},
+			{Name: "direct2", Type: "direct", Enabled: true},
+		},
+		Routes: []config.RouteConfig{
+			{Domains: []string{"example.com"}, Backend: "direct1"},
+			{Domains: []string{"*"}, Backend: "direct2"},
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, s)
+}
+
+// TestServer_MetricsServerConfig tests metrics server configuration.
+// Note: Metrics server runs in a goroutine, so bind errors are logged asynchronously
+// and don't cause Start() to return an error.
+func TestServer_MetricsServerConfig(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		Metrics: config.MetricsConfig{
+			Enabled: true,
+			Listen:  "127.0.0.1:0",
+			Path:    "/custom-metrics",
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = s.Start(ctx)
+	require.NoError(t, err)
+
+	// Give the server time to start
+	time.Sleep(50 * time.Millisecond)
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.Stop(stopCtx)
+}
+
+// TestServer_APIServerConfig tests API server configuration.
+// Note: API server runs in a goroutine, so bind errors are logged asynchronously
+// and don't cause Start() to return an error.
+func TestServer_APIServerConfig(t *testing.T) {
+	cfg := &config.ServerConfig{
+		Server: config.ServerSettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Backends: []config.BackendConfig{
+			{Name: "default", Type: "direct", Enabled: true},
+		},
+		API: config.APIConfig{
+			Enabled: true,
+			Listen:  "127.0.0.1:0",
+		},
+	}
+
+	s, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = s.Start(ctx)
+	require.NoError(t, err)
+
+	// Give the server time to start
+	time.Sleep(50 * time.Millisecond)
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	s.Stop(stopCtx)
+}

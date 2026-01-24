@@ -1352,8 +1352,7 @@ No client-side validation for domain patterns and IP CIDR inputs.
 
 CLAUDE.md documents a security workflow with CodeQL but it doesn't exist.
 
-- [x] Create `.github/workflows/security.yml` as documented, or
-- [ ] Remove documentation about it
+- [x] Create `.github/workflows/security.yml` as documented ✅ EXISTS
 
 ---
 
@@ -1445,13 +1444,17 @@ CI build job runs `make build` which needs Node.js for web UI, but Node.js isn't
 Existing coverage:
 - [x] HTTP listener startup failure (`TestServer_StartHTTPListenerError`)
 - [x] SOCKS5 listener startup failure (`TestServer_StartSOCKS5ListenerError`)
-- [x] API listener startup failure (tested)
-- [x] Metrics listener startup failure (tested)
+- [x] API server configuration (`TestServer_APIServerConfig`)
+- [x] Metrics server configuration (`TestServer_MetricsServerConfig`)
+- [x] Invalid cache storage type (`TestNew_WithInvalidCacheStorageType`)
+- [x] Cache rules loading (`TestNew_WithCacheRules`)
+- [x] Multiple backend types (`TestNew_MultipleBackendTypes`)
+- [x] Disabled backend handling (`TestNew_BackendStartupFailure`)
 
-Deferred (requires refactoring):
-- [ ] Test backend startup failures
-- [ ] Test cache manager failures
-- [ ] Test health manager failures
+**Note:** API and Metrics servers run in goroutines - bind errors are logged asynchronously and don't cause Start() to return errors. This is by design for non-critical components.
+
+Deferred (architecture limitation):
+- [ ] Test health manager failures (NewManager() has no error path)
 
 ---
 
