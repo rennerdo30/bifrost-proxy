@@ -9,6 +9,8 @@ export default defineConfig({
     starlight({
       title: "Bifrost Proxy",
       description: "A Go-based proxy system with client-server architecture, supporting WireGuard/OpenVPN tunnels, domain-based routing, and multiple authentication modes",
+      logo: { src: "/logo.svg", alt: "Bifrost Proxy" },
+      favicon: "/logo.svg",
       plugins: [starlightThemeGalaxy(), starlightClientMermaid()],
       customCss: ["./src/styles/custom.css"],
       social: [
