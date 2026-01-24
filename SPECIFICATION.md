@@ -1,7 +1,7 @@
-# Simple Proxy Server - Technical Specification
+# Bifrost Proxy - Technical Specification
 
 **License**: MIT License
-**Repository**: https://github.com/[org]/simple-proxy-server
+**Repository**: https://github.com/rennerdo30/bifrost-proxy
 **Status**: Production-ready open source software
 
 ## 1. Overview
@@ -34,7 +34,7 @@ A Go-based proxy system with client-server architecture providing HTTP, HTTPS, a
 
 ## 2. Components
 
-### 2.1 Server (`simple-proxy-server`)
+### 2.1 Server (`bifrost-server`)
 
 Central proxy server that handles the actual routing through different backends.
 
@@ -65,7 +65,7 @@ graph TD
     end
 ```
 
-### 2.2 Client (`simple-proxy-client`)
+### 2.2 Client (`bifrost-client`)
 
 Local proxy that decides what traffic goes to the server vs direct. Includes system tray integration for easy access on all platforms.
 
@@ -499,80 +499,80 @@ GET  /api/debug/stats            - Traffic statistics
 
 ```bash
 # Start the server
-simple-proxy-server start
-simple-proxy-server start --config /path/to/server-config.yaml
+bifrost-server start
+bifrost-server start --config /path/to/server-config.yaml
 
 # Stop the server (graceful)
-simple-proxy-server stop
+bifrost-server stop
 
 # Status
-simple-proxy-server status
+bifrost-server status
 
 # Backend management
-simple-proxy-server backend list
-simple-proxy-server backend add --name "japan" --type wireguard --config /path/to/japan.conf
-simple-proxy-server backend remove --name "japan"
-simple-proxy-server backend test --name "germany"
+bifrost-server backend list
+bifrost-server backend add --name "japan" --type wireguard --config /path/to/japan.conf
+bifrost-server backend remove --name "japan"
+bifrost-server backend test --name "germany"
 
 # Rule management
-simple-proxy-server rule list
-simple-proxy-server rule add --name "Anime" --domain "*.crunchyroll.com" --backend "germany"
-simple-proxy-server rule remove --name "Anime"
+bifrost-server rule list
+bifrost-server rule add --name "Anime" --domain "*.crunchyroll.com" --backend "germany"
+bifrost-server rule remove --name "Anime"
 
 # Configuration
-simple-proxy-server config show
-simple-proxy-server config reload
-simple-proxy-server config validate
+bifrost-server config show
+bifrost-server config reload
+bifrost-server config validate
 
 # Service management (install as system service)
-simple-proxy-server service install --config /path/to/config.yaml
-simple-proxy-server service uninstall
-simple-proxy-server service status
+bifrost-server service install --config /path/to/config.yaml
+bifrost-server service uninstall
+bifrost-server service status
 
 # Update management
-simple-proxy-server update check
-simple-proxy-server update install --channel stable
+bifrost-server update check
+bifrost-server update install --channel stable
 ```
 
 ### 5.2 Client CLI Commands
 
 ```bash
 # Start the client
-simple-proxy-client start
-simple-proxy-client start --config /path/to/client-config.yaml
+bifrost-client start
+bifrost-client start --config /path/to/client-config.yaml
 
 # Stop the client
-simple-proxy-client stop
+bifrost-client stop
 
 # Status (includes server connection status)
-simple-proxy-client status
+bifrost-client status
 
 # Rule management (client-side routing)
-simple-proxy-client rule list
-simple-proxy-client rule add --name "Work" --domain "*.company.com" --action server
-simple-proxy-client rule add --name "Direct" --domain "*.local" --action direct
-simple-proxy-client rule remove --name "Work"
+bifrost-client rule list
+bifrost-client rule add --name "Work" --domain "*.company.com" --action server
+bifrost-client rule add --name "Direct" --domain "*.local" --action direct
+bifrost-client rule remove --name "Work"
 
 # Debug commands
-simple-proxy-client debug on                    # Enable debugging
-simple-proxy-client debug off                   # Disable debugging
-simple-proxy-client debug tail                  # Tail traffic log
-simple-proxy-client debug tail --filter "crunchyroll"
-simple-proxy-client debug clear                 # Clear traffic log
-simple-proxy-client debug export --output traffic.har  # Export as HAR file
+bifrost-client debug on                    # Enable debugging
+bifrost-client debug off                   # Disable debugging
+bifrost-client debug tail                  # Tail traffic log
+bifrost-client debug tail --filter "crunchyroll"
+bifrost-client debug clear                 # Clear traffic log
+bifrost-client debug export --output traffic.har  # Export as HAR file
 
 # Configuration
-simple-proxy-client config show
-simple-proxy-client config reload
+bifrost-client config show
+bifrost-client config reload
 
 # Service management (install as system service)
-simple-proxy-client service install --config /path/to/config.yaml
-simple-proxy-client service uninstall
-simple-proxy-client service status
+bifrost-client service install --config /path/to/config.yaml
+bifrost-client service uninstall
+bifrost-client service status
 
 # Update management
-simple-proxy-client update check
-simple-proxy-client update install --channel stable
+bifrost-client update check
+bifrost-client update install --channel stable
 ```
 
 ### 5.3 Server REST API
@@ -754,14 +754,14 @@ The server can be deployed as a Docker container.
 FROM golang:1.22-alpine AS builder
 WORKDIR /app
 COPY . .
-RUN go build -o simple-proxy-server ./cmd/server
+RUN go build -o bifrost-server ./cmd/server
 
 FROM alpine:latest
 RUN apk add --no-cache iptables openvpn
-COPY --from=builder /app/simple-proxy-server /usr/local/bin/
-COPY --from=builder /app/configs/server-config.yaml /etc/simple-proxy/config.yaml
+COPY --from=builder /app/bifrost-server /usr/local/bin/
+COPY --from=builder /app/configs/server-config.yaml /etc/bifrost/config.yaml
 EXPOSE 7080 7180 7081
-ENTRYPOINT ["simple-proxy-server", "start", "--config", "/etc/simple-proxy/config.yaml"]
+ENTRYPOINT ["bifrost-server", "start", "--config", "/etc/bifrost/config.yaml"]
 ```
 
 ### 10.2 Docker Compose
@@ -769,9 +769,9 @@ ENTRYPOINT ["simple-proxy-server", "start", "--config", "/etc/simple-proxy/confi
 ```yaml
 version: '3.8'
 services:
-  simple-proxy-server:
+  bifrost-server:
     build: .
-    container_name: simple-proxy-server
+    container_name: bifrost-server
     restart: unless-stopped
     cap_add:
       - NET_ADMIN  # Required for WireGuard
@@ -801,7 +801,7 @@ docker-compose up -d
 docker-compose logs -f
 
 # Reload configuration
-docker exec simple-proxy-server simple-proxy-server config reload
+docker exec bifrost-server bifrost-server config reload
 ```
 
 ## 11. Health Checks & Load Balancing
@@ -969,7 +969,7 @@ Reload configuration without dropping connections:
 
 ```bash
 # Via CLI
-simple-proxy-server config reload
+bifrost-server config reload
 
 # Via signal
 kill -HUP <pid>
@@ -1098,7 +1098,7 @@ auth:
     # Token validation
     jwt:
       issuer: "https://auth.example.com"
-      audience: "simple-proxy"
+      audience: "bifrost-proxy"
 ```
 
 ### 14.3 Proxy-Authorization Header
@@ -1122,20 +1122,20 @@ The Web UI uses the same authentication backend. Session-based authentication is
 
 ```bash
 # Add user
-simple-proxy-server user add --username john --groups streaming,work
+bifrost-server user add --username john --groups streaming,work
 
 # Remove user
-simple-proxy-server user remove --username john
+bifrost-server user remove --username john
 
 # List users
-simple-proxy-server user list
+bifrost-server user list
 
 # Reset password
-simple-proxy-server user passwd --username john
+bifrost-server user passwd --username john
 
 # Manage groups
-simple-proxy-server user groups --username john --add admin
-simple-proxy-server user groups --username john --remove streaming
+bifrost-server user groups --username john --add admin
+bifrost-server user groups --username john --remove streaming
 ```
 
 ## 15. Use Cases
@@ -1274,7 +1274,7 @@ The documentation is organized into the following sections:
   - Overview
   - Backends (WireGuard, OpenVPN, HTTP/SOCKS5 proxies)
   - Authentication (None, Native, System, LDAP, OAuth)
-  - [OpenWRT LuCI Setup Guide](file:///Users/rennerdo30/Development/simple-proxy-server/docs/openwrt.md#installation-via-luci-gui)
+  - [OpenWRT LuCI Setup Guide](file:///Users/rennerdo30/Development/bifrost-server/docs/openwrt.md#installation-via-luci-gui)
 - **Deployment** - Docker, systemd, launchd
 - **Operations**
   - CLI Reference
