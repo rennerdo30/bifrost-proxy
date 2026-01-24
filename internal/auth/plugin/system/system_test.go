@@ -20,7 +20,7 @@ func TestPluginRegistration(t *testing.T) {
 	require.True(t, ok, "system plugin should be registered")
 	assert.Equal(t, "system", plugin.Type())
 	assert.NotEmpty(t, plugin.Description())
-	assert.Contains(t, plugin.Description(), "PAM")
+	// Description varies by platform - just check it's not empty
 }
 
 // TestPluginType verifies the Type method.
@@ -34,8 +34,14 @@ func TestPluginDescription(t *testing.T) {
 	p := &plugin{}
 	desc := p.Description()
 	assert.NotEmpty(t, desc)
-	assert.Contains(t, desc, "PAM")
-	assert.Contains(t, desc, "Windows")
+
+	// Platform-specific description check
+	if runtime.GOOS == "windows" {
+		assert.Contains(t, desc, "Windows")
+		assert.Contains(t, desc, "LogonUser")
+	} else {
+		assert.Contains(t, desc, "PAM")
+	}
 }
 
 // TestPluginDefaultConfig verifies the DefaultConfig method.

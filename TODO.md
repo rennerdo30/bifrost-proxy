@@ -783,12 +783,12 @@ Track implementation progress by checking off completed items.
   - [x] Add note to `docs/deployment.md` Windows section
   - [x] Add troubleshooting entry in `docs/troubleshooting.md`
 
-- [ ] **Phase 3: Windows API Implementation**
-  - [ ] Research `LogonUserW` Win32 API requirements
-  - [ ] Create `internal/auth/system_windows.go` with build tags
-  - [ ] Implement `validateWindows()` using syscall or CGO
-  - [ ] Add Windows-specific tests with mocks
-  - [ ] Test on actual Windows system (Windows 10/11 and Server)
+- [x] **Phase 3: Windows API Implementation** ✅ COMPLETED
+  - [x] Research `LogonUserW` Win32 API requirements
+  - [x] Create `internal/auth/plugin/system/system_windows.go` with build tags
+  - [x] Implement `logonUser()` using golang.org/x/sys/windows syscall
+  - [x] Add Windows-specific tests with mocks
+  - [ ] Test on actual Windows system (Windows 10/11 and Server) - requires Windows
 
 ---
 
@@ -891,32 +891,58 @@ Native support for major VPN providers with full API integration.
 
 ### 5. Platform Enhancements
 
-- [ ] **Windows system authentication support (LogonUser API)**
-  - [ ] Research Windows LogonUser API requirements
-  - [ ] Determine CGO vs syscall approach
-  - [ ] Create build-tagged `internal/auth/system_windows.go`
-  - [ ] Implement `LogonUserW` call with proper error handling
-  - [ ] Handle domain vs local user authentication
-  - [ ] Add comprehensive tests with mocks
-  - [ ] Test on Windows 10/11 and Windows Server
+- [x] **Windows system authentication support (LogonUser API)** ✅ COMPLETED
+  - [x] Research Windows LogonUser API requirements
+  - [x] Determine CGO vs syscall approach (pure Go with golang.org/x/sys/windows)
+  - [x] Create build-tagged `internal/auth/plugin/system/system_windows.go`
+  - [x] Implement `LogonUserW` call with proper error handling
+  - [x] Handle domain vs local user authentication
+  - [x] Add comprehensive tests with mocks
+  - [ ] Test on Windows 10/11 and Windows Server (requires Windows environment)
 
-- [ ] **Platform-specific tray implementations**
-  - [ ] Evaluate current `fyne.io/systray` limitations
-  - [ ] Research native implementations:
-    - [ ] Windows: Win32 `Shell_NotifyIcon` API
-    - [ ] macOS: `NSStatusItem` API
-    - [ ] Linux: AppIndicator/StatusNotifierItem
-  - [ ] Determine if custom implementation provides value over fyne.io/systray
-  - [ ] Consider using build tags for platform separation
+  **Implementation Details:**
+  - Uses Windows LogonUser API via `golang.org/x/sys/windows` syscall
+  - Supports multiple logon types: network (default), interactive, batch, service
+  - Domain authentication supported via `domain` config option
+  - Retrieves group memberships from Windows token
+  - Case-insensitive username matching
+  - Build-tagged for Windows-only compilation
 
-- [ ] **OAuth authorization code flow**
-  - [ ] Research OAuth 2.0 authorization code flow requirements
-  - [ ] Design callback server for code exchange
-  - [ ] Implement PKCE (Proof Key for Code Exchange) for public clients
-  - [ ] Add state parameter for CSRF protection
-  - [ ] Store and refresh tokens securely
-  - [ ] Add configuration options for redirect URI
-  - [ ] Test with common providers (Google, GitHub, Azure AD, Okta)
+- [x] **Platform-specific tray implementations** ✅ EVALUATED
+  - [x] Evaluate current `fyne.io/systray` limitations
+  - [x] Research native implementations
+  - [x] Determine if custom implementation provides value
+
+  **Evaluation Results:**
+
+  Current implementation (`internal/tray/`) is well-architected:
+  - Uses `fyne.io/systray` - mature cross-platform library
+  - Interface-based adapter pattern (`SystrayAdapter`) allows testing and future swapping
+  - Supports all required features: icons, tooltips, menus, status updates
+
+  Native implementations would provide:
+  - Potential performance improvements (minimal)
+  - Closer platform integration (marginal benefit)
+  - Significantly more maintenance burden
+
+  **Recommendation:** Keep `fyne.io/systray`. The adapter pattern already allows swapping implementations if needed. Native implementations are not justified given the maintenance cost vs minimal benefits.
+
+- [x] **OAuth authorization code flow** ✅ COMPLETED
+  - [x] Research OAuth 2.0 authorization code flow requirements
+  - [x] Design callback server for code exchange
+  - [x] Implement PKCE (Proof Key for Code Exchange) for public clients
+  - [x] Add state parameter for CSRF protection
+  - [x] Store and refresh tokens securely (MemoryTokenStore + TokenStore interface)
+  - [x] Add configuration options for redirect URI
+  - [ ] Test with common providers (Google, GitHub, Azure AD, Okta) - requires live provider
+
+  **Implementation Details:**
+  - Created `internal/auth/plugin/oauth/authcode.go` with AuthCodeFlow
+  - Full PKCE support with S256 code challenge method
+  - State parameter with automatic expiration (10 minutes)
+  - Callback server for receiving authorization codes
+  - Token refresh support
+  - Extensible TokenStore interface with in-memory implementation
 
 ---
 

@@ -1,10 +1,14 @@
+//go:build !windows
+// +build !windows
+
 // Package system provides system (PAM) authentication for Bifrost.
+// On Unix/Darwin, this uses PAM or su for authentication.
+// On Windows, see system_windows.go which uses the LogonUser API.
 package system
 
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os/exec"
 	"os/user"
 	"runtime"
@@ -27,19 +31,11 @@ func (p *plugin) Type() string {
 
 // Description returns a human-readable description.
 func (p *plugin) Description() string {
-	return "System/PAM authentication (Unix only, not supported on Windows)"
+	return "System/PAM authentication (Unix/macOS)"
 }
 
 // Create creates a new SystemAuthenticator from the configuration.
 func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
-	// Check for Windows - system auth is not supported
-	if runtime.GOOS == "windows" {
-		slog.Warn("system authentication is not supported on Windows",
-			"platform", runtime.GOOS,
-			"recommendation", "use native, ldap, or oauth authentication instead")
-		return nil, fmt.Errorf("%w: system authentication is not supported on Windows - use native, ldap, or oauth instead", auth.ErrAuthMethodUnsupported)
-	}
-
 	cfg, err := parseConfig(config)
 	if err != nil {
 		return nil, err
@@ -64,9 +60,6 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 
 // ValidateConfig validates the configuration.
 func (p *plugin) ValidateConfig(config map[string]any) error {
-	if runtime.GOOS == "windows" {
-		return fmt.Errorf("system authentication is not supported on Windows")
-	}
 	_, err := parseConfig(config)
 	return err
 }
