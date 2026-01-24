@@ -36,7 +36,7 @@
 
 ### Diagrams
 - **Always use Mermaid** for diagrams in documentation
-- Mermaid is supported natively in MkDocs Material and GitHub markdown
+- Mermaid is supported in the Starlight docs site and GitHub markdown
 - Avoid external diagram tools or image files when possible
 
 ## Build Commands
