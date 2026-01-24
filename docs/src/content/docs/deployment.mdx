@@ -1,3 +1,8 @@
+---
+title: "Deployment Guide"
+description: "Documentation for Deployment Guide"
+---
+
 # Deployment Guide
 
 This guide covers deploying Bifrost in production environments using Docker, systemd (Linux), and launchd (macOS).
@@ -357,10 +362,10 @@ sudo launchctl load /Library/LaunchDaemons/com.bifrost.client.plist
 
 ## Windows
 
-!!! note "Authentication Limitation"
-    System authentication (`auth.mode: system`) is **not supported on Windows**.
-    Use `native`, `ldap`, or `oauth` authentication instead.
-    See the [Authentication Guide](authentication.md#system-authentication) for details.
+> **Note:** Authentication Limitation
+> System authentication (`auth.mode: system`) is **not supported on Windows**.
+> Use `native`, `ldap`, or `oauth` authentication instead.
+> See the [Authentication Guide](authentication.md#system-authentication) for details.
 
 ### Manual Installation
 
@@ -475,8 +480,8 @@ sudo systemctl reload bifrost-server
 docker exec bifrost-server kill -HUP 1
 ```
 
-!!! warning "Restart Required"
-    Some changes require a full restart:
+> **Warning:** Restart Required
+> Some changes require a full restart:
 
     - Listener address/port changes
     - TLS certificate changes

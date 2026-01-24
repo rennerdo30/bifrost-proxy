@@ -1,3 +1,8 @@
+---
+title: "Security Guide"
+description: "Documentation for Security Guide"
+---
+
 # Security Guide
 
 This guide covers security best practices for deploying and operating Bifrost in production environments.
@@ -88,10 +93,10 @@ htpasswd -nbBC 12 "" "your-password" | cut -d: -f2
 python3 -c "import bcrypt; print(bcrypt.hashpw(b'your-password', bcrypt.gensalt(rounds=12)).decode())"
 ```
 
-!!! warning "Password Hash Security"
-    - Always use bcrypt cost factor of 12 or higher
-    - Never store plaintext passwords in config files
-    - Rotate passwords regularly
+> **Warning:** Password Hash Security
+> - Always use bcrypt cost factor of 12 or higher
+> - Never store plaintext passwords in config files
+> - Rotate passwords regularly
 
 ```yaml
 auth:
@@ -115,11 +120,11 @@ auth:
     bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
 ```
 
-!!! tip "LDAP Best Practices"
-    - Use a dedicated service account with minimal permissions
-    - Store bind password in environment variable
-    - Use LDAPS (port 636) instead of StartTLS
-    - Verify server certificates
+> **Tip:** LDAP Best Practices
+> - Use a dedicated service account with minimal permissions
+> - Store bind password in environment variable
+> - Use LDAPS (port 636) instead of StartTLS
+> - Verify server certificates
 
 ### OAuth/OIDC Security
 
@@ -329,10 +334,10 @@ logging:
   format: json
 ```
 
-!!! warning "Log Review"
-    - Regularly review logs for sensitive data leaks
-    - Don't log full request/response bodies in production
-    - Secure log files with appropriate permissions
+> **Warning:** Log Review
+> - Regularly review logs for sensitive data leaks
+> - Don't log full request/response bodies in production
+> - Secure log files with appropriate permissions
 
 ### Log File Permissions
 

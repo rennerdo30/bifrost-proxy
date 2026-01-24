@@ -1,0 +1,60 @@
+import { defineConfig } from "astro/config";
+import starlight from "@astrojs/starlight";
+import starlightThemeGalaxy from "starlight-theme-galaxy";
+
+export default defineConfig({
+  site: "https://rennerdo30.github.io",
+  base: "/bifrost-proxy",
+  integrations: [
+    starlight({
+      title: "Bifrost Proxy",
+      description: "A Go-based proxy system with client-server architecture, supporting WireGuard/OpenVPN tunnels, domain-based routing, and multiple authentication modes",
+      plugins: [starlightThemeGalaxy()],
+      customCss: ["./src/styles/custom.css"],
+      social: [
+        { icon: "github", label: "GitHub", href: "https://github.com/rennerdo30/bifrost-proxy" },
+      ],
+      sidebar: [
+        { label: "Home", slug: "index" },
+        { label: "Getting Started", slug: "getting-started" },
+        {
+          label: "Configuration",
+          items: [
+            { label: "Overview", slug: "configuration" },
+            { label: "Backends", slug: "backends" },
+            { label: "VPN Providers", slug: "vpn-providers" },
+            { label: "Authentication", slug: "authentication" },
+            { label: "VPN Mode", slug: "vpn-mode" },
+            { label: "Mesh Networking", slug: "mesh-networking" },
+            { label: "HTTP Cache", slug: "cache" },
+          ],
+        },
+        {
+          label: "Clients",
+          items: [
+            { label: "Desktop Client", slug: "desktop-client" },
+            { label: "Mobile Client", slug: "mobile-client" },
+          ],
+        },
+        { label: "Deployment", slug: "deployment" },
+        {
+          label: "Operations",
+          items: [
+            { label: "CLI Reference", slug: "cli-reference" },
+            { label: "Monitoring", slug: "monitoring" },
+            { label: "Security", slug: "security" },
+            { label: "Troubleshooting", slug: "troubleshooting" },
+          ],
+        },
+        { label: "API Reference", slug: "api" },
+        {
+          label: "Development",
+          items: [
+            { label: "Contributing", slug: "contributing" },
+            { label: "Changelog", slug: "changelog" },
+          ],
+        },
+      ],
+    }),
+  ],
+});

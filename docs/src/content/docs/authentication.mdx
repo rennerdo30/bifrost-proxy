@@ -1,3 +1,8 @@
+---
+title: "Authentication Guide"
+description: "Documentation for Authentication Guide"
+---
+
 # Authentication Guide
 
 Bifrost supports multiple authentication modes.
@@ -80,9 +85,9 @@ auth:
 
 Authenticate against the operating system's user database (PAM on Linux, Directory Services on macOS).
 
-!!! warning "Platform Support"
-    System authentication is **only supported on Linux and macOS**. Windows is not currently supported.
-    If you need authentication on Windows, use `native`, `ldap`, or `oauth` mode instead.
+> **Warning:** Platform Support
+> System authentication is **only supported on Linux and macOS**. Windows is not currently supported.
+> If you need authentication on Windows, use `native`, `ldap`, or `oauth` mode instead.
 
 ```yaml
 auth:
@@ -337,8 +342,8 @@ auth:
     domain_controller: "dc.example.com"
 ```
 
-!!! warning "Security Note"
-    NTLM is considered legacy. Prefer Kerberos when possible.
+> **Warning:** Security Note
+> NTLM is considered legacy. Prefer Kerberos when possible.
 
 ## MFA Wrapper (Two-Factor Authentication)
 
