@@ -144,7 +144,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push server image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile
@@ -155,7 +155,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/bifrost-server:${{ github.sha }}
 
       - name: Build and push client image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: docker/Dockerfile.client
