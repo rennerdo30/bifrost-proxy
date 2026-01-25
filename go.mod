@@ -7,7 +7,7 @@ require (
 	github.com/go-chi/chi/v5 v5.0.12
 	github.com/go-ldap/ldap/v3 v3.4.6
 	github.com/jcmturner/gokrb5/v8 v8.4.4
-	github.com/miekg/dns v1.1.70
+	github.com/miekg/dns v1.1.72
 	github.com/prometheus/client_golang v1.19.0
 	github.com/spf13/cobra v1.8.0
 	github.com/stretchr/testify v1.9.0
