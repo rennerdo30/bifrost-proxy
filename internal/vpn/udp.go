@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+// UDP relay limits
+const (
+	// MaxUDPSessions is the maximum number of concurrent UDP sessions
+	MaxUDPSessions = 10000
+)
+
 // UDPRelay handles UDP packet forwarding through the VPN.
 type UDPRelay struct {
 	// UDP socket for sending/receiving packets
@@ -176,6 +182,11 @@ func (r *UDPRelay) getOrCreateSession(src, dst netip.AddrPort) *UDPSession {
 		}
 	}
 
+	// Enforce session limit - evict oldest if at capacity
+	if len(r.sessions) >= MaxUDPSessions {
+		r.evictOldestSessionLocked()
+	}
+
 	// Allocate NAT entry for the new session
 	entry, err := r.nat.Allocate(src, dst, ProtocolUDP)
 	if err != nil {
@@ -193,6 +204,31 @@ func (r *UDPRelay) getOrCreateSession(src, dst netip.AddrPort) *UDPSession {
 
 	r.sessions[session.LocalPort] = session
 	return session
+}
+
+// evictOldestSessionLocked removes the oldest session. Must be called with sessionsMu held.
+func (r *UDPRelay) evictOldestSessionLocked() {
+	var oldestPort uint16
+	var oldestTime time.Time
+
+	for port, session := range r.sessions {
+		if oldestTime.IsZero() || session.LastActivity.Before(oldestTime) {
+			oldestPort = port
+			oldestTime = session.LastActivity
+		}
+	}
+
+	if oldestPort != 0 {
+		if session, ok := r.sessions[oldestPort]; ok {
+			// Release NAT entry
+			r.nat.Release(session.OriginalSrc, session.Destination, ProtocolUDP)
+			delete(r.sessions, oldestPort)
+			slog.Debug("evicted oldest UDP session",
+				"src", session.OriginalSrc,
+				"dst", session.Destination,
+			)
+		}
+	}
 }
 
 // readLoop reads responses from the UDP socket and writes them back to the TUN.

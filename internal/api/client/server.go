@@ -6,8 +6,11 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"net/http/pprof"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,6 +23,18 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
+
+// SSE subscriber limits
+const (
+	// MaxLogSubscribers is the maximum number of concurrent log stream subscribers
+	MaxLogSubscribers = 100
+)
+
+// logSubscriber represents a log stream subscriber with thread-safe close tracking
+type logSubscriber struct {
+	ch     chan LogEntry
+	closed atomic.Bool
+}
 
 // VPNManager defines the interface for VPN management operations
 type VPNManager interface {
@@ -94,7 +109,7 @@ type API struct {
 	configGetter    func() interface{}
 	configUpdater   func(map[string]interface{}) error
 	configReloader  func() error
-	logSubscribers  map[chan LogEntry]struct{}
+	logSubscribers  map[*logSubscriber]struct{}
 	logMu           sync.RWMutex
 
 	// Additional fields for desktop app support
@@ -158,7 +173,7 @@ func New(cfg Config) *API {
 		configGetter:    cfg.ConfigGetter,
 		configUpdater:   cfg.ConfigUpdater,
 		configReloader:  cfg.ConfigReloader,
-		logSubscribers:  make(map[chan LogEntry]struct{}),
+		logSubscribers:  make(map[*logSubscriber]struct{}),
 		serverAddress:   cfg.ServerAddress,
 		httpProxyAddr:   cfg.HTTPProxyAddr,
 		socks5ProxyAddr: cfg.SOCKS5ProxyAddr,
@@ -252,6 +267,7 @@ func (a *API) HandlerWithUI() http.Handler {
 			r.Get("/entries/last/{count}", a.handleGetLastDebugEntries)
 			r.Delete("/entries", a.handleClearDebugEntries)
 			r.Get("/errors", a.handleGetDebugErrors)
+			r.Get("/memory", a.handleMemoryStats)
 		})
 		r.Route("/v1/routes", func(r chi.Router) {
 			r.Get("/", a.handleGetRoutes)
@@ -344,6 +360,22 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		r.Get("/entries/last/{count}", a.handleGetLastDebugEntries)
 		r.Delete("/entries", a.handleClearDebugEntries)
 		r.Get("/errors", a.handleGetDebugErrors)
+		r.Get("/memory", a.handleMemoryStats)
+	})
+
+	// pprof routes for profiling
+	r.Route("/debug/pprof", func(r chi.Router) {
+		r.HandleFunc("/", pprof.Index)
+		r.HandleFunc("/cmdline", pprof.Cmdline)
+		r.HandleFunc("/profile", pprof.Profile)
+		r.HandleFunc("/symbol", pprof.Symbol)
+		r.HandleFunc("/trace", pprof.Trace)
+		r.Handle("/heap", pprof.Handler("heap"))
+		r.Handle("/goroutine", pprof.Handler("goroutine"))
+		r.Handle("/allocs", pprof.Handler("allocs"))
+		r.Handle("/block", pprof.Handler("block"))
+		r.Handle("/mutex", pprof.Handler("mutex"))
+		r.Handle("/threadcreate", pprof.Handler("threadcreate"))
 	})
 
 	// Routes routes
@@ -625,6 +657,61 @@ func (a *API) handleGetDebugErrors(w http.ResponseWriter, r *http.Request) {
 
 	entries := a.debugger.FindErrors()
 	a.writeJSON(w, http.StatusOK, entries)
+}
+
+// MemoryStats contains memory usage statistics.
+type MemoryStats struct {
+	// Heap memory
+	HeapAlloc    uint64 `json:"heap_alloc"`
+	HeapSys      uint64 `json:"heap_sys"`
+	HeapIdle     uint64 `json:"heap_idle"`
+	HeapInuse    uint64 `json:"heap_inuse"`
+	HeapReleased uint64 `json:"heap_released"`
+	HeapObjects  uint64 `json:"heap_objects"`
+
+	// Stack memory
+	StackInuse uint64 `json:"stack_inuse"`
+	StackSys   uint64 `json:"stack_sys"`
+
+	// GC stats
+	NumGC        uint32  `json:"num_gc"`
+	LastGCPause  uint64  `json:"last_gc_pause_ns"`
+	TotalGCPause uint64  `json:"total_gc_pause_ns"`
+	GCCPUFrac    float64 `json:"gc_cpu_fraction"`
+
+	// Goroutines
+	NumGoroutines int `json:"num_goroutines"`
+
+	// Log subscribers (SSE)
+	LogSubscribers int `json:"log_subscribers"`
+}
+
+func (a *API) handleMemoryStats(w http.ResponseWriter, r *http.Request) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	a.logMu.RLock()
+	logSubs := len(a.logSubscribers)
+	a.logMu.RUnlock()
+
+	stats := MemoryStats{
+		HeapAlloc:     m.HeapAlloc,
+		HeapSys:       m.HeapSys,
+		HeapIdle:      m.HeapIdle,
+		HeapInuse:     m.HeapInuse,
+		HeapReleased:  m.HeapReleased,
+		HeapObjects:   m.HeapObjects,
+		StackInuse:    m.StackInuse,
+		StackSys:      m.StackSys,
+		NumGC:         m.NumGC,
+		LastGCPause:   m.PauseNs[(m.NumGC+255)%256],
+		TotalGCPause:  m.PauseTotalNs,
+		GCCPUFrac:     m.GCCPUFraction,
+		NumGoroutines: runtime.NumGoroutine(),
+		LogSubscribers: logSubs,
+	}
+
+	a.writeJSON(w, http.StatusOK, stats)
 }
 
 func (a *API) handleGetRoutes(w http.ResponseWriter, r *http.Request) {
@@ -1403,19 +1490,33 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("X-Accel-Buffering", "no")
 
-	// Create a channel for this subscriber
-	ch := make(chan LogEntry, 100)
+	// Check subscriber limit
+	a.logMu.Lock()
+	if len(a.logSubscribers) >= MaxLogSubscribers {
+		a.logMu.Unlock()
+		http.Error(w, "too many subscribers", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Create a subscriber for this connection
+	sub := &logSubscriber{
+		ch: make(chan LogEntry, 100),
+	}
 
 	// Register subscriber
-	a.logMu.Lock()
-	a.logSubscribers[ch] = struct{}{}
+	a.logSubscribers[sub] = struct{}{}
 	a.logMu.Unlock()
 
 	defer func() {
+		// Mark as closed first to prevent sends
+		sub.closed.Store(true)
+
 		a.logMu.Lock()
-		delete(a.logSubscribers, ch)
+		delete(a.logSubscribers, sub)
 		a.logMu.Unlock()
-		close(ch)
+
+		// Safe to close now - no more sends will happen
+		close(sub.ch)
 	}()
 
 	// Get flusher
@@ -1436,7 +1537,7 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-ctx.Done():
 			return
-		case entry, ok := <-ch:
+		case entry, ok := <-sub.ch:
 			if !ok {
 				return
 			}
@@ -1455,9 +1556,13 @@ func (a *API) BroadcastLog(entry LogEntry) {
 	a.logMu.RLock()
 	defer a.logMu.RUnlock()
 
-	for ch := range a.logSubscribers {
+	for sub := range a.logSubscribers {
+		// Check if subscriber is closed before attempting send
+		if sub.closed.Load() {
+			continue
+		}
 		select {
-		case ch <- entry:
+		case sub.ch <- entry:
 		default:
 			// Drop if channel is full
 		}

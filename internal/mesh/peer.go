@@ -7,6 +7,16 @@ import (
 	"time"
 )
 
+// Peer metadata limits
+const (
+	// MaxMetadataKeys is the maximum number of metadata keys per peer
+	MaxMetadataKeys = 50
+	// MaxMetadataKeyLen is the maximum length of a metadata key
+	MaxMetadataKeyLen = 64
+	// MaxMetadataValueLen is the maximum length of a metadata value
+	MaxMetadataValueLen = 256
+)
+
 // PeerStatus represents the connection status of a peer.
 type PeerStatus string
 
@@ -208,14 +218,35 @@ func (p *Peer) GetEndpoints() []Endpoint {
 }
 
 // SetMetadata sets a metadata value.
-func (p *Peer) SetMetadata(key, value string) {
+// Returns false if the key/value exceeds limits or max keys reached.
+func (p *Peer) SetMetadata(key, value string) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+
+	// Validate key length
+	if len(key) > MaxMetadataKeyLen {
+		return false
+	}
+
+	// Validate value length
+	if len(value) > MaxMetadataValueLen {
+		return false
+	}
 
 	if p.Metadata == nil {
 		p.Metadata = make(map[string]string)
 	}
+
+	// Check if key already exists (update is allowed)
+	if _, exists := p.Metadata[key]; !exists {
+		// New key - check max keys limit
+		if len(p.Metadata) >= MaxMetadataKeys {
+			return false
+		}
+	}
+
 	p.Metadata[key] = value
+	return true
 }
 
 // GetMetadata gets a metadata value.

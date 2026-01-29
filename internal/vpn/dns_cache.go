@@ -1,9 +1,16 @@
 package vpn
 
 import (
+	"context"
 	"net/netip"
 	"sync"
 	"time"
+)
+
+// DNS Cache limits
+const (
+	// MaxDNSCacheEntries is the maximum number of DNS cache entries
+	MaxDNSCacheEntries = 10000
 )
 
 // DNSCacheEntry represents a cached DNS response.
@@ -26,6 +33,11 @@ type DNSCache struct {
 	defaultTTL time.Duration
 	maxEntries int
 
+	// Lifecycle management
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
+
 	mu sync.RWMutex
 }
 
@@ -35,11 +47,16 @@ func NewDNSCache(defaultTTL time.Duration) *DNSCache {
 		defaultTTL = 5 * time.Minute
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
+
 	cache := &DNSCache{
 		forward:    make(map[string]*DNSCacheEntry),
 		reverse:    make(map[netip.Addr][]string),
 		defaultTTL: defaultTTL,
-		maxEntries: 10000,
+		maxEntries: MaxDNSCacheEntries,
+		ctx:        ctx,
+		cancel:     cancel,
+		done:       make(chan struct{}),
 	}
 
 	// Start cleanup goroutine
@@ -280,9 +297,26 @@ func (c *DNSCache) evictIfNeeded() {
 func (c *DNSCache) cleanupLoop() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
+	defer close(c.done)
 
-	for range ticker.C {
-		c.cleanup()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			c.cleanup()
+		}
+	}
+}
+
+// Close stops the cleanup goroutine and releases resources.
+func (c *DNSCache) Close() {
+	if c.cancel != nil {
+		c.cancel()
+	}
+	// Wait for cleanup goroutine to finish
+	if c.done != nil {
+		<-c.done
 	}
 }
 

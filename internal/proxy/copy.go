@@ -60,9 +60,21 @@ func copyWithContext(ctx context.Context, dst, src net.Conn) (int64, error) {
 		}
 		return r.n, r.err
 	case <-ctx.Done():
-		// Context cancelled - the connection should be closed by caller
-		// which will cause io.Copy to return
-		return 0, ctx.Err()
+		// Context cancelled - set deadline to force io.Copy to return
+		// This ensures the goroutine doesn't leak
+		deadline := time.Now().Add(100 * time.Millisecond)
+		src.SetReadDeadline(deadline)
+		dst.SetWriteDeadline(deadline)
+
+		// Wait for the goroutine to finish
+		select {
+		case r := <-done:
+			// Return the bytes copied so far
+			return r.n, ctx.Err()
+		case <-time.After(time.Second):
+			// Force close if still blocking
+			return 0, ctx.Err()
+		}
 	}
 }
 

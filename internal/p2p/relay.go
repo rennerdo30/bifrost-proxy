@@ -9,11 +9,22 @@ import (
 	"time"
 )
 
+// Relay limits
+const (
+	// MaxPeerRelays is the maximum number of peer relays
+	MaxPeerRelays = 100
+	// MaxRelayConnections is the maximum number of connections per relay
+	MaxRelayConnections = 500
+	// RelayChannelBuffer is the buffer size for relay channels
+	RelayChannelBuffer = 64
+)
+
 // Relay errors.
 var (
 	ErrRelayNotAvailable  = errors.New("relay: no relay available")
 	ErrRelayFailed        = errors.New("relay: relay failed")
 	ErrPeerNotRelayable   = errors.New("relay: peer not relayable")
+	ErrRelayAtCapacity    = errors.New("relay: at capacity")
 )
 
 // RelayType represents the type of relay.
@@ -215,6 +226,27 @@ func (rm *RelayManager) AddPeerRelay(peerID string, conn P2PConnection) error {
 	rm.mu.Lock()
 	defer rm.mu.Unlock()
 
+	// Check if already exists
+	if _, exists := rm.peerRelays[peerID]; exists {
+		// Update existing relay
+		rm.peerRelays[peerID].conn = conn
+		rm.relays["peer:"+peerID].Latency = conn.Latency()
+		rm.relays["peer:"+peerID].Address = conn.RemoteAddr()
+		return nil
+	}
+
+	// Enforce limit - evict oldest if at capacity
+	if len(rm.peerRelays) >= MaxPeerRelays {
+		// Evict a relay (pick first one found)
+		for evictID, evictRelay := range rm.peerRelays {
+			evictRelay.Close()
+			delete(rm.peerRelays, evictID)
+			delete(rm.relays, "peer:"+evictID)
+			slog.Debug("evicted peer relay due to capacity", "peer_id", evictID)
+			break
+		}
+	}
+
 	pr := &PeerRelay{
 		peerID: peerID,
 		conn:   conn,
@@ -309,11 +341,27 @@ func (pr *PeerRelay) CreateConnection(config ConnectionConfig) (P2PConnection, e
 		pr.connections = make(map[string]*PeerRelayedConnection)
 	}
 
+	// Check if connection already exists
+	if existing, exists := pr.connections[config.PeerID]; exists {
+		return existing, nil
+	}
+
+	// Enforce connection limit - evict oldest if at capacity
+	if len(pr.connections) >= MaxRelayConnections {
+		// Evict a connection (pick first one found)
+		for evictID, evictConn := range pr.connections {
+			evictConn.Close()
+			delete(pr.connections, evictID)
+			slog.Debug("evicted relay connection due to capacity", "peer_id", evictID)
+			break
+		}
+	}
+
 	conn := &PeerRelayedConnection{
-		config:     config,
-		relayPeer:  pr.conn,
-		sendQueue:  make(chan []byte, 256),
-		recvQueue:  make(chan []byte, 256),
+		config:    config,
+		relayPeer: pr.conn,
+		sendQueue: make(chan []byte, RelayChannelBuffer),
+		recvQueue: make(chan []byte, RelayChannelBuffer),
 	}
 
 	pr.connections[config.PeerID] = conn
@@ -413,8 +461,15 @@ func (c *PeerRelayedConnection) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	if c.closed {
+		return nil
+	}
+
 	c.closed = true
+
+	// Close both queues
 	close(c.sendQueue)
+	close(c.recvQueue)
 
 	return nil
 }

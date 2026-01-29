@@ -8,6 +8,14 @@ import (
 	"time"
 )
 
+// Connection tracking limits
+const (
+	// MaxTrackedConnections is the maximum number of tracked connections
+	MaxTrackedConnections = 50000
+	// MaxNATEntries is the maximum number of NAT table entries
+	MaxNATEntries = 50000
+)
+
 // ConnKey uniquely identifies a connection.
 type ConnKey struct {
 	SrcIP    netip.Addr
@@ -103,11 +111,38 @@ func (ct *ConnTracker) Add(conn *TrackedConnection) {
 		return
 	}
 
+	// Enforce connection limit - evict oldest if at capacity
+	if len(ct.connections) >= MaxTrackedConnections {
+		ct.evictOldestLocked()
+	}
+
 	conn.Created = time.Now()
 	conn.LastActivity = time.Now()
 	conn.State = ConnStateNew
 
 	ct.connections[conn.Key] = conn
+}
+
+// evictOldestLocked removes the oldest connection. Must be called with mu held.
+func (ct *ConnTracker) evictOldestLocked() {
+	var oldestKey ConnKey
+	var oldestTime time.Time
+
+	for key, conn := range ct.connections {
+		if oldestTime.IsZero() || conn.LastActivity.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = conn.LastActivity
+		}
+	}
+
+	if !oldestTime.IsZero() {
+		if conn, ok := ct.connections[oldestKey]; ok {
+			if conn.ProxyConn != nil {
+				conn.ProxyConn.Close()
+			}
+			delete(ct.connections, oldestKey)
+		}
+	}
 }
 
 // Get retrieves a tracked connection by its key.
@@ -351,6 +386,11 @@ func (nt *NATTable) Allocate(src, dst netip.AddrPort, protocol uint8) (*NATEntry
 		return entry, nil
 	}
 
+	// Enforce entry limit - evict oldest if at capacity
+	if len(nt.forward) >= MaxNATEntries {
+		nt.evictOldestLocked()
+	}
+
 	// Find an available port
 	port := nt.nextPort
 	startPort := port
@@ -389,6 +429,25 @@ func (nt *NATTable) Allocate(src, dst netip.AddrPort, protocol uint8) (*NATEntry
 		if port == startPort {
 			return nil, ErrNATTableFull
 		}
+	}
+}
+
+// evictOldestLocked removes the oldest NAT entry. Must be called with mu held.
+func (nt *NATTable) evictOldestLocked() {
+	var oldestKey string
+	var oldestEntry *NATEntry
+
+	for fwdKey, entry := range nt.forward {
+		if oldestEntry == nil || entry.LastActivity.Before(oldestEntry.LastActivity) {
+			oldestKey = fwdKey
+			oldestEntry = entry
+		}
+	}
+
+	if oldestEntry != nil {
+		revKey := nt.reverseKey(oldestEntry.MappedSrc, oldestEntry.Protocol)
+		delete(nt.forward, oldestKey)
+		delete(nt.reverse, revKey)
 	}
 }
 

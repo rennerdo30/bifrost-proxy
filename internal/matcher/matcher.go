@@ -2,8 +2,21 @@
 package matcher
 
 import (
+	"errors"
 	"strings"
 	"sync"
+)
+
+// Matcher limits
+const (
+	// MaxPatterns is the maximum number of patterns
+	MaxPatterns = 5000
+)
+
+// Matcher errors
+var (
+	ErrPatternsAtLimit = errors.New("matcher: patterns at maximum limit")
+	ErrDuplicatePattern = errors.New("matcher: duplicate pattern")
 )
 
 // Matcher provides domain pattern matching functionality.
@@ -29,7 +42,7 @@ func New(patterns []string) *Matcher {
 	return m
 }
 
-// AddPattern adds a pattern to the matcher.
+// AddPattern adds a pattern to the matcher. Returns error if duplicate or at limit.
 // Pattern formats:
 //   - "example.com" - exact match
 //   - "*.example.com" - wildcard subdomain match
@@ -37,13 +50,25 @@ func New(patterns []string) *Matcher {
 //   - "*" - match all
 //   - "sf-*.example.com" - glob match (sf-* matches sf-abc, sf-xyz, etc.)
 //   - "*-api.example.com" - glob match (*-api matches backend-api, frontend-api, etc.)
-func (m *Matcher) AddPattern(p string) {
+func (m *Matcher) AddPattern(p string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	p = strings.ToLower(strings.TrimSpace(p))
 	if p == "" {
-		return
+		return nil
+	}
+
+	// Check for duplicate
+	for _, existing := range m.patterns {
+		if existing.original == p {
+			return ErrDuplicatePattern
+		}
+	}
+
+	// Check limit
+	if len(m.patterns) >= MaxPatterns {
+		return ErrPatternsAtLimit
 	}
 
 	pat := pattern{original: p}
@@ -51,7 +76,7 @@ func (m *Matcher) AddPattern(p string) {
 	if p == "*" {
 		pat.isWild = true
 		m.patterns = append(m.patterns, pat)
-		return
+		return nil
 	}
 
 	if strings.HasPrefix(p, "*.") {
@@ -73,6 +98,7 @@ func (m *Matcher) AddPattern(p string) {
 	}
 
 	m.patterns = append(m.patterns, pat)
+	return nil
 }
 
 // Match checks if the given domain matches any pattern.
