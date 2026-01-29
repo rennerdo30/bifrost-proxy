@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ServerInfo } from '../services/api'
+import { getStatusColor } from '../utils/status'
 
 export function ServersScreen() {
   const queryClient = useQueryClient()
@@ -36,27 +37,14 @@ export function ServersScreen() {
   })
 
   // Set initial selected server from default
-  useState(() => {
+  useEffect(() => {
     if (servers && !selectedServer) {
       const defaultServer = servers.find((s) => s.is_default)
       if (defaultServer) {
         setSelectedServer(defaultServer.id)
       }
     }
-  })
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'online':
-        return '#22c55e'
-      case 'busy':
-        return '#f59e0b'
-      case 'offline':
-        return '#ef4444'
-      default:
-        return '#6b7280'
-    }
-  }
+  }, [servers, selectedServer])
 
   const handleSelectServer = (id: string) => {
     const server = servers?.find((s) => s.id === id)

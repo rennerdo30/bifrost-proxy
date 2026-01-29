@@ -1,24 +1,11 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
 import type { RequestLogEntry } from '../../api/types'
+import { formatBytes, formatDurationMs } from '../../utils'
 
 interface RequestTableProps {
   requests: RequestLogEntry[] | undefined
   isLoading: boolean
   enabled: boolean
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1) return '<1ms'
-  if (ms < 1000) return `${Math.round(ms)}ms`
-  return `${(ms / 1000).toFixed(2)}s`
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }
 
 function getStatusColor(status: number): string {
@@ -145,9 +132,8 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
           </thead>
           <tbody>
             {requests.map((request, index) => (
-              <>
+              <React.Fragment key={request.id}>
                 <tr
-                  key={request.id}
                   onClick={() => setExpandedId(expandedId === request.id ? null : request.id)}
                   className="border-b border-bifrost-border/50 hover:bg-bifrost-card-hover transition-colors cursor-pointer animate-slide-up"
                   style={{ animationDelay: `${index * 20}ms` }}
@@ -182,7 +168,7 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
                     )}
                   </td>
                   <td className="table-cell text-right font-mono text-sm">
-                    {formatDuration(request.duration_ms)}
+                    {formatDurationMs(request.duration_ms)}
                   </td>
                   <td className="table-cell text-right font-mono text-sm text-bifrost-muted">
                     {formatBytes(request.bytes_sent + request.bytes_recv)}
@@ -230,7 +216,7 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
                     </td>
                   </tr>
                 )}
-              </>
+              </React.Fragment>
             ))}
           </tbody>
         </table>

@@ -182,24 +182,144 @@ func (t *linuxTUN) setIPv4Address(sock int, prefix netip.Prefix) error {
 	return nil
 }
 
-// setIPv6Address sets an IPv6 address on the interface.
+// setIPv6Address sets an IPv6 address on the interface using netlink.
 func (t *linuxTUN) setIPv6Address(prefix netip.Prefix) error {
-	// IPv6 address configuration requires netlink or ip command
+	// Get interface index
 	iface, err := net.InterfaceByName(t.name)
 	if err != nil {
 		return &DeviceError{Op: "get interface", Err: err}
 	}
 
-	addr := &net.IPNet{
-		IP:   prefix.Addr().AsSlice(),
-		Mask: net.CIDRMask(prefix.Bits(), 128),
+	// Create netlink socket for address configuration
+	sock, err := unix.Socket(unix.AF_NETLINK, unix.SOCK_DGRAM, unix.NETLINK_ROUTE)
+	if err != nil {
+		return &DeviceError{Op: "create netlink socket", Err: err}
+	}
+	defer unix.Close(sock)
+
+	// Bind the socket
+	addr := &unix.SockaddrNetlink{
+		Family: unix.AF_NETLINK,
+		Pid:    0, // Let kernel assign
+	}
+	if err := unix.Bind(sock, addr); err != nil {
+		return &DeviceError{Op: "bind netlink socket", Err: err}
 	}
 
-	// Use netlink to add address
-	_ = iface
-	_ = addr
+	// Build the netlink message to add IPv6 address
+	msg := t.buildIPv6AddrMessage(iface.Index, prefix)
 
-	return errors.New("IPv6 address configuration not yet implemented")
+	// Send the message
+	if err := unix.Sendto(sock, msg, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
+		return &DeviceError{Op: "send netlink message", Err: err}
+	}
+
+	// Receive acknowledgment
+	buf := make([]byte, 4096)
+	n, _, err := unix.Recvfrom(sock, buf, 0)
+	if err != nil {
+		return &DeviceError{Op: "receive netlink response", Err: err}
+	}
+
+	// Parse response for errors
+	if err := t.parseNetlinkResponse(buf[:n]); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// buildIPv6AddrMessage constructs a netlink RTM_NEWADDR message for IPv6.
+func (t *linuxTUN) buildIPv6AddrMessage(ifIndex int, prefix netip.Prefix) []byte {
+	addr := prefix.Addr().As16()
+	prefixLen := uint8(prefix.Bits())
+
+	// Netlink message header (16 bytes)
+	// struct nlmsghdr {
+	//     __u32 nlmsg_len;    // Length of message including header
+	//     __u16 nlmsg_type;   // Message type (RTM_NEWADDR = 20)
+	//     __u16 nlmsg_flags;  // Additional flags
+	//     __u32 nlmsg_seq;    // Sequence number
+	//     __u32 nlmsg_pid;    // Sending process port ID
+	// }
+
+	// Interface address message (8 bytes)
+	// struct ifaddrmsg {
+	//     __u8  ifa_family;   // Address family (AF_INET6)
+	//     __u8  ifa_prefixlen; // Prefix length
+	//     __u8  ifa_flags;    // Address flags
+	//     __u8  ifa_scope;    // Address scope
+	//     __u32 ifa_index;    // Interface index
+	// }
+
+	// Attribute for address (4 byte header + 16 byte IPv6 address)
+	// struct rtattr {
+	//     unsigned short rta_len;
+	//     unsigned short rta_type;
+	// }
+
+	// Calculate total message length
+	// nlmsghdr (16) + ifaddrmsg (8) + rtattr for IFA_LOCAL (4 + 16) + rtattr for IFA_ADDRESS (4 + 16) = 64
+	msgLen := 16 + 8 + (4 + 16) + (4 + 16)
+	msg := make([]byte, msgLen)
+
+	// nlmsghdr
+	*(*uint32)(unsafe.Pointer(&msg[0])) = uint32(msgLen)          // nlmsg_len
+	*(*uint16)(unsafe.Pointer(&msg[4])) = unix.RTM_NEWADDR        // nlmsg_type
+	*(*uint16)(unsafe.Pointer(&msg[6])) = unix.NLM_F_REQUEST | unix.NLM_F_CREATE | unix.NLM_F_EXCL | unix.NLM_F_ACK // nlmsg_flags
+	*(*uint32)(unsafe.Pointer(&msg[8])) = 1                       // nlmsg_seq
+	*(*uint32)(unsafe.Pointer(&msg[12])) = 0                      // nlmsg_pid (0 = kernel)
+
+	// ifaddrmsg
+	msg[16] = unix.AF_INET6                                       // ifa_family
+	msg[17] = prefixLen                                           // ifa_prefixlen
+	msg[18] = 0                                                   // ifa_flags
+	msg[19] = unix.RT_SCOPE_UNIVERSE                              // ifa_scope (global)
+	*(*uint32)(unsafe.Pointer(&msg[20])) = uint32(ifIndex)        // ifa_index
+
+	// rtattr for IFA_LOCAL (local address)
+	offset := 24
+	*(*uint16)(unsafe.Pointer(&msg[offset])) = 20                 // rta_len (4 + 16)
+	*(*uint16)(unsafe.Pointer(&msg[offset+2])) = unix.IFA_LOCAL   // rta_type
+	copy(msg[offset+4:offset+20], addr[:])                        // IPv6 address
+
+	// rtattr for IFA_ADDRESS (peer/broadcast address, same as local for point-to-point)
+	offset = 44
+	*(*uint16)(unsafe.Pointer(&msg[offset])) = 20                 // rta_len (4 + 16)
+	*(*uint16)(unsafe.Pointer(&msg[offset+2])) = unix.IFA_ADDRESS // rta_type
+	copy(msg[offset+4:offset+20], addr[:])                        // IPv6 address
+
+	return msg
+}
+
+// parseNetlinkResponse checks for errors in the netlink response.
+func (t *linuxTUN) parseNetlinkResponse(data []byte) error {
+	if len(data) < 16 {
+		return &DeviceError{Op: "parse netlink response", Err: errors.New("response too short")}
+	}
+
+	// Parse nlmsghdr
+	msgLen := *(*uint32)(unsafe.Pointer(&data[0]))
+	msgType := *(*uint16)(unsafe.Pointer(&data[4]))
+
+	if msgLen > uint32(len(data)) {
+		return &DeviceError{Op: "parse netlink response", Err: errors.New("invalid message length")}
+	}
+
+	// Check for error response (NLMSG_ERROR = 2)
+	if msgType == unix.NLMSG_ERROR {
+		if len(data) < 20 {
+			return &DeviceError{Op: "parse netlink response", Err: errors.New("error response too short")}
+		}
+		// Error code is at offset 16 (after nlmsghdr)
+		errno := *(*int32)(unsafe.Pointer(&data[16]))
+		if errno < 0 {
+			return &DeviceError{Op: "set IPv6 address", Err: syscall.Errno(-errno)}
+		}
+		// errno == 0 means ACK (success)
+	}
+
+	return nil
 }
 
 // setUp brings the interface up.

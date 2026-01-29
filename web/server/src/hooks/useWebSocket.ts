@@ -34,13 +34,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
           const data = JSON.parse(event.data) as WSEvent
           setLastMessage(data)
           onMessage?.(data)
-        } catch {
-          // Silently ignore parse errors in production
+        } catch (err) {
+          if (import.meta.env.DEV) console.error('WebSocket message parse error:', err)
         }
       }
 
-      ws.onerror = () => {
-        // Error handling done via onclose
+      ws.onerror = (err) => {
+        if (import.meta.env.DEV) console.error('WebSocket error:', err)
       }
 
       ws.onclose = () => {
@@ -52,8 +52,8 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       }
 
       wsRef.current = ws
-    } catch {
-      // Connection failed, attempt reconnect
+    } catch (err) {
+      if (import.meta.env.DEV) console.error('WebSocket connection error:', err)
       reconnectTimeoutRef.current = setTimeout(connect, reconnectDelay)
     }
   }, [enabled, onMessage, reconnectDelay])

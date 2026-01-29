@@ -331,3 +331,50 @@ func TestManager_All_Empty(t *testing.T) {
 	all := m.All()
 	assert.Empty(t, all)
 }
+
+func TestValidateName(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantErr bool
+	}{
+		// Valid names
+		{"valid alphanumeric", "backend1", false},
+		{"valid with hyphen", "my-backend", false},
+		{"valid with underscore", "my_backend", false},
+		{"valid mixed", "backend-1_test", false},
+		{"valid uppercase", "Backend1", false},
+		{"valid single char", "a", false},
+		{"valid starts with number", "1backend", false},
+
+		// Invalid names
+		{"empty", "", true},
+		{"starts with hyphen", "-backend", true},
+		{"starts with underscore", "_backend", true},
+		{"contains space", "my backend", true},
+		{"contains dot", "my.backend", true},
+		{"contains special char", "my@backend", true},
+		{"contains slash", "my/backend", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateName(tt.input)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestManager_Add_InvalidName(t *testing.T) {
+	m := NewManager()
+
+	// Create a mock backend with invalid name
+	invalidBackend := &mockFailingBackend{name: "-invalid-name"}
+	err := m.Add(invalidBackend)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, ErrBackendInvalid)
+}

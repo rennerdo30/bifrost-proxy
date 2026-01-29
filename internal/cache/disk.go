@@ -505,9 +505,19 @@ func (d *DiskStorage) removeEntry(key string) {
 	delete(d.index, key)
 	d.currentSize -= meta.Size
 
-	// Remove files
-	os.Remove(d.dataFilePath(key))
-	os.Remove(d.metaFilePath(key))
+	// Remove files - log errors to help diagnose disk space leaks
+	if err := os.Remove(d.dataFilePath(key)); err != nil && !os.IsNotExist(err) {
+		slog.Warn("failed to remove cache data file",
+			"key", truncateKey(key),
+			"error", err,
+		)
+	}
+	if err := os.Remove(d.metaFilePath(key)); err != nil && !os.IsNotExist(err) {
+		slog.Warn("failed to remove cache metadata file",
+			"key", truncateKey(key),
+			"error", err,
+		)
+	}
 }
 
 // evictOne removes the least recently used entry.
@@ -573,8 +583,13 @@ func (d *DiskStorage) loadIndex() error {
 		dataPath := path[:len(path)-5] + ".dat"
 		dataInfo, err := os.Stat(dataPath)
 		if err != nil {
-			// Orphaned metadata file
-			os.Remove(path)
+			// Orphaned metadata file - clean up and log if removal fails
+			if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+				slog.Warn("failed to remove orphaned cache metadata file",
+					"path", path,
+					"error", removeErr,
+				)
+			}
 			return nil
 		}
 
@@ -583,8 +598,18 @@ func (d *DiskStorage) loadIndex() error {
 
 		// Skip expired entries
 		if meta.IsExpired() {
-			os.Remove(path)
-			os.Remove(dataPath)
+			if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+				slog.Warn("failed to remove expired cache metadata file",
+					"path", path,
+					"error", removeErr,
+				)
+			}
+			if removeErr := os.Remove(dataPath); removeErr != nil && !os.IsNotExist(removeErr) {
+				slog.Warn("failed to remove expired cache data file",
+					"path", dataPath,
+					"error", removeErr,
+				)
+			}
 			return nil
 		}
 

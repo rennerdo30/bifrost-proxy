@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { RequestTable } from '../components/RequestLog/RequestTable'
+import { formatBytes } from '../utils'
 
 export function RequestLog() {
   const [autoRefresh, setAutoRefresh] = useState(true)
@@ -12,6 +13,13 @@ export function RequestLog() {
     queryKey: ['requests', limit],
     queryFn: () => api.getRequests(limit),
     refetchInterval: autoRefresh ? 2000 : false,
+  })
+
+  // Fetch request stats for the aggregate view
+  const { data: stats } = useQuery({
+    queryKey: ['requestStats'],
+    queryFn: () => api.getRequestStats(),
+    refetchInterval: autoRefresh ? 5000 : false,
   })
 
   const handleClear = useCallback(async () => {
@@ -74,7 +82,7 @@ export function RequestLog() {
           </button>
 
           {/* Refresh Button */}
-          <button onClick={() => refetch()} className="btn btn-secondary">
+          <button onClick={() => refetch()} className="btn btn-secondary" aria-label="Refresh request log">
             <svg
               className="w-4 h-4"
               fill="none"
@@ -91,7 +99,7 @@ export function RequestLog() {
           </button>
 
           {/* Clear Button */}
-          <button onClick={handleClear} className="btn btn-secondary text-bifrost-error">
+          <button onClick={handleClear} className="btn btn-secondary text-bifrost-error" aria-label="Clear request log">
             <svg
               className="w-4 h-4"
               fill="none"
@@ -110,30 +118,59 @@ export function RequestLog() {
       </div>
 
       {/* Stats Summary */}
-      {data?.enabled && data.requests.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="card py-3">
-            <p className="text-sm text-gray-400">Total Shown</p>
-            <p className="text-xl font-bold text-white">{data.requests.length}</p>
-          </div>
-          <div className="card py-3">
-            <p className="text-sm text-gray-400">Success (2xx)</p>
-            <p className="text-xl font-bold text-bifrost-success">
-              {data.requests.filter((r) => r.status_code >= 200 && r.status_code < 300).length}
-            </p>
-          </div>
-          <div className="card py-3">
-            <p className="text-sm text-gray-400">Redirects (3xx)</p>
-            <p className="text-xl font-bold text-bifrost-accent">
-              {data.requests.filter((r) => r.status_code >= 300 && r.status_code < 400).length}
-            </p>
-          </div>
-          <div className="card py-3">
-            <p className="text-sm text-gray-400">Errors (4xx/5xx)</p>
-            <p className="text-xl font-bold text-bifrost-error">
-              {data.requests.filter((r) => r.status_code >= 400 || r.status_code === 0).length}
-            </p>
-          </div>
+      {data?.enabled && (
+        <div className="space-y-4">
+          {/* Aggregate Stats from API */}
+          {stats?.enabled && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="card py-3 bg-gradient-to-br from-bifrost-accent/10 to-transparent">
+                <p className="text-sm text-gray-400">Total Requests</p>
+                <p className="text-xl font-bold text-white">{stats.total_requests.toLocaleString()}</p>
+              </div>
+              <div className="card py-3 bg-gradient-to-br from-cyan-500/10 to-transparent">
+                <p className="text-sm text-gray-400">Data Sent</p>
+                <p className="text-xl font-bold text-cyan-400">{formatBytes(stats.total_bytes_sent)}</p>
+              </div>
+              <div className="card py-3 bg-gradient-to-br from-emerald-500/10 to-transparent">
+                <p className="text-sm text-gray-400">Data Received</p>
+                <p className="text-xl font-bold text-emerald-400">{formatBytes(stats.total_bytes_recv)}</p>
+              </div>
+              <div className="card py-3">
+                <p className="text-sm text-gray-400">Top Hosts</p>
+                <div className="text-sm text-white mt-1 truncate">
+                  {stats.top_hosts.slice(0, 3).map(h => h.host).join(', ') || 'None'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Current View Stats */}
+          {data.requests.length > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <div className="card py-3">
+                <p className="text-sm text-gray-400">Showing</p>
+                <p className="text-xl font-bold text-white">{data.requests.length}</p>
+              </div>
+              <div className="card py-3">
+                <p className="text-sm text-gray-400">Success (2xx)</p>
+                <p className="text-xl font-bold text-bifrost-success">
+                  {data.requests.filter((r) => r.status_code >= 200 && r.status_code < 300).length}
+                </p>
+              </div>
+              <div className="card py-3">
+                <p className="text-sm text-gray-400">Redirects (3xx)</p>
+                <p className="text-xl font-bold text-bifrost-accent">
+                  {data.requests.filter((r) => r.status_code >= 300 && r.status_code < 400).length}
+                </p>
+              </div>
+              <div className="card py-3">
+                <p className="text-sm text-gray-400">Errors (4xx/5xx)</p>
+                <p className="text-xl font-bold text-bifrost-error">
+                  {data.requests.filter((r) => r.status_code >= 400 || r.status_code === 0).length}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

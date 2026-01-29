@@ -237,11 +237,32 @@ func (e *SplitTunnelEngine) AddDomain(pattern string) {
 	e.domainMatcher.AddPattern(pattern)
 }
 
+// RemoveDomain removes a domain pattern from the split tunnel.
+func (e *SplitTunnelEngine) RemoveDomain(pattern string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.domainMatcher.RemovePattern(pattern)
+}
+
 // AddIP adds an IP or CIDR to the split tunnel.
 func (e *SplitTunnelEngine) AddIP(cidr string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.ipMatcher.Add(cidr)
+}
+
+// RemoveIP removes an IP or CIDR from the split tunnel.
+func (e *SplitTunnelEngine) RemoveIP(cidr string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.ipMatcher.Remove(cidr)
+}
+
+// SetMode sets the split tunnel mode ("exclude" or "include").
+func (e *SplitTunnelEngine) SetMode(mode string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.mode = mode
 }
 
 // AppMatcher matches applications by name or path.

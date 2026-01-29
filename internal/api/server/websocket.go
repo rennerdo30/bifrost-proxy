@@ -21,6 +21,7 @@ type WebSocketHub struct {
 	broadcast  chan []byte
 	register   chan *websocket.Conn
 	unregister chan *websocket.Conn
+	stopCh     chan struct{}
 	mu         sync.RWMutex
 	maxClients int
 }
@@ -41,14 +42,25 @@ func NewWebSocketHubWithMaxClients(maxClients int) *WebSocketHub {
 		broadcast:  make(chan []byte, 256),
 		register:   make(chan *websocket.Conn),
 		unregister: make(chan *websocket.Conn),
+		stopCh:     make(chan struct{}),
 		maxClients: maxClients,
 	}
 }
 
-// Run starts the hub's main loop.
+// Run starts the hub's main loop. Call Stop() to terminate the loop.
 func (h *WebSocketHub) Run() {
 	for {
 		select {
+		case <-h.stopCh:
+			// Close all client connections on shutdown
+			h.mu.Lock()
+			for client := range h.clients {
+				client.Close()
+				delete(h.clients, client)
+			}
+			h.mu.Unlock()
+			return
+
 		case client := <-h.register:
 			h.mu.Lock()
 			// Enforce connection limit to prevent resource exhaustion
@@ -85,6 +97,11 @@ func (h *WebSocketHub) Run() {
 			}
 		}
 	}
+}
+
+// Stop signals the hub to stop and close all connections.
+func (h *WebSocketHub) Stop() {
+	close(h.stopCh)
 }
 
 // Broadcast sends a message to all connected clients.

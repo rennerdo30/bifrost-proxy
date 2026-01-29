@@ -31,7 +31,10 @@ type VPNManager interface {
 	AddSplitTunnelApp(app vpn.AppRule) error
 	RemoveSplitTunnelApp(name string) error
 	AddSplitTunnelDomain(pattern string) error
+	RemoveSplitTunnelDomain(pattern string) error
 	AddSplitTunnelIP(cidr string) error
+	RemoveSplitTunnelIP(cidr string) error
+	SetSplitTunnelMode(mode string) error
 }
 
 // ServerInfo represents a configured server.
@@ -189,6 +192,9 @@ func (a *API) Handler() http.Handler {
 		r.Use(a.authMiddleware)
 	}
 
+	// CSRF protection
+	r.Use(csrfMiddleware)
+
 	// CORS for local development
 	r.Use(corsMiddleware)
 
@@ -218,6 +224,7 @@ func (a *API) HandlerWithUI() http.Handler {
 		if a.token != "" {
 			r.Use(a.authMiddleware)
 		}
+		r.Use(csrfMiddleware)
 		r.Get("/v1/health", a.handleHealth)
 		r.Get("/v1/version", a.handleVersion)
 		r.Get("/v1/status", a.handleStatus)
@@ -257,10 +264,13 @@ func (a *API) HandlerWithUI() http.Handler {
 			r.Get("/connections", a.handleVPNConnections)
 			r.Route("/split", func(r chi.Router) {
 				r.Get("/rules", a.handleVPNSplitRules)
+				r.Put("/mode", a.handleVPNSplitSetMode)
 				r.Post("/apps", a.handleVPNSplitAddApp)
 				r.Delete("/apps/{name}", a.handleVPNSplitRemoveApp)
 				r.Post("/domains", a.handleVPNSplitAddDomain)
+				r.Delete("/domains/{pattern}", a.handleVPNSplitRemoveDomain)
 				r.Post("/ips", a.handleVPNSplitAddIP)
+				r.Delete("/ips/{cidr}", a.handleVPNSplitRemoveIP)
 			})
 			r.Get("/dns/cache", a.handleVPNDNSCache)
 		})
@@ -339,6 +349,8 @@ func (a *API) addAPIRoutes(r chi.Router) {
 	// Routes routes
 	r.Route("/api/v1/routes", func(r chi.Router) {
 		r.Get("/", a.handleGetRoutes)
+		r.Post("/", a.handleAddRoute)
+		r.Delete("/{name}", a.handleRemoveRoute)
 		r.Get("/test", a.handleTestRoute)
 	})
 
@@ -352,10 +364,13 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		// Split tunnel routes
 		r.Route("/split", func(r chi.Router) {
 			r.Get("/rules", a.handleVPNSplitRules)
+			r.Put("/mode", a.handleVPNSplitSetMode)
 			r.Post("/apps", a.handleVPNSplitAddApp)
 			r.Delete("/apps/{name}", a.handleVPNSplitRemoveApp)
 			r.Post("/domains", a.handleVPNSplitAddDomain)
+			r.Delete("/domains/{pattern}", a.handleVPNSplitRemoveDomain)
 			r.Post("/ips", a.handleVPNSplitAddIP)
+			r.Delete("/ips/{cidr}", a.handleVPNSplitRemoveIP)
 		})
 
 		// DNS routes
@@ -392,6 +407,24 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// csrfMiddleware provides CSRF protection for mutating requests.
+// Requires X-Requested-With header on POST/PUT/DELETE requests.
+// This prevents CSRF attacks because custom headers cannot be sent cross-origin
+// without CORS preflight approval.
+func csrfMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only check mutating methods
+		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
+			// Require X-Requested-With header (standard CSRF mitigation)
+			if r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+				http.Error(w, "CSRF validation failed: missing X-Requested-With header", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
@@ -409,7 +442,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		if allowedOrigin != "" {
 			w.Header().Set("Access-Control-Allow-Origin", allowedOrigin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Requested-With")
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 		}
 
@@ -634,6 +667,142 @@ func (a *API) handleTestRoute(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, response)
 }
 
+func (a *API) handleAddRoute(w http.ResponseWriter, r *http.Request) {
+	if a.configUpdater == nil {
+		a.writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"error": "Config management not available",
+		})
+		return
+	}
+
+	var newRoute struct {
+		Name     string   `json:"name"`
+		Domains  []string `json:"domains"`
+		Action   string   `json:"action"` // server or direct
+		Priority int      `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&newRoute); err != nil {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Validate required fields
+	if newRoute.Name == "" {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Route name is required",
+		})
+		return
+	}
+	if len(newRoute.Domains) == 0 {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "At least one domain pattern is required",
+		})
+		return
+	}
+	if newRoute.Action == "" {
+		newRoute.Action = "server" // Default action
+	}
+	if newRoute.Action != "server" && newRoute.Action != "direct" {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":   "Invalid action",
+			"message": "action must be 'server' or 'direct'",
+		})
+		return
+	}
+
+	// Get current routes
+	var currentRoutes []map[string]interface{}
+	if a.router != nil {
+		routes := a.router.Routes()
+		for _, route := range routes {
+			if route.Name == newRoute.Name {
+				a.writeJSON(w, http.StatusConflict, map[string]interface{}{
+					"error": "Route with this name already exists",
+					"route": newRoute.Name,
+				})
+				return
+			}
+		}
+	}
+
+	// Create update map - we need to append the new route
+	// We use the configUpdater which handles merging
+	routeMap := map[string]interface{}{
+		"name":     newRoute.Name,
+		"domains":  newRoute.Domains,
+		"action":   newRoute.Action,
+		"priority": newRoute.Priority,
+	}
+	currentRoutes = append(currentRoutes, routeMap)
+
+	// Update config with new routes
+	if err := a.configUpdater(map[string]interface{}{
+		"_add_route": routeMap,
+	}); err != nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error":   "Failed to update config",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	a.writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"status":  "created",
+		"route":   newRoute.Name,
+		"domains": newRoute.Domains,
+		"action":  newRoute.Action,
+	})
+}
+
+func (a *API) handleRemoveRoute(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	if a.configUpdater == nil {
+		a.writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"error": "Config management not available",
+		})
+		return
+	}
+
+	// Check if route exists
+	if a.router != nil {
+		found := false
+		routes := a.router.Routes()
+		for _, route := range routes {
+			if route.Name == name {
+				found = true
+				break
+			}
+		}
+		if !found {
+			a.writeJSON(w, http.StatusNotFound, map[string]interface{}{
+				"error": "Route not found",
+				"route": name,
+			})
+			return
+		}
+	}
+
+	// Update config to remove the route
+	if err := a.configUpdater(map[string]interface{}{
+		"_remove_route": name,
+	}); err != nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error":   "Failed to update config",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "removed",
+		"route":  name,
+	})
+}
+
 func (a *API) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	buf, err := json.Marshal(data)
@@ -700,6 +869,33 @@ func (a *API) handleVPNSplitRules(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.writeJSON(w, http.StatusOK, a.vpnManager.SplitTunnelRules())
+}
+
+func (a *API) handleVPNSplitSetMode(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	var req struct {
+		Mode string `json:"mode"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Mode == "" {
+		http.Error(w, "mode is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.SetSplitTunnelMode(req.Mode); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "updated", "mode": req.Mode})
 }
 
 func (a *API) handleVPNSplitAddApp(w http.ResponseWriter, r *http.Request) {
@@ -802,6 +998,46 @@ func (a *API) handleVPNSplitAddIP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.writeJSON(w, http.StatusCreated, map[string]string{"status": "added"})
+}
+
+func (a *API) handleVPNSplitRemoveDomain(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	pattern := chi.URLParam(r, "pattern")
+	if pattern == "" {
+		http.Error(w, "pattern is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.RemoveSplitTunnelDomain(pattern); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+}
+
+func (a *API) handleVPNSplitRemoveIP(w http.ResponseWriter, r *http.Request) {
+	if a.vpnManager == nil {
+		http.Error(w, "VPN not configured", http.StatusBadRequest)
+		return
+	}
+
+	cidr := chi.URLParam(r, "cidr")
+	if cidr == "" {
+		http.Error(w, "cidr is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.vpnManager.RemoveSplitTunnelIP(cidr); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
 func (a *API) handleVPNDNSCache(w http.ResponseWriter, r *http.Request) {

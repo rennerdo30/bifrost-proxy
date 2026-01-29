@@ -520,3 +520,699 @@ func TestCredentialsValidation(t *testing.T) {
 	_, err := client.GenerateWireGuardConfig(context.Background(), server, vpnprovider.Credentials{})
 	assert.ErrorIs(t, err, vpnprovider.ErrInvalidCredentials)
 }
+
+func TestWithLogger(t *testing.T) {
+	client := NewClient("user", "pass", WithLogger(nil))
+	assert.NotNil(t, client)
+}
+
+func TestFetchServersWithMockServer(t *testing.T) {
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{
+				ID:          "us-east",
+				Name:        "US East",
+				Country:     "US",
+				PortForward: true,
+				Servers: RegionServers{
+					WireGuard: []WGServer{{IP: "1.2.3.4", CN: "us-east-wg"}},
+					Meta:      []MetaServer{{IP: "1.2.3.5", CN: "us-east-meta"}},
+				},
+			},
+			{
+				ID:      "de-berlin",
+				Name:    "DE Berlin",
+				Country: "Germany",
+				Servers: RegionServers{
+					WireGuard: []WGServer{{IP: "5.6.7.8", CN: "de-berlin-wg"}},
+				},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient("testuser", "testpass")
+	// Override the httpClient transport to redirect to our mock server
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				// Redirect all requests to our mock server
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	servers, err := client.FetchServers(ctx)
+	require.NoError(t, err)
+	assert.Len(t, servers, 2)
+	assert.Equal(t, "us-east", servers[0].ID)
+	assert.Equal(t, "de-berlin", servers[1].ID)
+}
+
+// mockTransport is a custom http.RoundTripper for testing
+type mockTransport struct {
+	handler func(*http.Request) (*http.Response, error)
+}
+
+func (t *mockTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t.handler(req)
+}
+
+func TestSelectServerWithMockServer(t *testing.T) {
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{
+				ID:          "us-east",
+				Name:        "US East",
+				Country:     "US",
+				PortForward: true,
+				Servers: RegionServers{
+					WireGuard: []WGServer{{IP: "1.2.3.4", CN: "us-east-wg"}},
+					Meta:      []MetaServer{{IP: "1.2.3.5", CN: "us-east-meta"}},
+				},
+			},
+			{
+				ID:      "de-berlin",
+				Name:    "DE Berlin",
+				Country: "Germany",
+				Servers: RegionServers{
+					WireGuard: []WGServer{{IP: "5.6.7.8", CN: "de-berlin-wg"}},
+				},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient("testuser", "testpass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	criteria := vpnprovider.ServerCriteria{Country: "US"}
+
+	selected, err := client.SelectServer(ctx, criteria)
+	require.NoError(t, err)
+	require.NotNil(t, selected)
+	assert.Equal(t, "us-east", selected.ID)
+}
+
+func TestSelectServerNoMatch(t *testing.T) {
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{
+				ID:      "us-east",
+				Name:    "US East",
+				Country: "US",
+				Servers: RegionServers{
+					WireGuard: []WGServer{{IP: "1.2.3.4", CN: "us-east-wg"}},
+				},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient("testuser", "testpass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	criteria := vpnprovider.ServerCriteria{Country: "JP"} // No Japanese servers
+
+	selected, err := client.SelectServer(ctx, criteria)
+	// SelectServer returns an error when no servers match
+	assert.Error(t, err)
+	assert.Nil(t, selected)
+}
+
+func TestClientAuthenticateAndInvalidate(t *testing.T) {
+	client := NewClient("testuser", "testpass")
+
+	// Test Authenticate returns error when auth endpoint is unreachable
+	ctx := context.Background()
+	_, err := client.Authenticate(ctx)
+	assert.Error(t, err) // Will fail because we can't reach real PIA API
+
+	// Test InvalidateToken doesn't panic
+	client.InvalidateToken()
+}
+
+func TestFindRegion(t *testing.T) {
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{ID: "us-east", Name: "US East", Country: "US",
+				Servers: RegionServers{WireGuard: []WGServer{{IP: "1.2.3.4"}}}},
+			{ID: "de-berlin", Name: "DE Berlin", Country: "Germany",
+				Servers: RegionServers{WireGuard: []WGServer{{IP: "5.6.7.8"}}}},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient("user", "pass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	// Populate cache by fetching servers
+	ctx := context.Background()
+	_, err := client.FetchServers(ctx)
+	require.NoError(t, err)
+
+	t.Run("FindByID", func(t *testing.T) {
+		region := client.findRegion("de-berlin")
+		require.NotNil(t, region)
+		assert.Equal(t, "de-berlin", region.ID)
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		region := client.findRegion("nonexistent")
+		assert.Nil(t, region)
+	})
+}
+
+func TestGenerateOpenVPNConfigFull(t *testing.T) {
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{
+				ID:      "us-test",
+				Name:    "US Test",
+				Country: "US",
+				DNS:     "10.0.0.1",
+				Servers: RegionServers{
+					OpenVPN: []OVPNServer{{IP: "1.2.3.4", CN: "us-test-ovpn"}},
+				},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient("testuser", "testpass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	vpnServer := &vpnprovider.Server{
+		ID:   "us-test",
+		Name: "US Test",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "test.example.com",
+			UDPPort:  1198,
+			TCPPort:  443,
+		},
+	}
+	creds := vpnprovider.Credentials{
+		Username: "testuser",
+		Password: "testpass",
+	}
+
+	config, err := client.GenerateOpenVPNConfig(ctx, vpnServer, creds)
+	require.NoError(t, err)
+	require.NotNil(t, config)
+	assert.Contains(t, config.ConfigContent, "client")
+	assert.Contains(t, config.ConfigContent, "dev tun")
+	assert.Contains(t, config.ConfigContent, "remote test.example.com")
+}
+
+func TestGenerateOpenVPNConfig_ServerNotFound(t *testing.T) {
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{ID: "us-east", Name: "US East"},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient("testuser", "testpass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	vpnServer := &vpnprovider.Server{
+		ID:   "nonexistent",
+		Name: "Non Existent",
+	}
+	creds := vpnprovider.Credentials{
+		Username: "testuser",
+		Password: "testpass",
+	}
+
+	_, err := client.GenerateOpenVPNConfig(ctx, vpnServer, creds)
+	assert.Error(t, err)
+}
+
+func TestGetWireGuardEndpoint(t *testing.T) {
+	t.Run("WithWireGuardServer", func(t *testing.T) {
+		region := Region{
+			Servers: RegionServers{
+				WireGuard: []WGServer{{IP: "1.2.3.4"}},
+			},
+		}
+		endpoint := region.GetWireGuardEndpoint()
+		assert.Equal(t, "1.2.3.4", endpoint) // Returns just the IP
+	})
+
+	t.Run("NoWireGuardServers", func(t *testing.T) {
+		region := Region{
+			Servers: RegionServers{
+				OpenVPN: []OVPNServer{{IP: "1.2.3.4"}},
+			},
+		}
+		endpoint := region.GetWireGuardEndpoint()
+		assert.Empty(t, endpoint)
+	})
+}
+
+func TestGetTokenWithCachedToken(t *testing.T) {
+	tm := NewTokenManager("user", "pass", nil, nil)
+	// Pre-set a valid token
+	tm.token = &Token{
+		Value:     "cached-token-123",
+		ExpiresAt: time.Now().Add(1 * time.Hour),
+	}
+
+	ctx := context.Background()
+	token, err := tm.GetToken(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "cached-token-123", token.Value)
+}
+
+func TestGetTokenAuthentication(t *testing.T) {
+	mockToken := TokenResponse{Token: "new-token-456"}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, http.MethodPost, r.Method)
+		assert.Equal(t, "application/x-www-form-urlencoded", r.Header.Get("Content-Type"))
+
+		err := r.ParseForm()
+		require.NoError(t, err)
+
+		if r.Form.Get("username") == "validuser" && r.Form.Get("password") == "validpass" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(mockToken)
+		} else {
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer server.Close()
+
+	// Create token manager with custom http client that redirects to our mock
+	tm := NewTokenManager("validuser", "validpass", &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}, nil)
+
+	ctx := context.Background()
+	token, err := tm.GetToken(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, "new-token-456", token.Value)
+}
+
+func TestGetTokenUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	tm := NewTokenManager("baduser", "badpass", &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}, nil)
+
+	ctx := context.Background()
+	_, err := tm.GetToken(ctx)
+	assert.ErrorIs(t, err, vpnprovider.ErrInvalidCredentials)
+}
+
+func TestGetTokenEmptyResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(TokenResponse{Token: ""})
+	}))
+	defer server.Close()
+
+	tm := NewTokenManager("user", "pass", &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}, nil)
+
+	ctx := context.Background()
+	_, err := tm.GetToken(ctx)
+	assert.ErrorIs(t, err, vpnprovider.ErrAuthenticationFailed)
+}
+
+func TestGetTokenServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("internal server error"))
+	}))
+	defer server.Close()
+
+	tm := NewTokenManager("user", "pass", &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}, nil)
+
+	ctx := context.Background()
+	_, err := tm.GetToken(ctx)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrAuthenticationFailed)
+}
+
+func TestGenerateWireGuardConfigRegionNotFound(t *testing.T) {
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{
+				ID:      "us-east",
+				Name:    "US East",
+				Country: "US",
+				Servers: RegionServers{
+					WireGuard: []WGServer{{IP: "1.2.3.4"}},
+				},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/vpninfo/servers/v6" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(mockResponse)
+		} else {
+			// Token endpoint
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(TokenResponse{Token: "test-token"})
+		}
+	}))
+	defer server.Close()
+
+	client := NewClient("testuser", "testpass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	// Fetch servers to populate regions
+	ctx := context.Background()
+	_, err := client.FetchServers(ctx)
+	require.NoError(t, err)
+
+	// Try to generate config for a server that doesn't have a region
+	vpnServer := &vpnprovider.Server{
+		ID:   "nonexistent",
+		Name: "Non Existent",
+		WireGuard: &vpnprovider.WireGuardServer{
+			Endpoint: "9.9.9.9:1337",
+		},
+	}
+
+	_, err = client.GenerateWireGuardConfig(ctx, vpnServer, vpnprovider.Credentials{
+		Username: "testuser",
+		Password: "testpass",
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "region not found")
+}
+
+func TestGenerateWireGuardConfigNoWireGuardSupport(t *testing.T) {
+	client := NewClient("testuser", "testpass")
+
+	// Server without WireGuard support
+	vpnServer := &vpnprovider.Server{
+		ID:        "test",
+		Name:      "Test Server",
+		WireGuard: nil, // No WireGuard support
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "test.example.com",
+			UDPPort:  1198,
+		},
+	}
+
+	ctx := context.Background()
+	_, err := client.GenerateWireGuardConfig(ctx, vpnServer, vpnprovider.Credentials{
+		Username: "testuser",
+		Password: "testpass",
+	})
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrUnsupportedProtocol)
+}
+
+func TestGenerateOpenVPNConfigNoSupport(t *testing.T) {
+	client := NewClient("testuser", "testpass")
+
+	// Server without OpenVPN support
+	vpnServer := &vpnprovider.Server{
+		ID:      "test",
+		Name:    "Test Server",
+		OpenVPN: nil, // No OpenVPN support
+	}
+
+	ctx := context.Background()
+	_, err := client.GenerateOpenVPNConfig(ctx, vpnServer, vpnprovider.Credentials{
+		Username: "testuser",
+		Password: "testpass",
+	})
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrUnsupportedProtocol)
+}
+
+func TestGenerateOpenVPNConfigNoCredentials(t *testing.T) {
+	client := NewClient("", "")
+
+	vpnServer := &vpnprovider.Server{
+		ID:   "test",
+		Name: "Test Server",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "test.example.com",
+			UDPPort:  1198,
+		},
+	}
+
+	ctx := context.Background()
+	_, err := client.GenerateOpenVPNConfig(ctx, vpnServer, vpnprovider.Credentials{})
+	assert.ErrorIs(t, err, vpnprovider.ErrInvalidCredentials)
+}
+
+func TestBuildOpenVPNConfigTCPOnly(t *testing.T) {
+	client := NewClient("testuser", "testpass")
+
+	// Server with only TCP port
+	vpnServer := &vpnprovider.Server{
+		ID:   "test",
+		Name: "Test Server",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "test.example.com",
+			UDPPort:  0, // No UDP
+			TCPPort:  443,
+		},
+	}
+
+	config := client.buildOpenVPNConfig(vpnServer, nil)
+	assert.Contains(t, config, "proto tcp")
+	assert.Contains(t, config, "remote test.example.com 443")
+}
+
+func TestBuildOpenVPNConfigNoDNS(t *testing.T) {
+	client := NewClient("testuser", "testpass")
+
+	vpnServer := &vpnprovider.Server{
+		ID:   "test",
+		Name: "Test Server",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "test.example.com",
+			UDPPort:  1198,
+		},
+	}
+
+	// Nil region (no DNS)
+	config := client.buildOpenVPNConfig(vpnServer, nil)
+	assert.NotContains(t, config, "dhcp-option DNS")
+
+	// Region with empty DNS
+	region := &Region{DNS: ""}
+	config = client.buildOpenVPNConfig(vpnServer, region)
+	assert.NotContains(t, config, "dhcp-option DNS")
+}
+
+func TestFetchServersError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewClient("user", "pass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	_, err := client.FetchServers(ctx)
+	assert.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrServerListFetchFailed)
+}
+
+func TestFetchServersInvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("invalid json"))
+	}))
+	defer server.Close()
+
+	client := NewClient("user", "pass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+	_, err := client.FetchServers(ctx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "parse server list")
+}
+
+func TestFetchServersFromCache(t *testing.T) {
+	callCount := 0
+	mockResponse := ServerListResponse{
+		Regions: []Region{
+			{
+				ID:      "us-east",
+				Name:    "US East",
+				Country: "US",
+				Servers: RegionServers{
+					WireGuard: []WGServer{{IP: "1.2.3.4"}},
+				},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mockResponse)
+	}))
+	defer server.Close()
+
+	client := NewClient("user", "pass")
+	client.httpClient = &http.Client{
+		Transport: &mockTransport{
+			handler: func(req *http.Request) (*http.Response, error) {
+				req.URL.Scheme = "http"
+				req.URL.Host = server.Listener.Addr().String()
+				return http.DefaultTransport.RoundTrip(req)
+			},
+		},
+	}
+
+	ctx := context.Background()
+
+	// First call should hit the API
+	servers1, err := client.FetchServers(ctx)
+	require.NoError(t, err)
+	assert.Len(t, servers1, 1)
+	assert.Equal(t, 1, callCount)
+
+	// Second call should use cache
+	servers2, err := client.FetchServers(ctx)
+	require.NoError(t, err)
+	assert.Len(t, servers2, 1)
+	assert.Equal(t, 1, callCount) // Should still be 1 - using cache
+}

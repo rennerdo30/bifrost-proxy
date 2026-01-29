@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -77,7 +78,57 @@ func NewCommands() *cobra.Command {
 		},
 	}
 
-	backendCmd.AddCommand(backendListCmd, backendShowCmd)
+	// Backend add command
+	var backendType string
+	var backendConfig string
+	var backendEnabled bool
+	backendAddCmd := &cobra.Command{
+		Use:   "add [name]",
+		Short: "Add a new backend",
+		Long: `Add a new backend to the server.
+
+Example:
+  bifrost-server ctl backend add my-proxy --type http_proxy --config '{"address":"proxy.example.com:8080"}'
+  bifrost-server ctl backend add direct-out --type direct
+  bifrost-server ctl backend add socks --type socks5_proxy --config '{"address":"socks.example.com:1080","username":"user","password":"pass"}'`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.AddBackend(args[0], backendType, backendConfig, backendEnabled)
+		},
+	}
+	backendAddCmd.Flags().StringVarP(&backendType, "type", "t", "", "Backend type (required): direct, http_proxy, socks5_proxy, wireguard, openvpn, nordvpn, mullvad, pia, protonvpn")
+	backendAddCmd.Flags().StringVarP(&backendConfig, "config", "c", "{}", "Backend configuration as JSON")
+	backendAddCmd.Flags().BoolVarP(&backendEnabled, "enabled", "e", true, "Enable the backend after creation")
+	backendAddCmd.MarkFlagRequired("type")
+
+	// Backend remove command
+	backendRemoveCmd := &cobra.Command{
+		Use:   "remove [name]",
+		Short: "Remove a backend",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.RemoveBackend(args[0])
+		},
+	}
+
+	// Backend test command
+	var testTarget string
+	var testTimeout string
+	backendTestCmd := &cobra.Command{
+		Use:   "test [name]",
+		Short: "Test backend connectivity",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.TestBackend(args[0], testTarget, testTimeout)
+		},
+	}
+	backendTestCmd.Flags().StringVar(&testTarget, "target", "google.com:443", "Target host:port to test connectivity")
+	backendTestCmd.Flags().StringVar(&testTimeout, "timeout", "10s", "Test timeout")
+
+	backendCmd.AddCommand(backendListCmd, backendShowCmd, backendAddCmd, backendRemoveCmd, backendTestCmd)
 
 	// Config commands
 	configCmd := &cobra.Command{
@@ -95,6 +146,57 @@ func NewCommands() *cobra.Command {
 	}
 
 	configCmd.AddCommand(configReloadCmd)
+
+	// Rule commands
+	ruleCmd := &cobra.Command{
+		Use:   "rule",
+		Short: "Manage routing rules",
+	}
+
+	ruleListCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List all routing rules",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.ListRules()
+		},
+	}
+
+	var ruleDomain string
+	var ruleBackend string
+	var rulePriority int
+	ruleAddCmd := &cobra.Command{
+		Use:   "add [name]",
+		Short: "Add a new routing rule",
+		Long: `Add a new routing rule to route traffic for specific domains to a backend.
+
+Example:
+  bifrost-server ctl rule add anime --domain "*.crunchyroll.com" --backend germany
+  bifrost-server ctl rule add work --domain "*.company.com" --backend office --priority 100
+  bifrost-server ctl rule add streaming --domain "*.netflix.com,*.hulu.com" --backend us-west`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.AddRule(args[0], ruleDomain, ruleBackend, rulePriority)
+		},
+	}
+	ruleAddCmd.Flags().StringVarP(&ruleDomain, "domain", "d", "", "Domain pattern(s), comma-separated for multiple (required)")
+	ruleAddCmd.Flags().StringVarP(&ruleBackend, "backend", "b", "", "Backend name to route traffic to (required)")
+	ruleAddCmd.Flags().IntVarP(&rulePriority, "priority", "p", 0, "Rule priority (higher = matched first)")
+	ruleAddCmd.MarkFlagRequired("domain")
+	ruleAddCmd.MarkFlagRequired("backend")
+
+	ruleRemoveCmd := &cobra.Command{
+		Use:   "remove [name]",
+		Short: "Remove a routing rule",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.RemoveRule(args[0])
+		},
+	}
+
+	ruleCmd.AddCommand(ruleListCmd, ruleAddCmd, ruleRemoveCmd)
 
 	// Stats command
 	statsCmd := &cobra.Command{
@@ -116,7 +218,7 @@ func NewCommands() *cobra.Command {
 		},
 	}
 
-	root.AddCommand(statusCmd, backendCmd, configCmd, statsCmd, healthCmd)
+	root.AddCommand(statusCmd, backendCmd, configCmd, ruleCmd, statsCmd, healthCmd)
 	return root
 }
 
@@ -252,5 +354,193 @@ func (c *APIClient) CheckHealth() error {
 	}
 
 	fmt.Printf("Server health: %v\n", status)
+	return nil
+}
+
+// AddBackend adds a new backend to the server.
+func (c *APIClient) AddBackend(name, backendType, configJSON string, enabled bool) error {
+	// Parse the config JSON
+	var configMap map[string]interface{}
+	if err := json.Unmarshal([]byte(configJSON), &configMap); err != nil {
+		return fmt.Errorf("invalid config JSON: %w", err)
+	}
+
+	// Build the request body
+	reqBody := map[string]interface{}{
+		"name":    name,
+		"type":    backendType,
+		"enabled": enabled,
+		"config":  configMap,
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := c.doRequest("POST", "/api/v1/backends", strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to add backend: %s - %s", resp.Status, string(respBody))
+	}
+
+	fmt.Printf("Backend '%s' added successfully (type: %s, enabled: %v)\n", name, backendType, enabled)
+	return nil
+}
+
+// RemoveBackend removes a backend from the server.
+func (c *APIClient) RemoveBackend(name string) error {
+	resp, err := c.doRequest("DELETE", "/api/v1/backends/"+name, nil)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to remove backend: %s - %s", resp.Status, string(body))
+	}
+
+	fmt.Printf("Backend '%s' removed successfully\n", name)
+	return nil
+}
+
+// TestBackend tests connectivity through a backend.
+func (c *APIClient) TestBackend(name, target, timeout string) error {
+	reqBody := map[string]string{
+		"target":  target,
+		"timeout": timeout,
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := c.doRequest("POST", "/api/v1/backends/"+name+"/test", strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	status := result["status"]
+	if status == "success" {
+		fmt.Printf("Backend '%s' test PASSED\n", name)
+		fmt.Printf("  Target: %v\n", result["target"])
+		fmt.Printf("  Duration: %v\n", result["duration"])
+		fmt.Printf("  Healthy: %v\n", result["healthy"])
+	} else {
+		fmt.Printf("Backend '%s' test FAILED\n", name)
+		fmt.Printf("  Target: %v\n", result["target"])
+		fmt.Printf("  Error: %v\n", result["error"])
+		fmt.Printf("  Duration: %v\n", result["duration"])
+	}
+
+	return nil
+}
+
+// ListRules lists all routing rules.
+func (c *APIClient) ListRules() error {
+	var routes []map[string]interface{}
+	if err := c.getJSON("/api/v1/routes", &routes); err != nil {
+		return err
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "NAME\tDOMAINS\tBACKEND\tPRIORITY")
+
+	for _, r := range routes {
+		name := r["name"]
+		domains := ""
+		if d, ok := r["domains"].([]interface{}); ok && len(d) > 0 {
+			parts := make([]string, len(d))
+			for i, v := range d {
+				parts[i] = fmt.Sprintf("%v", v)
+			}
+			domains = strings.Join(parts, ", ")
+		}
+		backend := r["backend"]
+		if backend == nil || backend == "" {
+			if backends, ok := r["backends"].([]interface{}); ok && len(backends) > 0 {
+				parts := make([]string, len(backends))
+				for i, v := range backends {
+					parts[i] = fmt.Sprintf("%v", v)
+				}
+				backend = strings.Join(parts, ", ")
+			}
+		}
+		priority := r["priority"]
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", name, domains, backend, priority)
+	}
+
+	return w.Flush()
+}
+
+// AddRule adds a new routing rule.
+func (c *APIClient) AddRule(name, domain, backend string, priority int) error {
+	// Parse comma-separated domains
+	domains := strings.Split(domain, ",")
+	for i := range domains {
+		domains[i] = strings.TrimSpace(domains[i])
+	}
+
+	reqBody := map[string]interface{}{
+		"name":     name,
+		"domains":  domains,
+		"backend":  backend,
+		"priority": priority,
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := c.doRequest("POST", "/api/v1/routes", strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to add rule: %s - %s", resp.Status, string(respBody))
+	}
+
+	fmt.Printf("Rule '%s' added successfully\n", name)
+	fmt.Printf("  Domains: %s\n", strings.Join(domains, ", "))
+	fmt.Printf("  Backend: %s\n", backend)
+	if priority > 0 {
+		fmt.Printf("  Priority: %d\n", priority)
+	}
+	return nil
+}
+
+// RemoveRule removes a routing rule.
+func (c *APIClient) RemoveRule(name string) error {
+	resp, err := c.doRequest("DELETE", "/api/v1/routes/"+name, nil)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to remove rule: %s - %s", resp.Status, string(body))
+	}
+
+	fmt.Printf("Rule '%s' removed successfully\n", name)
 	return nil
 }

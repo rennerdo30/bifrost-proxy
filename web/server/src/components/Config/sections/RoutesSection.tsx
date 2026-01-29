@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Section } from '../Section'
 import { RouteForm } from '../forms/RouteForm'
+import { ConfirmModal } from '../ConfirmModal'
 import type { RouteConfig } from '../../../api/types'
 
 interface RoutesSectionProps {
@@ -12,6 +13,7 @@ interface RoutesSectionProps {
 export function RoutesSection({ routes, availableBackends, onChange }: RoutesSectionProps) {
   const [editingRoute, setEditingRoute] = useState<{ route: RouteConfig; index: number } | null>(null)
   const [isAdding, setIsAdding] = useState(false)
+  const [deletingRouteIndex, setDeletingRouteIndex] = useState<number | null>(null)
 
   const handleSave = (route: RouteConfig) => {
     if (editingRoute) {
@@ -28,11 +30,12 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
   }
 
   const handleDelete = (index: number) => {
+    onChange(routes.filter((_, i) => i !== index))
+  }
+
+  const getRouteName = (index: number) => {
     const route = routes[index]
-    const name = route.name || route.domains.join(', ')
-    if (confirm(`Delete route "${name}"?`)) {
-      onChange(routes.filter((_, i) => i !== index))
-    }
+    return route?.name || route?.domains.join(', ') || 'this route'
   }
 
   const moveRoute = (index: number, direction: 'up' | 'down') => {
@@ -105,6 +108,7 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
                       disabled={displayIndex === 0}
                       className="btn btn-ghost text-sm disabled:opacity-30"
                       title="Move up (higher priority)"
+                      aria-label="Move route up"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -115,6 +119,7 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
                       disabled={displayIndex === sortedRoutes.length - 1}
                       className="btn btn-ghost text-sm disabled:opacity-30"
                       title="Move down (lower priority)"
+                      aria-label="Move route down"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -123,14 +128,16 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
                     <button
                       onClick={() => setEditingRoute({ route, index: actualIndex })}
                       className="btn btn-ghost text-sm"
+                      aria-label="Edit route"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                       </svg>
                     </button>
                     <button
-                      onClick={() => handleDelete(actualIndex)}
+                      onClick={() => setDeletingRouteIndex(actualIndex)}
                       className="btn btn-ghost text-sm text-bifrost-error hover:bg-bifrost-error/10"
+                      aria-label="Delete route"
                     >
                       <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -162,6 +169,16 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
           }}
         />
       )}
+
+      <ConfirmModal
+        isOpen={deletingRouteIndex !== null}
+        onClose={() => setDeletingRouteIndex(null)}
+        onConfirm={() => deletingRouteIndex !== null && handleDelete(deletingRouteIndex)}
+        title="Delete Route"
+        message={`Are you sure you want to delete "${deletingRouteIndex !== null ? getRouteName(deletingRouteIndex) : ''}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+      />
     </Section>
   )
 }

@@ -3,6 +3,7 @@ package nordvpn
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -640,4 +641,13 @@ func TestCacheStats(t *testing.T) {
 	assert.Equal(t, 0, serverCount)
 	assert.True(t, lastFetch.IsZero())
 	assert.Equal(t, 2*time.Hour, ttl)
+}
+
+func TestWithLogger(t *testing.T) {
+	customLogger := slog.Default().With("component", "nordvpn-test")
+
+	client := NewClient(WithLogger(customLogger))
+
+	assert.NotNil(t, client)
+	assert.Equal(t, customLogger, client.logger)
 }

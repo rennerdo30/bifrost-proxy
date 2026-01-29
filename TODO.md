@@ -1560,3 +1560,232 @@ The following issues from the security review have been fixed:
 - [x] Config reload error handling → Logged and returned in response
 - [x] SOCKS5 domain validation → RFC 1035 compliant regex
 - [x] OpenVPN temp file cleanup → `cleanupTempFiles()` on failure and stop
+
+---
+
+## Feature Implementation Status (2026-01-29)
+
+Features audit and implementation tracking from comprehensive codebase review.
+
+### Recently Completed ✅
+
+#### Mesh API Routes Registration
+**File:** `internal/api/server/server.go`
+
+- [x] Add `meshAPI *MeshAPI` field to API struct
+- [x] Initialize MeshAPI in `New()` function
+- [x] Register routes via `meshAPI.RegisterRoutes(r)` in `addAPIRoutes()`
+
+**Status:** Complete - Mesh networking API is now accessible
+
+---
+
+#### Split Tunnel Delete Buttons
+**Files:** `internal/vpn/vpn.go`, `internal/api/client/server.go`, `web/client/src/pages/VPN.tsx`
+
+- [x] Add `RemoveSplitTunnelDomain()` method to VPN Manager
+- [x] Add `RemoveSplitTunnelIP()` method to VPN Manager
+- [x] Add DELETE /vpn/split/domains/{pattern} endpoint
+- [x] Add DELETE /vpn/split/ips/{cidr} endpoint
+- [x] Add delete buttons to VPN.tsx domains list
+- [x] Add delete buttons to VPN.tsx IPs list
+
+**Status:** Complete - Split tunnel rules can now be deleted from Web UI
+
+---
+
+#### Traffic Pagination
+**File:** `web/client/src/pages/Traffic.tsx`
+
+- [x] Add `limit` state with default page size
+- [x] Add "Load More" button
+- [x] Display entry count
+
+**Status:** Complete - Traffic list supports incremental loading
+
+---
+
+#### Split Tunnel Mode Toggle
+**Files:** `internal/vpn/vpn.go`, `internal/api/client/server.go`, `web/client/src/pages/VPN.tsx`
+
+- [x] Add `SetSplitTunnelMode()` method to VPN Manager
+- [x] Add PUT /vpn/split/mode endpoint
+- [x] Make mode buttons clickable in VPN.tsx
+- [x] Add explanatory text for each mode
+
+**Status:** Complete - Split tunnel mode can be changed from Web UI
+
+---
+
+#### API Port Documentation Consistency
+**Files:** CLI, desktop app, mobile, web UI
+
+- [x] Update CLI default from 3130 to 7383 to match config defaults
+- [x] Update desktop app fallback from 3130 to 7383
+- [x] Update desktop frontend mock from 3130 to 7383
+- [x] Update mobile API config from 3130 to 7383
+- [x] Update web client Settings.tsx placeholder from 3130 to 7383
+
+**Status:** Complete - All ports now consistent with SPECIFICATION.md
+
+---
+
+### Recently Completed (2026-01-29) ✅
+
+#### CLI Commands
+
+##### Backend Management CLI (Server) ✅
+**File:** `internal/cli/server/commands.go`
+
+- [x] `bifrost-server backend add --name "name" --type wireguard --config /path`
+- [x] `bifrost-server backend remove --name "name"`
+- [x] `bifrost-server backend test --name "name" [--target URL] [--timeout DURATION]`
+- [x] Added API endpoints for backend management
+- [x] Updated tests
+
+---
+
+##### Rule Management CLI (Server + Client) ✅
+**Files:** `internal/cli/server/commands.go`, `internal/cli/client/commands.go`
+
+- [x] `bifrost-server rule list`
+- [x] `bifrost-server rule add --name "Name" --domain "*.domain.com" --backend "backend"`
+- [x] `bifrost-server rule remove --name "Name"`
+- [x] `bifrost-client routes add --name "Work" --domain "*.company.com" --action server`
+- [x] `bifrost-client routes remove --name "Work"`
+- [x] Added API endpoints for route management
+- [x] Updated tests
+
+---
+
+##### Debug Export CLI (Client) ✅
+**File:** `internal/cli/client/commands.go`
+
+- [x] `bifrost-client debug export --output traffic.har --format har`
+- [x] Implemented HAR (HTTP Archive) format export
+- [x] Updated tests
+
+---
+
+#### Authentication ✅
+
+##### ECDSA JWT Verification ✅
+**File:** `internal/auth/plugin/jwt/jwt.go`
+
+- [x] Implemented ES256 verification using `crypto/ecdsa`
+- [x] Implemented ES384 verification
+- [x] Implemented ES512 verification
+- [x] Added `parseECKey()` function for JWKS EC key parsing
+- [x] Added comprehensive tests for all ECDSA algorithms
+- [x] Updated `refreshJWKS()` to handle EC keys from JWKS endpoints
+
+---
+
+#### Web UI Improvements ✅
+
+##### Wire Unused API Endpoints ✅
+**Files:** `web/server/src/pages/RequestLog.tsx`, `web/client/src/pages/Traffic.tsx`
+
+- [x] `getRequestStats()` - Added aggregate stats display in server RequestLog
+- [x] `getErrors()` - Added "Errors Only" filter toggle in client Traffic page
+- [x] Enhanced Traffic page with toggle between all entries and errors only
+- [x] Added request stats (total requests, data sent/received, top hosts) to RequestLog
+
+---
+
+### Recently Completed (Deferred Items) ✅
+
+#### IPv6 TUN Configuration (Linux) ✅
+**File:** `internal/device/tun_linux.go`
+
+- [x] Implemented `setIPv6Address()` using netlink RTM_NEWADDR
+- [x] Added `buildIPv6AddrMessage()` to construct netlink messages
+- [x] Added `parseNetlinkResponse()` to handle ACK/error responses
+- [x] Supports P-256, P-384, P-521 curves and any prefix length
+- [x] Added comprehensive tests in `tun_linux_test.go`
+
+**Status:** Complete - IPv6 addresses can now be configured on TUN interfaces on Linux
+
+---
+
+### Recently Completed (2026-01-29) ✅
+
+#### UDP Tunneling ✅
+**Files:** `internal/vpn/udp.go` (NEW), `internal/vpn/vpn.go`
+
+Full UDP relay implementation for VPN mode.
+
+- [x] Created `UDPRelay` struct with session management
+- [x] Implemented `HandlePacket()` for outbound UDP from TUN
+- [x] Implemented `readLoop()` for inbound UDP responses
+- [x] Implemented `buildIPv4UDPPacket()` and `buildIPv6UDPPacket()` for packet construction
+- [x] Implemented `ipChecksum()` for IPv4 header checksum
+- [x] Implemented `udpIPv6Checksum()` for mandatory IPv6 UDP checksum
+- [x] Session-based NAT tracking with idle timeout cleanup
+- [x] IPv4-mapped IPv6 address comparison fix in `findSessionByRemote()`
+- [x] Integrated into VPN Manager's packet handling
+- [x] Comprehensive tests in `udp_test.go`
+
+**Status:** Complete - UDP packets are now relayed through the VPN tunnel
+
+---
+
+### Deferred Features (LOW PRIORITY)
+
+These features are complex and have workarounds available.
+
+
+
+#### ProtonVPN WireGuard Key Registration ✅ COMPLETE
+**Files:** `internal/vpnprovider/protonvpn/wireguard.go` (NEW), `internal/vpnprovider/protonvpn/client.go`
+
+Automatic WireGuard key registration with ProtonVPN API.
+
+- [x] Implemented `GenerateWireGuardKeyPair()` using X25519 (curve25519)
+- [x] Implemented `RegisterWireGuardKey()` API call to `/vpn/v1/certificate`
+- [x] Updated `GenerateWireGuardConfig()` to use key registration
+- [x] Added comprehensive tests in `wireguard_test.go`
+
+**Status:** Complete - WireGuard configs can now be generated via API authentication
+
+---
+
+#### ProtonVPN SRP Authentication ✅ COMPLETE
+**Files:** `internal/vpnprovider/protonvpn/srp.go` (NEW), `internal/vpnprovider/protonvpn/client.go`
+
+Secure Remote Password (SRP-6a) protocol for ProtonVPN authentication.
+
+- [x] Implemented full SRP-6a cryptographic protocol
+- [x] Implemented `computePasswordHash()` with support for versions 0-4 (SHA-512, bcrypt+argon2, argon2)
+- [x] Implemented `NewSRPSession()` with client proof computation
+- [x] Implemented `Login()` method with full auth flow:
+  - GET `/auth/info` to get server parameters (salt, modulus, server ephemeral)
+  - Compute client ephemeral and proof
+  - POST `/auth` with client proof
+  - Verify server proof
+- [x] Added comprehensive tests in `srp_test.go`
+
+**Status:** Complete - Users can now authenticate with ProtonVPN API using their Proton account credentials
+
+---
+
+### Implementation Priority Summary
+
+| Priority | Feature | Effort | Status |
+|----------|---------|--------|--------|
+| ✅ Done | Mesh API Routes | 30 min | Complete |
+| ✅ Done | Split Tunnel Delete | 4 hrs | Complete |
+| ✅ Done | Traffic Pagination | 2 hrs | Complete |
+| ✅ Done | Split Tunnel Mode Toggle | 3 hrs | Complete |
+| ✅ Done | API Port Consistency | 30 min | Complete |
+| ✅ Done | Backend CLI add/remove/test | 1-2 days | Complete |
+| ✅ Done | Rule CLI add/remove | 1 day | Complete |
+| ✅ Done | Debug Export CLI | 1 day | Complete |
+| ✅ Done | ECDSA JWT Verification | 2 days | Complete |
+| ✅ Done | Wire Unused APIs | 3 hrs | Complete |
+| ✅ Done | IPv6 TUN (Linux) | 3-5 days | Complete |
+| ✅ Done | UDP Tunneling | 1-2 weeks | Complete |
+| ✅ Done | ProtonVPN WireGuard | 1-2 weeks | Complete |
+| ✅ Done | ProtonVPN SRP | 2+ weeks | Complete |
+
+**ALL features are now complete!** The entire implementation plan has been executed.

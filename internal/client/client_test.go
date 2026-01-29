@@ -12,8 +12,36 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	apiclient "github.com/rennerdo30/bifrost-proxy/internal/api/client"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
+
+// mockSysProxyManager implements sysproxy.Manager for testing
+type mockSysProxyManager struct {
+	proxySet     bool
+	proxyAddress string
+	setErr       error
+	clearErr     error
+}
+
+func (m *mockSysProxyManager) SetProxy(address string) error {
+	if m.setErr != nil {
+		return m.setErr
+	}
+	m.proxySet = true
+	m.proxyAddress = address
+	return nil
+}
+
+func (m *mockSysProxyManager) ClearProxy() error {
+	if m.clearErr != nil {
+		return m.clearErr
+	}
+	m.proxySet = false
+	m.proxyAddress = ""
+	return nil
+}
 
 func TestNew(t *testing.T) {
 	cfg := &config.ClientConfig{
@@ -1319,4 +1347,423 @@ func TestClient_DirectRouteHTTP(t *testing.T) {
 	n, err := conn.Read(buf)
 	require.NoError(t, err)
 	assert.Contains(t, string(buf[:n]), "200")
+}
+
+func TestClient_getQuickSettings(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		Tray: config.TrayConfig{
+			AutoConnect:       true,
+			StartMinimized:    true,
+			ShowNotifications: false,
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: true,
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	settings := client.getQuickSettings()
+	require.NotNil(t, settings)
+
+	assert.True(t, settings.AutoConnect)
+	assert.True(t, settings.StartMinimized)
+	assert.False(t, settings.ShowNotifications)
+	assert.False(t, settings.VPNEnabled) // VPN not running
+	assert.True(t, settings.SystemProxyEnabled)
+	assert.Equal(t, "localhost:7080", settings.CurrentServer)
+}
+
+func TestClient_getQuickSettings_WithVPNManager(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		VPN: vpn.Config{
+			Enabled: false, // We'll mock the manager status
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Create a disabled VPN manager to test the status check
+	vpnCfg := vpn.DefaultConfig()
+	vpnCfg.Enabled = false
+	vpnManager, err := vpn.New(vpnCfg)
+	require.NoError(t, err)
+	client.vpnManager = vpnManager
+
+	settings := client.getQuickSettings()
+	require.NotNil(t, settings)
+
+	// VPN is initialized but not connected
+	assert.False(t, settings.VPNEnabled)
+}
+
+func TestClient_updateQuickSettings(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:8080"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		Tray: config.TrayConfig{
+			AutoConnect:       false,
+			StartMinimized:    false,
+			ShowNotifications: true,
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: false,
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Replace sys proxy manager with mock
+	mockManager := &mockSysProxyManager{}
+	client.sysProxyManager = mockManager
+
+	settings := &apiclient.QuickSettings{
+		AutoConnect:        true,
+		StartMinimized:     true,
+		ShowNotifications:  false,
+		SystemProxyEnabled: false, // Keep disabled
+		CurrentServer:      "localhost:7080",
+	}
+
+	err = client.updateQuickSettings(settings)
+	require.NoError(t, err)
+
+	// Verify tray config updated
+	assert.True(t, client.config.Tray.AutoConnect)
+	assert.True(t, client.config.Tray.StartMinimized)
+	assert.False(t, client.config.Tray.ShowNotifications)
+}
+
+func TestClient_updateQuickSettings_EnableSystemProxy(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:8080"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: false,
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Replace sys proxy manager with mock
+	mockManager := &mockSysProxyManager{}
+	client.sysProxyManager = mockManager
+
+	settings := &apiclient.QuickSettings{
+		SystemProxyEnabled: true,
+		CurrentServer:      "localhost:7080",
+	}
+
+	err = client.updateQuickSettings(settings)
+	require.NoError(t, err)
+
+	// Verify system proxy was enabled
+	assert.True(t, client.config.SystemProxy.Enabled)
+	assert.True(t, mockManager.proxySet)
+	assert.Equal(t, "127.0.0.1:8080", mockManager.proxyAddress)
+}
+
+func TestClient_updateQuickSettings_DisableSystemProxy(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:8080"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: true,
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Replace sys proxy manager with mock (start with proxy set)
+	mockManager := &mockSysProxyManager{proxySet: true}
+	client.sysProxyManager = mockManager
+
+	settings := &apiclient.QuickSettings{
+		SystemProxyEnabled: false,
+		CurrentServer:      "localhost:7080",
+	}
+
+	err = client.updateQuickSettings(settings)
+	require.NoError(t, err)
+
+	// Verify system proxy was disabled
+	assert.False(t, client.config.SystemProxy.Enabled)
+	assert.False(t, mockManager.proxySet)
+}
+
+func TestClient_updateQuickSettings_ChangeServer(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:8080"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Replace sys proxy manager with mock
+	mockManager := &mockSysProxyManager{}
+	client.sysProxyManager = mockManager
+
+	settings := &apiclient.QuickSettings{
+		CurrentServer: "newserver:9090",
+	}
+
+	err = client.updateQuickSettings(settings)
+	require.NoError(t, err)
+
+	// Verify server address was updated
+	assert.Equal(t, "newserver:9090", client.config.Server.Address)
+}
+
+func TestClient_updateQuickSettings_WithConfigPath(t *testing.T) {
+	// Create temp dir for config file
+	tmpDir := t.TempDir()
+	configPath := filepath.Join(tmpDir, "config.yaml")
+
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:8080"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Set config path
+	client.SetConfigPath(configPath)
+
+	// Replace sys proxy manager with mock
+	mockManager := &mockSysProxyManager{}
+	client.sysProxyManager = mockManager
+
+	settings := &apiclient.QuickSettings{
+		AutoConnect:   true,
+		CurrentServer: "localhost:7080",
+	}
+
+	err = client.updateQuickSettings(settings)
+	require.NoError(t, err)
+
+	// Verify config file was created
+	_, err = os.Stat(configPath)
+	assert.NoError(t, err)
+}
+
+func TestClient_updateQuickSettings_SystemProxyWithSOCKS5(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP:   config.ListenerConfig{Listen: ""}, // No HTTP
+			SOCKS5: config.ListenerConfig{Listen: "127.0.0.1:1080"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: false,
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Replace sys proxy manager with mock
+	mockManager := &mockSysProxyManager{}
+	client.sysProxyManager = mockManager
+
+	settings := &apiclient.QuickSettings{
+		SystemProxyEnabled: true,
+		CurrentServer:      "localhost:7080",
+	}
+
+	err = client.updateQuickSettings(settings)
+	require.NoError(t, err)
+
+	// Verify SOCKS5 address was used when HTTP is empty
+	assert.True(t, mockManager.proxySet)
+	assert.Equal(t, "127.0.0.1:1080", mockManager.proxyAddress)
+}
+
+func TestNew_WithVPNEnabled(t *testing.T) {
+	vpnCfg := vpn.DefaultConfig()
+	vpnCfg.Enabled = true
+
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		VPN: vpnCfg,
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, client)
+	assert.NotNil(t, client.vpnManager)
+}
+
+func TestClient_Start_SystemProxyNoListeners(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			// No HTTP or SOCKS5 listeners
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: true, // System proxy enabled but no listeners
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	err = client.Start(ctx)
+	require.NoError(t, err) // Should not error, just warn
+
+	// Stop
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = client.Stop(ctx)
+	require.NoError(t, err)
+}
+
+func TestClient_Start_SystemProxyWithSOCKS5Only(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			// No HTTP listener, only SOCKS5
+			SOCKS5: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: true,
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Replace with mock
+	mockManager := &mockSysProxyManager{}
+	client.sysProxyManager = mockManager
+
+	ctx := context.Background()
+	err = client.Start(ctx)
+	require.NoError(t, err)
+
+	// Verify SOCKS5 was used for system proxy
+	assert.True(t, mockManager.proxySet)
+
+	// Stop
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = client.Stop(ctx)
+	require.NoError(t, err)
+}
+
+func TestClient_Start_SystemProxyError(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+		SystemProxy: config.SystemProxyConfig{
+			Enabled: true,
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	// Replace with mock that returns error
+	mockManager := &mockSysProxyManager{
+		setErr: errors.New("failed to set system proxy"),
+	}
+	client.sysProxyManager = mockManager
+
+	ctx := context.Background()
+	err = client.Start(ctx)
+	// Should not fail, just log error
+	require.NoError(t, err)
+	assert.False(t, mockManager.proxySet)
+
+	// Stop
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = client.Stop(ctx)
+	require.NoError(t, err)
+}
+
+func TestClient_Start_AlreadyRunning(t *testing.T) {
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address: "localhost:7080",
+		},
+	}
+
+	client, err := New(cfg)
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	// Start the first time
+	err = client.Start(ctx)
+	require.NoError(t, err)
+	assert.True(t, client.Running())
+
+	// Start again - should be a no-op
+	err = client.Start(ctx)
+	require.NoError(t, err)
+	assert.True(t, client.Running())
+
+	// Stop
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	err = client.Stop(ctx)
+	require.NoError(t, err)
 }

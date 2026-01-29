@@ -30,8 +30,8 @@ export function Logs() {
           if (data.type !== 'connected') {
             setStreamLogs(prev => [...prev.slice(-499), data])
           }
-        } catch {
-          // Ignore parse errors
+        } catch (err) {
+          if (import.meta.env.DEV) console.error('SSE message parse error:', err)
         }
       }
 
@@ -187,7 +187,7 @@ export function Logs() {
           ) : (
             <div className="divide-y divide-bifrost-border/30">
               {filteredLogs.map((log, idx) => (
-                <div key={idx} className={`p-3 ${getLevelBg(log.level)} border-l-2`}>
+                <div key={`${log.timestamp}-${idx}`} className={`p-3 ${getLevelBg(log.level)} border-l-2`}>
                   <div className="flex items-start gap-3">
                     <span className="text-xs text-bifrost-muted whitespace-nowrap">
                       {new Date(log.timestamp).toLocaleTimeString()}
@@ -201,14 +201,14 @@ export function Logs() {
                   </div>
                   {log.fields && Object.keys(log.fields).length > 0 && (
                     <div className="mt-2 pl-[88px] flex flex-wrap gap-2">
-                      {Object.entries(log.fields).map(([key, value]) => (
-                        value !== '' && value !== null && (
+                      {Object.entries(log.fields)
+                        .filter(([, value]) => value !== '' && value !== null)
+                        .map(([key, value]) => (
                           <span key={key} className="text-xs px-1.5 py-0.5 bg-bifrost-border/50 rounded">
                             <span className="text-bifrost-muted">{key}:</span>
                             <span className="text-bifrost-text ml-1">{String(value)}</span>
                           </span>
-                        )
-                      ))}
+                        ))}
                     </div>
                   )}
                 </div>

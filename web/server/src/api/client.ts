@@ -31,6 +31,7 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('bifrost_api_token')
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest', // CSRF protection
     ...(token && { Authorization: `Bearer ${token}` }),
     ...options?.headers,
   }

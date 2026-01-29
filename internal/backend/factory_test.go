@@ -332,3 +332,299 @@ func TestFactory_CreateAll_DuplicateNames(t *testing.T) {
 	// Only one backend should be added (the duplicate is skipped)
 	assert.Len(t, manager.List(), 1)
 }
+
+// ============================================================================
+// NordVPN Factory Tests
+// ============================================================================
+
+func TestFactory_Create_NordVPN_WireGuard(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-nordvpn-wg",
+		Type:    "nordvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"access_token":     "my-private-key-base64",
+			"protocol":         "wireguard",
+			"country":          "US",
+			"city":             "New York",
+			"auto_select":      true,
+			"max_load":         70,
+			"refresh_interval": "5m",
+			"features":         []any{"p2p", "double_vpn"},
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-nordvpn-wg", backend.Name())
+	assert.Equal(t, "nordvpn", backend.Type())
+}
+
+func TestFactory_Create_NordVPN_NordLynx(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-nordvpn-lynx",
+		Type:    "nordvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"access_token": "my-private-key-base64",
+			"protocol":     "nordlynx",
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-nordvpn-lynx", backend.Name())
+}
+
+func TestFactory_Create_NordVPN_OpenVPN(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-nordvpn-ovpn",
+		Type:    "nordvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"username": "nord_username",
+			"password": "nord_password",
+			"protocol": "openvpn",
+			"country":  "DE",
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-nordvpn-ovpn", backend.Name())
+}
+
+func TestFactory_Create_NordVPN_MissingAccessToken(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-nordvpn",
+		Type:    "nordvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"protocol": "wireguard",
+			// Missing access_token
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "access_token")
+}
+
+func TestFactory_Create_NordVPN_DefaultProtocol(t *testing.T) {
+	f := NewFactory()
+
+	// No protocol specified, defaults to wireguard which requires access_token
+	cfg := config.BackendConfig{
+		Name:    "test-nordvpn",
+		Type:    "nordvpn",
+		Enabled: true,
+		Config:  map[string]any{},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "access_token")
+}
+
+func TestFactory_Create_NordVPN_OpenVPN_MissingCredentials(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-nordvpn",
+		Type:    "nordvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"protocol": "openvpn",
+			"username": "user",
+			// Missing password
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "username")
+	assert.Contains(t, err.Error(), "password")
+}
+
+// ============================================================================
+// Mullvad Factory Tests
+// ============================================================================
+
+func TestFactory_Create_Mullvad(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-mullvad",
+		Type:    "mullvad",
+		Enabled: true,
+		Config: map[string]any{
+			"account_id":       "1234567890123456",
+			"country":          "SE",
+			"city":             "Stockholm",
+			"protocol":         "wireguard",
+			"auto_select":      true,
+			"max_load":         80,
+			"refresh_interval": "10m",
+			"features":         []any{"streaming", "multihop"},
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-mullvad", backend.Name())
+	assert.Equal(t, "mullvad", backend.Type())
+}
+
+func TestFactory_Create_Mullvad_MissingAccountID(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-mullvad",
+		Type:    "mullvad",
+		Enabled: true,
+		Config:  map[string]any{},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "account_id")
+}
+
+// ============================================================================
+// PIA Factory Tests
+// ============================================================================
+
+func TestFactory_Create_PIA(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-pia",
+		Type:    "pia",
+		Enabled: true,
+		Config: map[string]any{
+			"username":         "p1234567",
+			"password":         "pia_password",
+			"country":          "US",
+			"city":             "California",
+			"protocol":         "wireguard",
+			"auto_select":      true,
+			"max_load":         75,
+			"refresh_interval": "15m",
+			"port_forwarding":  true,
+			"features":         []any{"port_forwarding", "streaming"},
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-pia", backend.Name())
+	assert.Equal(t, "pia", backend.Type())
+}
+
+func TestFactory_Create_PIA_MissingUsername(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-pia",
+		Type:    "pia",
+		Enabled: true,
+		Config: map[string]any{
+			"password": "pass",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "username")
+}
+
+func TestFactory_Create_PIA_MissingPassword(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-pia",
+		Type:    "pia",
+		Enabled: true,
+		Config: map[string]any{
+			"username": "user",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "password")
+}
+
+// ============================================================================
+// ProtonVPN Factory Tests
+// ============================================================================
+
+func TestFactory_Create_ProtonVPN(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-protonvpn",
+		Type:    "protonvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"username":         "proton_openvpn_user",
+			"password":         "proton_openvpn_pass",
+			"country":          "CH",
+			"city":             "Zurich",
+			"tier":             2,
+			"protocol":         "openvpn",
+			"auto_select":      true,
+			"max_load":         60,
+			"refresh_interval": "20m",
+			"secure_core":      true,
+			"features":         []any{"secure_core", "tor"},
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-protonvpn", backend.Name())
+	assert.Equal(t, "protonvpn", backend.Type())
+}
+
+func TestFactory_Create_ProtonVPN_MissingUsername(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-protonvpn",
+		Type:    "protonvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"password": "pass",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "username")
+}
+
+func TestFactory_Create_ProtonVPN_MissingPassword(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-protonvpn",
+		Type:    "protonvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"username": "user",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "password")
+}

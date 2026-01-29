@@ -1178,11 +1178,11 @@ func TestNewCommands_SubcommandStructure(t *testing.T) {
 
 	// Test debug subcommands
 	debugSubcmds := debugCmd.Commands()
-	require.Len(t, debugSubcmds, 3, "debug should have 3 subcommands: tail, clear, errors")
+	require.Len(t, debugSubcmds, 4, "debug should have 4 subcommands: tail, clear, errors, export")
 
 	// Test routes subcommands
 	routesSubcmds := routesCmd.Commands()
-	require.Len(t, routesSubcmds, 2, "routes should have 2 subcommands: list, test")
+	require.Len(t, routesSubcmds, 4, "routes should have 4 subcommands: list, test, add, remove")
 
 	// Test vpn subcommands
 	vpnSubcmds := vpnCmd.Commands()
@@ -1209,7 +1209,7 @@ func TestNewCommands_Flags(t *testing.T) {
 	// Test persistent flags
 	apiFlag := root.PersistentFlags().Lookup("api")
 	assert.NotNil(t, apiFlag, "api flag should exist")
-	assert.Equal(t, "http://localhost:3130", apiFlag.DefValue)
+	assert.Equal(t, "http://localhost:7383", apiFlag.DefValue)
 
 	tokenFlag := root.PersistentFlags().Lookup("token")
 	assert.NotNil(t, tokenFlag, "token flag should exist")
@@ -1266,4 +1266,270 @@ func TestNewCommands_RoutesTestArgs(t *testing.T) {
 	}
 	require.NotNil(t, testCmd)
 	assert.Equal(t, "test [domain]", testCmd.Use)
+}
+
+func TestGetStatusText(t *testing.T) {
+	tests := []struct {
+		code     int
+		expected string
+	}{
+		{200, "OK"},
+		{201, "Created"},
+		{204, "No Content"},
+		{301, "Moved Permanently"},
+		{302, "Found"},
+		{304, "Not Modified"},
+		{400, "Bad Request"},
+		{401, "Unauthorized"},
+		{403, "Forbidden"},
+		{404, "Not Found"},
+		{500, "Internal Server Error"},
+		{502, "Bad Gateway"},
+		{503, "Service Unavailable"},
+		{418, "Unknown"}, // I'm a teapot - not in the map
+		{999, "Unknown"}, // Unknown code
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.expected, func(t *testing.T) {
+			result := getStatusText(tt.code)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestAPIClient_AddRoute(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/api/v1/routes", r.URL.Path)
+
+		var body map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&body)
+		assert.Equal(t, "test-route", body["name"])
+		assert.Contains(t, body["domains"], "*.example.com")
+		assert.Equal(t, "proxy", body["action"])
+		assert.Equal(t, float64(10), body["priority"])
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddRoute("test-route", "*.example.com", "proxy", 10)
+	require.NoError(t, err)
+}
+
+func TestAPIClient_AddRoute_MultiDomain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&body)
+
+		domains := body["domains"].([]interface{})
+		assert.Len(t, domains, 2)
+		assert.Equal(t, "*.example.com", domains[0])
+		assert.Equal(t, "*.test.com", domains[1])
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddRoute("test-route", "*.example.com, *.test.com", "proxy", 5)
+	require.NoError(t, err)
+}
+
+func TestAPIClient_AddRoute_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(`{"error": "invalid route"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddRoute("bad-route", "*.example.com", "proxy", 10)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add route")
+}
+
+func TestAPIClient_RemoveRoute(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "DELETE", r.Method)
+		assert.Equal(t, "/api/v1/routes/test-route", r.URL.Path)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.RemoveRoute("test-route")
+	require.NoError(t, err)
+}
+
+func TestAPIClient_RemoveRoute_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error": "route not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.RemoveRoute("nonexistent-route")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to remove route")
+}
+
+func TestAPIClient_ExportDebug_JSON(t *testing.T) {
+	entries := []map[string]interface{}{
+		{
+			"timestamp":     "2024-01-01T12:00:00Z",
+			"method":        "GET",
+			"host":          "example.com",
+			"status":        float64(200),
+			"duration":      float64(100),
+			"request_size":  float64(50),
+			"response_size": float64(1000),
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v1/debug/entries", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(entries)
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	tmpFile := t.TempDir() + "/export.json"
+
+	err := client.ExportDebug(tmpFile, "json")
+	require.NoError(t, err)
+
+	// Verify the file was written
+	assert.FileExists(t, tmpFile)
+}
+
+func TestAPIClient_ExportDebug_HAR(t *testing.T) {
+	entries := []map[string]interface{}{
+		{
+			"timestamp":     "2024-01-01T12:00:00Z",
+			"method":        "GET",
+			"host":          "example.com",
+			"status":        float64(200),
+			"duration":      float64(100),
+			"request_size":  float64(50),
+			"response_size": float64(1000),
+			"protocol":      "HTTP/1.1",
+		},
+		{
+			"timestamp":     "2024-01-01T12:01:00Z",
+			"method":        "POST",
+			"host":          "api.example.com",
+			"status":        float64(201),
+			"duration":      float64(200),
+			"request_size":  float64(100),
+			"response_size": float64(500),
+			"protocol":      "HTTPS",
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(entries)
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	tmpFile := t.TempDir() + "/export.har"
+
+	err := client.ExportDebug(tmpFile, "har")
+	require.NoError(t, err)
+	assert.FileExists(t, tmpFile)
+}
+
+func TestAPIClient_ExportDebug_NoEntries(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode([]map[string]interface{}{})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	tmpFile := t.TempDir() + "/export.json"
+
+	err := client.ExportDebug(tmpFile, "json")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no debug entries")
+}
+
+func TestAPIClient_ExportDebug_FetchError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	tmpFile := t.TempDir() + "/export.json"
+
+	err := client.ExportDebug(tmpFile, "json")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to fetch debug entries")
+}
+
+func TestConvertToHAR(t *testing.T) {
+	entries := []map[string]interface{}{
+		{
+			"timestamp":     "2024-01-01T12:00:00Z",
+			"method":        "GET",
+			"host":          "example.com",
+			"status":        float64(200),
+			"duration":      float64(100.5),
+			"request_size":  float64(50),
+			"response_size": float64(1000),
+			"protocol":      "HTTP/1.1",
+		},
+	}
+
+	har := convertToHAR(entries)
+
+	// Check HAR structure
+	assert.NotNil(t, har["log"])
+	log := har["log"].(map[string]interface{})
+	assert.Equal(t, "1.2", log["version"])
+	assert.NotNil(t, log["creator"])
+	assert.NotNil(t, log["entries"])
+
+	harEntries := log["entries"].([]map[string]interface{})
+	assert.Len(t, harEntries, 1)
+
+	entry := harEntries[0]
+	assert.Equal(t, "2024-01-01T12:00:00Z", entry["startedDateTime"])
+	assert.Equal(t, 100.5, entry["time"])
+
+	request := entry["request"].(map[string]interface{})
+	assert.Equal(t, "GET", request["method"])
+	assert.Equal(t, "http://example.com", request["url"])
+
+	response := entry["response"].(map[string]interface{})
+	assert.Equal(t, 200, response["status"])
+}
+
+func TestConvertToHAR_HTTPS(t *testing.T) {
+	entries := []map[string]interface{}{
+		{
+			"timestamp": "2024-01-01T12:00:00Z",
+			"method":    "GET",
+			"host":      "secure.example.com",
+			"status":    float64(200),
+			"duration":  float64(50),
+			"protocol":  "HTTPS", // Not HTTP/
+		},
+	}
+
+	har := convertToHAR(entries)
+	log := har["log"].(map[string]interface{})
+	harEntries := log["entries"].([]map[string]interface{})
+	request := harEntries[0]["request"].(map[string]interface{})
+
+	// Should default to https when protocol is not HTTP/
+	assert.Equal(t, "https://secure.example.com", request["url"])
 }

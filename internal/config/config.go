@@ -39,7 +39,8 @@ func Save(path string, v any) error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	// Use 0600 permissions - config files may contain sensitive data (passwords, tokens)
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -77,7 +78,8 @@ func Backup(path string) (string, error) {
 		return "", fmt.Errorf("failed to read config: %w", err)
 	}
 
-	if err := os.WriteFile(backupPath, data, 0644); err != nil {
+	// Use 0600 permissions - config files may contain sensitive data (passwords, tokens)
+	if err := os.WriteFile(backupPath, data, 0600); err != nil {
 		return "", fmt.Errorf("failed to write backup: %w", err)
 	}
 

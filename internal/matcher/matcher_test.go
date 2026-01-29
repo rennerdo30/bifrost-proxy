@@ -306,6 +306,64 @@ func TestMatchEdgeCases(t *testing.T) {
 	})
 }
 
+func TestRemovePattern(t *testing.T) {
+	m := New([]string{"example.com", "*.test.com", "api.example.org"})
+
+	// Verify all patterns exist
+	assert.True(t, m.Match("example.com"))
+	assert.True(t, m.Match("sub.test.com"))
+	assert.True(t, m.Match("api.example.org"))
+
+	// Remove one pattern
+	m.RemovePattern("example.com")
+	assert.False(t, m.Match("example.com"))
+	assert.True(t, m.Match("sub.test.com"))
+	assert.True(t, m.Match("api.example.org"))
+
+	// Remove wildcard pattern
+	m.RemovePattern("*.test.com")
+	assert.False(t, m.Match("sub.test.com"))
+	assert.True(t, m.Match("api.example.org"))
+
+	// Remove last pattern
+	m.RemovePattern("api.example.org")
+	assert.False(t, m.Match("api.example.org"))
+
+	// Verify patterns list is empty
+	assert.Empty(t, m.Patterns())
+}
+
+func TestRemovePattern_Empty(t *testing.T) {
+	m := New([]string{"example.com"})
+
+	// Remove empty pattern should be no-op
+	m.RemovePattern("")
+	m.RemovePattern("   ")
+
+	assert.True(t, m.Match("example.com"))
+	assert.Len(t, m.Patterns(), 1)
+}
+
+func TestRemovePattern_NonExistent(t *testing.T) {
+	m := New([]string{"example.com"})
+
+	// Remove non-existent pattern should be no-op
+	m.RemovePattern("nonexistent.com")
+
+	assert.True(t, m.Match("example.com"))
+	assert.Len(t, m.Patterns(), 1)
+}
+
+func TestRemovePattern_CaseInsensitive(t *testing.T) {
+	m := New([]string{"Example.Com"})
+
+	// Should match case-insensitively
+	m.RemovePattern("EXAMPLE.COM")
+
+	assert.False(t, m.Match("example.com"))
+	assert.Empty(t, m.Patterns())
+}
+
 func BenchmarkMatcherExact(b *testing.B) {
 	m := New([]string{"example.com"})
 	b.ResetTimer()

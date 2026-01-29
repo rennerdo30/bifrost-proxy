@@ -74,6 +74,7 @@ type Manager struct {
 	routeManager  RouteManager
 	processLookup ProcessLookup
 	serverConn    ServerConnector
+	udpRelay      *UDPRelay
 
 	status    atomic.Value // Status
 	startTime time.Time
@@ -176,6 +177,22 @@ func (m *Manager) Start(ctx context.Context) error {
 		"mtu", m.tun.MTU(),
 	)
 
+	// Initialize UDP relay for UDP packet forwarding
+	tunAddr, err := netip.ParsePrefix(m.config.TUN.Address)
+	if err == nil {
+		udpCfg := UDPRelayConfig{
+			TUNAddr:     tunAddr.Addr(),
+			IdleTimeout: 30 * time.Second,
+		}
+		m.udpRelay, err = NewUDPRelay(udpCfg, m.tun)
+		if err != nil {
+			slog.Warn("failed to create UDP relay, UDP tunneling disabled", "error", err)
+		} else {
+			m.udpRelay.Start()
+			slog.Info("UDP relay started")
+		}
+	}
+
 	// Initialize route manager and set up routes
 	m.routeManager = NewRouteManager()
 	if err := m.routeManager.Setup(ctx, m.tun.Name(), m.config); err != nil {
@@ -250,6 +267,12 @@ func (m *Manager) Stop(ctx context.Context) error {
 
 // cleanup releases all resources.
 func (m *Manager) cleanup() {
+	// Stop UDP relay
+	if m.udpRelay != nil {
+		m.udpRelay.Stop()
+		m.udpRelay = nil
+	}
+
 	// Stop DNS server
 	if m.dnsServer != nil {
 		if err := m.dnsServer.Stop(); err != nil {
@@ -478,12 +501,23 @@ func (m *Manager) handleConnectionData(conn *TrackedConnection) {
 
 // handleUDPPacket handles UDP packets.
 func (m *Manager) handleUDPPacket(packet *IPPacket) {
-	// UDP handling through SOCKS5 proxy (if supported)
-	// For now, we'll skip UDP tunneling as it requires UDP association
-	slog.Debug("UDP tunneling not yet implemented",
-		"dst", packet.DstIP,
-		"port", packet.DstPort,
-	)
+	// Check if UDP relay is available
+	if m.udpRelay == nil {
+		slog.Debug("UDP relay not initialized, dropping packet",
+			"dst", packet.DstIP,
+			"port", packet.DstPort,
+		)
+		return
+	}
+
+	// Forward the UDP packet through the relay
+	if err := m.udpRelay.HandlePacket(packet); err != nil {
+		slog.Debug("failed to handle UDP packet",
+			"dst", packet.DstIP,
+			"port", packet.DstPort,
+			"error", err,
+		)
+	}
 }
 
 // forwardOnConnection forwards a packet on an existing connection.
@@ -703,6 +737,90 @@ func (m *Manager) AddSplitTunnelIP(cidr string) error {
 
 	if m.splitEngine != nil {
 		m.splitEngine.AddIP(cidr)
+	}
+
+	return nil
+}
+
+// RemoveSplitTunnelDomain removes a domain pattern from the split tunnel rules.
+func (m *Manager) RemoveSplitTunnelDomain(pattern string) error {
+	if m == nil {
+		return errors.New("VPN manager not initialized")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	found := false
+	domains := make([]string, 0, len(m.config.SplitTunnel.Domains))
+	for _, domain := range m.config.SplitTunnel.Domains {
+		if domain == pattern {
+			found = true
+			continue
+		}
+		domains = append(domains, domain)
+	}
+
+	if !found {
+		return fmt.Errorf("domain pattern %q not found in split tunnel rules", pattern)
+	}
+
+	m.config.SplitTunnel.Domains = domains
+
+	if m.splitEngine != nil {
+		m.splitEngine.RemoveDomain(pattern)
+	}
+
+	return nil
+}
+
+// RemoveSplitTunnelIP removes an IP/CIDR from the split tunnel rules.
+func (m *Manager) RemoveSplitTunnelIP(cidr string) error {
+	if m == nil {
+		return errors.New("VPN manager not initialized")
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	found := false
+	ips := make([]string, 0, len(m.config.SplitTunnel.IPs))
+	for _, ip := range m.config.SplitTunnel.IPs {
+		if ip == cidr {
+			found = true
+			continue
+		}
+		ips = append(ips, ip)
+	}
+
+	if !found {
+		return fmt.Errorf("IP/CIDR %q not found in split tunnel rules", cidr)
+	}
+
+	m.config.SplitTunnel.IPs = ips
+
+	if m.splitEngine != nil {
+		m.splitEngine.RemoveIP(cidr)
+	}
+
+	return nil
+}
+
+// SetSplitTunnelMode sets the split tunnel mode ("exclude" or "include").
+func (m *Manager) SetSplitTunnelMode(mode string) error {
+	if m == nil {
+		return errors.New("VPN manager not initialized")
+	}
+
+	if mode != "exclude" && mode != "include" {
+		return fmt.Errorf("invalid mode %q: must be 'exclude' or 'include'", mode)
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.config.SplitTunnel.Mode = mode
+
+	if m.splitEngine != nil {
+		m.splitEngine.SetMode(mode)
 	}
 
 	return nil

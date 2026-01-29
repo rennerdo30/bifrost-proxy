@@ -25,6 +25,8 @@ export function ConfigSection({
         type="button"
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between text-left"
+        aria-label={isOpen ? `Collapse ${title} section` : `Expand ${title} section`}
+        aria-expanded={isOpen}
       >
         <div className="flex items-center gap-3">
           {icon && (

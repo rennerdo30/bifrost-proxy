@@ -33,9 +33,11 @@ function ToggleSwitch({ enabled, onChange, label, description }: ToggleSwitchPro
         className={`toggle ${enabled ? 'bg-bifrost-accent' : 'bg-bifrost-border'}`}
         role="switch"
         aria-checked={enabled}
+        aria-label={`Toggle ${label}`}
       >
         <span
           className={`toggle-dot ${enabled ? 'translate-x-5' : 'translate-x-1'}`}
+          aria-hidden="true"
         />
       </button>
     </div>
@@ -51,12 +53,16 @@ interface CollapsibleSectionProps {
 
 function CollapsibleSection({ title, defaultOpen = false, restartRequired, children }: CollapsibleSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
+  const sectionId = `section-${title.toLowerCase().replace(/\s+/g, '-')}`;
 
   return (
     <div className="border-t border-bifrost-border/50 pt-2 first:border-t-0 first:pt-0">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between py-2 text-left"
+        aria-expanded={isOpen}
+        aria-controls={sectionId}
+        aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${title} section`}
       >
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-bifrost-text">{title}</span>
@@ -71,11 +77,12 @@ function CollapsibleSection({ title, defaultOpen = false, restartRequired, child
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
+          aria-hidden="true"
         >
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
       </button>
-      {isOpen && <div className="pb-2">{children}</div>}
+      {isOpen && <div id={sectionId} className="pb-2">{children}</div>}
     </div>
   );
 }
@@ -151,10 +158,11 @@ export function QuickSettings({
 
           {/* Server Address */}
           <div>
-            <label className="block text-xs font-medium text-bifrost-text-muted mb-1">
+            <label htmlFor="server-address" className="block text-xs font-medium text-bifrost-text-muted mb-1">
               Server Address
             </label>
             <input
+              id="server-address"
               type="text"
               value={currentProxy?.server_address || ''}
               onChange={(e) => handleProxyChange('server_address', e.target.value)}
@@ -165,10 +173,11 @@ export function QuickSettings({
 
           {/* Protocol */}
           <div>
-            <label className="block text-xs font-medium text-bifrost-text-muted mb-1">
+            <label htmlFor="server-protocol" className="block text-xs font-medium text-bifrost-text-muted mb-1">
               Connection Protocol
             </label>
             <select
+              id="server-protocol"
               value={currentProxy?.server_protocol || 'http'}
               onChange={(e) => handleProxyChange('server_protocol', e.target.value)}
               className="w-full px-3 py-1.5 text-sm bg-bifrost-bg border border-bifrost-border rounded-md text-bifrost-text focus:outline-none focus:ring-1 focus:ring-bifrost-accent focus:border-bifrost-accent"
@@ -189,10 +198,11 @@ export function QuickSettings({
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs font-medium text-bifrost-text-muted mb-1">
+              <label htmlFor="http-proxy-port" className="block text-xs font-medium text-bifrost-text-muted mb-1">
                 HTTP Port
               </label>
               <input
+                id="http-proxy-port"
                 type="number"
                 value={currentProxy?.http_proxy_port || 3128}
                 onChange={(e) => handleProxyChange('http_proxy_port', parseInt(e.target.value) || 3128)}
@@ -202,10 +212,11 @@ export function QuickSettings({
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-bifrost-text-muted mb-1">
+              <label htmlFor="socks5-proxy-port" className="block text-xs font-medium text-bifrost-text-muted mb-1">
                 SOCKS5 Port
               </label>
               <input
+                id="socks5-proxy-port"
                 type="number"
                 value={currentProxy?.socks5_proxy_port || 1081}
                 onChange={(e) => handleProxyChange('socks5_proxy_port', parseInt(e.target.value) || 1081)}

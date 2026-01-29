@@ -12,134 +12,21 @@ import {
   ConfigSection,
 } from '../components/form'
 import { useToast } from '../components/Toast'
-
-// Icons
-const ServerIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2m-2-4h.01M17 16h.01" />
-  </svg>
-)
-
-const ProxyIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-  </svg>
-)
-
-const RouteIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-  </svg>
-)
-
-const DebugIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-  </svg>
-)
-
-const TrayIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-  </svg>
-)
-
-const WebIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-  </svg>
-)
-
-const VPNIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-  </svg>
-)
-
-const MeshIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
-  </svg>
-)
-
-const LogIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-  </svg>
-)
-
-const UpdateIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-  </svg>
-)
-
-const ExportIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-  </svg>
-)
-
-// Validation functions for split tunnel inputs
-const validateDomain = (value: string): string | null => {
-  // Allow wildcards like *.example.com
-  const domainPattern = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/
-  if (!domainPattern.test(value)) {
-    return 'Invalid domain format. Use format like "example.com" or "*.example.com"'
-  }
-  return null
-}
-
-const validateIP = (value: string): string | null => {
-  // IPv4 pattern
-  const ipv4Pattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
-  // IPv6 pattern (simplified)
-  const ipv6Pattern = /^([0-9a-fA-F:]+)(\/\d{1,3})?$/
-
-  if (ipv4Pattern.test(value)) {
-    // Validate IPv4 octets
-    const parts = value.split('/')[0].split('.')
-    for (const part of parts) {
-      const num = parseInt(part, 10)
-      if (num < 0 || num > 255) {
-        return 'Invalid IPv4 address. Each octet must be 0-255'
-      }
-    }
-    // Validate CIDR if present
-    if (value.includes('/')) {
-      const cidr = parseInt(value.split('/')[1], 10)
-      if (cidr < 0 || cidr > 32) {
-        return 'Invalid CIDR notation. IPv4 prefix must be 0-32'
-      }
-    }
-    return null
-  }
-
-  if (ipv6Pattern.test(value)) {
-    // Validate IPv6 CIDR if present
-    if (value.includes('/')) {
-      const cidr = parseInt(value.split('/')[1], 10)
-      if (cidr < 0 || cidr > 128) {
-        return 'Invalid CIDR notation. IPv6 prefix must be 0-128'
-      }
-    }
-    return null
-  }
-
-  return 'Invalid IP format. Use IPv4 (e.g., "10.0.0.0/8") or IPv6'
-}
-
-const validateDomainOrIP = (value: string): string | null => {
-  // Try domain first, then IP
-  const domainError = validateDomain(value)
-  const ipError = validateIP(value)
-
-  if (domainError === null || ipError === null) {
-    return null // Valid if either is valid
-  }
-
-  return 'Invalid format. Enter a domain (e.g., "example.com") or IP/CIDR (e.g., "10.0.0.0/8")'
-}
+import { ConfirmModal } from '../components/ConfirmModal'
+import { validateDomain, validateIP, validateDomainOrIP } from '../utils/validation'
+import {
+  ServerIcon,
+  ProxyIcon,
+  RouteIcon,
+  DebugIcon,
+  TrayIcon,
+  WebIcon,
+  VPNIcon,
+  MeshIcon,
+  LogIcon,
+  UpdateIcon,
+  ExportIcon,
+} from '../components/icons'
 
 export function Settings() {
   const queryClient = useQueryClient()
@@ -148,6 +35,7 @@ export function Settings() {
   const [pendingChanges, setPendingChanges] = useState<Partial<ClientConfig>>({})
   const [hasChanges, setHasChanges] = useState(false)
   const [lastResponse, setLastResponse] = useState<ConfigUpdateResponse | null>(null)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
 
   const { data: config, isLoading, isError, error } = useQuery({
     queryKey: ['config'],
@@ -261,12 +149,11 @@ export function Settings() {
 
   // Reset to defaults
   const resetToDefaults = async () => {
-    if (!confirm('Are you sure you want to reset all settings to defaults? This cannot be undone.')) return
     try {
       const defaults = await api.getConfigDefaults()
       updateMutation.mutate(defaults)
     } catch (err) {
-      console.error('Failed to reset to defaults:', err)
+      if (import.meta.env.DEV) console.error('Failed to reset to defaults:', err)
       showToast(`Failed to reset to defaults: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }
@@ -284,11 +171,11 @@ export function Settings() {
         URL.revokeObjectURL(url)
         showToast('Configuration exported successfully', 'success')
       } catch (downloadErr) {
-        console.error('Failed to download exported configuration:', downloadErr)
+        if (import.meta.env.DEV) console.error('Failed to download exported configuration:', downloadErr)
         showToast('Failed to download file. Please check your browser settings.', 'error')
       }
     } catch (err) {
-      console.error('Failed to export configuration:', err)
+      if (import.meta.env.DEV) console.error('Failed to export configuration:', err)
       showToast(`Failed to export configuration: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
     }
   }
@@ -306,7 +193,7 @@ export function Settings() {
       try {
         content = await file.text()
       } catch (readErr) {
-        console.error('Failed to read configuration file:', readErr)
+        if (import.meta.env.DEV) console.error('Failed to read configuration file:', readErr)
         showToast('Failed to read the selected file. Please ensure the file is accessible.', 'error')
         return
       }
@@ -321,7 +208,7 @@ export function Settings() {
         showToast('Configuration imported successfully', 'success')
         setTimeout(() => setSaveStatus('idle'), 3000)
       } catch (err) {
-        console.error('Failed to import configuration:', err)
+        if (import.meta.env.DEV) console.error('Failed to import configuration:', err)
         showToast(`Failed to import configuration: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')
         setSaveStatus('error')
         setTimeout(() => setSaveStatus('idle'), 3000)
@@ -383,7 +270,7 @@ export function Settings() {
             Import
           </button>
           <button
-            onClick={resetToDefaults}
+            onClick={() => setShowResetConfirm(true)}
             className="btn btn-secondary text-sm"
           >
             Reset
@@ -424,8 +311,12 @@ export function Settings() {
             </svg>
             <span className="text-sm text-bifrost-warning">You have unsaved changes</span>
           </div>
-          <button onClick={saveChanges} className="btn btn-primary text-sm">
-            Save Now
+          <button
+            onClick={saveChanges}
+            disabled={updateMutation.isPending}
+            className="btn btn-primary text-sm"
+          >
+            {updateMutation.isPending ? 'Saving...' : 'Save Now'}
           </button>
         </div>
       )}
@@ -651,7 +542,7 @@ export function Settings() {
               </thead>
               <tbody>
                 {config?.routes?.map((route, index) => (
-                  <tr key={index} className="border-b border-bifrost-border/50">
+                  <tr key={`${route.name || 'route'}-${route.priority}-${index}`} className="border-b border-bifrost-border/50">
                     <td className="py-2 text-bifrost-text">{route.name || `Rule ${index + 1}`}</td>
                     <td className="py-2">
                       <div className="flex flex-wrap gap-1">
@@ -858,8 +749,8 @@ export function Settings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormInput
                   label="Listen Address"
-                  placeholder="127.0.0.1:3130"
-                  value={getValue('api', 'listen', '127.0.0.1:3130') as string}
+                  placeholder="127.0.0.1:7383"
+                  value={getValue('api', 'listen', '127.0.0.1:7383') as string}
                   onChange={(v) => updateField('api', 'listen', v)}
                 />
                 <FormPassword
@@ -1220,6 +1111,16 @@ export function Settings() {
         </div>
       </div>
       </ConfigSection>
+
+      <ConfirmModal
+        isOpen={showResetConfirm}
+        onClose={() => setShowResetConfirm(false)}
+        onConfirm={resetToDefaults}
+        title="Reset Settings"
+        message="Are you sure you want to reset all settings to defaults? This action cannot be undone."
+        confirmLabel="Reset"
+        variant="danger"
+      />
     </div>
   )
 }

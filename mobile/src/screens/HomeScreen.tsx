@@ -11,6 +11,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, formatBytes } from '../services/api'
 import { StatusCard } from '../components/StatusCard'
+import { getConnectionStatusColor } from '../utils/status'
 
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
@@ -66,18 +67,7 @@ export function HomeScreen() {
     }
   }
 
-  const getStatusColor = () => {
-    switch (connectionStatus) {
-      case 'connected':
-        return '#22c55e'
-      case 'connecting':
-        return '#f59e0b'
-      case 'error':
-        return '#ef4444'
-      default:
-        return '#6b7280'
-    }
-  }
+  const statusColor = getConnectionStatusColor(connectionStatus)
 
   const getStatusText = () => {
     switch (connectionStatus) {
@@ -102,9 +92,9 @@ export function HomeScreen() {
     >
       {/* Connection Status */}
       <View style={styles.statusSection}>
-        <View style={[styles.statusRing, { borderColor: getStatusColor() }]}>
+        <View style={[styles.statusRing, { borderColor: statusColor }]}>
           <TouchableOpacity
-            style={[styles.connectButton, { backgroundColor: getStatusColor() }]}
+            style={[styles.connectButton, { backgroundColor: statusColor }]}
             onPress={handleToggle}
             disabled={isToggling}
             activeOpacity={0.8}
@@ -116,7 +106,7 @@ export function HomeScreen() {
             )}
           </TouchableOpacity>
         </View>
-        <Text style={[styles.statusText, { color: getStatusColor() }]}>{getStatusText()}</Text>
+        <Text style={[styles.statusText, { color: statusColor }]}>{getStatusText()}</Text>
         {status?.version && (
           <Text style={styles.versionText}>v{status.version}</Text>
         )}

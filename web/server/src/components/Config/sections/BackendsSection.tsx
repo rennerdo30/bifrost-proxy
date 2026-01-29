@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Section } from '../Section'
 import { BackendForm } from '../forms/BackendForm'
+import { ConfirmModal } from '../ConfirmModal'
 import type { BackendConfig } from '../../../api/types'
 
 interface BackendsSectionProps {
@@ -27,6 +28,7 @@ const typeBadgeColors: Record<string, string> = {
 export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
   const [editingBackend, setEditingBackend] = useState<BackendConfig | null>(null)
   const [isAdding, setIsAdding] = useState(false)
+  const [deletingBackend, setDeletingBackend] = useState<string | null>(null)
 
   const handleSave = (backend: BackendConfig) => {
     if (editingBackend) {
@@ -41,9 +43,7 @@ export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
   }
 
   const handleDelete = (name: string) => {
-    if (confirm(`Delete backend "${name}"?`)) {
-      onChange(backends.filter((b) => b.name !== name))
-    }
+    onChange(backends.filter((b) => b.name !== name))
   }
 
   const existingNames = backends.map((b) => b.name)
@@ -85,14 +85,16 @@ export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
                   <button
                     onClick={() => setEditingBackend(backend)}
                     className="btn btn-ghost text-sm"
+                    aria-label={`Edit backend ${backend.name}`}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                   </button>
                   <button
-                    onClick={() => handleDelete(backend.name)}
+                    onClick={() => setDeletingBackend(backend.name)}
                     className="btn btn-ghost text-sm text-bifrost-error hover:bg-bifrost-error/10"
+                    aria-label={`Delete backend ${backend.name}`}
                   >
                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -123,6 +125,16 @@ export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
           }}
         />
       )}
+
+      <ConfirmModal
+        isOpen={deletingBackend !== null}
+        onClose={() => setDeletingBackend(null)}
+        onConfirm={() => deletingBackend && handleDelete(deletingBackend)}
+        title="Delete Backend"
+        message={`Are you sure you want to delete the backend "${deletingBackend}"? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+      />
     </Section>
   )
 }

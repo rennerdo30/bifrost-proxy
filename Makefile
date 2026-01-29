@@ -173,25 +173,25 @@ docker-push:
 
 docker-deploy: docker-build
 	@echo "Deploying with Docker Compose..."
-	docker-compose -f docker/docker-compose.yml -p bifrost up -d
+	docker compose -f docker/docker-compose.yml -p bifrost up -d
 
 docker-up:
 	@echo "Starting Docker Compose services..."
-	docker-compose -f docker/docker-compose.yml -p bifrost up -d
+	docker compose -f docker/docker-compose.yml -p bifrost up -d
 
 docker-down:
 	@echo "Stopping Docker Compose services..."
-	docker-compose -f docker/docker-compose.yml -p bifrost down
+	docker compose -f docker/docker-compose.yml -p bifrost down
 
 docker-stop:
 	@echo "Stopping Docker Compose services (keeping volumes)..."
-	docker-compose -f docker/docker-compose.yml -p bifrost stop
+	docker compose -f docker/docker-compose.yml -p bifrost stop
 
 docker-logs:
-	@docker-compose -f docker/docker-compose.yml -p bifrost logs -f
+	@docker compose -f docker/docker-compose.yml -p bifrost logs -f
 
 docker-status:
-	@docker-compose -f docker/docker-compose.yml -p bifrost ps
+	@docker compose -f docker/docker-compose.yml -p bifrost ps
 
 docker-rebuild:
 	@echo "Rebuilding and starting Docker Compose services..."
@@ -361,12 +361,12 @@ help:
 	@echo "Docker:"
 	@echo "  make docker-build         - Build Docker images"
 	@echo "  make docker-push          - Push Docker images to registry"
-	@echo "  make docker-deploy        - Build and deploy with docker-compose"
-	@echo "  make docker-up            - Start docker-compose services"
-	@echo "  make docker-down          - Stop and remove docker-compose services"
+	@echo "  make docker-deploy        - Build and deploy with Docker Compose"
+	@echo "  make docker-up            - Start Docker Compose services"
+	@echo "  make docker-down          - Stop and remove Docker Compose services"
 	@echo "  make docker-stop          - Stop services (keep volumes)"
-	@echo "  make docker-logs          - Follow docker-compose logs"
-	@echo "  make docker-status        - Show docker-compose service status"
+	@echo "  make docker-logs          - Follow Docker Compose logs"
+	@echo "  make docker-status        - Show Docker Compose service status"
 	@echo "  make docker-rebuild       - Rebuild and start services (--build)"
 	@echo "  make docker-rebuild-clean - Rebuild without cache and start"
 	@echo ""

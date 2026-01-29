@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/device"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -41,6 +42,10 @@ func (m *mockTUNDevice) Name() string {
 
 func (m *mockTUNDevice) MTU() int {
 	return m.mtu
+}
+
+func (m *mockTUNDevice) Type() device.DeviceType {
+	return device.DeviceTUN
 }
 
 func (m *mockTUNDevice) Read(b []byte) (int, error) {
@@ -626,4 +631,261 @@ func TestHandleTCPPacketNotSYN(t *testing.T) {
 	// Should not create new connection
 	m.handleTCPPacket(packet)
 	assert.Zero(t, m.connTracker.Count())
+}
+
+// TestManagerRemoveSplitTunnelDomain tests removing domains from split tunnel
+func TestManagerRemoveSplitTunnelDomain(t *testing.T) {
+	tests := []struct {
+		name           string
+		initialDomains []string
+		removePattern  string
+		wantErr        bool
+		remaining      int
+	}{
+		{
+			name:           "remove existing domain",
+			initialDomains: []string{"*.example.com", "*.test.com"},
+			removePattern:  "*.example.com",
+			wantErr:        false,
+			remaining:      1,
+		},
+		{
+			name:           "remove non-existent domain",
+			initialDomains: []string{"*.example.com"},
+			removePattern:  "*.nonexistent.com",
+			wantErr:        true,
+			remaining:      1,
+		},
+		{
+			name:           "remove from empty list",
+			initialDomains: []string{},
+			removePattern:  "*.example.com",
+			wantErr:        true,
+			remaining:      0,
+		},
+		{
+			name:           "remove last domain",
+			initialDomains: []string{"*.example.com"},
+			removePattern:  "*.example.com",
+			wantErr:        false,
+			remaining:      0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.SplitTunnel.Domains = tt.initialDomains
+			m, err := New(cfg)
+			require.NoError(t, err)
+
+			err = m.RemoveSplitTunnelDomain(tt.removePattern)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Len(t, m.config.SplitTunnel.Domains, tt.remaining)
+		})
+	}
+}
+
+// TestManagerRemoveSplitTunnelDomain_WithEngine tests domain removal with split engine
+func TestManagerRemoveSplitTunnelDomain_WithEngine(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SplitTunnel.Domains = []string{"*.example.com", "*.test.com"}
+	m, err := New(cfg)
+	require.NoError(t, err)
+
+	// Initialize split engine
+	m.splitEngine, _ = NewSplitTunnelEngine(SplitTunnelConfig{
+		Mode:    "exclude",
+		Domains: cfg.SplitTunnel.Domains,
+	}, nil)
+
+	err = m.RemoveSplitTunnelDomain("*.example.com")
+	assert.NoError(t, err)
+	assert.Len(t, m.config.SplitTunnel.Domains, 1)
+	assert.NotContains(t, m.config.SplitTunnel.Domains, "*.example.com")
+}
+
+// TestManagerRemoveSplitTunnelDomain_NilManager tests nil manager
+func TestManagerRemoveSplitTunnelDomain_NilManager(t *testing.T) {
+	var m *Manager
+	err := m.RemoveSplitTunnelDomain("*.example.com")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not initialized")
+}
+
+// TestManagerRemoveSplitTunnelIP tests removing IPs from split tunnel
+func TestManagerRemoveSplitTunnelIP(t *testing.T) {
+	tests := []struct {
+		name       string
+		initialIPs []string
+		removeCIDR string
+		wantErr    bool
+		remaining  int
+	}{
+		{
+			name:       "remove existing CIDR",
+			initialIPs: []string{"10.0.0.0/8", "192.168.0.0/16"},
+			removeCIDR: "10.0.0.0/8",
+			wantErr:    false,
+			remaining:  1,
+		},
+		{
+			name:       "remove non-existent CIDR",
+			initialIPs: []string{"10.0.0.0/8"},
+			removeCIDR: "172.16.0.0/12",
+			wantErr:    true,
+			remaining:  1,
+		},
+		{
+			name:       "remove from empty list",
+			initialIPs: []string{},
+			removeCIDR: "10.0.0.0/8",
+			wantErr:    true,
+			remaining:  0,
+		},
+		{
+			name:       "remove last IP",
+			initialIPs: []string{"10.0.0.0/8"},
+			removeCIDR: "10.0.0.0/8",
+			wantErr:    false,
+			remaining:  0,
+		},
+		{
+			name:       "remove single IP",
+			initialIPs: []string{"192.168.1.1", "10.0.0.1"},
+			removeCIDR: "192.168.1.1",
+			wantErr:    false,
+			remaining:  1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.SplitTunnel.IPs = tt.initialIPs
+			m, err := New(cfg)
+			require.NoError(t, err)
+
+			err = m.RemoveSplitTunnelIP(tt.removeCIDR)
+			if tt.wantErr {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+			assert.Len(t, m.config.SplitTunnel.IPs, tt.remaining)
+		})
+	}
+}
+
+// TestManagerRemoveSplitTunnelIP_WithEngine tests IP removal with split engine
+func TestManagerRemoveSplitTunnelIP_WithEngine(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SplitTunnel.IPs = []string{"10.0.0.0/8", "192.168.0.0/16"}
+	m, err := New(cfg)
+	require.NoError(t, err)
+
+	// Initialize split engine
+	m.splitEngine, _ = NewSplitTunnelEngine(SplitTunnelConfig{
+		Mode: "exclude",
+		IPs:  cfg.SplitTunnel.IPs,
+	}, nil)
+
+	err = m.RemoveSplitTunnelIP("10.0.0.0/8")
+	assert.NoError(t, err)
+	assert.Len(t, m.config.SplitTunnel.IPs, 1)
+	assert.NotContains(t, m.config.SplitTunnel.IPs, "10.0.0.0/8")
+}
+
+// TestManagerRemoveSplitTunnelIP_NilManager tests nil manager
+func TestManagerRemoveSplitTunnelIP_NilManager(t *testing.T) {
+	var m *Manager
+	err := m.RemoveSplitTunnelIP("10.0.0.0/8")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not initialized")
+}
+
+// TestManagerSetSplitTunnelMode tests setting split tunnel mode
+func TestManagerSetSplitTunnelMode(t *testing.T) {
+	tests := []struct {
+		name        string
+		initialMode string
+		newMode     string
+		wantErr     bool
+	}{
+		{
+			name:        "exclude to include",
+			initialMode: "exclude",
+			newMode:     "include",
+			wantErr:     false,
+		},
+		{
+			name:        "include to exclude",
+			initialMode: "include",
+			newMode:     "exclude",
+			wantErr:     false,
+		},
+		{
+			name:        "same mode",
+			initialMode: "exclude",
+			newMode:     "exclude",
+			wantErr:     false,
+		},
+		{
+			name:        "invalid mode",
+			initialMode: "exclude",
+			newMode:     "invalid",
+			wantErr:     true,
+		},
+		{
+			name:        "empty mode",
+			initialMode: "exclude",
+			newMode:     "",
+			wantErr:     true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.SplitTunnel.Mode = tt.initialMode
+			m, err := New(cfg)
+			require.NoError(t, err)
+
+			err = m.SetSplitTunnelMode(tt.newMode)
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Equal(t, tt.initialMode, m.config.SplitTunnel.Mode)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.newMode, m.config.SplitTunnel.Mode)
+			}
+		})
+	}
+}
+
+// TestManagerSetSplitTunnelMode_WithEngine tests mode change with split engine
+func TestManagerSetSplitTunnelMode_WithEngine(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.SplitTunnel.Mode = "exclude"
+	m, err := New(cfg)
+	require.NoError(t, err)
+
+	// Initialize split engine
+	m.splitEngine, _ = NewSplitTunnelEngine(SplitTunnelConfig{Mode: "exclude"}, nil)
+
+	err = m.SetSplitTunnelMode("include")
+	assert.NoError(t, err)
+	assert.Equal(t, "include", m.config.SplitTunnel.Mode)
+}
+
+// TestManagerSetSplitTunnelMode_NilManager tests nil manager
+func TestManagerSetSplitTunnelMode_NilManager(t *testing.T) {
+	var m *Manager
+	err := m.SetSplitTunnelMode("exclude")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "not initialized")
 }

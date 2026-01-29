@@ -7,7 +7,7 @@ on:
     branches: [master, main]
 
 env:
-  GO_VERSION: '1.23'
+  GO_VERSION: '1.24'
 
 jobs:
   lint:
@@ -132,6 +132,41 @@ jobs:
           tags: bifrost-client:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  web-ui:
+    name: Web UI Build & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install server UI dependencies
+        working-directory: web/server
+        run: npm ci
+
+      - name: Lint server UI
+        working-directory: web/server
+        run: npm run lint
+
+      - name: Build server UI
+        working-directory: web/server
+        run: npm run build
+
+      - name: Install client UI dependencies
+        working-directory: web/client
+        run: npm ci
+
+      - name: Lint client UI
+        working-directory: web/client
+        run: npm run lint
+
+      - name: Build client UI
+        working-directory: web/client
+        run: npm run build
 
   security:
     name: Security Scan

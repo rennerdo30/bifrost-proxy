@@ -9,12 +9,16 @@ interface SectionProps {
 
 export function Section({ title, badge, defaultOpen = true, children }: SectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen)
+  const sectionId = `section-content-${title.toLowerCase().replace(/\s+/g, '-')}`
 
   return (
     <div className="card">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between text-left"
+        aria-expanded={isOpen}
+        aria-controls={sectionId}
+        aria-label={`${isOpen ? 'Collapse' : 'Expand'} ${title} section`}
       >
         <div className="flex items-center gap-3">
           <svg
@@ -22,6 +26,7 @@ export function Section({ title, badge, defaultOpen = true, children }: SectionP
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
+            aria-hidden="true"
           >
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
@@ -33,7 +38,7 @@ export function Section({ title, badge, defaultOpen = true, children }: SectionP
           </span>
         )}
       </button>
-      {isOpen && <div className="mt-4 pt-4 border-t border-bifrost-border">{children}</div>}
+      {isOpen && <div id={sectionId} className="mt-4 pt-4 border-t border-bifrost-border">{children}</div>}
     </div>
   )
 }

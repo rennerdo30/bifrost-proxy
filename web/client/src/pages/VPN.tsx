@@ -1,48 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, VPNConnection } from '../api/client'
-
-// Validation functions for split tunnel inputs
-function validateDomain(value: string): string | null {
-  if (!value.trim()) return null
-  // Allow wildcards like *.example.com or exact domains
-  const domainPattern = /^(\*\.)?([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$/
-  if (!domainPattern.test(value)) {
-    return 'Invalid domain format. Use format like "example.com" or "*.example.com"'
-  }
-  return null
-}
-
-function validateCIDR(value: string): string | null {
-  if (!value.trim()) return null
-  // Match IPv4 CIDR notation (e.g., 192.168.1.0/24) or plain IP
-  const cidrPattern = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/
-  if (!cidrPattern.test(value)) {
-    return 'Invalid IP/CIDR format. Use format like "192.168.1.0/24" or "10.0.0.1"'
-  }
-  // Validate IP octets are in range
-  const ipPart = value.split('/')[0]
-  const octets = ipPart.split('.').map(Number)
-  if (octets.some(o => o < 0 || o > 255)) {
-    return 'Invalid IP address. Each octet must be 0-255'
-  }
-  // Validate CIDR prefix if present
-  if (value.includes('/')) {
-    const prefix = parseInt(value.split('/')[1])
-    if (prefix < 0 || prefix > 32) {
-      return 'Invalid CIDR prefix. Must be 0-32'
-    }
-  }
-  return null
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
-}
+import { formatBytes } from '../utils/formatting'
+import { validateDomain, validateCIDR } from '../utils/validation'
 
 export function VPN() {
   const queryClient = useQueryClient()
@@ -121,6 +81,21 @@ export function VPN() {
 
   const removeAppMutation = useMutation({
     mutationFn: api.removeSplitTunnelApp,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
+  })
+
+  const removeDomainMutation = useMutation({
+    mutationFn: api.removeSplitTunnelDomain,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
+  })
+
+  const removeIPMutation = useMutation({
+    mutationFn: api.removeSplitTunnelIP,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
+  })
+
+  const setModeMutation = useMutation({
+    mutationFn: (mode: 'exclude' | 'include') => api.setSplitTunnelMode(mode),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
   })
 
@@ -281,17 +256,34 @@ export function VPN() {
           <div>
             <p className="text-sm text-bifrost-muted mb-2">Mode</p>
             <div className="flex gap-2">
-              <span className={`px-3 py-1 rounded text-sm ${
-                splitRules?.mode === 'exclude' ? 'bg-bifrost-accent text-white' : 'bg-bifrost-card border border-bifrost-border text-bifrost-muted'
-              }`}>
+              <button
+                onClick={() => setModeMutation.mutate('exclude')}
+                disabled={setModeMutation.isPending}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  splitRules?.mode === 'exclude'
+                    ? 'bg-bifrost-accent text-white'
+                    : 'bg-bifrost-card border border-bifrost-border text-bifrost-muted hover:border-bifrost-accent hover:text-bifrost-accent'
+                }`}
+              >
                 Exclude (bypass VPN)
-              </span>
-              <span className={`px-3 py-1 rounded text-sm ${
-                splitRules?.mode === 'include' ? 'bg-bifrost-accent text-white' : 'bg-bifrost-card border border-bifrost-border text-bifrost-muted'
-              }`}>
+              </button>
+              <button
+                onClick={() => setModeMutation.mutate('include')}
+                disabled={setModeMutation.isPending}
+                className={`px-3 py-1 rounded text-sm transition-colors ${
+                  splitRules?.mode === 'include'
+                    ? 'bg-bifrost-accent text-white'
+                    : 'bg-bifrost-card border border-bifrost-border text-bifrost-muted hover:border-bifrost-accent hover:text-bifrost-accent'
+                }`}
+              >
                 Include (only VPN)
-              </span>
+              </button>
             </div>
+            <p className="text-xs text-bifrost-muted mt-2">
+              {splitRules?.mode === 'exclude'
+                ? 'Listed items will bypass the VPN (go direct). All other traffic uses VPN.'
+                : 'Only listed items will use the VPN. All other traffic goes direct.'}
+            </p>
           </div>
 
           {/* Apps */}
@@ -369,8 +361,17 @@ export function VPN() {
             )}
             <div className="flex flex-wrap gap-2">
               {splitRules?.domains?.map((domain) => (
-                <span key={domain} className="px-2 py-1 bg-bifrost-card border border-bifrost-border rounded text-sm font-mono">
+                <span key={domain} className="px-2 py-1 bg-bifrost-card border border-bifrost-border rounded text-sm font-mono flex items-center gap-2">
                   {domain}
+                  <button
+                    onClick={() => removeDomainMutation.mutate(domain)}
+                    className="text-bifrost-muted hover:text-bifrost-error"
+                    aria-label={`Remove ${domain}`}
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </span>
               ))}
               {(!splitRules?.domains || splitRules.domains.length === 0) && (
@@ -414,8 +415,17 @@ export function VPN() {
             )}
             <div className="flex flex-wrap gap-2">
               {splitRules?.ips?.map((ip) => (
-                <span key={ip} className="px-2 py-1 bg-bifrost-card border border-bifrost-border rounded text-sm font-mono">
+                <span key={ip} className="px-2 py-1 bg-bifrost-card border border-bifrost-border rounded text-sm font-mono flex items-center gap-2">
                   {ip}
+                  <button
+                    onClick={() => removeIPMutation.mutate(ip)}
+                    className="text-bifrost-muted hover:text-bifrost-error"
+                    aria-label={`Remove ${ip}`}
+                  >
+                    <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </span>
               ))}
               {(!splitRules?.ips || splitRules.ips.length === 0) && (

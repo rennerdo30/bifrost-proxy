@@ -1,25 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { Connection, ClientSummary } from '../api/types'
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-}
-
-function formatDuration(startTime: string): string {
-  const start = new Date(startTime).getTime()
-  const now = Date.now()
-  const seconds = Math.floor((now - start) / 1000)
-
-  if (seconds < 60) return `${seconds}s`
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`
-  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
-}
+import { formatBytes, formatDuration } from '../utils'
 
 function ConnectionRow({ conn }: { conn: Connection }) {
   return (
@@ -94,10 +77,10 @@ export function Clients() {
     refetchInterval: autoRefresh ? 2000 : false,
   })
 
-  const refetch = () => {
+  const refetch = useCallback(() => {
     refetchConnections()
     refetchClients()
-  }
+  }, [refetchConnections, refetchClients])
 
   // Keyboard shortcut for refresh
   useEffect(() => {
@@ -108,7 +91,7 @@ export function Clients() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [])
+  }, [refetch])
 
   const isLoading = view === 'connections' ? connectionsLoading : clientsLoading
 
@@ -168,7 +151,7 @@ export function Clients() {
           </button>
 
           {/* Refresh Button */}
-          <button onClick={refetch} className="btn btn-secondary">
+          <button onClick={refetch} className="btn btn-secondary" aria-label="Refresh clients">
             <svg
               className="w-4 h-4"
               fill="none"

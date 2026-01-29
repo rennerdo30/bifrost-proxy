@@ -41,7 +41,7 @@ func NewCommands() *cobra.Command {
 		Short: "Control a running Bifrost client",
 	}
 
-	root.PersistentFlags().StringVar(&apiURL, "api", "http://localhost:3130", "API server URL")
+	root.PersistentFlags().StringVar(&apiURL, "api", "http://localhost:7383", "API server URL")
 	root.PersistentFlags().StringVar(&apiToken, "token", "", "API authentication token")
 
 	// Status command
@@ -89,7 +89,25 @@ func NewCommands() *cobra.Command {
 		},
 	}
 
-	debugCmd.AddCommand(debugTailCmd, debugClearCmd, debugErrorsCmd)
+	var exportOutput string
+	var exportFormat string
+	debugExportCmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export debug entries to file",
+		Long: `Export debug entries to HAR (HTTP Archive) format.
+
+Example:
+  bifrost-client ctl debug export --output traffic.har
+  bifrost-client ctl debug export -o traffic.json --format json`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.ExportDebug(exportOutput, exportFormat)
+		},
+	}
+	debugExportCmd.Flags().StringVarP(&exportOutput, "output", "o", "traffic.har", "Output file path")
+	debugExportCmd.Flags().StringVarP(&exportFormat, "format", "f", "har", "Export format: har or json")
+
+	debugCmd.AddCommand(debugTailCmd, debugClearCmd, debugErrorsCmd, debugExportCmd)
 
 	// Routes commands
 	routesCmd := &cobra.Command{
@@ -116,7 +134,40 @@ func NewCommands() *cobra.Command {
 		},
 	}
 
-	routesCmd.AddCommand(routesListCmd, routesTestCmd)
+	var routeDomain string
+	var routeAction string
+	var routePriority int
+	routesAddCmd := &cobra.Command{
+		Use:   "add [name]",
+		Short: "Add a new route",
+		Long: `Add a new routing rule for the client.
+
+Example:
+  bifrost-client ctl routes add work --domain "*.company.com" --action server
+  bifrost-client ctl routes add bypass --domain "*.local" --action direct
+  bifrost-client ctl routes add streaming --domain "*.netflix.com,*.hulu.com" --action server --priority 100`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.AddRoute(args[0], routeDomain, routeAction, routePriority)
+		},
+	}
+	routesAddCmd.Flags().StringVarP(&routeDomain, "domain", "d", "", "Domain pattern(s), comma-separated for multiple (required)")
+	routesAddCmd.Flags().StringVarP(&routeAction, "action", "a", "server", "Action: 'server' (use proxy) or 'direct' (bypass proxy)")
+	routesAddCmd.Flags().IntVarP(&routePriority, "priority", "p", 0, "Rule priority (higher = matched first)")
+	routesAddCmd.MarkFlagRequired("domain")
+
+	routesRemoveCmd := &cobra.Command{
+		Use:   "remove [name]",
+		Short: "Remove a route",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := NewAPIClient(apiURL, apiToken)
+			return client.RemoveRoute(args[0])
+		},
+	}
+
+	routesCmd.AddCommand(routesListCmd, routesTestCmd, routesAddCmd, routesRemoveCmd)
 
 	// Health command
 	healthCmd := &cobra.Command{
@@ -367,6 +418,150 @@ func (c *APIClient) ShowErrors() error {
 	return w.Flush()
 }
 
+// ExportDebug exports debug entries to a file.
+func (c *APIClient) ExportDebug(outputPath, format string) error {
+	var entries []map[string]interface{}
+	if err := c.getJSON("/api/v1/debug/entries", &entries); err != nil {
+		return fmt.Errorf("failed to fetch debug entries: %w", err)
+	}
+
+	if len(entries) == 0 {
+		return fmt.Errorf("no debug entries to export")
+	}
+
+	var output []byte
+	var err error
+
+	if format == "json" {
+		// Export as raw JSON
+		output, err = json.MarshalIndent(entries, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal entries: %w", err)
+		}
+	} else {
+		// Export as HAR format
+		har := convertToHAR(entries)
+		output, err = json.MarshalIndent(har, "", "  ")
+		if err != nil {
+			return fmt.Errorf("failed to marshal HAR: %w", err)
+		}
+	}
+
+	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	fmt.Printf("Exported %d entries to %s\n", len(entries), outputPath)
+	return nil
+}
+
+// convertToHAR converts debug entries to HAR format.
+func convertToHAR(entries []map[string]interface{}) map[string]interface{} {
+	harEntries := make([]map[string]interface{}, 0, len(entries))
+
+	for _, e := range entries {
+		method, _ := e["method"].(string)
+		host, _ := e["host"].(string)
+		status, _ := e["status"].(float64)
+		duration, _ := e["duration"].(float64)
+		timestamp, _ := e["timestamp"].(string)
+		requestSize, _ := e["request_size"].(float64)
+		responseSize, _ := e["response_size"].(float64)
+
+		// Build URL
+		scheme := "https"
+		if proto, ok := e["protocol"].(string); ok && strings.HasPrefix(proto, "HTTP/") {
+			scheme = "http"
+		}
+		url := fmt.Sprintf("%s://%s", scheme, host)
+
+		harEntry := map[string]interface{}{
+			"startedDateTime": timestamp,
+			"time":            duration,
+			"request": map[string]interface{}{
+				"method":      method,
+				"url":         url,
+				"httpVersion": "HTTP/1.1",
+				"cookies":     []interface{}{},
+				"headers":     []interface{}{},
+				"queryString": []interface{}{},
+				"headersSize": -1,
+				"bodySize":    int(requestSize),
+			},
+			"response": map[string]interface{}{
+				"status":      int(status),
+				"statusText":  getStatusText(int(status)),
+				"httpVersion": "HTTP/1.1",
+				"cookies":     []interface{}{},
+				"headers":     []interface{}{},
+				"content": map[string]interface{}{
+					"size":     int(responseSize),
+					"mimeType": "",
+				},
+				"redirectURL":  "",
+				"headersSize":  -1,
+				"bodySize":     int(responseSize),
+			},
+			"cache": map[string]interface{}{},
+			"timings": map[string]interface{}{
+				"blocked": -1,
+				"dns":     -1,
+				"connect": -1,
+				"send":    0,
+				"wait":    duration,
+				"receive": 0,
+				"ssl":     -1,
+			},
+			"serverIPAddress": "",
+			"connection":      "",
+		}
+
+		// Add route info as custom field
+		if route, ok := e["route"].(string); ok {
+			harEntry["_route"] = route
+		}
+		if errorMsg, ok := e["error"].(string); ok && errorMsg != "" {
+			harEntry["_error"] = errorMsg
+		}
+
+		harEntries = append(harEntries, harEntry)
+	}
+
+	return map[string]interface{}{
+		"log": map[string]interface{}{
+			"version": "1.2",
+			"creator": map[string]interface{}{
+				"name":    "Bifrost Proxy",
+				"version": "1.0.0",
+			},
+			"entries": harEntries,
+		},
+	}
+}
+
+// getStatusText returns the HTTP status text for a status code.
+func getStatusText(code int) string {
+	statusTexts := map[int]string{
+		200: "OK",
+		201: "Created",
+		204: "No Content",
+		301: "Moved Permanently",
+		302: "Found",
+		304: "Not Modified",
+		400: "Bad Request",
+		401: "Unauthorized",
+		403: "Forbidden",
+		404: "Not Found",
+		500: "Internal Server Error",
+		502: "Bad Gateway",
+		503: "Service Unavailable",
+	}
+	if text, ok := statusTexts[code]; ok {
+		return text
+	}
+	return "Unknown"
+}
+
 // ListRoutes lists all configured routes.
 func (c *APIClient) ListRoutes() error {
 	var routes []map[string]interface{}
@@ -397,6 +592,64 @@ func (c *APIClient) TestRoute(domain string) error {
 
 	fmt.Printf("Domain: %v\n", result["domain"])
 	fmt.Printf("Action: %v\n", result["action"])
+	return nil
+}
+
+// AddRoute adds a new routing rule.
+func (c *APIClient) AddRoute(name, domain, action string, priority int) error {
+	// Parse comma-separated domains
+	domains := strings.Split(domain, ",")
+	for i := range domains {
+		domains[i] = strings.TrimSpace(domains[i])
+	}
+
+	reqBody := map[string]interface{}{
+		"name":     name,
+		"domains":  domains,
+		"action":   action,
+		"priority": priority,
+	}
+
+	body, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	resp, err := c.doRequest("POST", "/api/v1/routes", strings.NewReader(string(body)))
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to add route: %s - %s", resp.Status, string(respBody))
+	}
+
+	fmt.Printf("Route '%s' added successfully\n", name)
+	fmt.Printf("  Domains: %s\n", strings.Join(domains, ", "))
+	fmt.Printf("  Action: %s\n", action)
+	if priority > 0 {
+		fmt.Printf("  Priority: %d\n", priority)
+	}
+	return nil
+}
+
+// RemoveRoute removes a routing rule.
+func (c *APIClient) RemoveRoute(name string) error {
+	resp, err := c.doRequest("DELETE", "/api/v1/routes/"+name, nil)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to remove route: %s - %s", resp.Status, string(body))
+	}
+
+	fmt.Printf("Route '%s' removed successfully\n", name)
 	return nil
 }
 

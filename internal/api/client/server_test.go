@@ -336,6 +336,7 @@ func TestAPI_HandleClearDebugEntries(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/debug/entries", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -352,6 +353,7 @@ func TestAPI_HandleClearDebugEntries_NilDebugger(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/debug/entries", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -697,6 +699,7 @@ func TestAPI_HandleVPNEnable_NilVPNManager(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/enable", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -709,6 +712,7 @@ func TestAPI_HandleVPNDisable_NilVPNManager(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/disable", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -750,6 +754,7 @@ func TestAPI_HandleVPNSplitAddApp_NilVPNManager(t *testing.T) {
 	body := `{"name": "testapp", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -763,6 +768,7 @@ func TestAPI_HandleVPNSplitAddApp_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -776,6 +782,7 @@ func TestAPI_HandleVPNSplitAddApp_EmptyName(t *testing.T) {
 	body := `{"name": "", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -787,6 +794,7 @@ func TestAPI_HandleVPNSplitRemoveApp_NilVPNManager(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/testapp", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -801,6 +809,7 @@ func TestAPI_HandleVPNSplitAddDomain_NilVPNManager(t *testing.T) {
 	body := `{"pattern": "*.example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -814,6 +823,7 @@ func TestAPI_HandleVPNSplitAddDomain_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -827,6 +837,7 @@ func TestAPI_HandleVPNSplitAddDomain_EmptyPattern(t *testing.T) {
 	body := `{"pattern": ""}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -840,6 +851,7 @@ func TestAPI_HandleVPNSplitAddIP_NilVPNManager(t *testing.T) {
 	body := `{"cidr": "10.0.0.0/8"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -853,6 +865,7 @@ func TestAPI_HandleVPNSplitAddIP_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -866,6 +879,7 @@ func TestAPI_HandleVPNSplitAddIP_EmptyCIDR(t *testing.T) {
 	body := `{"cidr": ""}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -922,6 +936,7 @@ func TestAPI_HandleUpdateConfig_NilConfigUpdater(t *testing.T) {
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -938,6 +953,7 @@ func TestAPI_HandleUpdateConfig_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -955,6 +971,7 @@ func TestAPI_HandleUpdateConfig_UpdaterError(t *testing.T) {
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -972,6 +989,7 @@ func TestAPI_HandleUpdateConfig_Success(t *testing.T) {
 	body := `{"debug": {"enabled": true}}`
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -995,6 +1013,7 @@ func TestAPI_HandleUpdateConfig_RestartRequired(t *testing.T) {
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1013,6 +1032,7 @@ func TestAPI_HandleValidateConfig_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1026,6 +1046,7 @@ func TestAPI_HandleValidateConfig_NoConfigGetter(t *testing.T) {
 	body := `{"debug": {"enabled": true}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1049,6 +1070,7 @@ func TestAPI_HandleValidateConfig_WithConfigGetter(t *testing.T) {
 	body := `{"debug": {"enabled": true}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1073,6 +1095,7 @@ func TestAPI_HandleValidateConfig_InvalidConfig(t *testing.T) {
 	body := `{"proxy": {"http": {"listen": ""}, "socks5": {"listen": ""}}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1098,6 +1121,7 @@ func TestAPI_HandleValidateConfig_RestartWarnings(t *testing.T) {
 	body := `{"vpn": {"enabled": true}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1125,6 +1149,7 @@ func TestAPI_HandleExportConfig_NilConfigGetter(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1141,6 +1166,7 @@ func TestAPI_HandleExportConfig_JSON(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export?format=json", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1159,6 +1185,7 @@ func TestAPI_HandleExportConfig_YAML(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export?format=yaml", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1176,6 +1203,7 @@ func TestAPI_HandleExportConfig_DefaultFormat(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1194,6 +1222,7 @@ func TestAPI_HandleExportConfig_UnsupportedFormat(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export?format=xml", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1207,6 +1236,7 @@ func TestAPI_HandleImportConfig_NilConfigUpdater(t *testing.T) {
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/import", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1223,6 +1253,7 @@ func TestAPI_HandleImportConfig_InvalidJSON(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=json", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1239,6 +1270,7 @@ func TestAPI_HandleImportConfig_InvalidYAML(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=yaml", strings.NewReader("invalid: yaml: content:"))
 	req.Header.Set("Content-Type", "application/x-yaml")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1254,6 +1286,7 @@ func TestAPI_HandleImportConfig_UnsupportedFormat(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=xml", strings.NewReader("<config/>"))
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1272,6 +1305,7 @@ func TestAPI_HandleImportConfig_ValidationFailed(t *testing.T) {
 	body := `{"proxy": {"http": {"listen": ""}, "socks5": {"listen": ""}}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=json", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1290,6 +1324,7 @@ func TestAPI_HandleImportConfig_UpdaterError(t *testing.T) {
 	body, _ := json.Marshal(testConfig)
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=json", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1308,6 +1343,7 @@ func TestAPI_HandleImportConfig_Success(t *testing.T) {
 	body, _ := json.Marshal(testConfig)
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=json", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1339,6 +1375,7 @@ debug:
 `
 	req := httptest.NewRequest("POST", "/api/v1/config/import", strings.NewReader(yamlBody))
 	req.Header.Set("Content-Type", "application/x-yaml")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1350,6 +1387,7 @@ func TestAPI_HandleReloadConfig_NilConfigReloader(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/reload", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1365,6 +1403,7 @@ func TestAPI_HandleReloadConfig_ReloaderError(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/reload", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1380,6 +1419,7 @@ func TestAPI_HandleReloadConfig_Success(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/reload", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1484,6 +1524,7 @@ func TestAPI_HandleConnect_NilConnector(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/connect", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1504,6 +1545,7 @@ func TestAPI_HandleConnect_ConnectorError(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/connect", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1519,6 +1561,7 @@ func TestAPI_HandleConnect_Success(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/connect", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1535,6 +1578,7 @@ func TestAPI_HandleDisconnect_NilDisconnector(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/disconnect", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1555,6 +1599,7 @@ func TestAPI_HandleDisconnect_DisconnectorError(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/disconnect", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1570,6 +1615,7 @@ func TestAPI_HandleDisconnect_Success(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/disconnect", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1642,6 +1688,7 @@ func TestAPI_HandleSelectServer_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1655,6 +1702,7 @@ func TestAPI_HandleSelectServer_EmptyServer(t *testing.T) {
 	body := `{"server": ""}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1668,6 +1716,7 @@ func TestAPI_HandleSelectServer_NilServerSelector(t *testing.T) {
 	body := `{"server": "server1"}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1691,6 +1740,7 @@ func TestAPI_HandleSelectServer_SelectorError(t *testing.T) {
 	body := `{"server": "invalid-server"}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1708,6 +1758,7 @@ func TestAPI_HandleSelectServer_Success(t *testing.T) {
 	body := `{"server": "server1"}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1779,6 +1830,7 @@ func TestAPI_HandleUpdateSettings_InvalidBody(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1796,6 +1848,7 @@ func TestAPI_HandleUpdateSettings_UpdaterError(t *testing.T) {
 	body := `{"auto_connect": true}`
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1813,6 +1866,7 @@ func TestAPI_HandleUpdateSettings_Success(t *testing.T) {
 	body := `{"auto_connect": true, "show_notifications": false}`
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -1831,6 +1885,7 @@ func TestAPI_HandleUpdateSettings_NilUpdater(t *testing.T) {
 	body := `{"auto_connect": true}`
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2469,6 +2524,7 @@ func TestAPI_HandleVPNSplitRemoveApp_EmptyName(t *testing.T) {
 
 	// The chi router will return 405 for empty name because the route won't match
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2482,15 +2538,18 @@ func TestAPI_HandleVPNSplitRemoveApp_EmptyName(t *testing.T) {
 
 // mockVPNManager is a mock implementation of the VPN manager for testing
 type mockVPNManager struct {
-	status           vpn.VPNStats
-	connections      []vpn.ConnectionInfo
-	splitTunnelRules vpn.SplitTunnelConfig
-	startErr         error
-	stopErr          error
-	addAppErr        error
-	removeAppErr     error
-	addDomainErr     error
-	addIPErr         error
+	status             vpn.VPNStats
+	connections        []vpn.ConnectionInfo
+	splitTunnelRules   vpn.SplitTunnelConfig
+	startErr           error
+	stopErr            error
+	addAppErr          error
+	removeAppErr       error
+	addDomainErr       error
+	removeDomainErr    error
+	addIPErr           error
+	removeIPErr        error
+	setModeErr         error
 }
 
 func (m *mockVPNManager) Status() vpn.VPNStats {
@@ -2548,11 +2607,33 @@ func (m *mockVPNManager) AddSplitTunnelDomain(pattern string) error {
 	return nil
 }
 
+func (m *mockVPNManager) RemoveSplitTunnelDomain(pattern string) error {
+	if m.removeDomainErr != nil {
+		return m.removeDomainErr
+	}
+	return nil
+}
+
 func (m *mockVPNManager) AddSplitTunnelIP(cidr string) error {
 	if m.addIPErr != nil {
 		return m.addIPErr
 	}
 	m.splitTunnelRules.IPs = append(m.splitTunnelRules.IPs, cidr)
+	return nil
+}
+
+func (m *mockVPNManager) RemoveSplitTunnelIP(cidr string) error {
+	if m.removeIPErr != nil {
+		return m.removeIPErr
+	}
+	return nil
+}
+
+func (m *mockVPNManager) SetSplitTunnelMode(mode string) error {
+	if m.setModeErr != nil {
+		return m.setModeErr
+	}
+	m.splitTunnelRules.Mode = mode
 	return nil
 }
 
@@ -2590,6 +2671,7 @@ func TestAPI_HandleVPNEnable_WithMockVPNManager(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/enable", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2611,6 +2693,7 @@ func TestAPI_HandleVPNEnable_WithMockVPNManager_Error(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/enable", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2625,6 +2708,7 @@ func TestAPI_HandleVPNDisable_WithMockVPNManager(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/disable", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2646,6 +2730,7 @@ func TestAPI_HandleVPNDisable_WithMockVPNManager_Error(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/disable", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2692,6 +2777,7 @@ func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager(t *testing.T) {
 	body := `{"name": "testapp", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2715,6 +2801,7 @@ func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager_Error(t *testing.T) {
 	body := `{"name": "testapp", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2729,6 +2816,7 @@ func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/testapp", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2750,6 +2838,7 @@ func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager_Error(t *testing.T) {
 	handler := api.Handler()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/testapp", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2766,6 +2855,7 @@ func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager(t *testing.T) {
 	body := `{"pattern": "*.example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2789,6 +2879,7 @@ func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager_Error(t *testing.T) {
 	body := `{"pattern": "*.example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2805,6 +2896,7 @@ func TestAPI_HandleVPNSplitAddIP_WithMockVPNManager(t *testing.T) {
 	body := `{"cidr": "10.0.0.0/8"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2828,6 +2920,7 @@ func TestAPI_HandleVPNSplitAddIP_WithMockVPNManager_Error(t *testing.T) {
 	body := `{"cidr": "10.0.0.0/8"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -2851,6 +2944,7 @@ func TestAPI_HandleValidateConfig_WithMergedConfig(t *testing.T) {
 	body := `{"debug": {"enabled": true, "max_entries": 500}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -3025,6 +3119,7 @@ proxy:
 `
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=yaml", strings.NewReader(yamlBody))
 	req.Header.Set("Content-Type", "application/x-yaml")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -3188,5 +3283,568 @@ func TestAPI_HandleStatus_NilConcreteVPNManager(t *testing.T) {
 		handler.ServeHTTP(w, req)
 	})
 
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+// ============================================================================
+// VPN Split Tunnel Set Mode Tests
+// ============================================================================
+
+func TestAPI_HandleVPNSplitSetMode_NilVPNManager(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	body := `{"mode": "exclude"}`
+	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "VPN not configured")
+}
+
+func TestAPI_HandleVPNSplitSetMode_Success(t *testing.T) {
+	api := New(Config{
+		VPNManager: newMockVPNManager(),
+	})
+	handler := api.Handler()
+
+	body := `{"mode": "include"}`
+	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "updated", resp["status"])
+	assert.Equal(t, "include", resp["mode"])
+}
+
+func TestAPI_HandleVPNSplitSetMode_InvalidJSON(t *testing.T) {
+	api := New(Config{
+		VPNManager: newMockVPNManager(),
+	})
+	handler := api.Handler()
+
+	body := `{"mode": invalid}`
+	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid request body")
+}
+
+func TestAPI_HandleVPNSplitSetMode_EmptyMode(t *testing.T) {
+	api := New(Config{
+		VPNManager: newMockVPNManager(),
+	})
+	handler := api.Handler()
+
+	body := `{"mode": ""}`
+	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "mode is required")
+}
+
+func TestAPI_HandleVPNSplitSetMode_Error(t *testing.T) {
+	mock := newMockVPNManager()
+	mock.setModeErr = errors.New("invalid mode")
+	api := New(Config{
+		VPNManager: mock,
+	})
+	handler := api.Handler()
+
+	body := `{"mode": "invalid"}`
+	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "invalid mode")
+}
+
+// ============================================================================
+// VPN Split Tunnel Remove Domain Tests
+// ============================================================================
+
+func TestAPI_HandleVPNSplitRemoveDomain_NilVPNManager(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/domains/%2A.example.com", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "VPN not configured")
+}
+
+func TestAPI_HandleVPNSplitRemoveDomain_Success(t *testing.T) {
+	api := New(Config{
+		VPNManager: newMockVPNManager(),
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/domains/%2A.example.com", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "removed", resp["status"])
+}
+
+func TestAPI_HandleVPNSplitRemoveDomain_Error(t *testing.T) {
+	mock := newMockVPNManager()
+	mock.removeDomainErr = errors.New("domain not found")
+	api := New(Config{
+		VPNManager: mock,
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/domains/%2A.nonexistent.com", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "domain not found")
+}
+
+// ============================================================================
+// VPN Split Tunnel Remove IP Tests
+// ============================================================================
+
+func TestAPI_HandleVPNSplitRemoveIP_NilVPNManager(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/ips/10.0.0.0%2F8", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "VPN not configured")
+}
+
+func TestAPI_HandleVPNSplitRemoveIP_Success(t *testing.T) {
+	api := New(Config{
+		VPNManager: newMockVPNManager(),
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/ips/10.0.0.0%2F8", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "removed", resp["status"])
+}
+
+func TestAPI_HandleVPNSplitRemoveIP_Error(t *testing.T) {
+	mock := newMockVPNManager()
+	mock.removeIPErr = errors.New("IP not found")
+	api := New(Config{
+		VPNManager: mock,
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/ips/192.168.0.0%2F16", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "IP not found")
+}
+
+// ============================================================================
+// Add Route Tests
+// ============================================================================
+
+func TestAPI_HandleAddRoute_NilConfigUpdater(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "server"}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Config management not available", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_Success(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "server", "priority": 100}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "created", resp["status"])
+	assert.Equal(t, "test-route", resp["route"])
+	assert.Equal(t, "server", resp["action"])
+}
+
+func TestAPI_HandleAddRoute_InvalidJSON(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": invalid}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Invalid request body", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_MissingName(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"domains": ["*.example.com"], "action": "server"}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Route name is required", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_MissingDomains(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": "test-route", "action": "server"}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "At least one domain pattern is required", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_InvalidAction(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "invalid"}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Invalid action", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_DefaultAction(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": "test-route", "domains": ["*.example.com"]}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "server", resp["action"])
+}
+
+func TestAPI_HandleAddRoute_DirectAction(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": "direct-route", "domains": ["*.local"], "action": "direct"}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "direct", resp["action"])
+}
+
+func TestAPI_HandleAddRoute_ConflictingName(t *testing.T) {
+	// Create a router with existing routes
+	r := router.NewClientRouter()
+	r.LoadRoutes([]config.ClientRouteConfig{
+		{Name: "existing-route", Domains: []string{"*.test.com"}, Action: "server"},
+	})
+
+	api := New(Config{
+		Router: r,
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": "existing-route", "domains": ["*.example.com"], "action": "server"}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Route with this name already exists", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_ConfigUpdateError(t *testing.T) {
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return errors.New("config update failed")
+		},
+	})
+	handler := api.Handler()
+
+	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "server"}`
+	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Failed to update config", resp["error"])
+}
+
+// ============================================================================
+// Remove Route Tests
+// ============================================================================
+
+func TestAPI_HandleRemoveRoute_NilConfigUpdater(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/routes/test-route", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Config management not available", resp["error"])
+}
+
+func TestAPI_HandleRemoveRoute_Success(t *testing.T) {
+	// Create a router with existing routes
+	r := router.NewClientRouter()
+	r.LoadRoutes([]config.ClientRouteConfig{
+		{Name: "test-route", Domains: []string{"*.test.com"}, Action: "server"},
+	})
+
+	api := New(Config{
+		Router: r,
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/routes/test-route", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "removed", resp["status"])
+	assert.Equal(t, "test-route", resp["route"])
+}
+
+func TestAPI_HandleRemoveRoute_NotFound(t *testing.T) {
+	// Create a router without the route we're trying to delete
+	r := router.NewClientRouter()
+	r.LoadRoutes([]config.ClientRouteConfig{
+		{Name: "other-route", Domains: []string{"*.other.com"}, Action: "server"},
+	})
+
+	api := New(Config{
+		Router: r,
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/routes/nonexistent-route", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Route not found", resp["error"])
+}
+
+func TestAPI_HandleRemoveRoute_ConfigUpdateError(t *testing.T) {
+	// Create a router with the route
+	r := router.NewClientRouter()
+	r.LoadRoutes([]config.ClientRouteConfig{
+		{Name: "test-route", Domains: []string{"*.test.com"}, Action: "server"},
+	})
+
+	api := New(Config{
+		Router: r,
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return errors.New("config update failed")
+		},
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/routes/test-route", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, "Failed to update config", resp["error"])
+}
+
+func TestAPI_HandleRemoveRoute_NoRouter(t *testing.T) {
+	// When router is nil, the handler should still work if configUpdater is set
+	api := New(Config{
+		ConfigUpdater: func(updates map[string]interface{}) error {
+			return nil
+		},
+	})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/routes/any-route", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	// Without a router to check, it should proceed with the update
 	assert.Equal(t, http.StatusOK, w.Code)
 }

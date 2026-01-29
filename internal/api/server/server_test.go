@@ -552,6 +552,7 @@ func TestAPI_HandleClearRequests(t *testing.T) {
 	handler := api.RouterWithWebSocket(hub)
 
 	req := httptest.NewRequest("DELETE", "/api/v1/requests", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest") // CSRF protection
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
@@ -560,6 +561,25 @@ func TestAPI_HandleClearRequests(t *testing.T) {
 	// Verify cleared
 	entries := api.requestLog.GetAll()
 	assert.Empty(t, entries)
+}
+
+func TestAPI_HandleClearRequests_CSRFFails(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends:         mgr,
+		EnableRequestLog: true,
+	}
+
+	api := New(cfg)
+	hub := NewWebSocketHub()
+	handler := api.RouterWithWebSocket(hub)
+
+	// DELETE without X-Requested-With should fail with 403
+	req := httptest.NewRequest("DELETE", "/api/v1/requests", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
 }
 
 func TestAPI_RequestLog(t *testing.T) {
@@ -1061,4 +1081,785 @@ func TestAPI_HandleSaveConfig_InvalidBody(t *testing.T) {
 	api.handleSaveConfig(w, r)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_HandleAddBackend_Success(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	body := strings.NewReader(`{"name":"new-backend","type":"direct","enabled":true,"config":{}}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends", body)
+	api.handleAddBackend(w, r)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "created", resp["status"])
+	assert.Equal(t, "new-backend", resp["backend"])
+	assert.Equal(t, "direct", resp["type"])
+
+	// Verify backend was added
+	_, err := mgr.Get("new-backend")
+	assert.NoError(t, err)
+}
+
+func TestAPI_HandleAddBackend_MissingName(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	body := strings.NewReader(`{"type":"direct","enabled":true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends", body)
+	api.handleAddBackend(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_HandleAddBackend_MissingType(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	body := strings.NewReader(`{"name":"test","enabled":true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends", body)
+	api.handleAddBackend(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_HandleAddBackend_AlreadyExists(t *testing.T) {
+	mgr := backend.NewManager()
+	existing := backend.NewDirectBackend(backend.DirectConfig{Name: "existing"})
+	mgr.Add(existing)
+
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	body := strings.NewReader(`{"name":"existing","type":"direct","enabled":true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends", body)
+	api.handleAddBackend(w, r)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+}
+
+func TestAPI_HandleAddBackend_InvalidJSON(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	body := strings.NewReader(`{invalid json}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends", body)
+	api.handleAddBackend(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_HandleAddBackend_InvalidType(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	body := strings.NewReader(`{"name":"test","type":"unknown_type","enabled":true}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends", body)
+	api.handleAddBackend(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func TestAPI_HandleRemoveBackend_Success(t *testing.T) {
+	mgr := backend.NewManager()
+	existing := backend.NewDirectBackend(backend.DirectConfig{Name: "to-remove"})
+	mgr.Add(existing)
+	existing.Start(context.Background())
+
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/api/v1/backends/to-remove", nil)
+
+	// Need to use chi router to get URL param
+	router := api.Router()
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	// Verify backend was removed
+	_, err := mgr.Get("to-remove")
+	assert.Error(t, err)
+}
+
+func TestAPI_HandleRemoveBackend_NotFound(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/api/v1/backends/nonexistent", nil)
+
+	router := api.Router()
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPI_HandleTestBackend_Success(t *testing.T) {
+	mgr := backend.NewManager()
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test-backend"})
+	mgr.Add(directBackend)
+	directBackend.Start(context.Background())
+
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	// Test with a valid target (localhost - should work on most systems)
+	body := strings.NewReader(`{"target":"127.0.0.1:80","timeout":"1s"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends/test-backend/test", body)
+
+	router := api.Router()
+	router.ServeHTTP(w, r)
+
+	// Should return 200 even if connection fails - the test itself ran
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	// Either success or failed - both are valid responses
+	status := resp["status"].(string)
+	assert.True(t, status == "success" || status == "failed")
+	assert.Equal(t, "test-backend", resp["backend"])
+}
+
+func TestAPI_HandleTestBackend_NotFound(t *testing.T) {
+	mgr := backend.NewManager()
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends/nonexistent/test", nil)
+
+	router := api.Router()
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+}
+
+func TestAPI_HandleTestBackend_DefaultTarget(t *testing.T) {
+	mgr := backend.NewManager()
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test-backend"})
+	mgr.Add(directBackend)
+	directBackend.Start(context.Background())
+
+	cfg := Config{
+		Backends: mgr,
+	}
+	api := New(cfg)
+
+	// Empty body - should use default target
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/backends/test-backend/test", nil)
+
+	router := api.Router()
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "google.com:443", resp["target"])
+}
+
+// ============================================================================
+// Route Handlers Tests
+// ============================================================================
+
+func TestAPI_HandleListRoutes_NilGetFullConfig(t *testing.T) {
+	api := New(Config{})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v1/routes", nil)
+	api.handleListRoutes(w, r)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Config retrieval not available", resp["error"])
+}
+
+func TestAPI_HandleListRoutes_NilConfig(t *testing.T) {
+	api := New(Config{
+		GetFullConfig: func() *config.ServerConfig {
+			return nil
+		},
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v1/routes", nil)
+	api.handleListRoutes(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []config.RouteConfig
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Empty(t, resp)
+}
+
+func TestAPI_HandleListRoutes_WithRoutes(t *testing.T) {
+	api := New(Config{
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{
+				Routes: []config.RouteConfig{
+					{Name: "route1", Domains: []string{"*.example.com"}, Backend: "direct"},
+					{Name: "route2", Domains: []string{"*.test.com"}, Backend: "proxy"},
+				},
+			}
+		},
+	})
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v1/routes", nil)
+	api.handleListRoutes(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp []config.RouteConfig
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Len(t, resp, 2)
+	assert.Equal(t, "route1", resp[0].Name)
+	assert.Equal(t, "route2", resp[1].Name)
+}
+
+func TestAPI_HandleAddRoute_NilConfigManagement(t *testing.T) {
+	api := New(Config{})
+
+	body := strings.NewReader(`{"name":"test","domains":["*.example.com"],"backend":"direct"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Config management not available", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_InvalidJSON(t *testing.T) {
+	mgr := backend.NewManager()
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{invalid json}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Invalid request body", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_MissingName(t *testing.T) {
+	mgr := backend.NewManager()
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{"domains":["*.example.com"],"backend":"direct"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Route name is required", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_MissingDomains(t *testing.T) {
+	mgr := backend.NewManager()
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{"name":"test","backend":"direct"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "At least one domain pattern is required", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_MissingBackend(t *testing.T) {
+	mgr := backend.NewManager()
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{"name":"test","domains":["*.example.com"]}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Backend or backends is required", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_NilConfigFromGetFullConfig(t *testing.T) {
+	mgr := backend.NewManager()
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return nil
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{"name":"test","domains":["*.example.com"],"backend":"direct"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Failed to get current config", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_DuplicateName(t *testing.T) {
+	mgr := backend.NewManager()
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "direct"})
+	mgr.Add(directBackend)
+
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{
+				Routes: []config.RouteConfig{
+					{Name: "existing", Domains: []string{"*.test.com"}, Backend: "direct"},
+				},
+			}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{"name":"existing","domains":["*.example.com"],"backend":"direct"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusConflict, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Route with this name already exists", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_BackendNotFound(t *testing.T) {
+	mgr := backend.NewManager()
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{"name":"test","domains":["*.example.com"],"backend":"nonexistent"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Backend not found", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_Success(t *testing.T) {
+	mgr := backend.NewManager()
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "direct"})
+	mgr.Add(directBackend)
+
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	body := strings.NewReader(`{"name":"new-route","domains":["*.example.com"],"backend":"direct"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "created", resp["status"])
+	assert.Equal(t, "new-route", resp["route"])
+}
+
+func TestAPI_HandleRemoveRoute_NilConfigManagement(t *testing.T) {
+	api := New(Config{})
+	hub := NewWebSocketHub()
+	router := api.RouterWithWebSocket(hub)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/api/v1/routes/test", nil)
+	r.Header.Set("X-Requested-With", "XMLHttpRequest") // CSRF protection
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Config management not available", resp["error"])
+}
+
+func TestAPI_HandleRemoveRoute_NilConfig(t *testing.T) {
+	api := New(Config{
+		GetFullConfig: func() *config.ServerConfig {
+			return nil
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+	hub := NewWebSocketHub()
+	router := api.RouterWithWebSocket(hub)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/api/v1/routes/test", nil)
+	r.Header.Set("X-Requested-With", "XMLHttpRequest") // CSRF protection
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Failed to get current config", resp["error"])
+}
+
+func TestAPI_HandleRemoveRoute_NotFound(t *testing.T) {
+	api := New(Config{
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{
+				Routes: []config.RouteConfig{
+					{Name: "other-route", Domains: []string{"*.test.com"}, Backend: "direct"},
+				},
+			}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+	hub := NewWebSocketHub()
+	router := api.RouterWithWebSocket(hub)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/api/v1/routes/nonexistent", nil)
+	r.Header.Set("X-Requested-With", "XMLHttpRequest") // CSRF protection
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Route not found", resp["error"])
+}
+
+func TestAPI_HandleRemoveRoute_Success(t *testing.T) {
+	api := New(Config{
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{
+				Routes: []config.RouteConfig{
+					{Name: "to-remove", Domains: []string{"*.test.com"}, Backend: "direct"},
+				},
+			}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+	hub := NewWebSocketHub()
+	router := api.RouterWithWebSocket(hub)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/api/v1/routes/to-remove", nil)
+	r.Header.Set("X-Requested-With", "XMLHttpRequest") // CSRF protection
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "removed", resp["status"])
+	assert.Equal(t, "to-remove", resp["route"])
+}
+
+// ============================================================================
+// Connection Handlers Tests
+// ============================================================================
+
+func TestAPI_HandleGetConnections(t *testing.T) {
+	api := New(Config{})
+	hub := NewWebSocketHub()
+	router := api.RouterWithWebSocket(hub)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v1/connections/", nil)
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Contains(t, resp, "connections")
+	assert.Contains(t, resp, "count")
+	assert.Contains(t, resp, "time")
+}
+
+func TestAPI_HandleGetClients(t *testing.T) {
+	api := New(Config{})
+	hub := NewWebSocketHub()
+	router := api.RouterWithWebSocket(hub)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/v1/connections/clients", nil)
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Contains(t, resp, "clients")
+	assert.Contains(t, resp, "count")
+	assert.Contains(t, resp, "time")
+}
+
+// ============================================================================
+// Additional Handler Tests for Coverage
+// ============================================================================
+
+func TestAPI_ConnectionTracker(t *testing.T) {
+	cfg := Config{}
+	api := New(cfg)
+
+	tracker := api.ConnectionTracker()
+	require.NotNil(t, tracker)
+
+	// Verify it's the same instance
+	assert.Equal(t, api.connTracker, tracker)
+}
+
+func TestWebSocketHub_Stop(t *testing.T) {
+	hub := NewWebSocketHub()
+	require.NotNil(t, hub)
+
+	// Stop should not panic even without running
+	hub.Stop()
+}
+
+func TestAddWebSocketRoutes(t *testing.T) {
+	api := New(Config{})
+	hub := NewWebSocketHub()
+
+	// Get the router with websocket
+	router := api.RouterWithWebSocket(hub)
+	require.NotNil(t, router)
+
+	// Verify the hub was set on the API
+	assert.Equal(t, hub, api.wsHub)
+}
+
+func TestAPI_HandleAddRoute_SaveError(t *testing.T) {
+	mgr := backend.NewManager()
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "direct"})
+	mgr.Add(directBackend)
+
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return assert.AnError
+		},
+	})
+
+	body := strings.NewReader(`{"name":"new-route","domains":["*.example.com"],"backend":"direct"}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Failed to save config", resp["error"])
+}
+
+func TestAPI_HandleRemoveRoute_SaveError(t *testing.T) {
+	api := New(Config{
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{
+				Routes: []config.RouteConfig{
+					{Name: "to-remove", Domains: []string{"*.test.com"}, Backend: "direct"},
+				},
+			}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return assert.AnError
+		},
+	})
+	hub := NewWebSocketHub()
+	router := api.RouterWithWebSocket(hub)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("DELETE", "/api/v1/routes/to-remove", nil)
+	r.Header.Set("X-Requested-With", "XMLHttpRequest") // CSRF protection
+	router.ServeHTTP(w, r)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Failed to save config", resp["error"])
+}
+
+func TestAPI_HandleAddRoute_WithBackends(t *testing.T) {
+	mgr := backend.NewManager()
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "direct"})
+	proxyBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "proxy"})
+	mgr.Add(directBackend)
+	mgr.Add(proxyBackend)
+
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	// Test with backends array instead of single backend
+	body := strings.NewReader(`{"name":"lb-route","domains":["*.example.com"],"backends":["direct","proxy"]}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusCreated, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "created", resp["status"])
+	assert.Equal(t, "lb-route", resp["route"])
+}
+
+func TestAPI_HandleAddRoute_BackendsNotFound(t *testing.T) {
+	mgr := backend.NewManager()
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "direct"})
+	mgr.Add(directBackend)
+
+	api := New(Config{
+		Backends: mgr,
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{}
+		},
+		SaveConfig: func(cfg *config.ServerConfig) error {
+			return nil
+		},
+	})
+
+	// Test with backends array where one is missing
+	body := strings.NewReader(`{"name":"lb-route","domains":["*.example.com"],"backends":["direct","nonexistent"]}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/routes", body)
+	api.handleAddRoute(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+
+	var resp map[string]interface{}
+	json.NewDecoder(w.Body).Decode(&resp)
+	assert.Equal(t, "Backend not found", resp["error"])
 }

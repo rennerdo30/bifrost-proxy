@@ -17,9 +17,17 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
 
+  // Add CSRF protection and content type headers
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    'X-Requested-With': 'XMLHttpRequest', // CSRF protection
+    ...options?.headers,
+  }
+
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
+      headers,
       signal: controller.signal,
     })
     clearTimeout(timeoutId)
@@ -357,6 +365,12 @@ export const api = {
   disableVPN: () => fetchJSON<{ status: string }>('/vpn/disable', { method: 'POST' }),
   getVPNConnections: () => fetchJSON<VPNConnection[]>('/vpn/connections'),
   getSplitTunnelRules: () => fetchJSON<SplitTunnelConfig>('/vpn/split/rules'),
+  setSplitTunnelMode: (mode: 'exclude' | 'include') =>
+    fetchJSON<{ status: string; mode: string }>('/vpn/split/mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    }),
   addSplitTunnelApp: (app: AppRule) =>
     fetchJSON<{ status: string }>('/vpn/split/apps', {
       method: 'POST',
@@ -371,10 +385,14 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pattern }),
     }),
+  removeSplitTunnelDomain: (pattern: string) =>
+    fetchJSON<{ status: string }>(`/vpn/split/domains/${encodeURIComponent(pattern)}`, { method: 'DELETE' }),
   addSplitTunnelIP: (cidr: string) =>
     fetchJSON<{ status: string }>('/vpn/split/ips', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cidr }),
     }),
+  removeSplitTunnelIP: (cidr: string) =>
+    fetchJSON<{ status: string }>(`/vpn/split/ips/${encodeURIComponent(cidr)}`, { method: 'DELETE' }),
 }

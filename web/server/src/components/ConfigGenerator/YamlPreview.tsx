@@ -21,7 +21,7 @@ export function YamlPreview({ yaml }: YamlPreviewProps) {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
-      console.error('Failed to copy to clipboard:', err)
+      if (import.meta.env.DEV) console.error('Failed to copy to clipboard:', err)
       showNotification('Failed to copy to clipboard. Please try selecting and copying manually.', 'error')
     }
   }
@@ -39,7 +39,7 @@ export function YamlPreview({ yaml }: YamlPreviewProps) {
       URL.revokeObjectURL(url)
       showNotification('Configuration downloaded successfully.', 'success')
     } catch (err) {
-      console.error('Failed to download configuration:', err)
+      if (import.meta.env.DEV) console.error('Failed to download configuration:', err)
       showNotification('Failed to download configuration. Please try copying the content instead.', 'error')
     }
   }

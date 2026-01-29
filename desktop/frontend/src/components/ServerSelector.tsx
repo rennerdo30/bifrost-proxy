@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ServerInfo } from '../hooks/useClient';
+import { getStatusColor } from '../utils/status';
 
 interface ServerSelectorProps {
   servers: ServerInfo[];
@@ -10,6 +11,19 @@ interface ServerSelectorProps {
 
 export function ServerSelector({ servers, currentServer, onSelect, disabled }: ServerSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown on Escape key
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape' && isOpen) {
+      setIsOpen(false);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   const selectedServer = servers.find(s => s.name === currentServer) || servers[0];
 
@@ -21,25 +35,20 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
     );
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'online': return 'bg-bifrost-success';
-      case 'offline': return 'bg-bifrost-error';
-      default: return 'bg-bifrost-warning';
-    }
-  };
-
   return (
-    <div className="relative">
+    <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => !disabled && setIsOpen(!isOpen)}
         disabled={disabled}
         className={`w-full card flex items-center justify-between transition-colors ${
           disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-bifrost-accent cursor-pointer'
         }`}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-label={`Select server, current: ${selectedServer?.name || 'None'}`}
       >
         <div className="flex items-center gap-3">
-          <span className={`w-2 h-2 rounded-full ${getStatusColor(selectedServer?.status || 'unknown')}`} />
+          <span className={`w-2 h-2 rounded-full ${getStatusColor(selectedServer?.status || 'unknown')}`} aria-hidden="true" />
           <div className="text-left">
             <p className="text-sm font-medium text-bifrost-text">{selectedServer?.name || 'Select Server'}</p>
             <p className="text-xs text-bifrost-text-muted">{selectedServer?.address}</p>
@@ -49,7 +58,7 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
           {selectedServer?.latency_ms && (
             <span className="text-xs text-bifrost-text-muted">{selectedServer.latency_ms}ms</span>
           )}
-          <svg className={`w-4 h-4 text-bifrost-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className={`w-4 h-4 text-bifrost-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
           </svg>
         </div>
@@ -62,10 +71,15 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
           <div
             className="fixed inset-0 z-10"
             onClick={() => setIsOpen(false)}
+            aria-hidden="true"
           />
 
           {/* Menu */}
-          <div className="absolute z-20 w-full mt-2 bg-bifrost-card border border-bifrost-border rounded-xl shadow-xl overflow-hidden">
+          <div
+            className="absolute z-20 w-full mt-2 bg-bifrost-card border border-bifrost-border rounded-xl shadow-xl overflow-hidden"
+            role="listbox"
+            aria-label="Server list"
+          >
             {servers.map((server) => (
               <button
                 key={server.name}
@@ -79,9 +93,12 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
                     ? 'bg-bifrost-accent/10 border-l-2 border-bifrost-accent'
                     : 'hover:bg-bifrost-border/50'
                 } ${server.status === 'offline' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                role="option"
+                aria-selected={server.name === currentServer}
+                aria-disabled={server.status === 'offline'}
               >
                 <div className="flex items-center gap-3">
-                  <span className={`w-2 h-2 rounded-full ${getStatusColor(server.status)}`} />
+                  <span className={`w-2 h-2 rounded-full ${getStatusColor(server.status)}`} aria-hidden="true" />
                   <div className="text-left">
                     <p className="text-sm font-medium text-bifrost-text">{server.name}</p>
                     <p className="text-xs text-bifrost-text-muted">{server.address}</p>
@@ -97,7 +114,7 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
                     </span>
                   )}
                   {server.name === currentServer && (
-                    <svg className="w-4 h-4 text-bifrost-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4 text-bifrost-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                     </svg>
                   )}
