@@ -8,7 +8,7 @@ interface APIConfig {
 }
 
 let config: APIConfig = {
-  baseUrl: 'http://localhost:3130/api/v1',
+  baseUrl: 'http://localhost:7383/api/v1',
 }
 
 export function setAPIConfig(newConfig: Partial<APIConfig>) {

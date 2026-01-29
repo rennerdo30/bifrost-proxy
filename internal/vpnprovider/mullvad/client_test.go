@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -349,8 +350,8 @@ func TestExtractCities(t *testing.T) {
 		{CountryCode: "SE", City: "Stockholm"},
 		{CountryCode: "SE", City: "Gothenburg"},
 		{CountryCode: "SE", City: "Stockholm"}, // Duplicate
-		{CountryCode: "DE", City: "Frankfurt"},
-		{CountryCode: "DE", City: ""}, // Empty city
+		{Country: "DE", City: "Frankfurt"},
+		{Country: "DE", City: ""}, // Empty city
 	}
 
 	cities := extractCities(servers)
@@ -512,4 +513,755 @@ func TestCacheOperations(t *testing.T) {
 
 	// Clear cache (should be no-op on empty cache)
 	client.ClearCache()
+}
+
+func TestWithHTTPClient(t *testing.T) {
+	customClient := &http.Client{Timeout: 10 * time.Second}
+
+	client, err := NewClient("1234567890123456", WithHTTPClient(customClient))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.httpClient != customClient {
+		t.Error("WithHTTPClient did not set the custom HTTP client")
+	}
+}
+
+func TestWithCache(t *testing.T) {
+	customCache := vpnprovider.NewServerCache(5 * time.Minute)
+
+	client, err := NewClient("1234567890123456", WithCache(customCache))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.cache != customCache {
+		t.Error("WithCache did not set the custom cache")
+	}
+}
+
+func TestWithLogger(t *testing.T) {
+	customLogger := slog.Default().With("component", "test")
+
+	client, err := NewClient("1234567890123456", WithLogger(customLogger))
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	if client.logger != customLogger {
+		t.Error("WithLogger did not set the custom logger")
+	}
+}
+
+func TestFetchServersWithMockServer(t *testing.T) {
+	relays := []MullvadRelay{
+		{
+			Hostname:    "se-sto-wg-001",
+			CountryCode: "se",
+			CountryName: "Sweden",
+			CityCode:    "sto",
+			CityName:    "Stockholm",
+			Active:      true,
+			Owned:       true,
+			Provider:    "mullvad",
+			IPv4AddrIn:  "185.65.134.1",
+			Pubkey:      "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
+			Type:        "wireguard",
+		},
+		{
+			Hostname:    "de-fra-ovpn-001",
+			CountryCode: "de",
+			CountryName: "Germany",
+			CityCode:    "fra",
+			CityName:    "Frankfurt",
+			Active:      true,
+			Owned:       false,
+			Provider:    "31173",
+			IPv4AddrIn:  "193.27.14.1",
+			Type:        "openvpn",
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(relays)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	// Use multiEndpointTransport to route API calls to test server
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	servers, err := client.FetchServers(ctx)
+	if err != nil {
+		t.Fatalf("FetchServers() error = %v", err)
+	}
+
+	if len(servers) != 2 {
+		t.Errorf("FetchServers() returned %d servers, want 2", len(servers))
+	}
+
+	// Test cache hit
+	servers2, err := client.FetchServers(ctx)
+	if err != nil {
+		t.Fatalf("FetchServers() cache hit error = %v", err)
+	}
+	if len(servers2) != 2 {
+		t.Errorf("FetchServers() cache hit returned %d servers, want 2", len(servers2))
+	}
+}
+
+func TestFetchServersHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal Server Error"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	_, err = client.FetchServers(ctx)
+	if err == nil {
+		t.Error("FetchServers() expected error for HTTP 500, got nil")
+	}
+}
+
+func TestFetchServersInvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte("invalid json"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	_, err = client.FetchServers(ctx)
+	if err == nil {
+		t.Error("FetchServers() expected error for invalid JSON, got nil")
+	}
+}
+
+func TestSelectServerWithMockServer(t *testing.T) {
+	relays := []MullvadRelay{
+		{
+			Hostname:    "jp-tyo-wg-001",
+			CountryCode: "jp",
+			CountryName: "Japan",
+			CityCode:    "tyo",
+			CityName:    "Tokyo",
+			Active:      true,
+			IPv4AddrIn:  "185.65.134.1",
+			Pubkey:      "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
+			Type:        "wireguard",
+		},
+		{
+			Hostname:    "us-nyc-wg-001",
+			CountryCode: "us",
+			CountryName: "USA",
+			CityCode:    "nyc",
+			CityName:    "New York",
+			Active:      true,
+			IPv4AddrIn:  "193.27.14.1",
+			Pubkey:      "ABC123=",
+			Type:        "wireguard",
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(relays)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+
+	// Select server by country code
+	selectedServer, err := client.SelectServer(ctx, vpnprovider.ServerCriteria{
+		Country: "US",
+	})
+	if err != nil {
+		t.Fatalf("SelectServer() error = %v", err)
+	}
+	if selectedServer.CountryCode != "US" {
+		t.Errorf("SelectServer() returned server with country %s, want US", selectedServer.CountryCode)
+	}
+}
+
+func TestSelectServerNoMatch(t *testing.T) {
+	relays := []MullvadRelay{
+		{
+			Hostname:    "se-sto-wg-001",
+			CountryCode: "se",
+			CountryName: "Sweden",
+			CityCode:    "sto",
+			CityName:    "Stockholm",
+			Active:      true,
+			IPv4AddrIn:  "185.65.134.1",
+			Pubkey:      "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
+			Type:        "wireguard",
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(relays)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+
+	// Select server with non-existent country
+	_, err = client.SelectServer(ctx, vpnprovider.ServerCriteria{
+		Country: "XX",
+	})
+	if err != vpnprovider.ErrNoServersAvailable {
+		t.Errorf("SelectServer() error = %v, want ErrNoServersAvailable", err)
+	}
+}
+
+func TestGenerateWireGuardConfigMethod(t *testing.T) {
+	// Set up mock server for WireGuard key registration
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wg/" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("10.64.0.42"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	wgServer := &vpnprovider.Server{
+		ID:       "se-sto-wg-001",
+		Hostname: "se-sto-wg-001.relays.mullvad.net",
+		WireGuard: &vpnprovider.WireGuardServer{
+			PublicKey: "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
+			Endpoint:  "185.65.134.1:51820",
+		},
+	}
+
+	config, err := client.GenerateWireGuardConfig(ctx, wgServer, vpnprovider.Credentials{})
+	if err != nil {
+		t.Fatalf("GenerateWireGuardConfig() error = %v", err)
+	}
+
+	if config.PrivateKey == "" {
+		t.Error("GenerateWireGuardConfig() PrivateKey is empty")
+	}
+	if config.PublicKey == "" {
+		t.Error("GenerateWireGuardConfig() PublicKey is empty")
+	}
+	if config.Address != "10.64.0.42/32" {
+		t.Errorf("GenerateWireGuardConfig() Address = %v, want 10.64.0.42/32", config.Address)
+	}
+	if config.Peer.PublicKey != wgServer.WireGuard.PublicKey {
+		t.Errorf("GenerateWireGuardConfig() Peer.PublicKey = %v, want %v", config.Peer.PublicKey, wgServer.WireGuard.PublicKey)
+	}
+}
+
+func TestGenerateWireGuardConfigNoWireGuardSupport(t *testing.T) {
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	ctx := context.Background()
+	// Server without WireGuard support
+	server := &vpnprovider.Server{
+		ID:       "de-fra-ovpn-001",
+		Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+			UDPPort:  1194,
+		},
+	}
+
+	_, err = client.GenerateWireGuardConfig(ctx, server, vpnprovider.Credentials{})
+	if err == nil {
+		t.Error("GenerateWireGuardConfig() expected error for server without WireGuard support, got nil")
+	}
+}
+
+func TestGenerateWireGuardConfigWithCustomCredentials(t *testing.T) {
+	// Set up mock server for WireGuard key registration
+	var receivedAccount string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/wg/" {
+			r.ParseForm()
+			receivedAccount = r.FormValue("account")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("10.64.0.99"))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	wgServer := &vpnprovider.Server{
+		ID:       "se-sto-wg-001",
+		Hostname: "se-sto-wg-001.relays.mullvad.net",
+		WireGuard: &vpnprovider.WireGuardServer{
+			PublicKey: "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
+			Endpoint:  "185.65.134.1:51820",
+		},
+	}
+
+	// Use custom credentials
+	creds := vpnprovider.Credentials{
+		AccountID: "9999888877776666",
+	}
+
+	_, err = client.GenerateWireGuardConfig(ctx, wgServer, creds)
+	if err != nil {
+		t.Fatalf("GenerateWireGuardConfig() error = %v", err)
+	}
+
+	if receivedAccount != "9999888877776666" {
+		t.Errorf("GenerateWireGuardConfig() used account %v, want 9999888877776666", receivedAccount)
+	}
+}
+
+func TestGenerateOpenVPNConfigMethod(t *testing.T) {
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	ctx := context.Background()
+	ovpnServer := &vpnprovider.Server{
+		ID:       "de-fra-ovpn-001",
+		Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+			UDPPort:  1194,
+			TCPPort:  443,
+		},
+	}
+
+	config, err := client.GenerateOpenVPNConfig(ctx, ovpnServer, vpnprovider.Credentials{})
+	if err != nil {
+		t.Fatalf("GenerateOpenVPNConfig() error = %v", err)
+	}
+
+	if config.ConfigContent == "" {
+		t.Error("GenerateOpenVPNConfig() ConfigContent is empty")
+	}
+	if config.Username != "1234567890123456" {
+		t.Errorf("GenerateOpenVPNConfig() Username = %v, want 1234567890123456", config.Username)
+	}
+	if config.Password != "m" {
+		t.Errorf("GenerateOpenVPNConfig() Password = %v, want m", config.Password)
+	}
+}
+
+func TestGenerateOpenVPNConfigMethodNoOpenVPNSupport(t *testing.T) {
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	ctx := context.Background()
+	// Server without OpenVPN support
+	server := &vpnprovider.Server{
+		ID:       "se-sto-wg-001",
+		Hostname: "se-sto-wg-001.relays.mullvad.net",
+		WireGuard: &vpnprovider.WireGuardServer{
+			PublicKey: "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
+			Endpoint:  "185.65.134.1:51820",
+		},
+	}
+
+	_, err = client.GenerateOpenVPNConfig(ctx, server, vpnprovider.Credentials{})
+	if err == nil {
+		t.Error("GenerateOpenVPNConfig() expected error for server without OpenVPN support, got nil")
+	}
+}
+
+func TestGenerateOpenVPNConfigMethodWithCustomCredentials(t *testing.T) {
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	ctx := context.Background()
+	ovpnServer := &vpnprovider.Server{
+		ID:       "de-fra-ovpn-001",
+		Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+			UDPPort:  1194,
+			TCPPort:  443,
+		},
+	}
+
+	// Use custom credentials
+	creds := vpnprovider.Credentials{
+		AccountID: "9999888877776666",
+	}
+
+	config, err := client.GenerateOpenVPNConfig(ctx, ovpnServer, creds)
+	if err != nil {
+		t.Fatalf("GenerateOpenVPNConfig() error = %v", err)
+	}
+
+	if config.Username != "9999888877776666" {
+		t.Errorf("GenerateOpenVPNConfig() Username = %v, want 9999888877776666", config.Username)
+	}
+}
+
+func TestGetAccountInfo(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/accounts/v1/accounts/1234567890123456" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(AccountInfo{
+				Account:      "1234567890123456",
+				ExpiryUnix:   1735689600,
+				PrettyExpiry: "2025-01-01",
+			})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	info, err := client.GetAccountInfo(ctx)
+	if err != nil {
+		t.Fatalf("GetAccountInfo() error = %v", err)
+	}
+
+	if info.Account != "1234567890123456" {
+		t.Errorf("GetAccountInfo() Account = %v, want 1234567890123456", info.Account)
+	}
+	if info.ExpiryUnix != 1735689600 {
+		t.Errorf("GetAccountInfo() ExpiryUnix = %v, want 1735689600", info.ExpiryUnix)
+	}
+}
+
+func TestGetAccountInfoUnauthorized(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	_, err = client.GetAccountInfo(ctx)
+	if err != vpnprovider.ErrAuthenticationFailed {
+		t.Errorf("GetAccountInfo() error = %v, want ErrAuthenticationFailed", err)
+	}
+}
+
+func TestGetAccountInfoNotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	_, err = client.GetAccountInfo(ctx)
+	if err != vpnprovider.ErrAuthenticationFailed {
+		t.Errorf("GetAccountInfo() error = %v, want ErrAuthenticationFailed", err)
+	}
+}
+
+func TestGetAccountInfoHTTPError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Server Error"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	_, err = client.GetAccountInfo(ctx)
+	if err == nil {
+		t.Error("GetAccountInfo() expected error for HTTP 500, got nil")
+	}
+}
+
+func TestRegisterWireGuardKeyErrors(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantErr    error
+	}{
+		{
+			name:       "unauthorized",
+			statusCode: http.StatusUnauthorized,
+			body:       "Invalid account",
+			wantErr:    vpnprovider.ErrAuthenticationFailed,
+		},
+		{
+			name:       "rate limited",
+			statusCode: http.StatusTooManyRequests,
+			body:       "Too many requests",
+			wantErr:    vpnprovider.ErrRateLimited,
+		},
+		{
+			name:       "bad request",
+			statusCode: http.StatusBadRequest,
+			body:       "Invalid pubkey format",
+			wantErr:    vpnprovider.ErrKeyRegistrationFailed,
+		},
+		{
+			name:       "bad request with existing key",
+			statusCode: http.StatusBadRequest,
+			body:       "10.64.0.50",
+			wantErr:    nil, // Should succeed as key is already registered
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tt.statusCode)
+				w.Write([]byte(tt.body))
+			}))
+			defer server.Close()
+
+			client, err := NewClient("1234567890123456")
+			if err != nil {
+				t.Fatalf("NewClient() error = %v", err)
+			}
+
+			client.httpClient = &http.Client{
+				Transport: &multiEndpointTransport{
+					baseURL:   server.URL,
+					transport: http.DefaultTransport,
+				},
+				Timeout: 5 * time.Second,
+			}
+
+			ctx := context.Background()
+			_, publicKey, _ := GenerateKeyPair()
+			ip, err := client.RegisterWireGuardKey(ctx, "1234567890123456", publicKey)
+
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Errorf("RegisterWireGuardKey() expected error %v, got nil", tt.wantErr)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("RegisterWireGuardKey() unexpected error: %v", err)
+				}
+				if ip == "" {
+					t.Error("RegisterWireGuardKey() expected IP, got empty string")
+				}
+			}
+		})
+	}
+}
+
+func TestMullvadRelayToServerBridgeType(t *testing.T) {
+	relay := MullvadRelay{
+		Hostname:    "se-sto-br-001",
+		CountryCode: "se",
+		CountryName: "Sweden",
+		CityCode:    "sto",
+		CityName:    "Stockholm",
+		Active:      true,
+		IPv4AddrIn:  "185.65.134.2",
+		Type:        "bridge",
+	}
+
+	server := mullvadRelayToServer(relay)
+
+	if server.OpenVPN == nil {
+		t.Fatal("Bridge server should have OpenVPN info")
+	}
+
+	hasBridgeFeature := false
+	for _, f := range server.Features {
+		if f == "bridge" {
+			hasBridgeFeature = true
+			break
+		}
+	}
+	if !hasBridgeFeature {
+		t.Error("Bridge server should have 'bridge' feature")
+	}
+}
+
+// multiEndpointTransport routes requests to different handlers based on path
+type multiEndpointTransport struct {
+	baseURL   string
+	transport http.RoundTripper
+}
+
+func (t *multiEndpointTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if req.URL.Host == "api.mullvad.net" {
+		req.URL.Scheme = "http"
+		req.URL.Host = t.baseURL[7:] // Remove "http://"
+	}
+	return t.transport.RoundTrip(req)
+}
+
+func TestGetAccountInfoInvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("invalid json"))
+	}))
+	defer server.Close()
+
+	client, err := NewClient("1234567890123456")
+	if err != nil {
+		t.Fatalf("NewClient() error = %v", err)
+	}
+
+	client.httpClient = &http.Client{
+		Transport: &multiEndpointTransport{
+			baseURL:   server.URL,
+			transport: http.DefaultTransport,
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	ctx := context.Background()
+	_, err = client.GetAccountInfo(ctx)
+	if err == nil {
+		t.Error("GetAccountInfo() expected error for invalid JSON, got nil")
+	}
 }

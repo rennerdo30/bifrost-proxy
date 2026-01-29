@@ -218,10 +218,10 @@ func TestNewCommands(t *testing.T) {
 
 	// Check that all subcommands are present
 	subcommands := root.Commands()
-	assert.Len(t, subcommands, 5) // status, backend, config, stats, health
+	assert.Len(t, subcommands, 6) // status, backend, config, rule, stats, health
 
 	// Find and verify each command
-	var statusCmd, backendCmd, configCmd, statsCmd, healthCmd *cobra.Command
+	var statusCmd, backendCmd, configCmd, ruleCmd, statsCmd, healthCmd *cobra.Command
 	for _, cmd := range subcommands {
 		switch cmd.Use {
 		case "status":
@@ -230,6 +230,8 @@ func TestNewCommands(t *testing.T) {
 			backendCmd = cmd
 		case "config":
 			configCmd = cmd
+		case "rule":
+			ruleCmd = cmd
 		case "stats":
 			statsCmd = cmd
 		case "health":
@@ -240,16 +242,21 @@ func TestNewCommands(t *testing.T) {
 	assert.NotNil(t, statusCmd)
 	assert.NotNil(t, backendCmd)
 	assert.NotNil(t, configCmd)
+	assert.NotNil(t, ruleCmd)
 	assert.NotNil(t, statsCmd)
 	assert.NotNil(t, healthCmd)
 
 	// Check backend subcommands
 	backendSubcmds := backendCmd.Commands()
-	assert.Len(t, backendSubcmds, 2) // list, show
+	assert.Len(t, backendSubcmds, 5) // list, show, add, remove, test
 
 	// Check config subcommands
 	configSubcmds := configCmd.Commands()
 	assert.Len(t, configSubcmds, 1) // reload
+
+	// Check rule subcommands
+	ruleSubcmds := ruleCmd.Commands()
+	assert.Len(t, ruleSubcmds, 3) // list, add, remove
 
 	// Check persistent flags
 	apiFlag := root.PersistentFlags().Lookup("api")
@@ -572,4 +579,321 @@ func TestAPIClient_CheckHealth_Error(t *testing.T) {
 	client := NewAPIClient(server.URL, "")
 	err := client.CheckHealth()
 	assert.Error(t, err)
+}
+
+// Test AddBackend success
+func TestAPIClient_AddBackend_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/api/v1/backends", r.URL.Path)
+
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+		assert.Equal(t, "test-backend", req["name"])
+		assert.Equal(t, "direct", req["type"])
+		assert.Equal(t, true, req["enabled"])
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "created",
+			"backend": "test-backend",
+			"type":    "direct",
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddBackend("test-backend", "direct", "{}", true)
+	assert.NoError(t, err)
+}
+
+// Test AddBackend with invalid JSON config
+func TestAPIClient_AddBackend_InvalidConfig(t *testing.T) {
+	client := NewAPIClient("http://localhost:8082", "")
+	err := client.AddBackend("test", "direct", "invalid json", true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid config JSON")
+}
+
+// Test AddBackend with server error
+func TestAPIClient_AddBackend_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"backend already exists"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddBackend("test", "direct", "{}", true)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add backend")
+}
+
+// Test RemoveBackend success
+func TestAPIClient_RemoveBackend_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "DELETE", r.Method)
+		assert.Equal(t, "/api/v1/backends/test-backend", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "removed",
+			"backend": "test-backend",
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.RemoveBackend("test-backend")
+	assert.NoError(t, err)
+}
+
+// Test RemoveBackend with server error
+func TestAPIClient_RemoveBackend_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"backend not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.RemoveBackend("nonexistent")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to remove backend")
+}
+
+// Test TestBackend success
+func TestAPIClient_TestBackend_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/api/v1/backends/test-backend/test", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":   "success",
+			"backend":  "test-backend",
+			"target":   "google.com:443",
+			"duration": "50ms",
+			"healthy":  true,
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.TestBackend("test-backend", "google.com:443", "10s")
+	assert.NoError(t, err)
+}
+
+// Test TestBackend failure
+func TestAPIClient_TestBackend_Failure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":   "failed",
+			"backend":  "test-backend",
+			"target":   "unreachable.host:443",
+			"error":    "connection refused",
+			"duration": "10s",
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.TestBackend("test-backend", "unreachable.host:443", "10s")
+	assert.NoError(t, err) // The command succeeds even if the test fails
+}
+
+// Test TestBackend network error
+func TestAPIClient_TestBackend_NetworkError(t *testing.T) {
+	client := NewAPIClient("http://localhost:99999", "")
+	err := client.TestBackend("test", "google.com:443", "10s")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "request failed")
+}
+
+// Test ListRules success
+func TestAPIClient_ListRules_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "GET", r.Method)
+		assert.Equal(t, "/api/v1/routes", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]map[string]interface{}{
+			{
+				"name":     "anime",
+				"domains":  []string{"*.crunchyroll.com"},
+				"backend":  "germany",
+				"priority": 100,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.ListRules()
+	assert.NoError(t, err)
+}
+
+// Test AddRule success
+func TestAPIClient_AddRule_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/api/v1/routes", r.URL.Path)
+
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+		assert.Equal(t, "anime", req["name"])
+		assert.Equal(t, "germany", req["backend"])
+
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "created",
+			"route":  "anime",
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddRule("anime", "*.crunchyroll.com", "germany", 100)
+	assert.NoError(t, err)
+}
+
+// Test AddRule with server error
+func TestAPIClient_AddRule_ServerError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		w.Write([]byte(`{"error":"rule already exists"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddRule("anime", "*.crunchyroll.com", "germany", 100)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to add rule")
+}
+
+// Test RemoveRule success
+func TestAPIClient_RemoveRule_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "DELETE", r.Method)
+		assert.Equal(t, "/api/v1/routes/anime", r.URL.Path)
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "removed",
+			"route":  "anime",
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.RemoveRule("anime")
+	assert.NoError(t, err)
+}
+
+// Test RemoveRule not found
+func TestAPIClient_RemoveRule_NotFound(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`{"error":"rule not found"}`))
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.RemoveRule("nonexistent")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "failed to remove rule")
+}
+
+// Test ListRules with multiple backends field
+func TestAPIClient_ListRules_MultipleBackends(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]map[string]interface{}{
+			{
+				"name":     "load-balanced",
+				"domains":  []interface{}{"*.example.com", "*.test.com"},
+				"backends": []interface{}{"server1", "server2", "server3"},
+				"priority": 50,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.ListRules()
+	assert.NoError(t, err)
+}
+
+// Test ListRules with empty domains
+func TestAPIClient_ListRules_EmptyDomains(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]map[string]interface{}{
+			{
+				"name":     "default",
+				"domains":  []interface{}{},
+				"backend":  "fallback",
+				"priority": 0,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.ListRules()
+	assert.NoError(t, err)
+}
+
+// Test ListRules with nil backend
+func TestAPIClient_ListRules_NilBackend(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode([]map[string]interface{}{
+			{
+				"name":     "no-backend",
+				"domains":  []interface{}{"*.example.com"},
+				"backend":  nil,
+				"priority": 10,
+			},
+		})
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.ListRules()
+	assert.NoError(t, err)
+}
+
+// Test ListRules error
+func TestAPIClient_ListRules_Error(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.ListRules()
+	assert.Error(t, err)
+}
+
+// Test AddRule with multiple domains
+func TestAPIClient_AddRule_MultiDomain(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&req)
+
+		domains := req["domains"].([]interface{})
+		assert.Len(t, domains, 3)
+		assert.Equal(t, "*.a.com", domains[0])
+		assert.Equal(t, "*.b.com", domains[1])
+		assert.Equal(t, "*.c.com", domains[2])
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	client := NewAPIClient(server.URL, "")
+	err := client.AddRule("multi", "*.a.com, *.b.com, *.c.com", "backend", 10)
+	assert.NoError(t, err)
 }

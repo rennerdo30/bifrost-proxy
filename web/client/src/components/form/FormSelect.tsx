@@ -1,4 +1,4 @@
-import { SelectHTMLAttributes } from 'react'
+import { SelectHTMLAttributes, useId } from 'react'
 
 interface Option {
   value: string
@@ -22,17 +22,26 @@ export function FormSelect({
   onChange,
   options,
   className = '',
+  id: providedId,
   ...props
 }: FormSelectProps) {
+  const generatedId = useId()
+  const selectId = providedId || generatedId
+  const descriptionId = description ? `${selectId}-description` : undefined
+  const errorId = error ? `${selectId}-error` : undefined
+
   return (
     <div className="space-y-1">
-      <label className="block text-sm font-medium text-bifrost-muted">{label}</label>
+      <label htmlFor={selectId} className="block text-sm font-medium text-bifrost-muted">{label}</label>
       {description && (
-        <p className="text-xs text-bifrost-muted/70">{description}</p>
+        <p id={descriptionId} className="text-xs text-bifrost-muted/70">{description}</p>
       )}
       <select
+        id={selectId}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        aria-describedby={[descriptionId, errorId].filter(Boolean).join(' ') || undefined}
+        aria-invalid={error ? 'true' : undefined}
         className={`input ${error ? 'border-bifrost-error focus:ring-bifrost-error' : ''} ${className}`}
         {...props}
       >
@@ -43,7 +52,7 @@ export function FormSelect({
         ))}
       </select>
       {error && (
-        <p className="text-xs text-bifrost-error">{error}</p>
+        <p id={errorId} className="text-xs text-bifrost-error" role="alert">{error}</p>
       )}
     </div>
   )

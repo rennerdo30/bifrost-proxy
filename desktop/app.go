@@ -161,7 +161,7 @@ func (a *App) initClient() error {
 	// Ensure API server is enabled for the desktop app
 	cfg.API.Enabled = true
 	if cfg.API.Listen == "" {
-		cfg.API.Listen = "127.0.0.1:3130"
+		cfg.API.Listen = "127.0.0.1:7383"
 	}
 
 	a.clientCfg = &cfg
@@ -467,7 +467,7 @@ func (a *App) DisableVPN() error {
 // OpenWebDashboard opens the web dashboard in the default browser.
 func (a *App) OpenWebDashboard() error {
 	// Use the API listen address if configured (API server serves the Web UI)
-	url := "http://127.0.0.1:3130"
+	url := "http://127.0.0.1:7383"
 	if a.clientCfg != nil && a.clientCfg.API.Listen != "" {
 		url = "http://" + a.clientCfg.API.Listen
 	}
@@ -617,7 +617,7 @@ func (a *App) RestartClient() error {
 			// Ensure API stays enabled
 			cfg.API.Enabled = true
 			if cfg.API.Listen == "" {
-				cfg.API.Listen = "127.0.0.1:3130"
+				cfg.API.Listen = "127.0.0.1:7383"
 			}
 			a.clientCfg = &cfg
 		}

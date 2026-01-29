@@ -3,10 +3,13 @@ package jwt
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -1188,12 +1191,13 @@ func TestAuthenticator_VerifyHMAC_UnsupportedAlgorithm(t *testing.T) {
 // verifyECDSA Tests
 // ============================================================
 
-func TestAuthenticator_VerifyECDSA_NotImplemented(t *testing.T) {
+func TestAuthenticator_VerifyECDSA_InvalidKeyType(t *testing.T) {
 	a := &Authenticator{}
 
+	// Test with nil key - should fail with "invalid key type"
 	err := a.verifyECDSA("input", []byte("sig"), "ES256", nil)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not implemented")
+	assert.Contains(t, err.Error(), "invalid key type for ECDSA")
 }
 
 // ============================================================
@@ -1774,9 +1778,10 @@ func TestAuthenticator_VerifySignature_ECDSAPath(t *testing.T) {
 	sig := base64URLEncode([]byte("dummy-signature"))
 
 	// validateToken will call verifySignature with ES256
+	// With an invalid key type (string instead of *ecdsa.PublicKey), it should fail
 	_, err := a.validateToken(header + "." + payload + "." + sig)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not implemented")
+	assert.Contains(t, err.Error(), "invalid key type for ECDSA")
 }
 
 func TestAuthenticator_VerifyRSA_UnsupportedHashAlgorithm(t *testing.T) {
@@ -2002,4 +2007,277 @@ func TestAuthenticator_ValidateToken_NoAudienceConfig(t *testing.T) {
 	user, err := authenticator.Authenticate(context.Background(), "", token)
 	require.NoError(t, err)
 	assert.Equal(t, "testuser", user.Username)
+}
+
+// generateTestECKey generates a test EC key pair
+func generateTestECKey(t *testing.T, curve elliptic.Curve) *ecdsa.PrivateKey {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(curve, rand.Reader)
+	require.NoError(t, err)
+	return key
+}
+
+// createECJWT creates a JWT signed with an EC private key
+func createECJWT(t *testing.T, header, payload map[string]any, privateKey *ecdsa.PrivateKey, alg string) string {
+	t.Helper()
+
+	headerJSON, err := json.Marshal(header)
+	require.NoError(t, err)
+	payloadJSON, err := json.Marshal(payload)
+	require.NoError(t, err)
+
+	headerB64 := base64.RawURLEncoding.EncodeToString(headerJSON)
+	payloadB64 := base64.RawURLEncoding.EncodeToString(payloadJSON)
+
+	signingInput := headerB64 + "." + payloadB64
+
+	// Hash the signing input based on algorithm
+	var hash []byte
+	var keyLen int
+	switch alg {
+	case "ES256":
+		h := sha256.Sum256([]byte(signingInput))
+		hash = h[:]
+		keyLen = 32
+	case "ES384":
+		h := sha512.Sum384([]byte(signingInput))
+		hash = h[:]
+		keyLen = 48
+	case "ES512":
+		h := sha512.Sum512([]byte(signingInput))
+		hash = h[:]
+		keyLen = 66
+	default:
+		t.Fatalf("unsupported algorithm: %s", alg)
+	}
+
+	// Sign with ECDSA
+	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hash)
+	require.NoError(t, err)
+
+	// Convert to fixed-length format (R||S)
+	rBytes := r.Bytes()
+	sBytes := s.Bytes()
+
+	// Pad to keyLen bytes
+	signature := make([]byte, keyLen*2)
+	copy(signature[keyLen-len(rBytes):keyLen], rBytes)
+	copy(signature[keyLen*2-len(sBytes):], sBytes)
+
+	sigB64 := base64.RawURLEncoding.EncodeToString(signature)
+
+	return headerB64 + "." + payloadB64 + "." + sigB64
+}
+
+func TestAuthenticator_ECDSA_ES256(t *testing.T) {
+	privateKey := generateTestECKey(t, elliptic.P256())
+
+	a := &Authenticator{
+		config: &jwtConfig{
+			Algorithms:    []string{"ES256"},
+			UsernameClaim: "sub",
+		},
+		keys: map[string]any{"static": &privateKey.PublicKey},
+	}
+
+	header := map[string]any{"alg": "ES256", "typ": "JWT"}
+	claims := map[string]any{
+		"sub": "testuser",
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+	}
+	token := createECJWT(t, header, claims, privateKey, "ES256")
+
+	user, err := a.Authenticate(context.Background(), "", token)
+	require.NoError(t, err)
+	assert.Equal(t, "testuser", user.Username)
+}
+
+func TestAuthenticator_ECDSA_ES384(t *testing.T) {
+	privateKey := generateTestECKey(t, elliptic.P384())
+
+	a := &Authenticator{
+		config: &jwtConfig{
+			Algorithms:    []string{"ES384"},
+			UsernameClaim: "sub",
+		},
+		keys: map[string]any{"static": &privateKey.PublicKey},
+	}
+
+	header := map[string]any{"alg": "ES384", "typ": "JWT"}
+	claims := map[string]any{
+		"sub": "testuser",
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+	}
+	token := createECJWT(t, header, claims, privateKey, "ES384")
+
+	user, err := a.Authenticate(context.Background(), "", token)
+	require.NoError(t, err)
+	assert.Equal(t, "testuser", user.Username)
+}
+
+func TestAuthenticator_ECDSA_ES512(t *testing.T) {
+	privateKey := generateTestECKey(t, elliptic.P521())
+
+	a := &Authenticator{
+		config: &jwtConfig{
+			Algorithms:    []string{"ES512"},
+			UsernameClaim: "sub",
+		},
+		keys: map[string]any{"static": &privateKey.PublicKey},
+	}
+
+	header := map[string]any{"alg": "ES512", "typ": "JWT"}
+	claims := map[string]any{
+		"sub": "testuser",
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+	}
+	token := createECJWT(t, header, claims, privateKey, "ES512")
+
+	user, err := a.Authenticate(context.Background(), "", token)
+	require.NoError(t, err)
+	assert.Equal(t, "testuser", user.Username)
+}
+
+func TestAuthenticator_ECDSA_InvalidSignature(t *testing.T) {
+	privateKey := generateTestECKey(t, elliptic.P256())
+	wrongKey := generateTestECKey(t, elliptic.P256())
+
+	a := &Authenticator{
+		config: &jwtConfig{
+			Algorithms:    []string{"ES256"},
+			UsernameClaim: "sub",
+		},
+		keys: map[string]any{"static": &privateKey.PublicKey},
+	}
+
+	// Sign with wrong key
+	header := map[string]any{"alg": "ES256", "typ": "JWT"}
+	claims := map[string]any{
+		"sub": "testuser",
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+	}
+	token := createECJWT(t, header, claims, wrongKey, "ES256")
+
+	_, err := a.Authenticate(context.Background(), "", token)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "signature verification failed")
+}
+
+func TestParseECKey_Valid(t *testing.T) {
+	tests := []struct {
+		name  string
+		curve elliptic.Curve
+		crv   string
+	}{
+		{"P-256", elliptic.P256(), "P-256"},
+		{"P-384", elliptic.P384(), "P-384"},
+		{"P-521", elliptic.P521(), "P-521"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			privateKey := generateTestECKey(t, tt.curve)
+
+			// Get X and Y coordinates as base64url
+			xBytes := privateKey.PublicKey.X.Bytes()
+			yBytes := privateKey.PublicKey.Y.Bytes()
+
+			// Pad to curve byte size
+			byteLen := (tt.curve.Params().BitSize + 7) / 8
+			xPadded := make([]byte, byteLen)
+			yPadded := make([]byte, byteLen)
+			copy(xPadded[byteLen-len(xBytes):], xBytes)
+			copy(yPadded[byteLen-len(yBytes):], yBytes)
+
+			xB64 := base64.RawURLEncoding.EncodeToString(xPadded)
+			yB64 := base64.RawURLEncoding.EncodeToString(yPadded)
+
+			key, err := parseECKey(tt.crv, xB64, yB64)
+			require.NoError(t, err)
+			assert.Equal(t, privateKey.PublicKey.X, key.X)
+			assert.Equal(t, privateKey.PublicKey.Y, key.Y)
+		})
+	}
+}
+
+func TestParseECKey_InvalidCurve(t *testing.T) {
+	_, err := parseECKey("P-999", "AAAA", "AAAA")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported curve")
+}
+
+func TestParseECKey_InvalidX(t *testing.T) {
+	_, err := parseECKey("P-256", "not-valid-base64!", "AAAA")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid x coordinate")
+}
+
+func TestParseECKey_InvalidY(t *testing.T) {
+	// Valid X but invalid Y
+	privateKey := generateTestECKey(t, elliptic.P256())
+	xBytes := privateKey.PublicKey.X.Bytes()
+	xB64 := base64.RawURLEncoding.EncodeToString(xBytes)
+
+	_, err := parseECKey("P-256", xB64, "not-valid-base64!")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid y coordinate")
+}
+
+func TestParseECKey_PointNotOnCurve(t *testing.T) {
+	// Create valid coordinates that are not on the curve
+	// Just use arbitrary bytes that won't be on the curve
+	x := base64.RawURLEncoding.EncodeToString([]byte("12345678901234567890123456789012"))
+	y := base64.RawURLEncoding.EncodeToString([]byte("12345678901234567890123456789012"))
+
+	_, err := parseECKey("P-256", x, y)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "point is not on the curve")
+}
+
+func TestAuthenticator_RefreshJWKS_WithECKey(t *testing.T) {
+	privateKey := generateTestECKey(t, elliptic.P256())
+
+	// Encode the public key coordinates
+	byteLen := (elliptic.P256().Params().BitSize + 7) / 8
+	xPadded := make([]byte, byteLen)
+	yPadded := make([]byte, byteLen)
+	copy(xPadded[byteLen-len(privateKey.PublicKey.X.Bytes()):], privateKey.PublicKey.X.Bytes())
+	copy(yPadded[byteLen-len(privateKey.PublicKey.Y.Bytes()):], privateKey.PublicKey.Y.Bytes())
+
+	jwks := map[string]any{
+		"keys": []map[string]any{
+			{
+				"kty": "EC",
+				"kid": "ec-key-1",
+				"use": "sig",
+				"crv": "P-256",
+				"x":   base64.RawURLEncoding.EncodeToString(xPadded),
+				"y":   base64.RawURLEncoding.EncodeToString(yPadded),
+			},
+		},
+	}
+	jwksJSON, _ := json.Marshal(jwks)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(jwksJSON)
+	}))
+	defer server.Close()
+
+	a := &Authenticator{
+		config:     &jwtConfig{JWKSURL: server.URL},
+		httpClient: &http.Client{},
+		keys:       make(map[string]any),
+	}
+
+	err := a.refreshJWKS()
+	require.NoError(t, err)
+
+	// Verify the EC key was parsed correctly
+	key, ok := a.keys["ec-key-1"]
+	require.True(t, ok)
+	ecKey, ok := key.(*ecdsa.PublicKey)
+	require.True(t, ok)
+	assert.Equal(t, privateKey.PublicKey.X, ecKey.X)
+	assert.Equal(t, privateKey.PublicKey.Y, ecKey.Y)
 }

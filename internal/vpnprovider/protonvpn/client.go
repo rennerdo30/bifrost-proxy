@@ -3,6 +3,7 @@ package protonvpn
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -293,12 +294,28 @@ func (c *Client) GenerateWireGuardConfig(ctx context.Context, server *vpnprovide
 		return nil, fmt.Errorf("%w: server %s does not support WireGuard", vpnprovider.ErrUnsupportedProtocol, server.Name)
 	}
 
-	// TODO: Implement WireGuard key registration via API
-	// This requires:
-	// 1. Generating a client key pair
-	// 2. POSTing the public key to /vpn/v1/certificate
-	// 3. Receiving the assigned client IP and DNS servers
-	return nil, fmt.Errorf("%w: WireGuard key registration not yet implemented", vpnprovider.ErrConfigGenerationFailed)
+	// Generate a new WireGuard key pair
+	keyPair, err := GenerateWireGuardKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("generate WireGuard key pair: %w", err)
+	}
+
+	c.logger.Debug("generated WireGuard key pair",
+		"provider", c.Name(),
+		"public_key", keyPair.PublicKey)
+
+	// Register the key and build config
+	config, err := c.generateWireGuardConfig(ctx, server, keyPair)
+	if err != nil {
+		return nil, err
+	}
+
+	c.logger.Info("generated WireGuard config",
+		"provider", c.Name(),
+		"server", server.Name,
+		"client_address", config.Address)
+
+	return config, nil
 }
 
 // GenerateOpenVPNConfig generates OpenVPN configuration for a server.
@@ -402,20 +419,195 @@ func (c *Client) checkResponse(resp *http.Response) error {
 	}
 }
 
-// Login authenticates with the ProtonVPN API.
-// Note: ProtonVPN uses the SRP (Secure Remote Password) protocol which is complex.
-// For simplicity, this method currently returns an error recommending manual credentials.
+// AuthInfoResponse represents the response from /auth/info endpoint.
+type AuthInfoResponse struct {
+	Code            int    `json:"Code"`
+	Modulus         string `json:"Modulus"`          // Base64-encoded modulus N
+	ServerEphemeral string `json:"ServerEphemeral"`  // Base64-encoded server public value B
+	Salt            string `json:"Salt"`             // Base64-encoded salt
+	SRPSession      string `json:"SRPSession"`       // Session identifier for auth request
+	Version         int    `json:"Version"`          // SRP version (affects password hashing)
+}
+
+// AuthRequest represents the authentication request to /auth endpoint.
+type AuthRequest struct {
+	Username        string `json:"Username"`
+	ClientEphemeral string `json:"ClientEphemeral"` // Base64-encoded client public value A
+	ClientProof     string `json:"ClientProof"`     // Base64-encoded client proof M1
+	SRPSession      string `json:"SRPSession"`      // Session identifier from auth/info
+}
+
+// AuthResponse represents the response from /auth endpoint.
+type AuthResponse struct {
+	Code         int    `json:"Code"`
+	UID          string `json:"UID"`
+	AccessToken  string `json:"AccessToken"`
+	RefreshToken string `json:"RefreshToken"`
+	TokenType    string `json:"TokenType"`
+	Scope        string `json:"Scope"`
+	ServerProof  string `json:"ServerProof"` // Base64-encoded server proof M2
+}
+
+// Login authenticates with the ProtonVPN API using SRP-6a protocol.
 func (c *Client) Login(ctx context.Context, username, password string) error {
-	// ProtonVPN uses SRP (Secure Remote Password) protocol for authentication.
-	// This is a complex cryptographic protocol that requires:
-	// 1. GET /auth/info to get server parameters (salt, modulus, version)
-	// 2. Compute client proof using SRP-6a
-	// 3. POST /auth with client proof
-	// 4. Verify server proof
-	//
-	// For now, we recommend using manual credentials mode instead.
-	return fmt.Errorf("ProtonVPN API authentication uses SRP protocol which is not yet implemented; " +
-		"please use manual credentials mode with OpenVPN username/password from account.protonvpn.com")
+	c.logger.Debug("starting SRP authentication", "username", username)
+
+	// Step 1: Get auth info (salt, modulus, server ephemeral)
+	authInfo, err := c.getAuthInfo(ctx, username)
+	if err != nil {
+		return fmt.Errorf("get auth info: %w", err)
+	}
+
+	// Parse SRP parameters
+	modulus, err := ParseSRPModulus(authInfo.Modulus)
+	if err != nil {
+		return fmt.Errorf("parse modulus: %w", err)
+	}
+
+	serverB, err := ParseServerPublicValue(authInfo.ServerEphemeral)
+	if err != nil {
+		return fmt.Errorf("parse server ephemeral: %w", err)
+	}
+
+	salt, err := base64.StdEncoding.DecodeString(authInfo.Salt)
+	if err != nil {
+		return fmt.Errorf("decode salt: %w", err)
+	}
+
+	params := &SRPParameters{
+		Modulus:   modulus,
+		Generator: srpGenerator,
+		Salt:      salt,
+		ServerB:   serverB,
+		Version:   authInfo.Version,
+	}
+
+	// Step 2: Create SRP session and compute proofs
+	srpSession, err := NewSRPSession(username, password, params)
+	if err != nil {
+		return fmt.Errorf("create SRP session: %w", err)
+	}
+
+	// Step 3: Send authentication request
+	authResp, err := c.sendAuthRequest(ctx, username, srpSession, authInfo.SRPSession)
+	if err != nil {
+		return fmt.Errorf("send auth request: %w", err)
+	}
+
+	// Step 4: Verify server proof
+	serverProof, err := base64.StdEncoding.DecodeString(authResp.ServerProof)
+	if err != nil {
+		return fmt.Errorf("decode server proof: %w", err)
+	}
+
+	if !srpSession.VerifyServerProof(serverProof) {
+		return fmt.Errorf("%w: server proof verification failed", vpnprovider.ErrAuthenticationFailed)
+	}
+
+	// Step 5: Store session
+	c.session = &Session{
+		UID:          authResp.UID,
+		AccessToken:  authResp.AccessToken,
+		RefreshToken: authResp.RefreshToken,
+		TokenType:    authResp.TokenType,
+	}
+	c.authMode = AuthModeAPI
+
+	if c.sessionStore != nil {
+		if err := c.sessionStore.Save(c.session); err != nil {
+			c.logger.Warn("failed to persist session", "error", err)
+		}
+	}
+
+	c.logger.Info("SRP authentication successful", "username", username)
+
+	return nil
+}
+
+// getAuthInfo fetches authentication info from the server.
+func (c *Client) getAuthInfo(ctx context.Context, username string) (*AuthInfoResponse, error) {
+	url := c.baseURL + "/auth/info"
+
+	reqBody := map[string]string{"Username": username}
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", vpnprovider.ErrProviderUnavailable, err)
+	}
+	defer resp.Body.Close()
+
+	if err := c.checkResponse(resp); err != nil {
+		return nil, err
+	}
+
+	var result AuthInfoResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if result.Code != 1000 {
+		return nil, fmt.Errorf("%w: API returned code %d", vpnprovider.ErrAuthenticationFailed, result.Code)
+	}
+
+	return &result, nil
+}
+
+// sendAuthRequest sends the authentication request with SRP proof.
+func (c *Client) sendAuthRequest(ctx context.Context, username string, srpSession *SRPSession, sessionID string) (*AuthResponse, error) {
+	url := c.baseURL + "/auth"
+
+	authReq := AuthRequest{
+		Username:        username,
+		ClientEphemeral: srpSession.GetPublicA(),
+		ClientProof:     srpSession.GetClientProof(),
+		SRPSession:      sessionID,
+	}
+
+	jsonBody, err := json.Marshal(authReq)
+	if err != nil {
+		return nil, fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("create request: %w", err)
+	}
+
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", vpnprovider.ErrProviderUnavailable, err)
+	}
+	defer resp.Body.Close()
+
+	if err := c.checkResponse(resp); err != nil {
+		return nil, err
+	}
+
+	var result AuthResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	if result.Code != 1000 {
+		return nil, fmt.Errorf("%w: API returned code %d", vpnprovider.ErrAuthenticationFailed, result.Code)
+	}
+
+	return &result, nil
 }
 
 // Logout clears the current session.

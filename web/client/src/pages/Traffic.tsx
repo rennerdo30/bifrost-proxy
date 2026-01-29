@@ -4,44 +4,83 @@ import { api } from '../api/client'
 import { StatsCards } from '../components/Traffic/StatsCards'
 import { TrafficTable } from '../components/Traffic/TrafficTable'
 
+const PAGE_SIZE = 100
+
 export function Traffic() {
   const [filter, setFilter] = useState('')
+  const [limit, setLimit] = useState(PAGE_SIZE)
+  const [showErrorsOnly, setShowErrorsOnly] = useState(false)
   const queryClient = useQueryClient()
 
-  const { data: entries = [], isLoading, isError, error } = useQuery({
-    queryKey: ['entries'],
-    queryFn: () => api.getEntries(100),
+  // Fetch all entries for normal view
+  const { data: entries = [], isLoading, isError, error, isFetching } = useQuery({
+    queryKey: ['entries', limit],
+    queryFn: () => api.getEntries(limit),
     refetchInterval: 3000,
+    enabled: !showErrorsOnly,
   })
+
+  // Fetch errors only when that filter is active
+  const { data: errorEntries = [], isLoading: errorsLoading, isError: errorsError, error: errorsFetchError, isFetching: errorsFetching } = useQuery({
+    queryKey: ['errors'],
+    queryFn: () => api.getErrors(),
+    refetchInterval: 3000,
+    enabled: showErrorsOnly,
+  })
+
+  const displayEntries = showErrorsOnly ? errorEntries : entries
+  const displayIsLoading = showErrorsOnly ? errorsLoading : isLoading
+  const displayIsError = showErrorsOnly ? errorsError : isError
+  const displayError = showErrorsOnly ? errorsFetchError : error
+  const displayIsFetching = showErrorsOnly ? errorsFetching : isFetching
+
+  const loadMore = () => {
+    setLimit(prev => prev + PAGE_SIZE)
+  }
 
   const handleClear = async () => {
     await api.clearEntries()
     queryClient.invalidateQueries({ queryKey: ['entries'] })
+    queryClient.invalidateQueries({ queryKey: ['errors'] })
   }
 
   const filteredEntries = filter
-    ? entries.filter(e =>
+    ? displayEntries.filter(e =>
         e.host.toLowerCase().includes(filter.toLowerCase()) ||
         (e.path || '').toLowerCase().includes(filter.toLowerCase())
       )
-    : entries
+    : displayEntries
 
   return (
     <div className="space-y-6">
-      <StatsCards entries={entries} />
+      <StatsCards entries={displayEntries} />
 
       <div className="flex items-center justify-between gap-4">
-        <div className="relative flex-1 max-w-md">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-bifrost-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Filter by host or path..."
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            className="input pl-10"
-          />
+        <div className="flex items-center gap-3 flex-1">
+          <div className="relative flex-1 max-w-md">
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-bifrost-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Filter by host or path..."
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              className="input pl-10"
+            />
+          </div>
+
+          {/* Errors Only Toggle */}
+          <button
+            onClick={() => setShowErrorsOnly(!showErrorsOnly)}
+            className={`btn ${showErrorsOnly ? 'btn-danger' : 'btn-secondary'}`}
+            aria-label={showErrorsOnly ? 'Show all entries' : 'Show errors only'}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            {showErrorsOnly ? 'Errors Only' : 'All'}
+          </button>
         </div>
 
         <button onClick={handleClear} className="btn btn-danger">
@@ -52,21 +91,53 @@ export function Traffic() {
         </button>
       </div>
 
-      {isError ? (
+      {displayIsError ? (
         <div className="card text-center py-12 border-bifrost-error/30">
           <svg className="w-12 h-12 mx-auto text-bifrost-error mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
           </svg>
           <p className="text-bifrost-error">Failed to load traffic data</p>
-          <p className="text-sm text-bifrost-muted mt-1">{error instanceof Error ? error.message : 'Unknown error'}</p>
+          <p className="text-sm text-bifrost-muted mt-1">{displayError instanceof Error ? displayError.message : 'Unknown error'}</p>
         </div>
-      ) : isLoading ? (
+      ) : displayIsLoading ? (
         <div className="card text-center py-12">
           <div className="animate-spin w-8 h-8 border-2 border-bifrost-accent border-t-transparent rounded-full mx-auto" />
           <p className="text-bifrost-muted mt-4">Loading traffic data...</p>
         </div>
       ) : (
-        <TrafficTable entries={filteredEntries} />
+        <>
+          <TrafficTable entries={filteredEntries} />
+
+          {/* Pagination footer */}
+          <div className="flex items-center justify-between text-sm text-bifrost-muted">
+            <span>
+              Showing {filteredEntries.length} of {displayEntries.length} entries
+              {filter && ` (filtered)`}
+              {showErrorsOnly && ' (errors only)'}
+            </span>
+            {!showErrorsOnly && displayEntries.length >= limit && (
+              <button
+                onClick={loadMore}
+                disabled={displayIsFetching}
+                className="btn btn-secondary flex items-center gap-2"
+              >
+                {displayIsFetching ? (
+                  <>
+                    <div className="animate-spin w-4 h-4 border-2 border-bifrost-accent border-t-transparent rounded-full" />
+                    Loading...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                    Load More
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </>
       )}
     </div>
   )

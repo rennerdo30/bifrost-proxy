@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Modal } from '../Modal'
 import { ArrayInput } from '../ArrayInput'
 import type { RouteConfig } from '../../../api/types'
@@ -33,7 +33,7 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
     }
   }, [route])
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     // Validation
     const validDomains = form.domains.filter((d) => d.trim())
     if (validDomains.length === 0) {
@@ -65,20 +65,23 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
     }
 
     onSave(savedRoute)
-  }
+  }, [form, useMultipleBackends, onSave])
 
-  const updateForm = (field: string, value: unknown) => {
+  const updateForm = useCallback((field: string, value: unknown) => {
     setForm((prev) => ({ ...prev, [field]: value }))
     setError(null)
-  }
+  }, [])
 
-  const toggleBackend = (backendName: string) => {
-    const current = form.backends || []
-    const updated = current.includes(backendName)
-      ? current.filter((b) => b !== backendName)
-      : [...current, backendName]
-    updateForm('backends', updated)
-  }
+  const toggleBackend = useCallback((backendName: string) => {
+    setForm((prev) => {
+      const current = prev.backends || []
+      const updated = current.includes(backendName)
+        ? current.filter((b) => b !== backendName)
+        : [...current, backendName]
+      return { ...prev, backends: updated }
+    })
+    setError(null)
+  }, [])
 
   return (
     <Modal

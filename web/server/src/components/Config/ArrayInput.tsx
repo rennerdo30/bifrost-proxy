@@ -1,3 +1,5 @@
+import { useCallback } from 'react'
+
 interface ArrayInputProps {
   values: string[]
   onChange: (values: string[]) => void
@@ -6,25 +8,25 @@ interface ArrayInputProps {
 }
 
 export function ArrayInput({ values, onChange, placeholder = 'Enter value...', label }: ArrayInputProps) {
-  const addItem = () => {
+  const addItem = useCallback(() => {
     onChange([...values, ''])
-  }
+  }, [values, onChange])
 
-  const updateItem = (index: number, value: string) => {
+  const updateItem = useCallback((index: number, value: string) => {
     const updated = [...values]
     updated[index] = value
     onChange(updated)
-  }
+  }, [values, onChange])
 
-  const removeItem = (index: number) => {
+  const removeItem = useCallback((index: number) => {
     onChange(values.filter((_, i) => i !== index))
-  }
+  }, [values, onChange])
 
   return (
     <div className="space-y-2">
       {label && <label className="block text-sm font-medium text-gray-300">{label}</label>}
       {values.map((value, index) => (
-        <div key={index} className="flex gap-2">
+        <div key={`item-${value || 'empty'}-${index}`} className="flex gap-2">
           <input
             type="text"
             value={value}

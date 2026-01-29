@@ -2,8 +2,10 @@
 package server
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -21,20 +23,22 @@ import (
 
 // API provides the REST API for Bifrost server.
 type API struct {
-	backends      *backend.Manager
-	healthManager *health.Manager
-	cacheManager  *cache.Manager
-	token         string
-	getConfig     func() interface{}
-	getFullConfig func() *config.ServerConfig
-	reloadConfig  func() error
-	saveConfig    func(*config.ServerConfig) error
-	configPath    string
-	wsHub         *WebSocketHub
-	pacGenerator  *PACGenerator
-	requestLog    *RequestLog
-	connTracker   *ConnectionTracker
-	cacheAPI      *CacheAPI
+	backends       *backend.Manager
+	backendFactory *backend.Factory
+	healthManager  *health.Manager
+	cacheManager   *cache.Manager
+	token          string
+	getConfig      func() interface{}
+	getFullConfig  func() *config.ServerConfig
+	reloadConfig   func() error
+	saveConfig     func(*config.ServerConfig) error
+	configPath     string
+	wsHub          *WebSocketHub
+	pacGenerator   *PACGenerator
+	requestLog     *RequestLog
+	connTracker    *ConnectionTracker
+	cacheAPI       *CacheAPI
+	meshAPI        *MeshAPI
 }
 
 // Config holds API configuration.
@@ -86,20 +90,25 @@ func New(cfg Config) *API {
 		cacheAPI = NewCacheAPI(cfg.CacheManager)
 	}
 
+	// Create mesh API for P2P mesh networking
+	meshAPI := NewMeshAPI()
+
 	return &API{
-		backends:      cfg.Backends,
-		healthManager: cfg.HealthManager,
-		cacheManager:  cfg.CacheManager,
-		token:         cfg.Token,
-		getConfig:     cfg.GetConfig,
-		getFullConfig: cfg.GetFullConfig,
-		reloadConfig:  cfg.ReloadConfig,
-		saveConfig:    cfg.SaveConfig,
-		configPath:    cfg.ConfigPath,
-		pacGenerator:  pacGen,
-		requestLog:    requestLog,
-		connTracker:   NewConnectionTracker(),
-		cacheAPI:      cacheAPI,
+		backends:       cfg.Backends,
+		backendFactory: backend.NewFactory(),
+		healthManager:  cfg.HealthManager,
+		cacheManager:   cfg.CacheManager,
+		token:          cfg.Token,
+		getConfig:      cfg.GetConfig,
+		getFullConfig:  cfg.GetFullConfig,
+		reloadConfig:   cfg.ReloadConfig,
+		saveConfig:     cfg.SaveConfig,
+		configPath:     cfg.ConfigPath,
+		pacGenerator:   pacGen,
+		requestLog:     requestLog,
+		connTracker:    NewConnectionTracker(),
+		cacheAPI:       cacheAPI,
+		meshAPI:        meshAPI,
 	}
 }
 
@@ -139,8 +148,11 @@ func (a *API) Router() http.Handler {
 	// Backend routes
 	r.Route("/api/v1/backends", func(r chi.Router) {
 		r.Get("/", a.handleListBackends)
+		r.Post("/", a.handleAddBackend)
 		r.Get("/{name}", a.handleGetBackend)
+		r.Delete("/{name}", a.handleRemoveBackend)
 		r.Get("/{name}/stats", a.handleGetBackendStats)
+		r.Post("/{name}/test", a.handleTestBackend)
 	})
 
 	// Config routes
@@ -175,6 +187,7 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 	if a.token != "" {
 		r.Group(func(r chi.Router) {
 			r.Use(a.authMiddleware)
+			r.Use(a.csrfMiddleware)
 			a.addAPIRoutes(r)
 
 			// WebSocket route (with auth - uses query param token for WS connections)
@@ -183,6 +196,7 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 			}
 		})
 	} else {
+		r.Use(a.csrfMiddleware)
 		a.addAPIRoutes(r)
 
 		// WebSocket route (no auth when token not configured)
@@ -214,8 +228,11 @@ func (a *API) addAPIRoutes(r chi.Router) {
 
 	r.Route("/api/v1/backends", func(r chi.Router) {
 		r.Get("/", a.handleListBackends)
+		r.Post("/", a.handleAddBackend)
 		r.Get("/{name}", a.handleGetBackend)
+		r.Delete("/{name}", a.handleRemoveBackend)
 		r.Get("/{name}/stats", a.handleGetBackendStats)
+		r.Post("/{name}/test", a.handleTestBackend)
 	})
 
 	r.Route("/api/v1/config", func(r chi.Router) {
@@ -240,9 +257,21 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		r.Get("/clients", a.handleGetClients)
 	})
 
+	// Routing rules endpoints
+	r.Route("/api/v1/routes", func(r chi.Router) {
+		r.Get("/", a.handleListRoutes)
+		r.Post("/", a.handleAddRoute)
+		r.Delete("/{name}", a.handleRemoveRoute)
+	})
+
 	// Cache routes
 	if a.cacheAPI != nil {
 		a.cacheAPI.RegisterRoutes(r)
+	}
+
+	// Mesh networking routes
+	if a.meshAPI != nil {
+		a.meshAPI.RegisterRoutes(r)
 	}
 }
 
@@ -271,6 +300,24 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+// csrfMiddleware provides CSRF protection for mutating requests.
+// Requires X-Requested-With header on POST/PUT/DELETE requests.
+// This prevents CSRF attacks because custom headers cannot be sent cross-origin
+// without CORS preflight approval (which is not configured).
+func (a *API) csrfMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only check mutating methods
+		if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
+			// Require X-Requested-With header (standard CSRF mitigation)
+			if r.Header.Get("X-Requested-With") != "XMLHttpRequest" {
+				http.Error(w, "CSRF validation failed: missing X-Requested-With header", http.StatusForbidden)
+				return
+			}
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -410,6 +457,386 @@ func (a *API) handleGetBackendStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.writeJSON(w, http.StatusOK, b.Stats())
+}
+
+// handleAddBackend adds a new backend to the manager.
+func (a *API) handleAddBackend(w http.ResponseWriter, r *http.Request) {
+	var cfg config.BackendConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Validate required fields
+	if cfg.Name == "" {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Backend name is required",
+		})
+		return
+	}
+	if cfg.Type == "" {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Backend type is required",
+		})
+		return
+	}
+
+	// Check if backend already exists
+	if _, err := a.backends.Get(cfg.Name); err == nil {
+		a.writeJSON(w, http.StatusConflict, map[string]interface{}{
+			"error":   "Backend already exists",
+			"backend": cfg.Name,
+		})
+		return
+	}
+
+	// Create the backend using the factory
+	newBackend, err := a.backendFactory.Create(cfg)
+	if err != nil {
+		slog.Error("failed to create backend", "name", cfg.Name, "type", cfg.Type, "error", err)
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":   "Failed to create backend",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Add to manager
+	if err := a.backends.Add(newBackend); err != nil {
+		slog.Error("failed to add backend to manager", "name", cfg.Name, "error", err)
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error":   "Failed to add backend",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Start the backend if enabled
+	if cfg.Enabled {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := newBackend.Start(ctx); err != nil {
+			slog.Warn("failed to start backend", "name", cfg.Name, "error", err)
+			// Don't fail the request, just warn - the backend is added but not started
+		}
+	}
+
+	slog.Info("backend added via API", "name", cfg.Name, "type", cfg.Type, "enabled", cfg.Enabled)
+	a.writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"status":  "created",
+		"backend": cfg.Name,
+		"type":    cfg.Type,
+	})
+}
+
+// handleRemoveBackend removes a backend from the manager.
+func (a *API) handleRemoveBackend(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	// Get the backend first to stop it
+	b, err := a.backends.Get(name)
+	if err != nil {
+		a.writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"error":   "Backend not found",
+			"backend": name,
+		})
+		return
+	}
+
+	// Stop the backend gracefully
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := b.Stop(ctx); err != nil {
+		slog.Warn("error stopping backend during removal", "name", name, "error", err)
+		// Continue with removal even if stop fails
+	}
+
+	// Remove from manager
+	if err := a.backends.Remove(name); err != nil {
+		slog.Error("failed to remove backend", "name", name, "error", err)
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error":   "Failed to remove backend",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	slog.Info("backend removed via API", "name", name)
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "removed",
+		"backend": name,
+	})
+}
+
+// handleTestBackend tests connectivity through a specific backend.
+func (a *API) handleTestBackend(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	b, err := a.backends.Get(name)
+	if err != nil {
+		a.writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"error":   "Backend not found",
+			"backend": name,
+		})
+		return
+	}
+
+	// Parse optional test parameters
+	var testReq struct {
+		Target  string `json:"target"`
+		Timeout string `json:"timeout"`
+	}
+	// Ignore decode errors - use defaults
+	_ = json.NewDecoder(r.Body).Decode(&testReq)
+
+	target := testReq.Target
+	if target == "" {
+		target = "google.com:443" // Default test target
+	}
+
+	timeout := 10 * time.Second
+	if testReq.Timeout != "" {
+		if d, err := time.ParseDuration(testReq.Timeout); err == nil {
+			timeout = d
+		}
+	}
+
+	// Perform connectivity test
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	start := time.Now()
+	conn, err := b.Dial(ctx, "tcp", target)
+	duration := time.Since(start)
+
+	if err != nil {
+		slog.Warn("backend test failed", "name", name, "target", target, "error", err)
+		a.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"status":   "failed",
+			"backend":  name,
+			"target":   target,
+			"error":    err.Error(),
+			"duration": duration.String(),
+		})
+		return
+	}
+	conn.Close()
+
+	slog.Info("backend test succeeded", "name", name, "target", target, "duration", duration)
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":   "success",
+		"backend":  name,
+		"target":   target,
+		"duration": duration.String(),
+		"healthy":  b.IsHealthy(),
+	})
+}
+
+// handleListRoutes lists all configured routes.
+func (a *API) handleListRoutes(w http.ResponseWriter, r *http.Request) {
+	if a.getFullConfig == nil {
+		a.writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"error": "Config retrieval not available",
+		})
+		return
+	}
+
+	cfg := a.getFullConfig()
+	if cfg == nil {
+		a.writeJSON(w, http.StatusOK, []config.RouteConfig{})
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, cfg.Routes)
+}
+
+// handleAddRoute adds a new route to the configuration.
+func (a *API) handleAddRoute(w http.ResponseWriter, r *http.Request) {
+	if a.getFullConfig == nil || a.saveConfig == nil {
+		a.writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"error": "Config management not available",
+		})
+		return
+	}
+
+	var newRoute config.RouteConfig
+	if err := json.NewDecoder(r.Body).Decode(&newRoute); err != nil {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":   "Invalid request body",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Validate required fields
+	if newRoute.Name == "" {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Route name is required",
+		})
+		return
+	}
+	if len(newRoute.Domains) == 0 {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "At least one domain pattern is required",
+		})
+		return
+	}
+	if newRoute.Backend == "" && len(newRoute.Backends) == 0 {
+		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error": "Backend or backends is required",
+		})
+		return
+	}
+
+	// Get current config
+	cfg := a.getFullConfig()
+	if cfg == nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to get current config",
+		})
+		return
+	}
+
+	// Check if route with same name already exists
+	for _, route := range cfg.Routes {
+		if route.Name == newRoute.Name {
+			a.writeJSON(w, http.StatusConflict, map[string]interface{}{
+				"error": "Route with this name already exists",
+				"route": newRoute.Name,
+			})
+			return
+		}
+	}
+
+	// Validate backend exists
+	if newRoute.Backend != "" {
+		if _, err := a.backends.Get(newRoute.Backend); err != nil {
+			a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"error":   "Backend not found",
+				"backend": newRoute.Backend,
+			})
+			return
+		}
+	}
+	for _, backendName := range newRoute.Backends {
+		if _, err := a.backends.Get(backendName); err != nil {
+			a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
+				"error":   "Backend not found",
+				"backend": backendName,
+			})
+			return
+		}
+	}
+
+	// Add route to config
+	cfg.Routes = append(cfg.Routes, newRoute)
+
+	// Save config
+	if err := a.saveConfig(cfg); err != nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error":   "Failed to save config",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Reload config to apply changes
+	if a.reloadConfig != nil {
+		if err := a.reloadConfig(); err != nil {
+			slog.Warn("failed to reload config after adding route", "route", newRoute.Name, "error", err)
+			a.writeJSON(w, http.StatusCreated, map[string]interface{}{
+				"status":          "created",
+				"route":           newRoute.Name,
+				"warning":         "Config saved but reload failed",
+				"reload_error":    err.Error(),
+				"restart_required": true,
+			})
+			return
+		}
+	}
+
+	slog.Info("route added via API", "name", newRoute.Name, "domains", newRoute.Domains, "backend", newRoute.Backend)
+	a.writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"status":  "created",
+		"route":   newRoute.Name,
+		"domains": newRoute.Domains,
+		"backend": newRoute.Backend,
+	})
+}
+
+// handleRemoveRoute removes a route from the configuration.
+func (a *API) handleRemoveRoute(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	if a.getFullConfig == nil || a.saveConfig == nil {
+		a.writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"error": "Config management not available",
+		})
+		return
+	}
+
+	// Get current config
+	cfg := a.getFullConfig()
+	if cfg == nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to get current config",
+		})
+		return
+	}
+
+	// Find and remove route
+	found := false
+	newRoutes := make([]config.RouteConfig, 0, len(cfg.Routes))
+	for _, route := range cfg.Routes {
+		if route.Name == name {
+			found = true
+			continue
+		}
+		newRoutes = append(newRoutes, route)
+	}
+
+	if !found {
+		a.writeJSON(w, http.StatusNotFound, map[string]interface{}{
+			"error": "Route not found",
+			"route": name,
+		})
+		return
+	}
+
+	cfg.Routes = newRoutes
+
+	// Save config
+	if err := a.saveConfig(cfg); err != nil {
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error":   "Failed to save config",
+			"message": err.Error(),
+		})
+		return
+	}
+
+	// Reload config to apply changes
+	if a.reloadConfig != nil {
+		if err := a.reloadConfig(); err != nil {
+			slog.Warn("failed to reload config after removing route", "route", name, "error", err)
+			a.writeJSON(w, http.StatusOK, map[string]interface{}{
+				"status":          "removed",
+				"route":           name,
+				"warning":         "Config saved but reload failed",
+				"reload_error":    err.Error(),
+				"restart_required": true,
+			})
+			return
+		}
+	}
+
+	slog.Info("route removed via API", "name", name)
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "removed",
+		"route":  name,
+	})
 }
 
 func (a *API) handleGetConfig(w http.ResponseWriter, r *http.Request) {

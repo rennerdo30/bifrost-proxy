@@ -89,4 +89,3 @@ api:
   enabled: true               # Enable REST API
   listen: ":7082"             # Address to listen on for the API
   # token: "your-api-token"   # Optional API authentication token
-`

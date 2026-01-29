@@ -8,7 +8,7 @@
 
 **Repository**: `github.com/rennerdo30/bifrost-proxy`
 **License**: MIT
-**Go Version**: 1.23+
+**Go Version**: 1.24+
 
 ## Critical Rules
 
@@ -87,7 +87,7 @@ web/
 ├── server/          # React + TypeScript dashboard (builds to internal/api/server/static/)
 └── client/          # React + TypeScript dashboard (builds to internal/api/client/static/)
 
-docs/                # MkDocs documentation (deployed to GitHub Pages)
+docs/                # Astro/Starlight documentation (deployed to GitHub Pages)
 ```
 
 ## Key Implementation Details

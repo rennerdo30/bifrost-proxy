@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ClientConfig, getAPIConfig, setAPIConfig } from '../services/api'
+import { useToast } from '../components/Toast'
 
 interface SettingItemProps {
   title: string
@@ -48,6 +49,7 @@ function SettingSection({ title, children }: { title: string; children: React.Re
 export function SettingsScreen() {
   const queryClient = useQueryClient()
   const apiConfig = getAPIConfig()
+  const { showToast } = useToast()
 
   const {
     data: config,
@@ -70,7 +72,7 @@ export function SettingsScreen() {
       queryClient.invalidateQueries({ queryKey: ['config'] })
     },
     onError: (err) => {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update settings')
+      showToast(err instanceof Error ? err.message : 'Failed to update settings', 'error')
     },
   })
 
@@ -78,10 +80,10 @@ export function SettingsScreen() {
     mutationFn: api.clearCache,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['status'] })
-      Alert.alert('Success', 'Cache cleared successfully')
+      showToast('Cache cleared successfully', 'success')
     },
     onError: (err) => {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to clear cache')
+      showToast(err instanceof Error ? err.message : 'Failed to clear cache', 'error')
     },
   })
 
@@ -115,7 +117,7 @@ export function SettingsScreen() {
       },
     } as Partial<ClientConfig>)
 
-    Alert.alert('Settings', 'Server address saved')
+    showToast('Server address saved', 'success')
   }
 
   const handleClearData = () => {
@@ -134,7 +136,7 @@ export function SettingsScreen() {
   }
 
   // Local state for server address input (initialized from config)
-  const [serverAddress, setServerAddress] = React.useState('')
+  const [serverAddress, setServerAddress] = useState('')
 
   useEffect(() => {
     if (config?.server?.address) {
@@ -204,7 +206,7 @@ export function SettingsScreen() {
         >
           <TouchableOpacity
             style={styles.linkButton}
-            onPress={() => Alert.alert('Split Tunneling', 'Configure split tunneling rules in the VPN settings.')}
+            onPress={() => showToast('Configure split tunneling rules in the VPN settings.', 'info')}
           >
             <Text style={styles.linkButtonText}>Configure</Text>
           </TouchableOpacity>
@@ -303,9 +305,6 @@ export function SettingsScreen() {
     </ScrollView>
   )
 }
-
-// Need to import React for useState
-import React from 'react'
 
 const styles = StyleSheet.create({
   container: {

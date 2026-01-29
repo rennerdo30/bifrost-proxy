@@ -5,6 +5,8 @@ package jwt
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/hmac"
 	"crypto/rsa"
 	"crypto/x509"
@@ -267,6 +269,7 @@ type Authenticator struct {
 	keys       map[string]any
 	keysMu     sync.RWMutex
 	stopCh     chan struct{}
+	closeOnce  sync.Once
 }
 
 // Authenticate validates a JWT token.
@@ -488,9 +491,52 @@ func (a *Authenticator) verifyRSA(signingInput string, signature []byte, alg str
 
 // verifyECDSA verifies an ECDSA signature.
 func (a *Authenticator) verifyECDSA(signingInput string, signature []byte, alg string, key any) error {
-	// ECDSA verification requires the ecdsa package
-	// This is a simplified implementation
-	return fmt.Errorf("ECDSA verification not implemented in minimal JWT plugin")
+	ecdsaKey, ok := key.(*ecdsa.PublicKey)
+	if !ok {
+		return fmt.Errorf("invalid key type for ECDSA: expected *ecdsa.PublicKey, got %T", key)
+	}
+
+	// Determine the expected signature length and hash function based on algorithm
+	hashFunc, cryptoHash := getHashFunc(alg)
+	var sigLen int
+
+	switch alg {
+	case "ES256":
+		sigLen = 64 // 32 bytes for R + 32 bytes for S
+	case "ES384":
+		sigLen = 96 // 48 bytes for R + 48 bytes for S
+	case "ES512":
+		sigLen = 132 // 66 bytes for R + 66 bytes for S
+	default:
+		return fmt.Errorf("unsupported ECDSA algorithm: %s", alg)
+	}
+
+	if hashFunc == nil || !cryptoHash.Available() {
+		return fmt.Errorf("hash algorithm not available for %s", alg)
+	}
+
+	// ECDSA signatures in JWT are in R||S format (raw concatenated big integers)
+	// Each component is keyLen bytes
+	if len(signature) != sigLen {
+		return fmt.Errorf("invalid ECDSA signature length: expected %d, got %d", sigLen, len(signature))
+	}
+
+	// Split signature into R and S components
+	keyLen := sigLen / 2
+	r := new(big.Int).SetBytes(signature[:keyLen])
+	s := new(big.Int).SetBytes(signature[keyLen:])
+
+	// Hash the signing input
+	h := hashFunc()
+	h.Write([]byte(signingInput))
+	hashed := h.Sum(nil)
+
+	// Verify the signature
+	if !ecdsa.Verify(ecdsaKey, hashed, r, s) {
+		return fmt.Errorf("ECDSA signature verification failed")
+	}
+
+	return nil
 }
 
 // verifyHMAC verifies an HMAC signature.
@@ -552,8 +598,13 @@ func (a *Authenticator) refreshJWKS() error {
 			Kty string `json:"kty"`
 			Kid string `json:"kid"`
 			Use string `json:"use"`
-			N   string `json:"n"`
-			E   string `json:"e"`
+			// RSA fields
+			N string `json:"n"`
+			E string `json:"e"`
+			// EC fields
+			Crv string `json:"crv"`
+			X   string `json:"x"`
+			Y   string `json:"y"`
 		}
 		if err := json.Unmarshal(keyJSON, &keyInfo); err != nil {
 			slog.Warn("failed to parse JWK", "error", err)
@@ -570,6 +621,13 @@ func (a *Authenticator) refreshJWKS() error {
 			key, err := parseRSAKey(keyInfo.N, keyInfo.E)
 			if err != nil {
 				slog.Warn("failed to parse RSA key", "kid", keyInfo.Kid, "error", err)
+				continue
+			}
+			newKeys[keyInfo.Kid] = key
+		case "EC":
+			key, err := parseECKey(keyInfo.Crv, keyInfo.X, keyInfo.Y)
+			if err != nil {
+				slog.Warn("failed to parse EC key", "kid", keyInfo.Kid, "error", err)
 				continue
 			}
 			newKeys[keyInfo.Kid] = key
@@ -628,6 +686,49 @@ func parseRSAKey(nStr, eStr string) (*rsa.PublicKey, error) {
 	return &rsa.PublicKey{N: n, E: e}, nil
 }
 
+// parseECKey parses EC key components from base64url encoded strings.
+func parseECKey(crv, xStr, yStr string) (*ecdsa.PublicKey, error) {
+	// Determine the curve based on the crv parameter
+	var curve elliptic.Curve
+	switch crv {
+	case "P-256":
+		curve = elliptic.P256()
+	case "P-384":
+		curve = elliptic.P384()
+	case "P-521":
+		curve = elliptic.P521()
+	default:
+		return nil, fmt.Errorf("unsupported curve: %s", crv)
+	}
+
+	// Decode X coordinate
+	xBytes, err := base64.RawURLEncoding.DecodeString(xStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid x coordinate: %w", err)
+	}
+
+	// Decode Y coordinate
+	yBytes, err := base64.RawURLEncoding.DecodeString(yStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid y coordinate: %w", err)
+	}
+
+	// Create the public key
+	x := new(big.Int).SetBytes(xBytes)
+	y := new(big.Int).SetBytes(yBytes)
+
+	// Verify the point is on the curve
+	if !curve.IsOnCurve(x, y) {
+		return nil, fmt.Errorf("point is not on the curve")
+	}
+
+	return &ecdsa.PublicKey{
+		Curve: curve,
+		X:     x,
+		Y:     y,
+	}, nil
+}
+
 // Name returns the authenticator name.
 func (a *Authenticator) Name() string {
 	return "jwt"
@@ -638,11 +739,13 @@ func (a *Authenticator) Type() string {
 	return "jwt"
 }
 
-// Close stops background tasks.
+// Close stops background tasks. Safe to call multiple times.
 func (a *Authenticator) Close() error {
-	if a.stopCh != nil {
-		close(a.stopCh)
-	}
+	a.closeOnce.Do(func() {
+		if a.stopCh != nil {
+			close(a.stopCh)
+		}
+	})
 	return nil
 }
 

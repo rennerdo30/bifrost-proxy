@@ -73,7 +73,10 @@ export function RouteTester() {
 
       {testMutation.isError && (
         <div className="mt-4 p-4 bg-bifrost-error/10 border border-bifrost-error/30 rounded-lg">
-          <p className="text-bifrost-error text-sm">Failed to test domain routing</p>
+          <p className="text-bifrost-error text-sm font-medium">Failed to test domain routing</p>
+          {testMutation.error instanceof Error && testMutation.error.message && (
+            <p className="text-bifrost-error/80 text-sm mt-1">{testMutation.error.message}</p>
+          )}
         </div>
       )}
     </div>

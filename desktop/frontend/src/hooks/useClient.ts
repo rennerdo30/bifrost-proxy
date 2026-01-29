@@ -77,8 +77,8 @@ const isWails = () => typeof window !== 'undefined' && window.go !== undefined;
 
 // Mock API for development in browser
 const mockAPI = {
-  Connect: async () => { console.log('Mock: Connect'); },
-  Disconnect: async () => { console.log('Mock: Disconnect'); },
+  Connect: async () => { if (import.meta.env.DEV) console.log('Mock: Connect'); },
+  Disconnect: async () => { if (import.meta.env.DEV) console.log('Mock: Disconnect'); },
   GetStatus: async (): Promise<StatusResponse> => ({
     status: 'running',
     version: '1.0.0-dev',
@@ -100,7 +100,7 @@ const mockAPI = {
     { name: 'Europe', address: 'eu1.bifrost.io:8080', protocol: 'http', is_default: false, latency_ms: 120, status: 'online' },
     { name: 'Asia', address: 'asia1.bifrost.io:8080', protocol: 'socks5', is_default: false, latency_ms: 200, status: 'offline' },
   ],
-  SelectServer: async (name: string) => { console.log('Mock: SelectServer', name); },
+  SelectServer: async (name: string) => { if (import.meta.env.DEV) console.log('Mock: SelectServer', name); },
   GetQuickSettings: async (): Promise<QuickSettings> => ({
     auto_connect: true,
     start_minimized: false,
@@ -108,21 +108,21 @@ const mockAPI = {
     vpn_enabled: false,
     current_server: 'Primary',
   }),
-  UpdateQuickSettings: async (settings: QuickSettings) => { console.log('Mock: UpdateQuickSettings', settings); },
+  UpdateQuickSettings: async (settings: QuickSettings) => { if (import.meta.env.DEV) console.log('Mock: UpdateQuickSettings', settings); },
   GetProxySettings: async (): Promise<ProxySettings> => ({
     server_address: 'demo.bifrost.io:8080',
     server_protocol: 'http',
     http_proxy_port: 3128,
     socks5_proxy_port: 1081,
   }),
-  UpdateProxySettings: async (settings: ProxySettings) => { console.log('Mock: UpdateProxySettings', settings); },
-  RestartClient: async () => { console.log('Mock: RestartClient'); },
-  EnableVPN: async () => { console.log('Mock: EnableVPN'); },
-  DisableVPN: async () => { console.log('Mock: DisableVPN'); },
+  UpdateProxySettings: async (settings: ProxySettings) => { if (import.meta.env.DEV) console.log('Mock: UpdateProxySettings', settings); },
+  RestartClient: async () => { if (import.meta.env.DEV) console.log('Mock: RestartClient'); },
+  EnableVPN: async () => { if (import.meta.env.DEV) console.log('Mock: EnableVPN'); },
+  DisableVPN: async () => { if (import.meta.env.DEV) console.log('Mock: DisableVPN'); },
   OpenWebDashboard: async () => { window.open('http://127.0.0.1:3129', '_blank'); },
-  Quit: async () => { console.log('Mock: Quit'); },
+  Quit: async () => { if (import.meta.env.DEV) console.log('Mock: Quit'); },
   IsConnected: async () => false,
-  GetAPIBaseURL: async () => 'http://127.0.0.1:3130',
+  GetAPIBaseURL: async () => 'http://127.0.0.1:7383',
 };
 
 // Get the API (real or mock)
@@ -169,9 +169,13 @@ export function useClient() {
       const serverList = await api.GetServers();
       setServers(serverList);
     } catch (err) {
-      console.error('Failed to get servers:', err);
+      if (import.meta.env.DEV) console.error('Failed to get servers:', err);
+      // Only set error on initial load (when servers is empty)
+      if (servers.length === 0) {
+        setError(err instanceof Error ? err.message : 'Failed to load servers');
+      }
     }
-  }, [api]);
+  }, [api, servers.length]);
 
   // Fetch settings
   const refreshSettings = useCallback(async () => {
@@ -179,9 +183,13 @@ export function useClient() {
       const quickSettings = await api.GetQuickSettings();
       setSettings(quickSettings);
     } catch (err) {
-      console.error('Failed to get settings:', err);
+      if (import.meta.env.DEV) console.error('Failed to get settings:', err);
+      // Only set error on initial load (when settings is null)
+      if (!settings) {
+        setError(err instanceof Error ? err.message : 'Failed to load settings');
+      }
     }
-  }, [api]);
+  }, [api, settings]);
 
   // Fetch proxy settings
   const refreshProxySettings = useCallback(async () => {
@@ -189,9 +197,13 @@ export function useClient() {
       const proxy = await api.GetProxySettings();
       setProxySettings(proxy);
     } catch (err) {
-      console.error('Failed to get proxy settings:', err);
+      if (import.meta.env.DEV) console.error('Failed to get proxy settings:', err);
+      // Only set error on initial load (when proxySettings is null)
+      if (!proxySettings) {
+        setError(err instanceof Error ? err.message : 'Failed to load proxy settings');
+      }
     }
-  }, [api]);
+  }, [api, proxySettings]);
 
   // Connect to server
   const connect = useCallback(async () => {
@@ -300,7 +312,7 @@ export function useClient() {
     try {
       await api.Quit();
     } catch (err) {
-      console.error('Failed to quit:', err);
+      if (import.meta.env.DEV) console.error('Failed to quit:', err);
     }
   }, [api]);
 

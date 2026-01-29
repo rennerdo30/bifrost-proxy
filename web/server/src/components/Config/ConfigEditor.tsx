@@ -110,6 +110,7 @@ const defaultConfig: ServerConfig = {
 
 export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEditorProps) {
   const [isSaving, setIsSaving] = useState(false)
+  const [isReloading, setIsReloading] = useState(false)
   const [createBackup, setCreateBackup] = useState(true)
   const [editedConfig, setEditedConfig] = useState<ServerConfig | null>(null)
 
@@ -131,6 +132,15 @@ export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEdit
       setEditedConfig(null) // Reset edited state after successful save
     } finally {
       setIsSaving(false)
+    }
+  }
+
+  const handleReload = async () => {
+    setIsReloading(true)
+    try {
+      await onReload()
+    } finally {
+      setIsReloading(false)
     }
   }
 
@@ -275,15 +285,28 @@ export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEdit
             <span className="text-sm text-gray-400">Create backup before saving</span>
           </label>
           <div className="flex items-center gap-3">
-            <button onClick={onReload} className="btn btn-secondary">
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Reload Config
+            <button
+              onClick={handleReload}
+              disabled={isReloading || isSaving}
+              className="btn btn-secondary"
+            >
+              {isReloading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Reloading...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Reload Config
+                </>
+              )}
             </button>
             <button
               onClick={handleSave}
-              disabled={isSaving || !hasChanges}
+              disabled={isSaving || isReloading || !hasChanges}
               className="btn btn-primary"
             >
               {isSaving ? (

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout/Layout'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { Dashboard } from './pages/Dashboard'
 import { Backends } from './pages/Backends'
 import { RequestLog } from './pages/RequestLog'
@@ -10,19 +11,21 @@ import { SetupGuide } from './pages/SetupGuide'
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Layout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          <Route path="backends" element={<Backends />} />
-          <Route path="requests" element={<RequestLog />} />
-          <Route path="clients" element={<Clients />} />
-          <Route path="config" element={<Config />} />
-          <Route path="generator" element={<ConfigGenerator />} />
-          <Route path="setup" element={<SetupGuide />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="backends" element={<Backends />} />
+            <Route path="requests" element={<RequestLog />} />
+            <Route path="clients" element={<Clients />} />
+            <Route path="config" element={<Config />} />
+            <Route path="generator" element={<ConfigGenerator />} />
+            <Route path="setup" element={<SetupGuide />} />
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }

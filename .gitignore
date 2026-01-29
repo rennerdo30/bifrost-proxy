@@ -5,6 +5,12 @@ bin/
 *.so
 *.dylib
 
+# Built binaries in root (from make build)
+/server
+/bifrost-server
+/client
+/bifrost-client
+
 # Test files
 *.test
 coverage.out

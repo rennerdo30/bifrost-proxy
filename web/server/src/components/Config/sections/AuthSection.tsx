@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Section } from '../Section'
 import { NativeAuthForm } from '../auth-forms/NativeAuthForm'
 import { SystemAuthForm } from '../auth-forms/SystemAuthForm'
@@ -65,7 +65,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
   // Check if using legacy mode (no providers but has mode set)
   const isLegacyMode = !hasProviders && config.mode && config.mode !== 'none'
 
-  const handleEnableMultiProvider = () => {
+  const handleEnableMultiProvider = useCallback(() => {
     // Convert legacy config to providers format
     if (isLegacyMode && config.mode) {
       const legacyProvider: AuthProvider = {
@@ -86,9 +86,9 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
         providers: [],
       })
     }
-  }
+  }, [isLegacyMode, config, onChange])
 
-  const handleUseLegacyMode = () => {
+  const handleUseLegacyMode = useCallback(() => {
     // Convert back to legacy single-mode
     if (providers.length > 0) {
       const firstEnabled = providers.find((p) => p.enabled) || providers[0]
@@ -102,9 +102,9 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
     } else {
       onChange({ mode: 'none' })
     }
-  }
+  }, [providers, onChange])
 
-  const handleAddProvider = () => {
+  const handleAddProvider = useCallback(() => {
     if (!newProviderName.trim()) return
 
     const newProvider: AuthProvider = {
@@ -122,29 +122,27 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
     setNewProviderName('')
     setShowAddForm(false)
     setEditingProvider(providers.length)
-  }
+  }, [newProviderName, newProviderType, providers, onChange])
 
-  const handleRemoveProvider = (index: number) => {
+  const handleRemoveProvider = useCallback((index: number) => {
     const newProviders = providers.filter((_, i) => i !== index)
     onChange({ providers: newProviders })
-    if (editingProvider === index) {
-      setEditingProvider(null)
-    }
-  }
+    setEditingProvider((current) => current === index ? null : current)
+  }, [providers, onChange])
 
-  const handleToggleProvider = (index: number) => {
+  const handleToggleProvider = useCallback((index: number) => {
     const newProviders = [...providers]
     newProviders[index] = { ...newProviders[index], enabled: !newProviders[index].enabled }
     onChange({ providers: newProviders })
-  }
+  }, [providers, onChange])
 
-  const handleUpdateProvider = (index: number, updates: Partial<AuthProvider>) => {
+  const handleUpdateProvider = useCallback((index: number, updates: Partial<AuthProvider>) => {
     const newProviders = [...providers]
     newProviders[index] = { ...newProviders[index], ...updates }
     onChange({ providers: newProviders })
-  }
+  }, [providers, onChange])
 
-  const handleMoveProvider = (index: number, direction: 'up' | 'down') => {
+  const handleMoveProvider = useCallback((index: number, direction: 'up' | 'down') => {
     const newIndex = direction === 'up' ? index - 1 : index + 1
     if (newIndex < 0 || newIndex >= providers.length) return
 
@@ -154,12 +152,12 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
     newProviders.forEach((p, i) => (p.priority = i))
     onChange({ providers: newProviders })
 
-    if (editingProvider === index) {
-      setEditingProvider(newIndex)
-    } else if (editingProvider === newIndex) {
-      setEditingProvider(index)
-    }
-  }
+    setEditingProvider((current) => {
+      if (current === index) return newIndex
+      if (current === newIndex) return index
+      return current
+    })
+  }, [providers, onChange])
 
   // Legacy mode UI (single provider dropdown)
   if (!hasProviders && !showAddForm) {
@@ -279,8 +277,9 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     disabled={index === 0}
                     className="btn btn-ghost btn-sm p-1 disabled:opacity-30"
                     title="Move up (higher priority)"
+                    aria-label={`Move ${provider.name} up`}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                     </svg>
                   </button>
@@ -289,8 +288,9 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     disabled={index === providers.length - 1}
                     className="btn btn-ghost btn-sm p-1 disabled:opacity-30"
                     title="Move down (lower priority)"
+                    aria-label={`Move ${provider.name} down`}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
@@ -298,8 +298,10 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     onClick={() => setEditingProvider(editingProvider === index ? null : index)}
                     className="btn btn-ghost btn-sm p-1"
                     title="Edit"
+                    aria-label={`Edit ${provider.name}`}
+                    aria-expanded={editingProvider === index}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"
@@ -312,8 +314,9 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     onClick={() => handleRemoveProvider(index)}
                     className="btn btn-ghost btn-sm p-1 text-bifrost-error hover:bg-bifrost-error/10"
                     title="Remove"
+                    aria-label={`Remove ${provider.name}`}
                   >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"

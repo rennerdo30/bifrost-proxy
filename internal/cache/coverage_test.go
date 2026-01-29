@@ -1981,3 +1981,13 @@ func createPipe() (*pipeConn, *pipeConn, error) {
 	r2, w2 := io.Pipe()
 	return &pipeConn{r: r1, w: w2}, &pipeConn{r: r2, w: w1}, nil
 }
+
+// ============================================================================
+// bytesBuffer.Close test (memory.go:522)
+// ============================================================================
+
+func TestBytesBuffer_Close(t *testing.T) {
+	buf := &bytesBuffer{Buffer: bytes.NewBuffer([]byte("test data"))}
+	err := buf.Close()
+	assert.NoError(t, err)
+}

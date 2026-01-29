@@ -228,6 +228,25 @@ func (m *Matcher) Patterns() []string {
 	return result
 }
 
+// RemovePattern removes a pattern from the matcher.
+func (m *Matcher) RemovePattern(p string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	p = strings.ToLower(strings.TrimSpace(p))
+	if p == "" {
+		return
+	}
+
+	patterns := make([]pattern, 0, len(m.patterns))
+	for _, pat := range m.patterns {
+		if pat.original != p {
+			patterns = append(patterns, pat)
+		}
+	}
+	m.patterns = patterns
+}
+
 // Clear removes all patterns.
 func (m *Matcher) Clear() {
 	m.mu.Lock()
