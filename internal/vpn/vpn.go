@@ -281,6 +281,12 @@ func (m *Manager) cleanup() {
 		m.dnsServer = nil
 	}
 
+	// Close DNS cache
+	if m.dnsCache != nil {
+		m.dnsCache.Close()
+		m.dnsCache = nil
+	}
+
 	// Restore routes
 	if m.routeManager != nil {
 		if err := m.routeManager.Cleanup(context.Background()); err != nil {
@@ -491,11 +497,64 @@ func (m *Manager) handleConnectionData(conn *TrackedConnection) {
 	// 3. Read responses from proxy
 	// 4. Create response packets and write to TUN
 
-	// For now, close connection when context is done
+	// Cleanup function to remove connection from tracker
+	cleanup := func() {
+		if conn.ProxyConn != nil {
+			conn.ProxyConn.Close()
+		}
+		m.connTracker.Remove(conn.Key)
+	}
+
+	// Set connection timeout to prevent indefinite blocking
+	if conn.ProxyConn != nil {
+		conn.ProxyConn.SetDeadline(time.Now().Add(5 * time.Minute))
+	}
+
+	// Monitor context for shutdown
 	go func() {
 		<-m.ctx.Done()
-		conn.ProxyConn.Close()
-		m.connTracker.Remove(conn.Key)
+		cleanup()
+	}()
+
+	// Also start a goroutine to read from the proxy connection
+	// and handle errors (connection closed, timeouts, etc.)
+	go func() {
+		if conn.ProxyConn == nil {
+			return
+		}
+
+		buf := make([]byte, 4096)
+		for {
+			// Check if context is done
+			select {
+			case <-m.ctx.Done():
+				return
+			default:
+			}
+
+			// Set read deadline for each read to allow checking context
+			conn.ProxyConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+
+			n, err := conn.ProxyConn.Read(buf)
+			if err != nil {
+				// Connection closed or error - clean up
+				if m.ctx.Err() == nil {
+					// Only log if not shutting down
+					slog.Debug("proxy connection read error, cleaning up",
+						"key", conn.Key,
+						"error", err,
+					)
+				}
+				cleanup()
+				return
+			}
+
+			// Update activity and bytes received
+			conn.LastActivity = time.Now()
+			conn.BytesReceived.Add(int64(n))
+
+			// TODO: In a full implementation, create response packet and write to TUN
+		}
 	}()
 }
 

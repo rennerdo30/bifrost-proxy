@@ -1,12 +1,31 @@
 package vpn
 
 import (
+	"errors"
 	"net"
 	"net/netip"
 	"strings"
 	"sync"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/matcher"
+)
+
+// Split tunnel limits
+const (
+	// MaxAppRules is the maximum number of app rules
+	MaxAppRules = 500
+	// MaxIPRules is the maximum number of IP/CIDR rules
+	MaxIPRules = 5000
+	// MaxDomainPatterns is the maximum number of domain patterns
+	MaxDomainPatterns = 5000
+)
+
+// Split tunnel errors
+var (
+	ErrAppRulesAtLimit    = errors.New("split tunnel: app rules at maximum limit")
+	ErrIPRulesAtLimit     = errors.New("split tunnel: IP rules at maximum limit")
+	ErrDomainPatternsAtLimit = errors.New("split tunnel: domain patterns at maximum limit")
+	ErrDuplicateRule      = errors.New("split tunnel: duplicate rule")
 )
 
 // Action represents the split tunnel decision.
@@ -278,11 +297,25 @@ func NewAppMatcher() *AppMatcher {
 	}
 }
 
-// AddRule adds an app rule.
-func (m *AppMatcher) AddRule(rule AppRule) {
+// AddRule adds an app rule. Returns error if duplicate or at limit.
+func (m *AppMatcher) AddRule(rule AppRule) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Check for duplicates
+	for _, existing := range m.rules {
+		if strings.EqualFold(existing.Name, rule.Name) {
+			return ErrDuplicateRule
+		}
+	}
+
+	// Check limit
+	if len(m.rules) >= MaxAppRules {
+		return ErrAppRulesAtLimit
+	}
+
 	m.rules = append(m.rules, rule)
+	return nil
 }
 
 // RemoveRule removes an app rule by name.
@@ -346,29 +379,52 @@ func NewIPMatcher() *IPMatcher {
 	}
 }
 
-// Add adds an IP address or CIDR range.
-func (m *IPMatcher) Add(entry string) {
+// Add adds an IP address or CIDR range. Returns error if duplicate or at limit.
+func (m *IPMatcher) Add(entry string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Check total limit
+	totalEntries := len(m.ips) + len(m.cidrs)
+	if totalEntries >= MaxIPRules {
+		return ErrIPRulesAtLimit
+	}
+
 	// Try parsing as prefix (CIDR)
 	if prefix, err := netip.ParsePrefix(entry); err == nil {
+		// Check for duplicate
+		for _, existing := range m.cidrs {
+			if existing == prefix {
+				return ErrDuplicateRule
+			}
+		}
 		m.cidrs = append(m.cidrs, prefix)
-		return
+		return nil
 	}
 
 	// Try parsing as address
 	if addr, err := netip.ParseAddr(entry); err == nil {
+		// Check for duplicate
+		if m.ips[addr] {
+			return ErrDuplicateRule
+		}
 		m.ips[addr] = true
-		return
+		return nil
 	}
 
 	// Try parsing as old net.IP format
 	if ip := net.ParseIP(entry); ip != nil {
 		if addr, ok := netip.AddrFromSlice(ip); ok {
+			// Check for duplicate
+			if m.ips[addr] {
+				return ErrDuplicateRule
+			}
 			m.ips[addr] = true
+			return nil
 		}
 	}
+
+	return nil
 }
 
 // Remove removes an IP address or CIDR range.

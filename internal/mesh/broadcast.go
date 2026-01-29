@@ -10,6 +10,12 @@ import (
 	"time"
 )
 
+// Broadcast limits
+const (
+	// MaxSeenMessages is the maximum number of seen message IDs to track
+	MaxSeenMessages = 10000
+)
+
 // BroadcastType represents the type of broadcast.
 type BroadcastType int
 
@@ -261,9 +267,9 @@ func (bm *BroadcastManager) Anycast(groupID string, payload []byte) error {
 
 // sendBroadcast sends a broadcast message.
 func (bm *BroadcastManager) sendBroadcast(msg *BroadcastMessage) error {
-	// Mark as seen
+	// Mark as seen with LRU eviction
 	bm.mu.Lock()
-	bm.seenMsgs[msg.ID] = time.Now()
+	bm.addSeenMessageLocked(msg.ID)
 	bm.mu.Unlock()
 
 	// Get neighbors
@@ -280,6 +286,28 @@ func (bm *BroadcastManager) sendBroadcast(msg *BroadcastMessage) error {
 	}
 
 	return nil
+}
+
+// addSeenMessageLocked adds a message ID to seen list with LRU eviction. Must be called with mu held.
+func (bm *BroadcastManager) addSeenMessageLocked(msgID string) {
+	// Evict oldest if at capacity
+	if len(bm.seenMsgs) >= MaxSeenMessages {
+		var oldestID string
+		var oldestTime time.Time
+
+		for id, seen := range bm.seenMsgs {
+			if oldestTime.IsZero() || seen.Before(oldestTime) {
+				oldestID = id
+				oldestTime = seen
+			}
+		}
+
+		if oldestID != "" {
+			delete(bm.seenMsgs, oldestID)
+		}
+	}
+
+	bm.seenMsgs[msgID] = time.Now()
 }
 
 // sendToPeer sends a message to a specific peer.
@@ -311,7 +339,7 @@ func (bm *BroadcastManager) HandleMessage(fromPeerID string, data []byte) error 
 		bm.mu.Unlock()
 		return nil // Already processed
 	}
-	bm.seenMsgs[msg.ID] = time.Now()
+	bm.addSeenMessageLocked(msg.ID)
 	bm.mu.Unlock()
 
 	// Deliver locally

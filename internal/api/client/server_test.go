@@ -2223,10 +2223,12 @@ func TestAuthMiddleware_EmptyToken(t *testing.T) {
 func TestAPI_BroadcastLog(t *testing.T) {
 	api := New(Config{})
 
-	// Create a subscriber channel
-	ch := make(chan LogEntry, 10)
+	// Create a subscriber
+	sub := &logSubscriber{
+		ch: make(chan LogEntry, 10),
+	}
 	api.logMu.Lock()
-	api.logSubscribers[ch] = struct{}{}
+	api.logSubscribers[sub] = struct{}{}
 	api.logMu.Unlock()
 
 	// Broadcast a log entry
@@ -2239,27 +2241,30 @@ func TestAPI_BroadcastLog(t *testing.T) {
 
 	// Check that subscriber received it
 	select {
-	case received := <-ch:
+	case received := <-sub.ch:
 		assert.Equal(t, entry.Message, received.Message)
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for log entry")
 	}
 
 	// Cleanup
+	sub.closed.Store(true)
 	api.logMu.Lock()
-	delete(api.logSubscribers, ch)
+	delete(api.logSubscribers, sub)
 	api.logMu.Unlock()
 }
 
 func TestAPI_BroadcastLog_FullChannel(t *testing.T) {
 	api := New(Config{})
 
-	// Create a full channel
-	ch := make(chan LogEntry, 1)
-	ch <- LogEntry{} // Fill the channel
+	// Create a subscriber with a full channel
+	sub := &logSubscriber{
+		ch: make(chan LogEntry, 1),
+	}
+	sub.ch <- LogEntry{} // Fill the channel
 
 	api.logMu.Lock()
-	api.logSubscribers[ch] = struct{}{}
+	api.logSubscribers[sub] = struct{}{}
 	api.logMu.Unlock()
 
 	// This should not block even with full channel
@@ -2271,8 +2276,9 @@ func TestAPI_BroadcastLog_FullChannel(t *testing.T) {
 	api.BroadcastLog(entry)
 
 	// Cleanup
+	sub.closed.Store(true)
 	api.logMu.Lock()
-	delete(api.logSubscribers, ch)
+	delete(api.logSubscribers, sub)
 	api.logMu.Unlock()
 }
 
