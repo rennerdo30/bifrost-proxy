@@ -1,6 +1,6 @@
 ---
 title: "Mesh Networking"
-description: "Documentation for Mesh Networking"
+description: "P2P mesh networking with NAT traversal, STUN/TURN relay, and automatic routing"
 ---
 
 # Mesh Networking
@@ -12,40 +12,564 @@ Bifrost supports optional Hamachi-like mesh networking for creating virtual LANs
 The mesh networking feature provides:
 
 - **Virtual LAN**: Create private networks between distributed peers
-- **NAT Traversal**: Automatic hole-punching with STUN/TURN support
+- **NAT Traversal**: Automatic hole-punching with STUN/TURN/ICE support
 - **P2P Encryption**: All traffic encrypted with ChaCha20-Poly1305
 - **Mesh Routing**: Automatic route discovery and multi-hop relaying
-- **TAP Device Support**: Layer 2 networking with Ethernet frame support
+- **TAP/TUN Device Support**: Layer 2 (Ethernet) and Layer 3 (IP) networking
 
-## Configuration
+## High-Level Architecture
 
-Mesh networking is **disabled by default** and must be explicitly enabled:
+```mermaid
+flowchart TB
+    subgraph LocalPeer["Local Peer"]
+        App[Application]
+        Device[TUN/TAP Device]
+        MeshNode[Mesh Node]
+        P2PManager[P2P Manager]
+        Router[Mesh Router]
+        Protocol[Routing Protocol]
+    end
+
+    subgraph Infrastructure["Infrastructure Services"]
+        Discovery[Discovery Server]
+        STUN[STUN Servers]
+        TURN[TURN Relay]
+    end
+
+    subgraph RemotePeers["Remote Peers"]
+        PeerA[Peer A]
+        PeerB[Peer B]
+        PeerC[Peer C]
+    end
+
+    App <--> Device
+    Device <--> MeshNode
+    MeshNode --> P2PManager
+    MeshNode --> Router
+    Router --> Protocol
+
+    P2PManager <-.->|Register/Heartbeat| Discovery
+    P2PManager <-.->|NAT Detection| STUN
+    P2PManager <-.->|Relay Allocation| TURN
+
+    P2PManager <-->|Direct UDP| PeerA
+    P2PManager <-->|Direct UDP| PeerB
+    P2PManager <-.->|Via TURN| PeerC
+
+    style MeshNode fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style P2PManager fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style TURN fill:#ff6b6b,stroke:#cc5555,color:#fff
+```
+
+## P2P Connectivity
+
+### Connection Types
+
+Bifrost supports three types of peer connections:
+
+| Type | Description | Latency | Use Case |
+|------|-------------|---------|----------|
+| **Direct** | UDP hole-punching through NAT | Lowest | Most connections |
+| **Relayed** | Traffic via TURN server | Medium | Symmetric NAT |
+| **Multi-Hop** | Traffic via other peers | Highest | Fallback when TURN unavailable |
+
+### Connection Flow
+
+```mermaid
+sequenceDiagram
+    participant A as Peer A
+    participant D as Discovery Server
+    participant S as STUN Server
+    participant T as TURN Server
+    participant B as Peer B
+
+    Note over A,B: 1. Discovery & NAT Detection
+    A->>D: Register with public key & endpoints
+    A->>S: STUN Binding Request
+    S-->>A: Mapped Address (public IP:port)
+    B->>D: Register with public key & endpoints
+    B->>S: STUN Binding Request
+    S-->>B: Mapped Address (public IP:port)
+
+    Note over A,B: 2. Peer Discovery
+    D-->>A: Peer B joined (endpoints, public key)
+    D-->>B: Peer A joined (endpoints, public key)
+
+    Note over A,B: 3. Connection Attempt
+    A->>B: Try Direct (host candidates)
+    A->>B: Try Direct (server-reflexive candidates)
+
+    alt Direct Connection Succeeds
+        A<-->B: Encrypted P2P Connection
+    else Direct Fails (Symmetric NAT)
+        A->>T: TURN Allocate
+        T-->>A: Relay Address
+        A->>T: Create Permission for B
+        A->>B: Exchange relay candidates
+        A<-->T: Data via TURN
+        T<-->B: Data via TURN
+    end
+
+    Note over A,B: 4. Handshake & Encryption
+    A->>B: Handshake Init (public key + random)
+    B-->>A: Handshake Response (public key + random)
+    Note over A,B: Derive shared secret via Curve25519
+    A<-->B: Encrypted data (ChaCha20-Poly1305)
+```
+
+## STUN/TURN/ICE Implementation
+
+### STUN (Session Traversal Utilities for NAT)
+
+STUN is used to discover your public IP address and port as seen from the internet.
+
+**Implementation details** (`internal/p2p/stun.go`):
+
+- Supports RFC 5389 STUN Binding Requests
+- Parses both `MAPPED-ADDRESS` and `XOR-MAPPED-ADDRESS` attributes
+- Default servers: Google's public STUN servers
+- Configurable timeout (default: 5 seconds)
+
+**How it works:**
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant STUN as STUN Server
+
+    Client->>STUN: Binding Request<br/>(Transaction ID)
+    Note over STUN: Server sees:<br/>Source IP: 203.0.113.50<br/>Source Port: 54321
+    STUN-->>Client: Binding Response<br/>(XOR-Mapped-Address: 203.0.113.50:54321)
+    Note over Client: Now knows public endpoint
+```
+
+**Default STUN Servers:**
 
 ```yaml
-# Mesh networking configuration
+stun:
+  servers:
+    - "stun:stun.l.google.com:19302"
+    - "stun:stun1.l.google.com:19302"
+    - "stun:stun2.l.google.com:19302"
+    - "stun:stun3.l.google.com:19302"
+    - "stun:stun4.l.google.com:19302"
+```
+
+### TURN (Traversal Using Relays around NAT)
+
+TURN provides relay services when direct connections are impossible (e.g., symmetric NAT).
+
+**Implementation details** (`internal/p2p/turn.go`):
+
+- Supports RFC 5766 TURN protocol
+- Long-term credentials with HMAC-SHA1 authentication
+- Channel binding for efficient data transfer
+- Automatic allocation refresh
+
+**TURN Operations:**
+
+| Operation | Description |
+|-----------|-------------|
+| `Allocate` | Request a relay address from the server |
+| `CreatePermission` | Allow a peer IP to send data through relay |
+| `ChannelBind` | Bind a channel number to a peer for efficiency |
+| `Refresh` | Keep allocation alive (default: 10 minutes) |
+| `Send/Data` | Send and receive relayed data |
+
+**Configuration:**
+
+```yaml
+turn:
+  enabled: true
+  servers:
+    - url: "turn:turn.example.com:3478"
+      username: "user"
+      password: "secret"
+```
+
+### ICE (Interactive Connectivity Establishment)
+
+ICE coordinates STUN and TURN to find the best connection path.
+
+**Implementation details** (`internal/p2p/ice.go`):
+
+**Candidate Types:**
+
+| Type | Priority | Description |
+|------|----------|-------------|
+| `host` | 126 | Local interface addresses |
+| `srflx` | 100 | Server-reflexive (via STUN) |
+| `prflx` | 110 | Peer-reflexive (discovered during checks) |
+| `relay` | 0 | TURN relay addresses |
+
+**ICE Candidate Gathering:**
+
+```mermaid
+flowchart LR
+    subgraph Gathering["Candidate Gathering"]
+        Host[Gather Host<br/>Candidates]
+        SRFLX[Gather Server-Reflexive<br/>via STUN]
+        Relay[Gather Relay<br/>via TURN]
+    end
+
+    subgraph Candidates["Local Candidates"]
+        C1["192.168.1.100:5000<br/>(host)"]
+        C2["203.0.113.50:54321<br/>(srflx)"]
+        C3["198.51.100.10:49152<br/>(relay)"]
+    end
+
+    Host --> C1
+    SRFLX --> C2
+    Relay --> C3
+```
+
+**Connectivity Checks:**
+
+ICE pairs local and remote candidates, then tests connectivity in priority order:
+
+```go
+// Priority calculation (RFC 8445)
+priority = (typePref << 24) | (localPref << 8) | (256 - componentID)
+
+// Pair priority
+pairPriority = (1 << 32) * min(localPri, remotePri) + 2 * max(localPri, remotePri)
+```
+
+## NAT Traversal
+
+### NAT Types
+
+**Implementation details** (`internal/p2p/nat.go`):
+
+| NAT Type | Mapping | Filtering | Direct Connection |
+|----------|---------|-----------|-------------------|
+| **None** | N/A | N/A | Always works |
+| **Full Cone** | Endpoint-independent | Endpoint-independent | Always works |
+| **Restricted Cone** | Endpoint-independent | Address-dependent | Works with hole-punching |
+| **Port Restricted** | Endpoint-independent | Address+port-dependent | Works with hole-punching |
+| **Symmetric** | Endpoint-dependent | Address+port-dependent | Requires TURN relay |
+
+### NAT Detection
+
+```mermaid
+flowchart TD
+    Start[Start Detection] --> STUN1[Send to STUN Server 1]
+    STUN1 --> Addr1[Get Mapped Address 1]
+    Addr1 --> STUN2[Send to STUN Server 2]
+    STUN2 --> Addr2[Get Mapped Address 2]
+    Addr2 --> Compare{Same Mapping?}
+
+    Compare -->|Yes| Friendly[Cone NAT<br/>Direct possible]
+    Compare -->|No| Symmetric[Symmetric NAT<br/>Relay required]
+
+    style Friendly fill:#50c878,stroke:#3a9d5f,color:#fff
+    style Symmetric fill:#ff6b6b,stroke:#cc5555,color:#fff
+```
+
+### Traversal Strategy Selection
+
+```go
+// Recommended strategy based on NAT types
+func RecommendedTraversalStrategy(nat1, nat2 NATType) string {
+    if nat1 == NATTypeNone || nat2 == NATTypeNone {
+        return "direct"
+    }
+    if nat1 == NATTypeSymmetric || nat2 == NATTypeSymmetric {
+        if nat1 == NATTypeFullCone || nat2 == NATTypeFullCone {
+            return "direct_to_full_cone"
+        }
+        return "relay"  // Both need TURN
+    }
+    return "hole_punch"  // Standard NAT traversal
+}
+```
+
+## Peer Discovery
+
+### Discovery Server
+
+The discovery server coordinates peer registration and endpoint exchange.
+
+**Implementation details** (`internal/mesh/discovery.go`):
+
+**Registration Flow:**
+
+```mermaid
+sequenceDiagram
+    participant Peer
+    participant Discovery as Discovery Server
+    participant WebSocket as WS Events
+
+    Peer->>Discovery: POST /api/v1/mesh/networks/{id}/peers<br/>{id, name, public_key, endpoints}
+    Discovery-->>Peer: {success: true, virtual_ip, peers: [...]}
+
+    Peer->>WebSocket: Connect to /events
+
+    loop Heartbeat (every 30s)
+        Peer->>Discovery: POST .../peers/{id}/heartbeat
+    end
+
+    Note over Discovery: New peer joins
+    Discovery-->>WebSocket: {type: "join", peer: {...}}
+
+    Note over Discovery: Peer leaves
+    Discovery-->>WebSocket: {type: "leave", peer: {...}}
+```
+
+**API Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/v1/mesh/networks/{id}/peers` | Register peer |
+| `GET` | `/api/v1/mesh/networks/{id}/peers` | List all peers |
+| `PATCH` | `/api/v1/mesh/networks/{id}/peers/{peer}` | Update endpoints |
+| `DELETE` | `/api/v1/mesh/networks/{id}/peers/{peer}` | Deregister |
+| `POST` | `.../peers/{peer}/heartbeat` | Keep alive |
+| `WS` | `/api/v1/mesh/networks/{id}/events` | Real-time events |
+
+### Peer Information
+
+Each peer advertises:
+
+```json
+{
+  "id": "peer-abc123",
+  "name": "laptop-home",
+  "public_key": "base64-encoded-ed25519-pubkey",
+  "virtual_ip": "10.100.0.5",
+  "endpoints": [
+    {"address": "192.168.1.100", "port": 51820, "type": "local", "priority": 100},
+    {"address": "203.0.113.50", "port": 54321, "type": "reflexive", "priority": 50},
+    {"address": "198.51.100.10", "port": 49152, "type": "relay", "priority": 10}
+  ]
+}
+```
+
+## Relay Networking
+
+### TURN Relay
+
+When direct connections fail, traffic is relayed through a TURN server.
+
+**Implementation details** (`internal/p2p/relay.go`):
+
+```mermaid
+flowchart LR
+    subgraph PeerA["Peer A (Symmetric NAT)"]
+        AppA[Application]
+        RA[Relay Manager]
+    end
+
+    subgraph TURN["TURN Server"]
+        Alloc[Allocations]
+        Perm[Permissions]
+        Chan[Channels]
+    end
+
+    subgraph PeerB["Peer B (Symmetric NAT)"]
+        RB[Relay Manager]
+        AppB[Application]
+    end
+
+    AppA --> RA
+    RA <-->|Channel Data| TURN
+    TURN <-->|Channel Data| RB
+    RB --> AppB
+
+    style TURN fill:#ff6b6b,stroke:#cc5555,color:#fff
+```
+
+**Channel Data Format:**
+
+```
++------+------+-------------------+
+| Chan | Len  |    Data Payload   |
+| (2)  | (2)  |    (variable)     |
++------+------+-------------------+
+```
+
+### Peer Relay (Multi-Hop)
+
+When TURN is unavailable, traffic can be relayed through other connected peers.
+
+**Implementation details** (`internal/p2p/relay.go`):
+
+```mermaid
+flowchart LR
+    A[Peer A] <-->|Direct| B[Peer B]
+    B <-->|Direct| C[Peer C]
+    A -.->|Via B| C
+
+    style B fill:#7b68ee,stroke:#5a4fcf,color:#fff
+```
+
+**Relay Message Format:**
+
+```
++------+----------+-----------+
+| Type | Dest Len | Dest ID   | Payload
+| (1)  |   (1)    | (var)     | (var)
++------+----------+-----------+
+```
+
+**Configuration:**
+
+```yaml
+connection:
+  direct_connect: true      # Try direct first
+  relay_enabled: true       # Enable TURN relay
+  relay_via_peers: true     # Enable peer relaying
+  connect_timeout: 30s
+  keep_alive_interval: 25s
+```
+
+## Encryption
+
+### Key Exchange
+
+**Implementation details** (`internal/p2p/crypto.go`):
+
+All P2P connections use:
+
+- **Key Generation**: Curve25519 key pairs
+- **Key Exchange**: ECDH (Elliptic Curve Diffie-Hellman)
+- **Encryption**: ChaCha20-Poly1305 AEAD
+- **Key Derivation**: Separate send/receive keys
+
+**Handshake Protocol:**
+
+```mermaid
+sequenceDiagram
+    participant A as Initiator
+    participant B as Responder
+
+    Note over A: Generate ephemeral keypair
+    A->>B: Handshake Init<br/>[0x01 | PublicKey | Random]
+
+    Note over B: Generate ephemeral keypair<br/>Compute shared secret
+    B-->>A: Handshake Response<br/>[0x02 | PublicKey | Random]
+
+    Note over A: Compute shared secret
+    Note over A,B: Derive send/receive keys
+
+    A->>B: Encrypted Data<br/>[0x03 | Nonce | Ciphertext | Tag]
+    B-->>A: Encrypted Data<br/>[0x03 | Nonce | Ciphertext | Tag]
+```
+
+**Key Derivation:**
+
+```go
+// Simplified - production uses HKDF
+sendKey = H(sharedSecret || "send")
+recvKey = H(sharedSecret || "recv")
+
+// Direction determined by public key comparison
+if localPubKey > remotePubKey {
+    sendKey, recvKey = recvKey, sendKey
+}
+```
+
+## Routing Protocol
+
+### Distance-Vector Routing
+
+**Implementation details** (`internal/mesh/protocol.go`, `internal/mesh/router.go`):
+
+The mesh uses a distance-vector routing protocol similar to RIP.
+
+**Message Types:**
+
+| Type | Purpose |
+|------|---------|
+| `RouteAnnounce` | Share known routes with neighbors |
+| `RouteRequest` | Request routes from neighbors |
+| `RouteWithdraw` | Notify route is no longer available |
+| `Hello` | Periodic keepalive |
+| `HelloAck` | RTT measurement |
+| `LinkState` | Link state updates |
+
+**Route Metric Calculation:**
+
+```go
+Metric = Latency(ms) + (HopCount * 100)
+```
+
+**Split Horizon:**
+
+Routes are not announced back to the peer they were learned from, preventing routing loops:
+
+```go
+if config.SplitHorizon && route.NextHop == peerID {
+    continue  // Don't announce back
+}
+```
+
+### Route Table
+
+```mermaid
+flowchart TB
+    subgraph RouteTable["Route Table"]
+        R1["Peer B: Direct, metric=50"]
+        R2["Peer C: via B, metric=150"]
+        R3["Peer D: via C, metric=250"]
+    end
+
+    subgraph Selection["Best Route Selection"]
+        Sort[Sort by Metric]
+        Best[Select Lowest]
+    end
+
+    RouteTable --> Sort --> Best
+```
+
+## Configuration Examples
+
+### Minimal Configuration
+
+```yaml
 mesh:
   enabled: true
   network_id: "my-network"
   network_cidr: "10.100.0.0/16"
+  discovery:
+    server: "bifrost.example.com:7080"
+```
+
+### Full Configuration
+
+```yaml
+mesh:
+  enabled: true
+  network_id: "corporate-vpn"
+  network_cidr: "10.100.0.0/16"
+  peer_name: "laptop-john"
 
   device:
-    type: tap           # "tun" (Layer 3) or "tap" (Layer 2)
+    type: tap           # Layer 2 networking
     name: "mesh0"
     mtu: 1400
-    mac_address: ""     # Auto-generated if empty
+    mac_address: ""     # Auto-generated
 
   discovery:
     server: "bifrost.example.com:7080"
     heartbeat_interval: 30s
+    peer_timeout: 90s
+    token: "${MESH_TOKEN}"
 
   stun:
     servers:
       - "stun:stun.l.google.com:19302"
       - "stun:stun1.l.google.com:19302"
+      - "stun:stun.cloudflare.com:3478"
+    timeout: 5s
 
   turn:
+    enabled: true
     servers:
       - url: "turn:turn.example.com:3478"
+        username: "${TURN_USER}"
+        password: "${TURN_PASS}"
+      - url: "turns:turn.example.com:5349"  # TLS
         username: "${TURN_USER}"
         password: "${TURN_PASS}"
 
@@ -54,244 +578,289 @@ mesh:
     relay_enabled: true
     relay_via_peers: true
     connect_timeout: 30s
-    keepalive_interval: 25s
+    keep_alive_interval: 25s
 
-  routing:
-    max_hops: 8
-    route_timeout: 5m
-    split_horizon: true
+  security:
+    private_key: ""           # Auto-generated if empty
+    require_encryption: true
+    allowed_peers: []         # Empty = allow all
 ```
 
-## Architecture
+### Self-Hosted TURN Server
 
-### Components
-
-```mermaid
-graph TB
-    subgraph "Mesh Client"
-        Device[TAP/TUN Device]
-        P2P[P2P Manager]
-        Router[Mesh Router]
-        Proto[Routing Protocol]
-        Broadcast[Broadcast Manager]
-    end
-
-    subgraph "External Services"
-        Discovery[Discovery Server]
-        STUN[STUN Server]
-        TURN[TURN Relay]
-    end
-
-    subgraph "Other Peers"
-        Peer1[Peer A]
-        Peer2[Peer B]
-        Peer3[Peer C]
-    end
-
-    Device --> P2P
-    P2P --> Router
-    Router --> Proto
-    Proto --> Broadcast
-
-    P2P --> Discovery
-    P2P --> STUN
-    P2P --> TURN
-
-    P2P <--> Peer1
-    P2P <--> Peer2
-    P2P <--> Peer3
-```
-
-### Package Structure
-
-| Package | Description |
-|---------|-------------|
-| `internal/device/` | Network device abstraction (TUN/TAP) |
-| `internal/frame/` | Ethernet frame handling |
-| `internal/mesh/` | Mesh networking core |
-| `internal/p2p/` | P2P connectivity and NAT traversal |
-
-## Device Types
-
-### TUN Device (Layer 3)
-
-TUN devices operate at Layer 3 (IP packets). Use for:
-- Simple IP routing between peers
-- Lower overhead
-- Compatibility with most use cases
-
-### TAP Device (Layer 2)
-
-TAP devices operate at Layer 2 (Ethernet frames). Use for:
-- Full Ethernet networking
-- Bridging with local networks
-- DHCP, ARP, and broadcast protocols
-- VLANs and other Layer 2 features
-
-## NAT Traversal
-
-The mesh network uses ICE-like connectivity checks with:
-
-1. **Host candidates**: Local interface addresses
-2. **Server reflexive candidates**: Public addresses via STUN
-3. **Relay candidates**: TURN relay addresses
-
-### NAT Types Supported
-
-| NAT Type | Direct Connection | Notes |
-|----------|------------------|-------|
-| None (public IP) | Yes | Best performance |
-| Full Cone | Yes | Works with most peers |
-| Restricted Cone | Yes | Hole punching required |
-| Port Restricted | Yes | Hole punching required |
-| Symmetric | TURN only | Requires relay |
-
-## Routing Protocol
-
-The mesh uses a distance-vector routing protocol with:
-
-- **Split horizon**: Don't announce routes back to source
-- **Route announcements**: Periodic route sharing with neighbors
-- **Loop prevention**: Path vector and TTL-based
-- **Latency-based metrics**: Prefer lower latency paths
-
-### Route Selection
-
-Routes are prioritized by:
-1. Direct connections (lowest metric)
-2. Single-hop routes through peers
-3. Multi-hop routes
-
-```
-Metric = Latency(ms) + (HopCount × 100)
-```
-
-## Broadcast and Multicast
-
-### Broadcast (Flood)
-
-Sends to all peers in the mesh:
-
-```go
-manager.Broadcast(payload, ttl)
-```
-
-### Multicast
-
-Sends to members of a specific group:
-
-```go
-manager.JoinGroup("group-id", "Group Name")
-manager.Multicast("group-id", payload, ttl)
-```
-
-### Anycast
-
-Sends to the closest member of a group:
-
-```go
-manager.Anycast("group-id", payload)
-```
-
-## Security
-
-### Encryption
-
-All P2P traffic is encrypted using:
-- **Key Exchange**: Curve25519 ECDH
-- **Encryption**: ChaCha20-Poly1305 AEAD
-- **Perfect Forward Secrecy**: Ephemeral session keys
-
-### Authentication
-
-Peers authenticate using:
-- Public key verification
-- Optional network-wide pre-shared keys
-- Discovery server authentication
-
-## API Endpoints
-
-### Server-Side API
-
-```
-POST   /api/v1/mesh/networks                     # Create network
-GET    /api/v1/mesh/networks                     # List networks
-GET    /api/v1/mesh/networks/{id}                # Get network
-DELETE /api/v1/mesh/networks/{id}                # Delete network
-
-POST   /api/v1/mesh/networks/{id}/peers          # Register peer
-GET    /api/v1/mesh/networks/{id}/peers          # List peers
-DELETE /api/v1/mesh/networks/{id}/peers/{peer}   # Deregister peer
-
-WS     /api/v1/mesh/networks/{id}/events         # Peer events
-```
-
-## Verification
-
-### Check Device Status
+Using coturn:
 
 ```bash
-# Linux
-ip link show mesh0
-ip addr show mesh0
+# /etc/turnserver.conf
+listening-port=3478
+tls-listening-port=5349
+realm=turn.example.com
+server-name=turn.example.com
 
-# macOS
-ifconfig mesh0
+# Authentication
+lt-cred-mech
+user=meshuser:meshpass
 
-# Windows
-netsh interface show interface "mesh0"
-```
-
-### Check Peer Connectivity
-
-```bash
-# List peers
-curl http://localhost:7082/api/v1/mesh/networks/my-network/peers
-
-# Ping virtual IP
-ping 10.100.0.2
-```
-
-### Check Routes
-
-```bash
-# Linux
-ip route show dev mesh0
-
-# macOS
-netstat -rn | grep mesh0
+# Certificates for TURNS
+cert=/etc/letsencrypt/live/turn.example.com/fullchain.pem
+pkey=/etc/letsencrypt/live/turn.example.com/privkey.pem
 ```
 
 ## Troubleshooting
 
 ### Connection Issues
 
-1. **Check NAT type**: Symmetric NAT requires TURN
-2. **Verify STUN servers**: Ensure they're reachable
-3. **Check firewall**: Allow UDP traffic
+#### Problem: Peers discovered but not connecting
 
-### Performance Issues
+**Diagnosis:**
 
-1. **High latency**: Check route metrics
-2. **Packet loss**: Verify MTU settings
-3. **CPU usage**: Consider TUN instead of TAP
+```bash
+# Check NAT type detection
+curl http://localhost:7082/api/v1/p2p/nat
+# Response: {"type": "symmetric", "mapped_address": "..."}
+
+# Check discovered endpoints
+curl http://localhost:7082/api/v1/mesh/networks/my-network/peers
+```
+
+**Solutions:**
+
+1. **Symmetric NAT detected**: Ensure TURN is configured
+2. **No reflexive candidates**: Check STUN server connectivity
+3. **Firewall blocking**: Allow UDP on ephemeral ports (32768-65535)
+
+#### Problem: Connection times out
+
+**Diagnosis:**
+
+```bash
+# Test STUN connectivity
+nc -u stun.l.google.com 19302
+
+# Check local firewall
+sudo iptables -L -n | grep -i drop
+```
+
+**Solutions:**
+
+1. Increase `connect_timeout`
+2. Add more STUN servers
+3. Check corporate firewall/proxy
+
+### TURN Relay Issues
+
+#### Problem: TURN allocation fails
+
+**Diagnosis:**
+
+```bash
+# Test TURN server
+turnutils_stunclient -p 3478 turn.example.com
+```
+
+**Solutions:**
+
+1. Verify credentials are correct
+2. Check server is reachable on port 3478/5349
+3. Ensure realm matches configuration
+
+#### Problem: High latency via relay
+
+**Expected behavior**: Relay adds latency due to extra hop.
+
+**Mitigation:**
+
+1. Use geographically close TURN servers
+2. Enable peer relaying for shorter paths
+3. Consider multiple TURN servers
+
+### Routing Issues
+
+#### Problem: Packets not reaching destination
+
+**Diagnosis:**
+
+```bash
+# Check route table
+curl http://localhost:7082/api/v1/mesh/routes
+
+# Check peer connections
+curl http://localhost:7082/api/v1/p2p/connections
+```
+
+**Solutions:**
+
+1. Verify peer is actually connected
+2. Check MTU settings (reduce if fragmentation)
+3. Ensure routing protocol is running
+
+#### Problem: Routing loops
+
+**Symptoms**: Packets bounce between peers, high CPU usage.
+
+**Solutions:**
+
+1. Enable split horizon (default)
+2. Check TTL is being decremented
+3. Verify sequence numbers prevent duplicate processing
 
 ### Device Issues
 
+#### Problem: TUN/TAP device not created
+
+**Linux:**
+
 ```bash
-# Linux: Check if TUN/TAP is available
+# Check if tun module is loaded
+lsmod | grep tun
+
+# Load if missing
+sudo modprobe tun
+
+# Check permissions
 ls -la /dev/net/tun
+# Should be: crw-rw-rw- 1 root root 10, 200
+```
 
-# macOS: Install tuntaposx
-brew install tuntap
+**macOS:**
 
-# Windows: Install TAP-Windows adapter
+```bash
+# Install tuntaposx
+brew install --cask tuntap
+
+# Or use system extension (macOS 10.15+)
+```
+
+**Windows:**
+
+```powershell
+# Install TAP-Windows adapter
+# Download from OpenVPN or WireGuard
+```
+
+#### Problem: Interface has no IP
+
+```bash
+# Linux
+ip addr add 10.100.0.5/16 dev mesh0
+ip link set mesh0 up
+
+# macOS
+sudo ifconfig mesh0 10.100.0.5 10.100.0.1 up
+```
+
+### Performance Tuning
+
+#### High CPU Usage
+
+1. Use TUN instead of TAP (less overhead)
+2. Reduce keepalive frequency
+3. Limit broadcast TTL
+
+#### Packet Loss
+
+1. Check MTU (try 1280 for maximum compatibility)
+2. Verify UDP buffer sizes
+3. Check for network congestion
+
+```bash
+# Linux: Increase UDP buffers
+sudo sysctl -w net.core.rmem_max=26214400
+sudo sysctl -w net.core.wmem_max=26214400
+```
+
+## Verification Commands
+
+### Check Mesh Status
+
+```bash
+# Node status
+curl http://localhost:7082/api/v1/mesh/status
+
+# Peer list
+curl http://localhost:7082/api/v1/mesh/networks/my-network/peers
+
+# P2P statistics
+curl http://localhost:7082/api/v1/p2p/stats
+```
+
+### Network Diagnostics
+
+```bash
+# Linux
+ip link show mesh0
+ip addr show mesh0
+ip route show dev mesh0
+
+# macOS
+ifconfig mesh0
+netstat -rn | grep mesh0
+
+# Windows
+netsh interface show interface "mesh0"
+route print
+```
+
+### Ping Test
+
+```bash
+# Ping another peer's virtual IP
+ping 10.100.0.2
+
+# With verbose output
+ping -c 5 10.100.0.2
 ```
 
 ## Platform Support
 
 | Platform | TUN | TAP | Notes |
 |----------|-----|-----|-------|
-| Linux | ✓ | ✓ | Native support |
-| macOS | ✓ | ✓ | Requires tuntaposx |
-| Windows | ✓ | ✓ | Requires TAP-Windows |
+| Linux | Full | Full | Native kernel support |
+| macOS | Full | Full | Requires tuntaposx or Network Extension |
+| Windows | Full | Full | Requires wintun or TAP-Windows driver |
+| FreeBSD | Full | Full | Native support |
+| OpenWrt | Full | Partial | May need additional packages |
+
+## API Reference
+
+### Mesh Node Stats
+
+```go
+type NodeStats struct {
+    Status            NodeStatus    `json:"status"`
+    PeerCount         int           `json:"peer_count"`
+    ConnectedPeers    int           `json:"connected_peers"`
+    DirectConnections int           `json:"direct_connections"`
+    RelayedConnections int          `json:"relayed_connections"`
+    BytesSent         int64         `json:"bytes_sent"`
+    BytesReceived     int64         `json:"bytes_received"`
+    PacketsSent       int64         `json:"packets_sent"`
+    PacketsReceived   int64         `json:"packets_received"`
+    Uptime            time.Duration `json:"uptime"`
+}
+```
+
+### P2P Manager Stats
+
+```go
+type Stats struct {
+    ActiveConnections  int
+    DirectConnections  int
+    RelayedConnections int
+    NATType            NATType
+    LocalEndpoints     []netip.AddrPort
+}
+```
+
+### NAT Info
+
+```go
+type NATInfo struct {
+    Type          NATType        `json:"type"`
+    MappedAddress netip.AddrPort `json:"mapped_address"`
+    LocalAddress  netip.AddrPort `json:"local_address"`
+    IsBehindNAT   bool           `json:"is_behind_nat"`
+    Hairpin       bool           `json:"hairpin"`
+    DetectedAt    time.Time      `json:"detected_at"`
+}
+```
