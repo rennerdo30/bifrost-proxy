@@ -557,6 +557,10 @@ func (d *DiskStorage) loadIndex() error {
 	// Walk through all shard directories
 	return filepath.Walk(d.dataPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			slog.Warn("failed to recover cache entry",
+				"path", path,
+				"error", err,
+			)
 			return nil // Skip errors
 		}
 		if info.IsDir() {
@@ -571,11 +575,19 @@ func (d *DiskStorage) loadIndex() error {
 		// Read metadata
 		data, err := os.ReadFile(path)
 		if err != nil {
+			slog.Warn("failed to read cache metadata",
+				"path", path,
+				"error", err,
+			)
 			return nil // Skip errors
 		}
 
 		var meta Metadata
 		if err := json.Unmarshal(data, &meta); err != nil {
+			slog.Warn("failed to read cache data",
+				"path", path,
+				"error", err,
+			)
 			return nil // Skip invalid files
 		}
 
