@@ -118,11 +118,11 @@ bifrost-client service status
 
 Explore our comprehensive guides for advanced setups:
 
-- 🚀 [Getting Started](docs/getting-started.md)
-- ⚙️ [Configuration Guide](docs/configuration.md)
-- 🔒 [Authentication Modes](docs/authentication.md)
-- 🌐 [VPN & Split Tunneling](docs/vpn-mode.md)
-- 📊 [API Reference](docs/api.md)
+- 🚀 [Getting Started](docs/src/content/docs/getting-started.mdx)
+- ⚙️ [Configuration Guide](docs/src/content/docs/configuration.mdx)
+- 🔒 [Authentication Modes](docs/src/content/docs/authentication.mdx)
+- 🌐 [VPN & Split Tunneling](docs/src/content/docs/vpn-mode.mdx)
+- 📊 [API Reference](docs/src/content/docs/api.mdx)
 
 ---
 

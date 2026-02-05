@@ -1274,7 +1274,7 @@ The documentation is organized into the following sections:
   - Overview
   - Backends (WireGuard, OpenVPN, HTTP/SOCKS5 proxies)
   - Authentication (None, Native, System, LDAP, OAuth)
-  - [OpenWRT LuCI Setup Guide](file:///Users/rennerdo30/Development/bifrost-server/docs/openwrt.md#installation-via-luci-gui)
+  - [OpenWRT LuCI Setup Guide](docs/src/content/docs/openwrt.mdx)
 - **Deployment** - Docker, systemd, launchd
 - **Operations**
   - CLI Reference

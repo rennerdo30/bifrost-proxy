@@ -168,6 +168,20 @@ jobs:
         working-directory: web/client
         run: npm run build
 
+  link-check:
+    name: Documentation Link Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check markdown links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          config-file: '.markdown-link-check.json'
+          folder-path: '.'
+          file-extension: '.md,.mdx'
+
   security:
     name: Security Scan
     runs-on: ubuntu-latest
