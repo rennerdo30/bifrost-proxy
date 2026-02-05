@@ -3,10 +3,10 @@
   "sessionId": "830a6708-97ad-4154-a11e-ce4394b62c30",
   "status": "running",
   "startedAt": "2026-02-05T05:20:13.807Z",
-  "updatedAt": "2026-02-05T05:30:24.161Z",
-  "currentIteration": 3,
+  "updatedAt": "2026-02-05T05:31:57.764Z",
+  "currentIteration": 4,
   "maxIterations": 35,
-  "tasksCompleted": 3,
+  "tasksCompleted": 4,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -35,8 +35,8 @@
       {
         "id": "US-004",
         "title": "Fix VPN and OpenVPN error handling",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-005",
@@ -256,6 +256,16 @@
       "durationMs": 122078,
       "startedAt": "2026-02-05T05:25:13.177Z",
       "endedAt": "2026-02-05T05:27:15.255Z"
+    },
+    {
+      "iteration": 4,
+      "status": "completed",
+      "taskId": "US-004",
+      "taskTitle": "Fix VPN and OpenVPN error handling",
+      "taskCompleted": true,
+      "durationMs": 187836,
+      "startedAt": "2026-02-05T05:27:16.322Z",
+      "endedAt": "2026-02-05T05:30:24.158Z"
     }
   ],
   "skippedTaskIds": [],

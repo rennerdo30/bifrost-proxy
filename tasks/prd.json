@@ -428,13 +428,14 @@
         "Handle edge case of selected server being removed"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "desktop",
         "wails",
         "bugfix"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-022",
@@ -719,6 +720,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T05:30:24.159Z"
+    "updatedAt": "2026-02-05T05:31:57.762Z"
   }
 }
