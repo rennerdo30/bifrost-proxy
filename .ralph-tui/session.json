@@ -3,10 +3,10 @@
   "sessionId": "830a6708-97ad-4154-a11e-ce4394b62c30",
   "status": "running",
   "startedAt": "2026-02-05T05:20:13.807Z",
-  "updatedAt": "2026-02-05T07:20:04.538Z",
-  "currentIteration": 28,
+  "updatedAt": "2026-02-05T07:25:01.761Z",
+  "currentIteration": 29,
   "maxIterations": 35,
-  "tasksCompleted": 28,
+  "tasksCompleted": 29,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -185,8 +185,8 @@
       {
         "id": "US-029",
         "title": "Document auto-update system",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-030",
@@ -506,6 +506,16 @@
       "durationMs": 219877,
       "startedAt": "2026-02-05T07:12:26.512Z",
       "endedAt": "2026-02-05T07:16:06.389Z"
+    },
+    {
+      "iteration": 29,
+      "status": "completed",
+      "taskId": "US-029",
+      "taskTitle": "Document auto-update system",
+      "taskCompleted": true,
+      "durationMs": 237078,
+      "startedAt": "2026-02-05T07:16:07.456Z",
+      "endedAt": "2026-02-05T07:20:04.534Z"
     }
   ],
   "skippedTaskIds": [],

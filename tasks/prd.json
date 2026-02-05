@@ -633,12 +633,13 @@
         "Add troubleshooting section for each auth method"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "documentation",
         "authentication"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-031",
@@ -744,6 +745,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T07:20:04.536Z"
+    "updatedAt": "2026-02-05T07:25:01.759Z"
   }
 }
