@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -100,7 +101,7 @@ Example:
 	backendAddCmd.Flags().StringVarP(&backendType, "type", "t", "", "Backend type (required): direct, http_proxy, socks5_proxy, wireguard, openvpn, nordvpn, mullvad, pia, protonvpn")
 	backendAddCmd.Flags().StringVarP(&backendConfig, "config", "c", "{}", "Backend configuration as JSON")
 	backendAddCmd.Flags().BoolVarP(&backendEnabled, "enabled", "e", true, "Enable the backend after creation")
-	backendAddCmd.MarkFlagRequired("type")
+	_ = backendAddCmd.MarkFlagRequired("type") //nolint:errcheck // Flag registration only fails on invalid flag name
 
 	// Backend remove command
 	backendRemoveCmd := &cobra.Command{
@@ -183,8 +184,8 @@ Example:
 	ruleAddCmd.Flags().StringVarP(&ruleDomain, "domain", "d", "", "Domain pattern(s), comma-separated for multiple (required)")
 	ruleAddCmd.Flags().StringVarP(&ruleBackend, "backend", "b", "", "Backend name to route traffic to (required)")
 	ruleAddCmd.Flags().IntVarP(&rulePriority, "priority", "p", 0, "Rule priority (higher = matched first)")
-	ruleAddCmd.MarkFlagRequired("domain")
-	ruleAddCmd.MarkFlagRequired("backend")
+	_ = ruleAddCmd.MarkFlagRequired("domain")  //nolint:errcheck // Flag registration only fails on invalid flag name
+	_ = ruleAddCmd.MarkFlagRequired("backend") //nolint:errcheck // Flag registration only fails on invalid flag name
 
 	ruleRemoveCmd := &cobra.Command{
 		Use:   "remove [name]",
@@ -223,7 +224,10 @@ Example:
 }
 
 func (c *APIClient) doRequest(method, path string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest(method, c.BaseURL+path, body)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +248,7 @@ func (c *APIClient) getJSON(path string, v interface{}) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("API error: %s - %s", resp.Status, string(body))
 	}
 
@@ -282,7 +286,7 @@ func (c *APIClient) ListBackends() error {
 		name := b["name"]
 		bType := b["type"]
 		healthy := b["healthy"]
-		stats, _ := b["stats"].(map[string]interface{})
+		stats, _ := b["stats"].(map[string]interface{}) //nolint:errcheck
 		active := int64(0)
 		total := int64(0)
 		if stats != nil {
@@ -306,7 +310,7 @@ func (c *APIClient) ShowBackend(name string) error {
 		return err
 	}
 
-	data, _ := json.MarshalIndent(backend, "", "  ")
+	data, _ := json.MarshalIndent(backend, "", "  ") //nolint:errcheck // Error only on cycle which won't happen
 	fmt.Println(string(data))
 	return nil
 }
@@ -320,7 +324,7 @@ func (c *APIClient) ReloadConfig() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("reload failed: %s - %s", resp.Status, string(body))
 	}
 
@@ -335,7 +339,7 @@ func (c *APIClient) ShowStats() error {
 		return err
 	}
 
-	data, _ := json.MarshalIndent(stats, "", "  ")
+	data, _ := json.MarshalIndent(stats, "", "  ") //nolint:errcheck // Error only on cycle which won't happen
 	fmt.Println(string(data))
 	return nil
 }
@@ -384,7 +388,7 @@ func (c *APIClient) AddBackend(name, backendType, configJSON string, enabled boo
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("failed to add backend: %s - %s", resp.Status, string(respBody))
@@ -403,7 +407,7 @@ func (c *APIClient) RemoveBackend(name string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("failed to remove backend: %s - %s", resp.Status, string(body))
 	}
 
@@ -513,7 +517,7 @@ func (c *APIClient) AddRule(name, domain, backend string, priority int) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("failed to add rule: %s - %s", resp.Status, string(respBody))
@@ -537,7 +541,7 @@ func (c *APIClient) RemoveRule(name string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("failed to remove rule: %s - %s", resp.Status, string(body))
 	}
 

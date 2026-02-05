@@ -129,7 +129,7 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 			entry.StatusCode = http.StatusInternalServerError
 		}
 		if h.accessLogger != nil {
-			_ = h.accessLogger.Log(*entry)
+			_ = h.accessLogger.Log(*entry) //nolint:errcheck // Best effort access logging
 		}
 	}()
 
@@ -232,7 +232,7 @@ func (h *HTTPHandler) handleConnect(ctx context.Context, conn net.Conn, req *htt
 }
 
 // handleHTTP handles plain HTTP requests (forward proxy).
-func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.Request, reader *bufio.Reader, clientIP string, entry *accesslog.Entry) error {
+func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.Request, _ *bufio.Reader, clientIP string, entry *accesslog.Entry) error {
 	host := req.Host
 	if host == "" {
 		host = req.URL.Host
@@ -298,8 +298,8 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 	req.URL.Host = ""
 
 	// Write the request to target
-	if err := req.Write(targetConn); err != nil {
-		return fmt.Errorf("write request: %w", err)
+	if writeErr := req.Write(targetConn); writeErr != nil {
+		return fmt.Errorf("write request: %w", writeErr)
 	}
 
 	// Read response from target and forward to client

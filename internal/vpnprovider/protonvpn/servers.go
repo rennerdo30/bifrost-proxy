@@ -9,58 +9,58 @@ import (
 
 // LogicalServerResponse represents the ProtonVPN API response for /vpn/logicals.
 type LogicalServerResponse struct {
-	Code            int             `json:"Code"`
-	LogicalServers  []LogicalServer `json:"LogicalServers"`
+	Code           int             `json:"Code"`
+	LogicalServers []LogicalServer `json:"LogicalServers"`
 }
 
 // LogicalServer represents a ProtonVPN logical server.
 // A logical server is a collection of physical servers that share the same
 // hostname and geographic location.
 type LogicalServer struct {
-	ID         string   `json:"ID"`
-	Name       string   `json:"Name"`
-	Domain     string   `json:"Domain"`
-	EntryCountry string `json:"EntryCountry"`
-	ExitCountry  string `json:"ExitCountry"`
-	Tier       int      `json:"Tier"`         // 0=free, 1=basic, 2=plus
-	Features   int      `json:"Features"`     // Bitmask of features
-	Region     *string  `json:"Region"`       // May be nil
-	City       *string  `json:"City"`         // May be nil
-	Score      float64  `json:"Score"`        // Lower is better
-	HostCountry string  `json:"HostCountry"`
-	Load       int      `json:"Load"`         // 0-100
-	Status     int      `json:"Status"`       // 1 = online
-	Servers    []Server `json:"Servers"`      // Physical servers
-	Location   Location `json:"Location"`
+	ID           string   `json:"ID"`
+	Name         string   `json:"Name"`
+	Domain       string   `json:"Domain"`
+	EntryCountry string   `json:"EntryCountry"`
+	ExitCountry  string   `json:"ExitCountry"`
+	Tier         int      `json:"Tier"`     // 0=free, 1=basic, 2=plus
+	Features     int      `json:"Features"` // Bitmask of features
+	Region       *string  `json:"Region"`   // May be nil
+	City         *string  `json:"City"`     // May be nil
+	Score        float64  `json:"Score"`    // Lower is better
+	HostCountry  string   `json:"HostCountry"`
+	Load         int      `json:"Load"`    // 0-100
+	Status       int      `json:"Status"`  // 1 = online
+	Servers      []Server `json:"Servers"` // Physical servers
+	Location     Location `json:"Location"`
 }
 
 // Server represents a physical ProtonVPN server.
 type Server struct {
-	ID          string `json:"ID"`
-	EntryIP     string `json:"EntryIP"`
-	ExitIP      string `json:"ExitIP"`
-	Domain      string `json:"Domain"`
-	Status      int    `json:"Status"`
-	Label       string `json:"Label"`
-	X25519PublicKey string `json:"X25519PublicKey,omitempty"` // WireGuard public key
-	Generation  int    `json:"Generation"`
+	ID                 string  `json:"ID"`
+	EntryIP            string  `json:"EntryIP"`
+	ExitIP             string  `json:"ExitIP"`
+	Domain             string  `json:"Domain"`
+	Status             int     `json:"Status"`
+	Label              string  `json:"Label"`
+	X25519PublicKey    string  `json:"X25519PublicKey,omitempty"` // WireGuard public key
+	Generation         int     `json:"Generation"`
 	ServicesDownReason *string `json:"ServicesDownReason"`
 }
 
 // Location represents the geographic location of a server.
 type Location struct {
-	Lat float64 `json:"Lat"`
+	Lat  float64 `json:"Lat"`
 	Long float64 `json:"Long"`
 }
 
 // ProtonVPN Feature flags (bitmask).
 const (
-	FeatureSecureCore = 1 << 0  // Secure Core server (multi-hop)
-	FeatureTor        = 1 << 1  // TOR exit server
-	FeatureP2P        = 1 << 2  // P2P/file-sharing allowed
-	FeatureXOR        = 1 << 3  // XOR obfuscation
-	FeatureIPv6       = 1 << 4  // IPv6 support
-	FeatureStreaming  = 1 << 5  // Streaming optimized
+	FeatureSecureCore = 1 << 0 // Secure Core server (multi-hop)
+	FeatureTor        = 1 << 1 // TOR exit server
+	FeatureP2P        = 1 << 2 // P2P/file-sharing allowed
+	FeatureXOR        = 1 << 3 // XOR obfuscation
+	FeatureIPv6       = 1 << 4 // IPv6 support
+	FeatureStreaming  = 1 << 5 // Streaming optimized
 )
 
 // FeatureMap maps feature flags to feature names.
@@ -180,31 +180,31 @@ func (ls *LogicalServer) GetWireGuardPublicKey() string {
 
 // SessionResponse represents the ProtonVPN session info response.
 type SessionResponse struct {
-	Code        int    `json:"Code"`
-	UID         string `json:"UID"`
-	AccessToken string `json:"AccessToken"`
+	Code         int    `json:"Code"`
+	UID          string `json:"UID"`
+	AccessToken  string `json:"AccessToken"`
 	RefreshToken string `json:"RefreshToken"`
-	TokenType   string `json:"TokenType"`
-	Scope       string `json:"Scope"`
-	LocalID     int    `json:"LocalID"`
+	TokenType    string `json:"TokenType"`
+	Scope        string `json:"Scope"`
+	LocalID      int    `json:"LocalID"`
 }
 
 // VPNInfoResponse represents the VPN info response.
 type VPNInfoResponse struct {
-	Code  int     `json:"Code"`
-	VPN   VPNInfo `json:"VPN"`
+	Code int     `json:"Code"`
+	VPN  VPNInfo `json:"VPN"`
 }
 
 // VPNInfo contains VPN-specific account information.
 type VPNInfo struct {
-	Status       int    `json:"Status"`
-	ExpirationTime int64 `json:"ExpirationTime"`
-	PlanName     string `json:"PlanName"`
-	MaxConnect   int    `json:"MaxConnect"`
-	MaxTier      int    `json:"MaxTier"`
-	Services     int    `json:"Services"`
-	GroupID      string `json:"GroupID"`
-	Name         string `json:"Name"`
+	Status         int    `json:"Status"`
+	ExpirationTime int64  `json:"ExpirationTime"`
+	PlanName       string `json:"PlanName"`
+	MaxConnect     int    `json:"MaxConnect"`
+	MaxTier        int    `json:"MaxTier"`
+	Services       int    `json:"Services"`
+	GroupID        string `json:"GroupID"`
+	Name           string `json:"Name"`
 }
 
 // OpenVPNConfigTemplate is the base OpenVPN configuration template for ProtonVPN.

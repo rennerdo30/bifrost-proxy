@@ -87,8 +87,8 @@ func TestAPIClient_ShowStatus(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":        "running",
 			"server_status": "connected",
-			"version":        "1.0.0",
-			"time":           "2024-01-01T00:00:00Z",
+			"version":       "1.0.0",
+			"time":          "2024-01-01T00:00:00Z",
 			"debug_entries": 42,
 		})
 	}))
@@ -105,12 +105,12 @@ func TestAPIClient_TailDebug(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode([]map[string]interface{}{
 			{
-				"timestamp":  "2024-01-01T00:00:00Z",
-				"method":    "GET",
-				"host":      "example.com",
+				"timestamp":   "2024-01-01T00:00:00Z",
+				"method":      "GET",
+				"host":        "example.com",
 				"status_code": 200,
 				"duration_ms": 100,
-				"route":     "direct",
+				"route":       "direct",
 			},
 		})
 	}))
@@ -184,10 +184,10 @@ func TestAPIClient_ListRoutes(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode([]map[string]interface{}{
 			{
-				"name":      "test-route",
-				"patterns":  []string{"*.example.com"},
-				"action":    "server",
-				"priority":  10,
+				"name":     "test-route",
+				"patterns": []string{"*.example.com"},
+				"action":   "server",
+				"priority": 10,
 			},
 		})
 	}))
@@ -659,14 +659,20 @@ func TestAPIClient_ShowVPNDNSCache_APIError(t *testing.T) {
 func TestAPIClient_doRequest_Error(t *testing.T) {
 	// Invalid URL that will cause request creation failure
 	client := NewAPIClient("://invalid-url", "test-token")
-	_, err := client.doRequest("GET", "/api/v1/test", nil)
+	resp, err := client.doRequest("GET", "/api/v1/test", nil)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	assert.Error(t, err)
 }
 
 func TestAPIClient_doRequest_NetworkError(t *testing.T) {
 	// Server that doesn't exist
 	client := NewAPIClient("http://localhost:99999", "")
-	_, err := client.doRequest("GET", "/api/v1/test", nil)
+	resp, err := client.doRequest("GET", "/api/v1/test", nil)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	assert.Error(t, err)
 }
 

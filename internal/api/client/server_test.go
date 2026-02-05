@@ -2544,18 +2544,18 @@ func TestAPI_HandleVPNSplitRemoveApp_EmptyName(t *testing.T) {
 
 // mockVPNManager is a mock implementation of the VPN manager for testing
 type mockVPNManager struct {
-	status             vpn.VPNStats
-	connections        []vpn.ConnectionInfo
-	splitTunnelRules   vpn.SplitTunnelConfig
-	startErr           error
-	stopErr            error
-	addAppErr          error
-	removeAppErr       error
-	addDomainErr       error
-	removeDomainErr    error
-	addIPErr           error
-	removeIPErr        error
-	setModeErr         error
+	status           vpn.VPNStats
+	connections      []vpn.ConnectionInfo
+	splitTunnelRules vpn.SplitTunnelConfig
+	startErr         error
+	stopErr          error
+	addAppErr        error
+	removeAppErr     error
+	addDomainErr     error
+	removeDomainErr  error
+	addIPErr         error
+	removeIPErr      error
+	setModeErr       error
 }
 
 func (m *mockVPNManager) Status() vpn.VPNStats {
@@ -3054,18 +3054,6 @@ func TestAuthMiddleware_BearerPrefixCaseInsensitive(t *testing.T) {
 // ============================================================================
 // WriteJSON Error Handling Test
 // ============================================================================
-
-type failingWriter struct {
-	http.ResponseWriter
-	failed bool
-}
-
-func (w *failingWriter) Write(data []byte) (int, error) {
-	if w.failed {
-		return 0, errors.New("write failed")
-	}
-	return w.ResponseWriter.Write(data)
-}
 
 func TestAPI_WriteJSON_HandlesError(t *testing.T) {
 	api := New(Config{})

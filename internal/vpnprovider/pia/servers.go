@@ -22,15 +22,15 @@ type GroupServer struct {
 
 // Region represents a PIA region with its servers.
 type Region struct {
-	ID          string            `json:"id"`
-	Name        string            `json:"name"`
-	Country     string            `json:"country"`
-	AutoRegion  bool              `json:"auto_region"`
-	DNS         string            `json:"dns"`
-	PortForward bool              `json:"port_forward"`
-	Geo         bool              `json:"geo"`
-	Offline     bool              `json:"offline"`
-	Servers     RegionServers     `json:"servers"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Country     string        `json:"country"`
+	AutoRegion  bool          `json:"auto_region"`
+	DNS         string        `json:"dns"`
+	PortForward bool          `json:"port_forward"`
+	Geo         bool          `json:"geo"`
+	Offline     bool          `json:"offline"`
+	Servers     RegionServers `json:"servers"`
 }
 
 // RegionServers contains different server types for a region.
@@ -43,20 +43,20 @@ type RegionServers struct {
 
 // WGServer represents a WireGuard server.
 type WGServer struct {
-	IP  string `json:"ip"`
-	CN  string `json:"cn"` // Common name (hostname)
+	IP string `json:"ip"`
+	CN string `json:"cn"` // Common name (hostname)
 }
 
 // OVPNServer represents an OpenVPN server.
 type OVPNServer struct {
-	IP  string `json:"ip"`
-	CN  string `json:"cn"`
+	IP string `json:"ip"`
+	CN string `json:"cn"`
 }
 
 // MetaServer represents a metadata server (used for API endpoints).
 type MetaServer struct {
-	IP  string `json:"ip"`
-	CN  string `json:"cn"`
+	IP string `json:"ip"`
+	CN string `json:"cn"`
 }
 
 // ToVPNProviderServer converts a PIA region to the common vpnprovider.Server format.

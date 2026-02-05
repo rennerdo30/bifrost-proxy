@@ -20,13 +20,13 @@ type DirectBackend struct {
 }
 
 type directStats struct {
-	activeConns  atomic.Int64
-	totalConns   atomic.Int64
-	bytesSent    atomic.Int64
-	bytesRecv    atomic.Int64
-	errors       atomic.Int64
-	lastError    string
-	lastErrorMu  sync.RWMutex
+	activeConns   atomic.Int64
+	totalConns    atomic.Int64
+	bytesSent     atomic.Int64
+	bytesRecv     atomic.Int64
+	errors        atomic.Int64
+	lastError     string
+	lastErrorMu   sync.RWMutex
 	lastErrorTime time.Time
 }
 
@@ -49,7 +49,9 @@ func NewDirectBackend(cfg DirectConfig) *DirectBackend {
 
 	var localAddr net.Addr
 	if cfg.LocalAddr != "" {
-		localAddr, _ = net.ResolveTCPAddr("tcp", cfg.LocalAddr)
+		// Error is intentionally ignored - if the address is invalid,
+		// we'll fall back to using the default local address
+		localAddr, _ = net.ResolveTCPAddr("tcp", cfg.LocalAddr) //nolint:errcheck
 	}
 
 	return &DirectBackend{

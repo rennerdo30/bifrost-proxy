@@ -211,17 +211,17 @@ func (a *ARPPacket) MarshalBinary() ([]byte, error) {
 // ARPInterceptor handles ARP requests and responses for a virtual network interface.
 // It responds to ARP requests for the local IP and learns MAC addresses from ARP traffic.
 type ARPInterceptor struct {
-	localMAC  net.HardwareAddr
-	localIP   netip.Addr
-	macTable  *MACTable
+	localMAC net.HardwareAddr
+	localIP  netip.Addr
+	macTable *MACTable
 }
 
 // NewARPInterceptor creates a new ARP interceptor.
 func NewARPInterceptor(localMAC net.HardwareAddr, localIP netip.Addr, macTable *MACTable) *ARPInterceptor {
 	return &ARPInterceptor{
-		localMAC:  localMAC,
-		localIP:   localIP,
-		macTable:  macTable,
+		localMAC: localMAC,
+		localIP:  localIP,
+		macTable: macTable,
 	}
 }
 

@@ -257,7 +257,7 @@ func (a *API) setWebSocketHub(hub *WebSocketHub) {
 }
 
 // handleGetConfigTimestamp returns the config file modification time.
-func (a *API) handleGetConfigTimestamp(w http.ResponseWriter, r *http.Request) {
+func (a *API) handleGetConfigTimestamp(w http.ResponseWriter, _ *http.Request) {
 	a.writeJSON(w, http.StatusOK, map[string]interface{}{
 		"timestamp": time.Now().Format(time.RFC3339),
 	})

@@ -96,15 +96,15 @@ func (i *Installer) Backup() (string, error) {
 	}
 	defer dst.Close()
 
-	if _, err := io.Copy(dst, src); err != nil {
+	if _, copyErr := io.Copy(dst, src); copyErr != nil {
 		os.Remove(backupPath)
-		return "", fmt.Errorf("copy to backup: %w", err)
+		return "", fmt.Errorf("copy to backup: %w", copyErr)
 	}
 
 	// Preserve permissions
 	srcInfo, err := os.Stat(currentPath)
 	if err == nil {
-		os.Chmod(backupPath, srcInfo.Mode())
+		_ = os.Chmod(backupPath, srcInfo.Mode()) //nolint:errcheck // Best effort permission preservation
 	}
 
 	return backupPath, nil
@@ -193,7 +193,9 @@ func (i *Installer) extractTarGz(archivePath, destPath string) error {
 			}
 			defer out.Close()
 
-			if _, err := io.Copy(out, tr); err != nil {
+			// Limit extraction to 500MB to prevent decompression bombs
+			const maxSize = 500 * 1024 * 1024
+			if _, err := io.Copy(out, io.LimitReader(tr, maxSize)); err != nil {
 				return fmt.Errorf("extract file: %w", err)
 			}
 
@@ -228,7 +230,9 @@ func (i *Installer) extractZip(archivePath, destPath string) error {
 			}
 			defer out.Close()
 
-			if _, err := io.Copy(out, src); err != nil {
+			// Limit extraction to 500MB to prevent decompression bombs
+			const maxSize = 500 * 1024 * 1024
+			if _, err := io.Copy(out, io.LimitReader(src, maxSize)); err != nil {
 				return fmt.Errorf("extract file: %w", err)
 			}
 

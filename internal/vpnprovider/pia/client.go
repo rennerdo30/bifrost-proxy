@@ -26,7 +26,7 @@ const (
 	ServerListEndpoint = "https://serverlist.piaservers.net/vpninfo/servers/v6"
 
 	// TokenEndpoint is the URL for obtaining authentication tokens.
-	TokenEndpoint = "https://www.privateinternetaccess.com/api/client/v2/token"
+	TokenEndpoint = "https://www.privateinternetaccess.com/api/client/v2/token" //nolint:gosec // G101: This is an API endpoint URL, not a credential
 
 	// AddKeyPath is the path for registering WireGuard keys (appended to server IP).
 	AddKeyPath = "/addKey"
@@ -287,7 +287,7 @@ func (c *Client) registerWireGuardKey(ctx context.Context, region *Region, publi
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // PIA uses self-signed certs for key registration
+				InsecureSkipVerify: true, //nolint:gosec // G402: PIA uses self-signed certs for WireGuard key registration
 			},
 		},
 	}

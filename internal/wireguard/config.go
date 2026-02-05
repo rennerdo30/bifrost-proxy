@@ -273,7 +273,8 @@ func (c *Config) ToIPC() string {
 }
 
 // hexKey converts a base64 key to hex format for IPC.
+// The key is assumed to be pre-validated by validateKey, so we can safely ignore the error.
 func hexKey(b64Key string) string {
-	decoded, _ := base64.StdEncoding.DecodeString(b64Key)
+	decoded, _ := base64.StdEncoding.DecodeString(b64Key) //nolint:errcheck
 	return fmt.Sprintf("%x", decoded)
 }

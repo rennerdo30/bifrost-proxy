@@ -1172,8 +1172,8 @@ func TestServer_HandleSOCKS5Conn(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := targetServer.Accept()
-			if err != nil {
+			conn, acceptErr := targetServer.Accept()
+			if acceptErr != nil {
 				return
 			}
 			conn.Write([]byte("Hello from target"))
@@ -1344,9 +1344,9 @@ func TestServer_HandleSOCKS5Conn_WithRateLimiting(t *testing.T) {
 	require.NoError(t, err)
 
 	conn2.SetReadDeadline(time.Now().Add(1 * time.Second))
-	_, err = conn2.Write([]byte{0x05, 0x01, 0x00})
 	// Either the write succeeds or fails due to connection being closed
 	// Both are valid behaviors under rate limiting
+	_, _ = conn2.Write([]byte{0x05, 0x01, 0x00})
 	conn2.Close()
 
 	// Stop server
@@ -1665,8 +1665,8 @@ func TestServer_HandleHTTPConn_WithConnectionLimiting(t *testing.T) {
 	// Server goroutine that accepts but holds connections
 	go func() {
 		for {
-			conn, err := targetServer.Accept()
-			if err != nil {
+			conn, acceptErr := targetServer.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Hold connection open for a while
@@ -1750,8 +1750,8 @@ func TestServer_HandleSOCKS5Conn_WithConnectionLimiting(t *testing.T) {
 	// Server goroutine
 	go func() {
 		for {
-			conn, err := targetServer.Accept()
-			if err != nil {
+			conn, acceptErr := targetServer.Accept()
+			if acceptErr != nil {
 				return
 			}
 			time.Sleep(5 * time.Second)
@@ -1784,8 +1784,8 @@ func TestServer_HandleSOCKS5Conn_WithConnectionLimiting(t *testing.T) {
 	conn2.SetDeadline(time.Now().Add(2 * time.Second))
 
 	// This may be rejected due to connection limit
-	_, err = conn2.Write([]byte{0x05, 0x01, 0x00})
 	// Either succeeds or connection is closed - both valid
+	_, _ = conn2.Write([]byte{0x05, 0x01, 0x00})
 
 	conn2.Close()
 	conn1.Close()
@@ -1944,8 +1944,8 @@ func TestServer_StopWithGracePeriodTimeout(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := targetServer.Accept()
-			if err != nil {
+			conn, acceptErr := targetServer.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Hold connection much longer than grace period
@@ -1965,7 +1965,10 @@ func TestServer_StopWithGracePeriodTimeout(t *testing.T) {
 
 	// Read initial response
 	reader := bufio.NewReader(conn)
-	_, _ = http.ReadResponse(reader, nil)
+	resp, _ := http.ReadResponse(reader, nil)
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
 	// Connection established, now stop server
 	// The grace period should timeout
 
@@ -2048,8 +2051,8 @@ func TestServer_HandleSOCKS5Conn_WithAuth(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := targetServer.Accept()
-			if err != nil {
+			conn, acceptErr := targetServer.Accept()
+			if acceptErr != nil {
 				return
 			}
 			conn.Write([]byte("Hello"))
@@ -2247,8 +2250,8 @@ func TestServer_HandleSOCKS5Conn_WithAPIEnabled(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := targetServer.Accept()
-			if err != nil {
+			conn, acceptErr := targetServer.Accept()
+			if acceptErr != nil {
 				return
 			}
 			conn.Write([]byte("Hello"))

@@ -22,10 +22,10 @@ import (
 
 const (
 	// API endpoints
-	relaysAPIURL       = "https://api.mullvad.net/www/relays/all/"
-	wireGuardAPIURL    = "https://api.mullvad.net/wg/"
-	accountAPIURL      = "https://api.mullvad.net/accounts/v1/accounts/"
-	providerName       = "mullvad"
+	relaysAPIURL    = "https://api.mullvad.net/www/relays/all/"
+	wireGuardAPIURL = "https://api.mullvad.net/wg/"
+	accountAPIURL   = "https://api.mullvad.net/accounts/v1/accounts/"
+	providerName    = "mullvad"
 
 	// Default WireGuard settings
 	defaultWireGuardPort = 51820
@@ -147,7 +147,7 @@ func (c *Client) FetchServers(ctx context.Context) ([]vpnprovider.Server, error)
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		c.logger.Error("failed to fetch servers",
 			"provider", providerName,
 			"status", resp.StatusCode,
@@ -370,7 +370,7 @@ func GenerateKeyPair() (string, string, error) {
 }
 
 // generateOpenVPNConfig generates the OpenVPN configuration content.
-func generateOpenVPNConfig(server *vpnprovider.Server, accountID string) string {
+func generateOpenVPNConfig(server *vpnprovider.Server, _ string) string {
 	var sb strings.Builder
 
 	sb.WriteString("# Mullvad OpenVPN Configuration\n")
@@ -471,7 +471,7 @@ func (c *Client) GetAccountInfo(ctx context.Context) (*AccountInfo, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return nil, fmt.Errorf("API error: HTTP %d: %s", resp.StatusCode, string(body))
 	}
 

@@ -233,7 +233,7 @@ func (b *SOCKS5ProxyBackend) connect(conn net.Conn, address string) error {
 
 	// Add port
 	portBytes := make([]byte, 2)
-	binary.BigEndian.PutUint16(portBytes, uint16(port))
+	binary.BigEndian.PutUint16(portBytes, uint16(port)) //nolint:gosec // G115: port is validated to be in 1-65535 range
 	req = append(req, portBytes...)
 
 	if _, err := conn.Write(req); err != nil {

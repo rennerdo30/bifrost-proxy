@@ -324,6 +324,7 @@ func handleMockSTUNRequests(conn net.PacketConn) {
 	handleMockSTUNRequestsWithAddress(conn, "198.51.100.1", 12345)
 }
 
+//nolint:unparam // ip is always "198.51.100.1" in tests but kept for test readability
 func handleMockSTUNRequestsWithAddress(conn net.PacketConn, ip string, port int) {
 	buf := make([]byte, 1024)
 	for {

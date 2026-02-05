@@ -19,6 +19,8 @@ import (
 )
 
 // generateTOTP generates a TOTP code for testing purposes
+//
+//nolint:unparam // secret is always totpSecret in tests but kept for test readability
 func generateTOTP(secret string, timestamp time.Time) string {
 	secretBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(secret)
 	if err != nil {
@@ -115,6 +117,8 @@ func TestMFAWrapperPlugin_ConfigSchema(t *testing.T) {
 }
 
 // Helper to create authenticators for testing the wrapper directly
+//
+//nolint:unparam // totpSecret is always the same in tests but kept for test readability
 func createTestAuthenticators(t *testing.T, passwordHash, totpSecret string) (auth.Authenticator, auth.Authenticator) {
 	t.Helper()
 	factory := auth.NewFactory()
@@ -511,14 +515,14 @@ func TestParsePluginConfig_AllMFAModes(t *testing.T) {
 	require.True(t, ok)
 
 	tests := []struct {
-		mode     string
-		wantErr  bool
+		mode    string
+		wantErr bool
 	}{
 		{"always", false},
 		{"per_user", false},
 		{"group_based", false},
-		{"ALWAYS", false},     // Test case insensitivity
-		{"Per_User", false},   // Test case insensitivity
+		{"ALWAYS", false},      // Test case insensitivity
+		{"Per_User", false},    // Test case insensitivity
 		{"GROUP_BASED", false}, // Test case insensitivity
 	}
 

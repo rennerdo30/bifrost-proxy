@@ -21,8 +21,8 @@ type DNSServer struct {
 	cache       *DNSCache
 	splitEngine *SplitTunnelEngine
 
-	server     *dns.Server
-	udpConn    *net.UDPConn
+	server      *dns.Server
+	udpConn     *net.UDPConn
 	tcpListener net.Listener
 
 	// Statistics
@@ -84,9 +84,9 @@ func (s *DNSServer) Start(ctx context.Context) error {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		if err := s.server.ActivateAndServe(); err != nil {
-			if !errors.Is(err, net.ErrClosed) {
-				slog.Error("DNS server error", "error", err)
+		if serveErr := s.server.ActivateAndServe(); serveErr != nil {
+			if !errors.Is(serveErr, net.ErrClosed) {
+				slog.Error("DNS server error", "error", serveErr)
 			}
 		}
 	}()
@@ -128,7 +128,7 @@ func (s *DNSServer) Stop() error {
 	}
 
 	if s.server != nil {
-		s.server.Shutdown()
+		_ = s.server.Shutdown() //nolint:errcheck // Best effort shutdown
 	}
 
 	if s.udpConn != nil {
@@ -170,12 +170,12 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		default:
 			// Forward other query types upstream
 			s.forwardQuery(m, r)
-			w.WriteMsg(m)
+			_ = w.WriteMsg(m) //nolint:errcheck // Best effort DNS response
 			return
 		}
 	}
 
-	w.WriteMsg(m)
+	_ = w.WriteMsg(m) //nolint:errcheck // Best effort DNS response
 }
 
 // handleAddressQuery handles A and AAAA queries.
@@ -210,7 +210,7 @@ func (s *DNSServer) handleAddressQuery(m *dns.Msg, q dns.Question, domain string
 }
 
 // addAddressAnswers adds A or AAAA records to the response.
-func (s *DNSServer) addAddressAnswers(m *dns.Msg, q dns.Question, domain string, addrs []netip.Addr) {
+func (s *DNSServer) addAddressAnswers(m *dns.Msg, q dns.Question, _ string, addrs []netip.Addr) {
 	for _, addr := range addrs {
 		if q.Qtype == dns.TypeA && addr.Is4() {
 			rr := &dns.A{

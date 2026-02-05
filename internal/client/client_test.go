@@ -785,9 +785,9 @@ func TestClient_onConnect_WithDebugger(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
-			conn.Close()
+		acceptedConn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			acceptedConn.Close()
 		}
 	}()
 
@@ -827,9 +827,9 @@ func TestClient_onConnect_NilDebugger(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
-			conn.Close()
+		acceptedConn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			acceptedConn.Close()
 		}
 	}()
 
@@ -866,9 +866,9 @@ func TestClient_onError_WithDebugger(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
-			conn.Close()
+		acceptedConn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			acceptedConn.Close()
 		}
 	}()
 
@@ -909,9 +909,9 @@ func TestClient_onError_NilDebugger(t *testing.T) {
 	defer listener.Close()
 
 	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
-			conn.Close()
+		acceptedConn, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			acceptedConn.Close()
 		}
 	}()
 
@@ -1294,12 +1294,12 @@ func TestClient_DirectRouteHTTP(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := httpServer.Accept()
-			if err != nil {
+			acceptedConn, acceptErr := httpServer.Accept()
+			if acceptErr != nil {
 				return
 			}
-			conn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"))
-			conn.Close()
+			acceptedConn.Write([]byte("HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK"))
+			acceptedConn.Close()
 		}
 	}()
 

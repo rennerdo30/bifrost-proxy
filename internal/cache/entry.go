@@ -136,12 +136,12 @@ func ParseCacheControl(header string) *CacheControl {
 			cc.Immutable = true
 		case strings.HasPrefix(directive, "max-age="):
 			var age int
-			if _, err := parseDirectiveValue(directive, "max-age=", &age); err == nil {
+			if parseDirectiveValue(directive, "max-age=", &age) {
 				cc.MaxAge = age
 			}
 		case strings.HasPrefix(directive, "s-maxage="):
 			var age int
-			if _, err := parseDirectiveValue(directive, "s-maxage=", &age); err == nil {
+			if parseDirectiveValue(directive, "s-maxage=", &age) {
 				cc.SMaxAge = age
 			}
 		}
@@ -151,9 +151,9 @@ func ParseCacheControl(header string) *CacheControl {
 }
 
 // parseDirectiveValue parses a directive value like "max-age=3600".
-func parseDirectiveValue(directive, prefix string, value *int) (bool, error) {
+func parseDirectiveValue(directive, prefix string, value *int) bool {
 	if !strings.HasPrefix(directive, prefix) {
-		return false, nil
+		return false
 	}
 	valueStr := strings.TrimPrefix(directive, prefix)
 	var v int
@@ -164,7 +164,7 @@ func parseDirectiveValue(directive, prefix string, value *int) (bool, error) {
 		v = v*10 + int(c-'0')
 	}
 	*value = v
-	return true, nil
+	return true
 }
 
 // IsCacheable checks if the metadata indicates a cacheable response.

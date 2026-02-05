@@ -96,7 +96,7 @@ func (t *darwinTAP) configure(cfg Config) error {
 	}
 
 	// Set MTU
-	cmd := exec.Command("ifconfig", t.name, "mtu", strconv.Itoa(cfg.MTU))
+	cmd := exec.Command("ifconfig", t.name, "mtu", strconv.Itoa(cfg.MTU)) //nolint:gosec // G204: interface name and MTU are from validated config
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return &DeviceError{Op: "ifconfig mtu", Err: fmt.Errorf("%w: %s", err, string(output))}
 	}
@@ -113,9 +113,9 @@ func (t *darwinTAP) configure(cfg Config) error {
 		if addr.Is4() {
 			mask := net.CIDRMask(bits, 32)
 			maskStr := net.IP(mask).String()
-			cmd = exec.Command("ifconfig", t.name, "inet", addr.String(), "netmask", maskStr)
+			cmd = exec.Command("ifconfig", t.name, "inet", addr.String(), "netmask", maskStr) //nolint:gosec // G204: interface name and addresses are validated
 		} else {
-			cmd = exec.Command("ifconfig", t.name, "inet6", fmt.Sprintf("%s/%d", addr, bits))
+			cmd = exec.Command("ifconfig", t.name, "inet6", fmt.Sprintf("%s/%d", addr, bits)) //nolint:gosec // G204: interface name and addresses are validated
 		}
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return &DeviceError{Op: "ifconfig address", Err: fmt.Errorf("%w: %s", err, string(output))}
@@ -123,7 +123,7 @@ func (t *darwinTAP) configure(cfg Config) error {
 	}
 
 	// Bring interface up
-	cmd = exec.Command("ifconfig", t.name, "up")
+	cmd = exec.Command("ifconfig", t.name, "up") //nolint:gosec // G204: interface name is from validated config
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return &DeviceError{Op: "ifconfig up", Err: fmt.Errorf("%w: %s", err, string(output))}
 	}
@@ -140,7 +140,7 @@ func (t *darwinTAP) configure(cfg Config) error {
 
 // setMACAddressCmd sets the MAC address using ifconfig.
 func (t *darwinTAP) setMACAddressCmd(mac net.HardwareAddr) error {
-	cmd := exec.Command("ifconfig", t.name, "lladdr", mac.String())
+	cmd := exec.Command("ifconfig", t.name, "lladdr", mac.String()) //nolint:gosec // G204: interface name and MAC are validated
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return &DeviceError{Op: "ifconfig lladdr", Err: fmt.Errorf("%w: %s", err, string(output))}
 	}
@@ -150,7 +150,7 @@ func (t *darwinTAP) setMACAddressCmd(mac net.HardwareAddr) error {
 // joinBridge adds the TAP interface to a bridge using ifconfig.
 func (t *darwinTAP) joinBridge(bridge string) error {
 	// On macOS, use ifconfig to add member to bridge
-	cmd := exec.Command("ifconfig", bridge, "addm", t.name)
+	cmd := exec.Command("ifconfig", bridge, "addm", t.name) //nolint:gosec // G204: bridge and interface names are from validated config
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return &DeviceError{Op: "join bridge", Err: fmt.Errorf("%w: %s", err, string(output))}
 	}
@@ -213,7 +213,7 @@ func (t *darwinTAP) Close() error {
 	t.closed = true
 
 	// Bring interface down
-	exec.Command("ifconfig", t.name, "down").Run()
+	_ = exec.Command("ifconfig", t.name, "down").Run() //nolint:errcheck,gosec // Best effort interface cleanup
 
 	if t.fd != nil {
 		return t.fd.Close()
@@ -238,7 +238,7 @@ func (t *darwinTAP) SetMACAddress(mac net.HardwareAddr) error {
 	}
 
 	// Bring interface down first
-	exec.Command("ifconfig", t.name, "down").Run()
+	_ = exec.Command("ifconfig", t.name, "down").Run() //nolint:errcheck,gosec // Best effort interface control
 
 	// Set the MAC address
 	if err := t.setMACAddressCmd(mac); err != nil {
@@ -248,7 +248,7 @@ func (t *darwinTAP) SetMACAddress(mac net.HardwareAddr) error {
 	t.mac = mac
 
 	// Bring interface back up
-	exec.Command("ifconfig", t.name, "up").Run()
+	_ = exec.Command("ifconfig", t.name, "up").Run() //nolint:errcheck,gosec // Best effort interface control
 
 	return nil
 }

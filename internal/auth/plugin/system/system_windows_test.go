@@ -165,11 +165,11 @@ func TestAuthenticatorUserAllowedCaseInsensitive(t *testing.T) {
 // TestParseConfig tests configuration parsing.
 func TestParseConfig(t *testing.T) {
 	tests := []struct {
-		name        string
-		config      map[string]any
-		wantDomain  string
-		wantLogon   uint32
-		wantErr     bool
+		name       string
+		config     map[string]any
+		wantDomain string
+		wantLogon  uint32
+		wantErr    bool
 	}{
 		{
 			name:       "nil config",

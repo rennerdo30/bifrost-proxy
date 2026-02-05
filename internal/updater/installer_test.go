@@ -59,11 +59,11 @@ func TestInstaller_ExtractBinary_TarGz(t *testing.T) {
 		Mode: 0755,
 		Size: int64(len(binaryContent)),
 	}
-	if err := tw.WriteHeader(hdr); err != nil {
-		t.Fatal(err)
+	if writeHdrErr := tw.WriteHeader(hdr); writeHdrErr != nil {
+		t.Fatal(writeHdrErr)
 	}
-	if _, err := tw.Write(binaryContent); err != nil {
-		t.Fatal(err)
+	if _, writeErr := tw.Write(binaryContent); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	tw.Close()
 	gzw.Close()
@@ -107,8 +107,8 @@ func TestInstaller_ExtractBinary_Zip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.Write(binaryContent); err != nil {
-		t.Fatal(err)
+	if _, writeErr := w.Write(binaryContent); writeErr != nil {
+		t.Fatal(writeErr)
 	}
 	zw.Close()
 	f.Close()
@@ -203,8 +203,8 @@ func TestInstaller_Backup(t *testing.T) {
 	}
 
 	// Verify backup exists
-	if _, err := os.Stat(backupPath); err != nil {
-		t.Fatalf("backup file does not exist: %v", err)
+	if _, statErr := os.Stat(backupPath); statErr != nil {
+		t.Fatalf("backup file does not exist: %v", statErr)
 	}
 
 	// Verify backup content

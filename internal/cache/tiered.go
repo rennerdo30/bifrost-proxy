@@ -56,7 +56,7 @@ func (t *TieredStorage) Start(ctx context.Context) error {
 	}
 
 	if err := t.disk.Start(ctx); err != nil {
-		t.memory.Stop(ctx)
+		_ = t.memory.Stop(ctx) //nolint:errcheck // Best effort cleanup after disk start failure
 		return err
 	}
 
@@ -166,8 +166,8 @@ func (t *TieredStorage) Delete(ctx context.Context, key string) error {
 	t.mu.RUnlock()
 
 	// Delete from both tiers (idempotent)
-	t.memory.Delete(ctx, key)
-	t.disk.Delete(ctx, key)
+	_ = t.memory.Delete(ctx, key) //nolint:errcheck // Best effort delete from memory tier
+	_ = t.disk.Delete(ctx, key)   //nolint:errcheck // Best effort delete from disk tier
 	return nil
 }
 

@@ -10,22 +10,22 @@ import (
 // It tracks failed login attempts per IP address and username, implementing
 // exponential backoff for repeated failures.
 type BruteForceProtector struct {
-	attempts     map[string]*attemptTracker
-	mu           sync.RWMutex
-	maxAttempts  int           // Max failed attempts before lockout
-	lockoutTime  time.Duration // Initial lockout duration
-	maxLockout   time.Duration // Maximum lockout duration (for exponential backoff)
-	windowSize   time.Duration // Time window for counting attempts
-	cleanupTick  *time.Ticker
-	done         chan struct{}
+	attempts    map[string]*attemptTracker
+	mu          sync.RWMutex
+	maxAttempts int           // Max failed attempts before lockout
+	lockoutTime time.Duration // Initial lockout duration
+	maxLockout  time.Duration // Maximum lockout duration (for exponential backoff)
+	windowSize  time.Duration // Time window for counting attempts
+	cleanupTick *time.Ticker
+	done        chan struct{}
 }
 
 type attemptTracker struct {
-	failedCount   int
-	firstAttempt  time.Time
-	lastAttempt   time.Time
-	lockedUntil   time.Time
-	lockoutCount  int // Number of times locked out (for exponential backoff)
+	failedCount  int
+	firstAttempt time.Time
+	lastAttempt  time.Time
+	lockedUntil  time.Time
+	lockoutCount int // Number of times locked out (for exponential backoff)
 }
 
 // BruteForceConfig configures brute force protection.
@@ -221,11 +221,11 @@ func (bf *BruteForceProtector) Stats() BruteForceStats {
 	}
 
 	return BruteForceStats{
-		TrackedKeys:    len(bf.attempts),
+		TrackedKeys:     len(bf.attempts),
 		CurrentLockouts: lockedOut,
-		MaxAttempts:    bf.maxAttempts,
-		LockoutTime:    bf.lockoutTime,
-		WindowSize:     bf.windowSize,
+		MaxAttempts:     bf.maxAttempts,
+		LockoutTime:     bf.lockoutTime,
+		WindowSize:      bf.windowSize,
 	}
 }
 

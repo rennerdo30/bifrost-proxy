@@ -198,6 +198,8 @@ func createTestClientCertWithSubject(t *testing.T, ca *testCA, subject pkix.Name
 }
 
 // createTestClientCertWithSANs creates a client certificate with DNS names and email addresses
+//
+//nolint:unparam // cn is always "testuser" in tests but kept for test readability
 func createTestClientCertWithSANs(t *testing.T, ca *testCA, cn string, dnsNames []string, emails []string) *testClientCert {
 	t.Helper()
 
@@ -1997,13 +1999,13 @@ func TestMTLSAuthenticator_ConcurrentRevocationAccess(t *testing.T) {
 	// Test concurrent access to revocation list
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
-		go func(id int) {
+		go func() {
 			serial := "12345"
 			authenticator.AddRevoked(serial)
 			_ = authenticator.IsRevoked(serial)
 			authenticator.RemoveRevoked(serial)
 			done <- true
-		}(i)
+		}()
 	}
 
 	for i := 0; i < 10; i++ {

@@ -119,14 +119,14 @@ func TestConnectionTracker_Concurrent(t *testing.T) {
 	// Concurrent adds
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
-		go func(n int) {
+		go func() {
 			for j := 0; j < 100; j++ {
 				id := ct.Add("192.168.1.100", "12345", "example.com", "default", "HTTP")
 				ct.UpdateBytes(id, 100, 100)
 				ct.Remove(id)
 			}
 			done <- true
-		}(i)
+		}()
 	}
 
 	for i := 0; i < 10; i++ {

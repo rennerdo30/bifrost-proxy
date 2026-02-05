@@ -5,10 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
-	"net"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -18,72 +15,6 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 )
-
-// mockLDAPServer is a simple mock LDAP server for testing.
-type mockLDAPServer struct {
-	listener     net.Listener
-	mu           sync.Mutex
-	users        map[string]mockUser
-	bindDN       string
-	bindPassword string
-	closed       bool
-}
-
-type mockUser struct {
-	dn       string
-	password string
-	attrs    map[string][]string
-	groups   []string
-}
-
-func newMockLDAPServer(t *testing.T) *mockLDAPServer {
-	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	server := &mockLDAPServer{
-		listener: listener,
-		users:    make(map[string]mockUser),
-	}
-
-	return server
-}
-
-func (s *mockLDAPServer) Addr() string {
-	return s.listener.Addr().String()
-}
-
-func (s *mockLDAPServer) URL() string {
-	return fmt.Sprintf("ldap://%s", s.Addr())
-}
-
-func (s *mockLDAPServer) AddUser(username, dn, password string, attrs map[string][]string, groups []string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.users[username] = mockUser{
-		dn:       dn,
-		password: password,
-		attrs:    attrs,
-		groups:   groups,
-	}
-}
-
-func (s *mockLDAPServer) SetBindCredentials(dn, password string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.bindDN = dn
-	s.bindPassword = password
-}
-
-func (s *mockLDAPServer) Close() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return nil
-	}
-	s.closed = true
-	return s.listener.Close()
-}
 
 // TestPlugin_Type tests the plugin Type method.
 func TestPlugin_Type(t *testing.T) {
@@ -862,13 +793,13 @@ func TestParseConfig_EmptyStringOptionalFields(t *testing.T) {
 		"base_dn":              "dc=example,dc=com",
 		"bind_dn":              "",
 		"bind_password":        "",
-		"user_filter":          "",         // Should use default
-		"group_filter":         "",         // Should remain empty
-		"require_group":        "",         // Should remain empty
-		"user_attribute":       "",         // Should use default
-		"email_attribute":      "",         // Should use default
-		"full_name_attribute":  "",         // Should use default
-		"group_attribute":      "",         // Should use default
+		"user_filter":          "", // Should use default
+		"group_filter":         "", // Should remain empty
+		"require_group":        "", // Should remain empty
+		"user_attribute":       "", // Should use default
+		"email_attribute":      "", // Should use default
+		"full_name_attribute":  "", // Should use default
+		"group_attribute":      "", // Should use default
 		"tls":                  false,
 		"insecure_skip_verify": false,
 	}

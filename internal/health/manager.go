@@ -8,10 +8,10 @@ import (
 
 // Manager manages health checks for multiple targets.
 type Manager struct {
-	checks   map[string]*managedCheck
-	mu       sync.RWMutex
-	done     chan struct{}
-	running  bool
+	checks  map[string]*managedCheck
+	mu      sync.RWMutex
+	done    chan struct{}
+	running bool
 }
 
 type managedCheck struct {

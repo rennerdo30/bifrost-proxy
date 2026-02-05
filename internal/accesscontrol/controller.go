@@ -28,10 +28,10 @@ type Result struct {
 
 // Controller manages IP-based access control.
 type Controller struct {
-	whitelist *IPMatcher
-	blacklist *IPMatcher
+	whitelist    *IPMatcher
+	blacklist    *IPMatcher
 	useWhitelist bool
-	mu        sync.RWMutex
+	mu           sync.RWMutex
 }
 
 // Config holds access controller configuration.

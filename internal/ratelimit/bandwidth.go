@@ -37,8 +37,13 @@ func ParseBandwidth(s string) (int64, error) {
 		multiplier = 1000 / 8
 		s = strings.TrimSuffix(s, "kbps")
 	} else if strings.HasSuffix(s, "bps") {
-		multiplier = 1 / 8
+		// bps (bits per second) - use float to avoid integer division resulting in zero
 		s = strings.TrimSuffix(s, "bps")
+		value, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid bandwidth value: %w", err)
+		}
+		return int64(value / 8), nil
 	} else if strings.HasSuffix(s, "gb/s") || strings.HasSuffix(s, "gbyte/s") {
 		multiplier = 1000 * 1000 * 1000
 		s = strings.TrimSuffix(strings.TrimSuffix(s, "gbyte/s"), "gb/s")
@@ -121,7 +126,7 @@ func (tc *ThrottledConn) Read(b []byte) (int, error) {
 		// Wait for tokens to be available
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		tc.readLimiter.WaitN(ctx, n)
+		_ = tc.readLimiter.WaitN(ctx, n) //nolint:errcheck // Best effort rate limiting after successful read
 	}
 
 	return n, err
@@ -200,7 +205,7 @@ func (tr *ThrottledReader) Read(p []byte) (int, error) {
 	if n > 0 {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		tr.limiter.WaitN(ctx, n)
+		_ = tr.limiter.WaitN(ctx, n) //nolint:errcheck // Best effort rate limiting after successful read
 	}
 
 	return n, err

@@ -36,10 +36,10 @@ type Client struct {
 	logger     *slog.Logger
 
 	// Authentication
-	authMode    AuthMode
-	session     *Session
+	authMode     AuthMode
+	session      *Session
 	sessionStore SessionStore
-	manualCreds *ManualCredentials
+	manualCreds  *ManualCredentials
 }
 
 // ClientOption is a functional option for configuring the client.
@@ -414,7 +414,7 @@ func (c *Client) checkResponse(resp *http.Response) error {
 	case http.StatusServiceUnavailable:
 		return vpnprovider.ErrProviderUnavailable
 	default:
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("%w: status %d: %s", vpnprovider.ErrProviderUnavailable, resp.StatusCode, string(body))
 	}
 }
@@ -422,11 +422,11 @@ func (c *Client) checkResponse(resp *http.Response) error {
 // AuthInfoResponse represents the response from /auth/info endpoint.
 type AuthInfoResponse struct {
 	Code            int    `json:"Code"`
-	Modulus         string `json:"Modulus"`          // Base64-encoded modulus N
-	ServerEphemeral string `json:"ServerEphemeral"`  // Base64-encoded server public value B
-	Salt            string `json:"Salt"`             // Base64-encoded salt
-	SRPSession      string `json:"SRPSession"`       // Session identifier for auth request
-	Version         int    `json:"Version"`          // SRP version (affects password hashing)
+	Modulus         string `json:"Modulus"`         // Base64-encoded modulus N
+	ServerEphemeral string `json:"ServerEphemeral"` // Base64-encoded server public value B
+	Salt            string `json:"Salt"`            // Base64-encoded salt
+	SRPSession      string `json:"SRPSession"`      // Session identifier for auth request
+	Version         int    `json:"Version"`         // SRP version (affects password hashing)
 }
 
 // AuthRequest represents the authentication request to /auth endpoint.

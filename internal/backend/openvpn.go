@@ -217,7 +217,7 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 	args = append(args, b.config.ExtraArgs...)
 
 	// Start OpenVPN process
-	b.cmd = exec.CommandContext(ctx, b.config.Binary, args...)
+	b.cmd = exec.CommandContext(ctx, b.config.Binary, args...) //nolint:gosec // G204: Binary path is from validated config, args are controlled
 	// Set working directory to config file location (for relative paths in config)
 	if b.config.ConfigFile != "" {
 		b.cmd.Dir = filepath.Dir(b.config.ConfigFile)
@@ -233,7 +233,7 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 
 	// Wait for management interface to be available
 	if err := b.waitForManagement(ctx); err != nil {
-		b.cmd.Process.Kill()
+		_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort process cleanup
 		// Clean up temp files on failure to prevent credential leakage
 		b.cleanupTempFiles()
 		return NewBackendError(b.name, "connect management", err)
@@ -365,9 +365,9 @@ func (b *OpenVPNBackend) Stop(ctx context.Context) error {
 		select {
 		case <-done:
 		case <-time.After(5 * time.Second):
-			b.cmd.Process.Kill()
+			_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort kill
 		case <-ctx.Done():
-			b.cmd.Process.Kill()
+			_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort kill
 		}
 	}
 

@@ -701,7 +701,7 @@ func (a *API) handleGetLastDebugEntries(w http.ResponseWriter, r *http.Request) 
 	count := 100
 	if countStr != "" {
 		var n int
-		_ = json.Unmarshal([]byte(countStr), &n)
+		_ = json.Unmarshal([]byte(countStr), &n) //nolint:errcheck // Default used if parse fails
 		if n > 0 {
 			count = n
 		}
@@ -764,19 +764,19 @@ func (a *API) handleMemoryStats(w http.ResponseWriter, r *http.Request) {
 	a.logMu.RUnlock()
 
 	stats := MemoryStats{
-		HeapAlloc:     m.HeapAlloc,
-		HeapSys:       m.HeapSys,
-		HeapIdle:      m.HeapIdle,
-		HeapInuse:     m.HeapInuse,
-		HeapReleased:  m.HeapReleased,
-		HeapObjects:   m.HeapObjects,
-		StackInuse:    m.StackInuse,
-		StackSys:      m.StackSys,
-		NumGC:         m.NumGC,
-		LastGCPause:   m.PauseNs[(m.NumGC+255)%256],
-		TotalGCPause:  m.PauseTotalNs,
-		GCCPUFrac:     m.GCCPUFraction,
-		NumGoroutines: runtime.NumGoroutine(),
+		HeapAlloc:      m.HeapAlloc,
+		HeapSys:        m.HeapSys,
+		HeapIdle:       m.HeapIdle,
+		HeapInuse:      m.HeapInuse,
+		HeapReleased:   m.HeapReleased,
+		HeapObjects:    m.HeapObjects,
+		StackInuse:     m.StackInuse,
+		StackSys:       m.StackSys,
+		NumGC:          m.NumGC,
+		LastGCPause:    m.PauseNs[(m.NumGC+255)%256],
+		TotalGCPause:   m.PauseTotalNs,
+		GCCPUFrac:      m.GCCPUFraction,
+		NumGoroutines:  runtime.NumGoroutine(),
 		LogSubscribers: logSubs,
 	}
 
@@ -869,8 +869,7 @@ func (a *API) handleAddRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current routes
-	var currentRoutes []map[string]interface{}
+	// Check if route with this name already exists
 	if a.router != nil {
 		routes := a.router.Routes()
 		for _, route := range routes {
@@ -884,15 +883,13 @@ func (a *API) handleAddRoute(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create update map - we need to append the new route
-	// We use the configUpdater which handles merging
+	// Create update map - we use the configUpdater which handles merging
 	routeMap := map[string]interface{}{
 		"name":     newRoute.Name,
 		"domains":  newRoute.Domains,
 		"action":   newRoute.Action,
 		"priority": newRoute.Priority,
 	}
-	currentRoutes = append(currentRoutes, routeMap)
 
 	// Update config with new routes
 	if err := a.configUpdater(map[string]interface{}{
@@ -967,7 +964,7 @@ func (a *API) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 		return
 	}
 	w.WriteHeader(status)
-	w.Write(buf)
+	_, _ = w.Write(buf) //nolint:errcheck // Best effort HTTP response write
 }
 
 // VPN handlers
@@ -1308,7 +1305,7 @@ func (a *API) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var configMap map[string]interface{}
-		if err := json.Unmarshal(configBytes, &configMap); err != nil {
+		if unmarshalErr := json.Unmarshal(configBytes, &configMap); unmarshalErr != nil {
 			result.Valid = false
 			result.Errors = append(result.Errors, "failed to parse current config")
 			a.writeJSON(w, http.StatusOK, result)
@@ -1386,11 +1383,11 @@ func (a *API) handleExportConfig(w http.ResponseWriter, r *http.Request) {
 	case "json":
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Content-Disposition", "attachment; filename=bifrost-client-config.json")
-		json.NewEncoder(w).Encode(cfg)
+		_ = json.NewEncoder(w).Encode(cfg) //nolint:errcheck // Best effort HTTP response
 	case "yaml":
 		w.Header().Set("Content-Type", "application/x-yaml")
 		w.Header().Set("Content-Disposition", "attachment; filename=bifrost-client-config.yaml")
-		yaml.NewEncoder(w).Encode(cfg)
+		_ = yaml.NewEncoder(w).Encode(cfg) //nolint:errcheck // Best effort HTTP response
 	default:
 		http.Error(w, "unsupported format, use 'json' or 'yaml'", http.StatusBadRequest)
 	}
@@ -1432,8 +1429,8 @@ func (a *API) handleImportConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Validate the imported config
-	if err := cfg.Validate(); err != nil {
-		http.Error(w, "invalid config: "+err.Error(), http.StatusBadRequest)
+	if validateErr := cfg.Validate(); validateErr != nil {
+		http.Error(w, "invalid config: "+validateErr.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1596,8 +1593,8 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Send initial connection message
-	data, _ := json.Marshal(map[string]string{"type": "connected"})
-	w.Write([]byte("data: " + string(data) + "\n\n"))
+	data, _ := json.Marshal(map[string]string{"type": "connected"}) //nolint:errcheck // Static data always marshals
+	_, _ = w.Write([]byte("data: " + string(data) + "\n\n"))         //nolint:errcheck // Best effort SSE write
 	flusher.Flush()
 
 	// Stream logs
@@ -1614,7 +1611,7 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				continue
 			}
-			w.Write([]byte("data: " + string(data) + "\n\n"))
+			_, _ = w.Write([]byte("data: " + string(data) + "\n\n")) //nolint:errcheck // Best effort SSE write
 			flusher.Flush()
 		}
 	}

@@ -252,7 +252,7 @@ func (a *Authenticator) validateWithSu(ctx context.Context, username, password s
 	}
 
 	// Write password
-	_, _ = stdin.Write([]byte(password + "\n"))
+	_, _ = stdin.Write([]byte(password + "\n")) //nolint:errcheck // Best effort password write
 	stdin.Close()
 
 	// Wait for result

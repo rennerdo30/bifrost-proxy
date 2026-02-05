@@ -176,8 +176,8 @@ func TestProgressReader(t *testing.T) {
 	var callCount int
 
 	pr := &progressReader{
-		reader:   tempFile,
-		total:    int64(len(content)),
+		reader: tempFile,
+		total:  int64(len(content)),
 		callback: func(downloaded, total int64) {
 			lastDownloaded = downloaded
 			callCount++

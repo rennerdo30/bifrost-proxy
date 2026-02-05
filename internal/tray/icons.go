@@ -24,10 +24,10 @@ var (
 
 func init() {
 	// Generate icons at init time
-	iconConnected = createIcon(color.RGBA{R: 76, G: 175, B: 80, A: 255})       // Green
-	iconDisconnected = createIcon(color.RGBA{R: 158, G: 158, B: 158, A: 255})  // Gray
-	iconWarning = createIcon(color.RGBA{R: 255, G: 193, B: 7, A: 255})         // Yellow/amber
-	iconError = createIcon(color.RGBA{R: 244, G: 67, B: 54, A: 255})           // Red
+	iconConnected = createIcon(color.RGBA{R: 76, G: 175, B: 80, A: 255})      // Green
+	iconDisconnected = createIcon(color.RGBA{R: 158, G: 158, B: 158, A: 255}) // Gray
+	iconWarning = createIcon(color.RGBA{R: 255, G: 193, B: 7, A: 255})        // Yellow/amber
+	iconError = createIcon(color.RGBA{R: 244, G: 67, B: 54, A: 255})          // Red
 }
 
 // createIcon creates a 64x64 PNG icon with a filled circle of the given color.
@@ -63,9 +63,9 @@ func createIcon(c color.Color) []byte {
 				if alpha > 0 {
 					rc, gc, bc, _ := c.RGBA()
 					img.Set(x, y, color.RGBA{
-						R: uint8(rc >> 8),
-						G: uint8(gc >> 8),
-						B: uint8(bc >> 8),
+						R: uint8(rc >> 8), //nolint:gosec // G115: RGBA returns 16-bit values, shifting right 8 bits always fits in uint8
+						G: uint8(gc >> 8), //nolint:gosec // G115: RGBA returns 16-bit values, shifting right 8 bits always fits in uint8
+						B: uint8(bc >> 8), //nolint:gosec // G115: RGBA returns 16-bit values, shifting right 8 bits always fits in uint8
 						A: uint8(alpha * 255),
 					})
 				}
@@ -74,8 +74,8 @@ func createIcon(c color.Color) []byte {
 	}
 
 	// Add a subtle inner highlight
-	for y := centerY - radius + 4; y < centerY - 4; y++ {
-		for x := centerX - radius/2; x < centerX + radius/2; x++ {
+	for y := centerY - radius + 4; y < centerY-4; y++ {
+		for x := centerX - radius/2; x < centerX+radius/2; x++ {
 			dx := float64(x - centerX)
 			dy := float64(y - (centerY - radius/2))
 			if dx*dx+dy*dy*2 < float64(radius*radius/4) {
@@ -94,7 +94,7 @@ func createIcon(c color.Color) []byte {
 	}
 
 	var buf bytes.Buffer
-	png.Encode(&buf, img)
+	_ = png.Encode(&buf, img) //nolint:errcheck // PNG encoding to memory buffer won't fail
 	return buf.Bytes()
 }
 

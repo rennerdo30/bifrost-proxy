@@ -22,10 +22,10 @@ const (
 
 	stunMagicCookie uint32 = 0x2112A442
 
-	stunAttrMappedAddress     uint16 = 0x0001
-	stunAttrXORMappedAddress  uint16 = 0x0020
-	stunAttrSoftware          uint16 = 0x8022
-	stunAttrFingerprint       uint16 = 0x8028
+	stunAttrMappedAddress    uint16 = 0x0001
+	stunAttrXORMappedAddress uint16 = 0x0020
+	stunAttrSoftware         uint16 = 0x8022
+	stunAttrFingerprint      uint16 = 0x8028
 )
 
 // STUN message header size.
@@ -33,7 +33,7 @@ const stunHeaderSize = 20
 
 // Common STUN errors.
 var (
-	ErrSTUNTimeout       = errors.New("stun: request timed out")
+	ErrSTUNTimeout         = errors.New("stun: request timed out")
 	ErrSTUNInvalidResponse = errors.New("stun: invalid response")
 	ErrSTUNNoMappedAddress = errors.New("stun: no mapped address in response")
 )
@@ -102,8 +102,8 @@ func (c *STUNClient) bindToServer(ctx context.Context, server string) (*STUNResu
 
 	// Build STUN binding request
 	transactionID := make([]byte, 12)
-	if _, err := rand.Read(transactionID); err != nil {
-		return nil, fmt.Errorf("failed to generate transaction ID: %w", err)
+	if _, randErr := rand.Read(transactionID); randErr != nil {
+		return nil, fmt.Errorf("failed to generate transaction ID: %w", randErr)
 	}
 
 	request := buildSTUNBindingRequest(transactionID)
@@ -113,11 +113,11 @@ func (c *STUNClient) bindToServer(ctx context.Context, server string) (*STUNResu
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	if err := conn.SetDeadline(deadline); err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			slog.Debug("failed to set deadline on STUN connection", "error", err)
+	if deadlineErr := conn.SetDeadline(deadline); deadlineErr != nil {
+		if netErr, ok := deadlineErr.(net.Error); ok && netErr.Timeout() {
+			slog.Debug("failed to set deadline on STUN connection", "error", deadlineErr)
 		} else {
-			slog.Warn("failed to set deadline on STUN connection", "error", err)
+			slog.Warn("failed to set deadline on STUN connection", "error", deadlineErr)
 		}
 	}
 
@@ -163,7 +163,7 @@ func (c *STUNClient) GetLocalPort() int {
 		return 0
 	}
 
-	localAddr := c.conn.LocalAddr().(*net.UDPAddr)
+	localAddr := c.conn.LocalAddr().(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 	return localAddr.Port
 }
 
@@ -258,7 +258,7 @@ func parseSTUNBindingResponse(data []byte, expectedTransactionID []byte) (netip.
 	}
 
 	// Parse message length
-	msgLen := int(binary.BigEndian.Uint16(data[2:4]))
+	msgLen := int(binary.BigEndian.Uint16(data[2:4])) //nolint:gosec // G602: False positive - len(data) >= stunHeaderSize (20) is checked at line 237
 	if len(data) < stunHeaderSize+msgLen {
 		return netip.AddrPort{}, ErrSTUNInvalidResponse
 	}

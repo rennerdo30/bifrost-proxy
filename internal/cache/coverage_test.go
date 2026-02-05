@@ -133,7 +133,7 @@ func TestDiskStorage_LoadIndex(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(10 * MB),
+		MaxSize:         10 * MB,
 		CleanupInterval: Duration(1 * time.Hour),
 		ShardCount:      16,
 	}
@@ -209,7 +209,7 @@ func TestDiskStorage_LoadIndex_OrphanedMetadata(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(10 * MB),
+		MaxSize:         10 * MB,
 		CleanupInterval: Duration(1 * time.Hour),
 		ShardCount:      256,
 	}
@@ -249,7 +249,7 @@ func TestDiskStorage_LoadIndex_ExpiredEntry(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(10 * MB),
+		MaxSize:         10 * MB,
 		CleanupInterval: Duration(1 * time.Hour),
 		ShardCount:      256,
 	}
@@ -282,7 +282,7 @@ func TestDiskStorage_LoadIndex_InvalidMetadata(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(10 * MB),
+		MaxSize:         10 * MB,
 		CleanupInterval: Duration(1 * time.Hour),
 		ShardCount:      256,
 	}
@@ -311,7 +311,7 @@ func TestDiskStorage_CopyMetadata(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:    tmpDir,
-		MaxSize: ByteSize(10 * MB),
+		MaxSize: 10 * MB,
 	}
 
 	storage, err := NewDiskStorage(cfg)
@@ -353,7 +353,7 @@ func TestDiskStorage_CopyMetadataNil(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:    tmpDir,
-		MaxSize: ByteSize(10 * MB),
+		MaxSize: 10 * MB,
 	}
 
 	storage, err := NewDiskStorage(cfg)
@@ -375,7 +375,7 @@ func TestDiskStorage_ShardForKeyShort(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:       tmpDir,
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		ShardCount: 256,
 	}
 
@@ -401,7 +401,7 @@ func TestDiskStorage_Closed(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:    tmpDir,
-		MaxSize: ByteSize(10 * MB),
+		MaxSize: 10 * MB,
 	}
 
 	storage, err := NewDiskStorage(cfg)
@@ -451,7 +451,7 @@ func TestDiskStorage_GetMissingDataFile(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:    tmpDir,
-		MaxSize: ByteSize(10 * MB),
+		MaxSize: 10 * MB,
 	}
 
 	storage, err := NewDiskStorage(cfg)
@@ -491,7 +491,7 @@ func TestDiskStorage_GetRangeExpired(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:    tmpDir,
-		MaxSize: ByteSize(10 * MB),
+		MaxSize: 10 * MB,
 	}
 
 	storage, err := NewDiskStorage(cfg)
@@ -527,7 +527,7 @@ func TestDiskStorage_GetMetadataExpired(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:    tmpDir,
-		MaxSize: ByteSize(10 * MB),
+		MaxSize: 10 * MB,
 	}
 
 	storage, err := NewDiskStorage(cfg)
@@ -558,7 +558,7 @@ func TestDiskStorage_GetMetadataExpired(t *testing.T) {
 
 func TestMemoryStorage_CopyMetadataNil(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 
@@ -573,7 +573,7 @@ func TestMemoryStorage_CopyMetadataNil(t *testing.T) {
 
 func TestMemoryStorage_GetRangeEdgeCases(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -632,7 +632,7 @@ func TestNewManager_InvalidRuleConfig(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -654,7 +654,7 @@ func TestNewManager_UnknownPreset(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"unknown_preset", "steam"}, // First is unknown
 	}
@@ -675,7 +675,7 @@ func TestNewManager_DiskStorage(t *testing.T) {
 			Type: "disk",
 			Disk: &DiskConfig{
 				Path:    tmpDir,
-				MaxSize: ByteSize(10 * MB),
+				MaxSize: 10 * MB,
 			},
 		},
 	}
@@ -706,7 +706,7 @@ func TestManager_StartStop_AlreadyRunning(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 	}
 
@@ -739,7 +739,7 @@ func TestManager_Put_Disabled(t *testing.T) {
 		Enabled: false,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 	}
 
@@ -760,7 +760,7 @@ func TestManager_Put_NoMatchingRule(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		// No presets or rules
 	}
@@ -785,7 +785,7 @@ func TestManager_Put_ContentTypeMismatch(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -822,7 +822,7 @@ func TestManager_Put_ContentTooLarge(t *testing.T) {
 		MaxFileSize: ByteSize(10), // Very small
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -857,7 +857,7 @@ func TestManager_Put_RuleMaxSize(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -893,7 +893,7 @@ func TestManager_Put_NoStore(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -928,7 +928,7 @@ func TestManager_Put_Private(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -964,7 +964,7 @@ func TestManager_Put_WithMaxAge(t *testing.T) {
 		DefaultTTL: Duration(24 * time.Hour),
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -1005,7 +1005,7 @@ func TestManager_Put_StripHeaders(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -1051,7 +1051,7 @@ func TestManager_Put_WithLastModified(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Rules: []RuleConfig{
 			{
@@ -1099,7 +1099,7 @@ func TestManager_Reload_InvalidConfig(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 	}
 
@@ -1124,7 +1124,7 @@ func TestManager_Reload_WithUnknownPreset(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 	}
 
@@ -1140,7 +1140,7 @@ func TestManager_Reload_WithUnknownPreset(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"unknown_preset"},
 	}
@@ -1217,7 +1217,7 @@ func TestConfig_Validate_TieredDiskPathMissing(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "tiered",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 			Disk:   &DiskConfig{Path: ""}, // Empty path
 		},
 	}
@@ -1510,8 +1510,8 @@ func TestTieredStorage_PutNilEntry(t *testing.T) {
 
 	storage, err := NewTieredStorage(
 		nil, // Use defaults
-		&MemoryConfig{MaxSize: ByteSize(1 * MB)},
-		&DiskConfig{Path: tmpDir, MaxSize: ByteSize(10 * MB)},
+		&MemoryConfig{MaxSize: 1 * MB},
+		&DiskConfig{Path: tmpDir, MaxSize: 10 * MB},
 	)
 	require.NoError(t, err)
 
@@ -1530,8 +1530,8 @@ func TestTieredStorage_PutNilMetadata(t *testing.T) {
 
 	storage, err := NewTieredStorage(
 		nil,
-		&MemoryConfig{MaxSize: ByteSize(1 * MB)},
-		&DiskConfig{Path: tmpDir, MaxSize: ByteSize(10 * MB)},
+		&MemoryConfig{MaxSize: 1 * MB},
+		&DiskConfig{Path: tmpDir, MaxSize: 10 * MB},
 	)
 	require.NoError(t, err)
 
@@ -1554,8 +1554,8 @@ func TestTieredStorage_ListEmpty(t *testing.T) {
 
 	storage, err := NewTieredStorage(
 		nil,
-		&MemoryConfig{MaxSize: ByteSize(1 * MB)},
-		&DiskConfig{Path: tmpDir, MaxSize: ByteSize(10 * MB)},
+		&MemoryConfig{MaxSize: 1 * MB},
+		&DiskConfig{Path: tmpDir, MaxSize: 10 * MB},
 	)
 	require.NoError(t, err)
 
@@ -1577,8 +1577,8 @@ func TestTieredStorage_GetRangeFallbackToDisk(t *testing.T) {
 
 	storage, err := NewTieredStorage(
 		&TieredConfig{MemoryThreshold: ByteSize(10)}, // Very small threshold
-		&MemoryConfig{MaxSize: ByteSize(1 * MB)},
-		&DiskConfig{Path: tmpDir, MaxSize: ByteSize(10 * MB)},
+		&MemoryConfig{MaxSize: 1 * MB},
+		&DiskConfig{Path: tmpDir, MaxSize: 10 * MB},
 	)
 	require.NoError(t, err)
 
@@ -1606,8 +1606,8 @@ func TestTieredStorage_GetMetadataFallbackToDisk(t *testing.T) {
 
 	storage, err := NewTieredStorage(
 		&TieredConfig{MemoryThreshold: ByteSize(10)},
-		&MemoryConfig{MaxSize: ByteSize(1 * MB)},
-		&DiskConfig{Path: tmpDir, MaxSize: ByteSize(10 * MB)},
+		&MemoryConfig{MaxSize: 1 * MB},
+		&DiskConfig{Path: tmpDir, MaxSize: 10 * MB},
 	)
 	require.NoError(t, err)
 
@@ -1638,7 +1638,7 @@ func TestInterceptor_ServeRangeRequest_InvalidRange(t *testing.T) {
 		DefaultTTL: Duration(1 * time.Hour),
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -1684,7 +1684,7 @@ func TestInterceptor_ServeRangeRequest_MultipleRanges(t *testing.T) {
 		DefaultTTL: Duration(1 * time.Hour),
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -1733,7 +1733,7 @@ func TestResponseWriter_WriteHeaderTwice(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 	}
 
@@ -1763,8 +1763,7 @@ func TestResponseWriter_WriteHeaderTwice(t *testing.T) {
 
 func TestParseDirectiveValue_NoPrefix(t *testing.T) {
 	var value int
-	ok, err := parseDirectiveValue("other=3600", "max-age=", &value)
-	assert.NoError(t, err)
+	ok := parseDirectiveValue("other=3600", "max-age=", &value)
 	assert.False(t, ok)
 	assert.Equal(t, 0, value)
 }
@@ -1810,7 +1809,7 @@ func TestNewDiskStorage_DefaultShardCount(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:       tmpDir,
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		ShardCount: 0, // Should default to 256
 	}
 
@@ -1827,7 +1826,7 @@ func TestNewDiskStorage_DefaultCleanupInterval(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(10 * MB),
+		MaxSize:         10 * MB,
 		CleanupInterval: 0, // Should default to 1 hour
 	}
 
@@ -1854,7 +1853,7 @@ func TestNewMemoryStorage_NilConfig(t *testing.T) {
 // ============================================================================
 
 func TestMemoryStorage_PutNilEntry(t *testing.T) {
-	storage := NewMemoryStorage(&MemoryConfig{MaxSize: ByteSize(10 * MB)})
+	storage := NewMemoryStorage(&MemoryConfig{MaxSize: 10 * MB})
 	ctx := context.Background()
 	storage.Start(ctx)
 	defer storage.Stop(ctx)
@@ -1864,7 +1863,7 @@ func TestMemoryStorage_PutNilEntry(t *testing.T) {
 }
 
 func TestMemoryStorage_PutNilMetadata(t *testing.T) {
-	storage := NewMemoryStorage(&MemoryConfig{MaxSize: ByteSize(10 * MB)})
+	storage := NewMemoryStorage(&MemoryConfig{MaxSize: 10 * MB})
 	ctx := context.Background()
 	storage.Start(ctx)
 	defer storage.Stop(ctx)
@@ -1879,7 +1878,7 @@ func TestMemoryStorage_PutNilMetadata(t *testing.T) {
 // ============================================================================
 
 func TestMemoryStorage_PutReplaceExisting(t *testing.T) {
-	storage := NewMemoryStorage(&MemoryConfig{MaxSize: ByteSize(10 * MB)})
+	storage := NewMemoryStorage(&MemoryConfig{MaxSize: 10 * MB})
 	ctx := context.Background()
 	storage.Start(ctx)
 	defer storage.Stop(ctx)
@@ -1911,7 +1910,7 @@ func TestMemoryStorage_PutReplaceExisting(t *testing.T) {
 // ============================================================================
 
 func TestMemoryStorage_ListNoLimit(t *testing.T) {
-	storage := NewMemoryStorage(&MemoryConfig{MaxSize: ByteSize(10 * MB)})
+	storage := NewMemoryStorage(&MemoryConfig{MaxSize: 10 * MB})
 	ctx := context.Background()
 	storage.Start(ctx)
 	defer storage.Stop(ctx)
@@ -1952,9 +1951,8 @@ func TestValidator_CalculateFreshness_Expired(t *testing.T) {
 // Helper function
 // ============================================================================
 
-func createPipeConn(t *testing.T) (clientConn, serverConn *pipeConn) {
-	client, server, err := createPipe()
-	require.NoError(t, err)
+func createPipeConn(_ *testing.T) (clientConn, serverConn *pipeConn) {
+	client, server := createPipe()
 	return client, server
 }
 
@@ -1976,10 +1974,10 @@ func (p *pipeConn) SetDeadline(t time.Time) error      { return nil }
 func (p *pipeConn) SetReadDeadline(t time.Time) error  { return nil }
 func (p *pipeConn) SetWriteDeadline(t time.Time) error { return nil }
 
-func createPipe() (*pipeConn, *pipeConn, error) {
+func createPipe() (*pipeConn, *pipeConn) {
 	r1, w1 := io.Pipe()
 	r2, w2 := io.Pipe()
-	return &pipeConn{r: r1, w: w2}, &pipeConn{r: r2, w: w1}, nil
+	return &pipeConn{r: r1, w: w2}, &pipeConn{r: r2, w: w1}
 }
 
 // ============================================================================

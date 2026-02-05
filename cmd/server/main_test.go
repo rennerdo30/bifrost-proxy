@@ -208,9 +208,9 @@ rules: []
 		Use:   "validate",
 		Short: "Validate configuration file",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			configPath, _ := cmd.Flags().GetString("config")
-			if _, err := os.Stat(configPath); os.IsNotExist(err) {
-				return err
+			cfgPath, _ := cmd.Flags().GetString("config")
+			if _, statErr := os.Stat(cfgPath); os.IsNotExist(statErr) {
+				return statErr
 			}
 			validated = true
 			return nil

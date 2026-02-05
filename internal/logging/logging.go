@@ -30,8 +30,8 @@ func DefaultConfig() Config {
 }
 
 var (
-	defaultLogger *slog.Logger
-	loggerMu      sync.RWMutex
+	defaultLogger  *slog.Logger
+	loggerMu       sync.RWMutex
 	currentLogFile *os.File // Track current log file for cleanup
 )
 

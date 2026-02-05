@@ -447,7 +447,7 @@ func TestJSONLogger_Concurrent(t *testing.T) {
 
 	// Start multiple goroutines logging concurrently
 	for i := 0; i < 10; i++ {
-		go func(id int) {
+		go func() {
 			for j := 0; j < 100; j++ {
 				logger.Log(Entry{
 					Timestamp: time.Now(),
@@ -456,7 +456,7 @@ func TestJSONLogger_Concurrent(t *testing.T) {
 				})
 			}
 			done <- true
-		}(i)
+		}()
 	}
 
 	// Wait for all goroutines

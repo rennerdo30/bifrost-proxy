@@ -279,13 +279,13 @@ const (
 
 // GetSessionFromContext retrieves the session from context.
 func GetSessionFromContext(ctx context.Context) *Session {
-	session, _ := ctx.Value(SessionContextKey).(*Session)
+	session, _ := ctx.Value(SessionContextKey).(*Session) //nolint:errcheck // Type assertion - nil is valid if missing
 	return session
 }
 
 // GetUserInfoFromContext retrieves the user info from context.
 func GetUserInfoFromContext(ctx context.Context) *auth.UserInfo {
-	userInfo, _ := ctx.Value(UserInfoContextKey).(*auth.UserInfo)
+	userInfo, _ := ctx.Value(UserInfoContextKey).(*auth.UserInfo) //nolint:errcheck // Type assertion - nil is valid if missing
 	return userInfo
 }
 

@@ -39,7 +39,7 @@ func JoinHostPort(host string, port int) string {
 
 // IsLocalAddress checks if an address is a local/loopback address.
 func IsLocalAddress(addr string) bool {
-	host, _, _ := SplitHostPort(addr)
+	host, _, _ := SplitHostPort(addr) //nolint:errcheck // Ignoring error - fall back to full address if split fails
 	if host == "" {
 		host = addr
 	}
@@ -69,7 +69,7 @@ func GetOutboundIP() (net.IP, error) {
 	}
 	defer conn.Close()
 
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	localAddr := conn.LocalAddr().(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 	return localAddr.IP, nil
 }
 

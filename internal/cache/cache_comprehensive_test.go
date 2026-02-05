@@ -28,7 +28,7 @@ func TestManager_GetPut(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "memory",
 			Memory: &MemoryConfig{
-				MaxSize:    ByteSize(10 * MB),
+				MaxSize:    10 * MB,
 				MaxEntries: 100,
 			},
 		},
@@ -74,7 +74,7 @@ func TestManager_GetPut(t *testing.T) {
 			Enabled: false,
 			Storage: StorageConfig{
 				Type:   "memory",
-				Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+				Memory: &MemoryConfig{MaxSize: 10 * MB},
 			},
 		}
 		disabledMgr, err := NewManager(disabledCfg)
@@ -91,7 +91,7 @@ func TestManager_DeleteClear(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "memory",
 			Memory: &MemoryConfig{
-				MaxSize:    ByteSize(10 * MB),
+				MaxSize:    10 * MB,
 				MaxEntries: 100,
 			},
 		},
@@ -134,7 +134,7 @@ func TestManager_Stats(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "memory",
 			Memory: &MemoryConfig{
-				MaxSize:    ByteSize(10 * MB),
+				MaxSize:    10 * MB,
 				MaxEntries: 100,
 			},
 		},
@@ -158,7 +158,7 @@ func TestManager_RulesStorage(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "memory",
 			Memory: &MemoryConfig{
-				MaxSize: ByteSize(10 * MB),
+				MaxSize: 10 * MB,
 			},
 		},
 	}
@@ -177,7 +177,7 @@ func TestManager_Reload(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "memory",
 			Memory: &MemoryConfig{
-				MaxSize: ByteSize(10 * MB),
+				MaxSize: 10 * MB,
 			},
 		},
 	}
@@ -195,7 +195,7 @@ func TestManager_Reload(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "memory",
 			Memory: &MemoryConfig{
-				MaxSize: ByteSize(20 * MB),
+				MaxSize: 20 * MB,
 			},
 		},
 		Presets: []string{"steam"},
@@ -210,7 +210,7 @@ func TestManager_KeyFor(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -230,7 +230,7 @@ func TestManager_PutNotCacheable(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -262,7 +262,7 @@ func TestCreateStorage(t *testing.T) {
 		cfg := &Config{
 			Storage: StorageConfig{
 				Type:   "memory",
-				Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+				Memory: &MemoryConfig{MaxSize: 10 * MB},
 			},
 		}
 		storage, err := createStorage(cfg)
@@ -332,7 +332,7 @@ func TestConfig_ValidateTiered(t *testing.T) {
 			Enabled: true,
 			Storage: StorageConfig{
 				Type:   "tiered",
-				Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+				Memory: &MemoryConfig{MaxSize: 10 * MB},
 			},
 		}
 		assert.Error(t, cfg.Validate())
@@ -345,7 +345,7 @@ func TestConfig_ValidateRules(t *testing.T) {
 			Enabled: true,
 			Storage: StorageConfig{
 				Type:   "memory",
-				Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+				Memory: &MemoryConfig{MaxSize: 10 * MB},
 			},
 			Rules: []RuleConfig{
 				{Domains: []string{"*.example.com"}},
@@ -359,7 +359,7 @@ func TestConfig_ValidateRules(t *testing.T) {
 			Enabled: true,
 			Storage: StorageConfig{
 				Type:   "memory",
-				Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+				Memory: &MemoryConfig{MaxSize: 10 * MB},
 			},
 			Rules: []RuleConfig{
 				{Name: "test"},
@@ -409,7 +409,7 @@ func TestDuration_MarshalUnmarshal(t *testing.T) {
 
 func TestByteSize_MarshalUnmarshal(t *testing.T) {
 	t.Run("YAML marshal", func(t *testing.T) {
-		b := ByteSize(10 * MB)
+		b := 10 * MB
 		data, err := b.MarshalYAML()
 		assert.NoError(t, err)
 		assert.Contains(t, data.(string), "MB")
@@ -424,7 +424,7 @@ func TestByteSize_MarshalUnmarshal(t *testing.T) {
 	})
 
 	t.Run("JSON marshal", func(t *testing.T) {
-		b := ByteSize(1 * GB)
+		b := 1 * GB
 		data, err := b.MarshalJSON()
 		assert.NoError(t, err)
 		assert.Contains(t, string(data), "GB")
@@ -452,10 +452,10 @@ func TestByteSize_String(t *testing.T) {
 	}{
 		{ByteSize(500), "500B"},
 		{ByteSize(1024), "1.00KB"},
-		{ByteSize(10 * MB), "10.00MB"},
-		{ByteSize(5 * GB), "5.00GB"},
-		{ByteSize(2 * TB), "2.00TB"},
-		{ByteSize(1 * PB), "1.00PB"},
+		{10 * MB, "10.00MB"},
+		{5 * GB, "5.00GB"},
+		{2 * TB, "2.00TB"},
+		{1 * PB, "1.00PB"},
 	}
 
 	for _, tc := range tests {
@@ -610,7 +610,7 @@ func TestKeyGenerator_WithVaryHeaders(t *testing.T) {
 
 func TestMemoryStorage_GetMetadata(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -643,7 +643,7 @@ func TestMemoryStorage_GetMetadata(t *testing.T) {
 
 func TestMemoryStorage_List(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -686,7 +686,7 @@ func TestMemoryStorage_List(t *testing.T) {
 
 func TestMemoryStorage_Clear(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -708,7 +708,7 @@ func TestMemoryStorage_Clear(t *testing.T) {
 
 func TestMemoryStorage_Stats(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -721,7 +721,7 @@ func TestMemoryStorage_Stats(t *testing.T) {
 
 func TestMemoryStorage_CleanupExpired(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -741,7 +741,7 @@ func TestMemoryStorage_CleanupExpired(t *testing.T) {
 
 func TestMemoryStorage_DataForKey(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -846,7 +846,7 @@ func TestMemoryStorage_EntrySizeExceeded(t *testing.T) {
 
 func TestMemoryStorage_Closed(t *testing.T) {
 	storage := NewMemoryStorage(&MemoryConfig{
-		MaxSize:    ByteSize(10 * MB),
+		MaxSize:    10 * MB,
 		MaxEntries: 100,
 	})
 	ctx := context.Background()
@@ -1465,7 +1465,7 @@ func TestDiskStorage(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(100 * MB),
+		MaxSize:         100 * MB,
 		CleanupInterval: Duration(1 * time.Hour),
 		ShardCount:      16,
 	}
@@ -1573,12 +1573,12 @@ func TestTieredStorage(t *testing.T) {
 		MemoryThreshold: ByteSize(100), // Small threshold
 	}
 	memoryCfg := &MemoryConfig{
-		MaxSize:    ByteSize(1 * MB),
+		MaxSize:    1 * MB,
 		MaxEntries: 100,
 	}
 	diskCfg := &DiskConfig{
 		Path:    tmpDir,
-		MaxSize: ByteSize(10 * MB),
+		MaxSize: 10 * MB,
 	}
 
 	storage, err := NewTieredStorage(tieredCfg, memoryCfg, diskCfg)
@@ -1680,8 +1680,8 @@ func TestTieredStorage_Closed(t *testing.T) {
 
 	storage, err := NewTieredStorage(
 		&TieredConfig{MemoryThreshold: ByteSize(100)},
-		&MemoryConfig{MaxSize: ByteSize(1 * MB)},
-		&DiskConfig{Path: tmpDir, MaxSize: ByteSize(10 * MB)},
+		&MemoryConfig{MaxSize: 1 * MB},
+		&DiskConfig{Path: tmpDir, MaxSize: 10 * MB},
 	)
 	require.NoError(t, err)
 
@@ -1727,7 +1727,7 @@ func TestInterceptor_HandleRequest(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -1778,7 +1778,7 @@ func TestInterceptor_StoreResponse(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -1828,7 +1828,7 @@ func TestResponseWriter(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 	}
 
@@ -1905,15 +1905,15 @@ func TestCacheIntegration(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "tiered",
 			Tiered: &TieredConfig{
-				MemoryThreshold: ByteSize(1 * KB),
+				MemoryThreshold: 1 * KB,
 			},
 			Memory: &MemoryConfig{
-				MaxSize:    ByteSize(1 * MB),
+				MaxSize:    1 * MB,
 				MaxEntries: 100,
 			},
 			Disk: &DiskConfig{
 				Path:    filepath.Join(tmpDir, "cache"),
-				MaxSize: ByteSize(10 * MB),
+				MaxSize: 10 * MB,
 			},
 		},
 		Presets: []string{"steam", "epic"},
@@ -1979,7 +1979,7 @@ func TestInterceptor_CacheHit(t *testing.T) {
 		DefaultTTL: Duration(1 * time.Hour),
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -2015,8 +2015,8 @@ func TestInterceptor_CacheHit(t *testing.T) {
 		defer close(done)
 		buf := make([]byte, 4096)
 		for {
-			_, err := clientConn.Read(buf)
-			if err != nil {
+			_, readErr := clientConn.Read(buf)
+			if readErr != nil {
 				return
 			}
 		}
@@ -2036,7 +2036,7 @@ func TestInterceptor_CacheHitWithRange(t *testing.T) {
 		DefaultTTL: Duration(1 * time.Hour),
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -2072,8 +2072,8 @@ func TestInterceptor_CacheHitWithRange(t *testing.T) {
 		defer close(done)
 		buf := make([]byte, 4096)
 		for {
-			_, err := clientConn.Read(buf)
-			if err != nil {
+			_, readErr := clientConn.Read(buf)
+			if readErr != nil {
 				return
 			}
 		}
@@ -2095,7 +2095,7 @@ func TestResponseWriter_Flush(t *testing.T) {
 		Enabled: true,
 		Storage: StorageConfig{
 			Type:   "memory",
-			Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+			Memory: &MemoryConfig{MaxSize: 10 * MB},
 		},
 		Presets: []string{"steam"},
 	}
@@ -2139,7 +2139,7 @@ func TestDiskStorage_EdgeCases(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(1 * MB),
+		MaxSize:         1 * MB,
 		CleanupInterval: Duration(100 * time.Millisecond),
 		ShardCount:      4,
 	}
@@ -2188,7 +2188,7 @@ func TestDiskStorage_CleanupExpired(t *testing.T) {
 
 	cfg := &DiskConfig{
 		Path:            tmpDir,
-		MaxSize:         ByteSize(1 * MB),
+		MaxSize:         1 * MB,
 		CleanupInterval: Duration(100 * time.Millisecond),
 	}
 
@@ -2241,7 +2241,7 @@ func TestConfig_EdgeCases(t *testing.T) {
 			Enabled: true,
 			Storage: StorageConfig{
 				Type:   "memory",
-				Memory: &MemoryConfig{MaxSize: ByteSize(10 * MB)},
+				Memory: &MemoryConfig{MaxSize: 10 * MB},
 			},
 			Presets: []string{"invalid_preset"},
 		}

@@ -83,7 +83,7 @@ func (b *IPHashBalancer) Select(backends []backend.Backend, clientIP string) bac
 	h.Write([]byte(clientIP))
 	hash := h.Sum32()
 
-	idx := hash % uint32(len(healthy))
+	idx := hash % uint32(len(healthy)) //nolint:gosec // G115: len(healthy) is always positive and small
 	return healthy[idx]
 }
 

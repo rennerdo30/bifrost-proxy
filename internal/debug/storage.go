@@ -6,11 +6,11 @@ import (
 
 // Storage provides ring buffer storage for debug entries.
 type Storage struct {
-	entries    []Entry
-	capacity   int
-	head       int
-	count      int
-	mu         sync.RWMutex
+	entries  []Entry
+	capacity int
+	head     int
+	count    int
+	mu       sync.RWMutex
 }
 
 // NewStorage creates a new storage with the given capacity.

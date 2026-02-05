@@ -21,10 +21,10 @@ const (
 
 // Relay errors.
 var (
-	ErrRelayNotAvailable  = errors.New("relay: no relay available")
-	ErrRelayFailed        = errors.New("relay: relay failed")
-	ErrPeerNotRelayable   = errors.New("relay: peer not relayable")
-	ErrRelayAtCapacity    = errors.New("relay: at capacity")
+	ErrRelayNotAvailable = errors.New("relay: no relay available")
+	ErrRelayFailed       = errors.New("relay: relay failed")
+	ErrPeerNotRelayable  = errors.New("relay: peer not relayable")
+	ErrRelayAtCapacity   = errors.New("relay: at capacity")
 )
 
 // RelayType represents the type of relay.
@@ -135,7 +135,7 @@ func (rm *RelayManager) Start(ctx context.Context) error {
 		if err := rm.turnClient.Allocate(ctx); err != nil {
 			slog.Warn("failed to allocate TURN relay", "error", err)
 		} else {
-			relayAddr, _ := rm.turnClient.RelayAddress()
+			relayAddr, _ := rm.turnClient.RelayAddress() //nolint:errcheck // Return zero value if not allocated
 			rm.mu.Lock()
 			rm.relays["turn"] = &Relay{
 				Type:      RelayTypeTURN,
@@ -297,7 +297,7 @@ func (rm *RelayManager) CreateRelayedConnection(ctx context.Context, config Conn
 }
 
 // createTURNRelayedConnection creates a TURN-relayed connection.
-func (rm *RelayManager) createTURNRelayedConnection(ctx context.Context, config ConnectionConfig) (P2PConnection, error) {
+func (rm *RelayManager) createTURNRelayedConnection(_ context.Context, config ConnectionConfig) (P2PConnection, error) {
 	if rm.turnClient == nil {
 		return nil, ErrRelayNotAvailable
 	}
@@ -311,7 +311,7 @@ func (rm *RelayManager) createTURNRelayedConnection(ctx context.Context, config 
 }
 
 // createPeerRelayedConnection creates a peer-relayed connection.
-func (rm *RelayManager) createPeerRelayedConnection(ctx context.Context, config ConnectionConfig, relayPeerID string) (P2PConnection, error) {
+func (rm *RelayManager) createPeerRelayedConnection(_ context.Context, config ConnectionConfig, relayPeerID string) (P2PConnection, error) {
 	rm.mu.RLock()
 	pr, ok := rm.peerRelays[relayPeerID]
 	rm.mu.RUnlock()

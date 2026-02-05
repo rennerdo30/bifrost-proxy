@@ -3,7 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/hmac"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: SHA1 is required by RFC 5766 (TURN) for MESSAGE-INTEGRITY attribute
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -16,16 +16,16 @@ import (
 
 // TURN message types and attributes (RFC 5766).
 const (
-	turnMsgTypeAllocate        uint16 = 0x0003
-	turnMsgTypeAllocateSuccess uint16 = 0x0103
-	turnMsgTypeAllocateError   uint16 = 0x0113
-	turnMsgTypeRefresh         uint16 = 0x0004
-	turnMsgTypeRefreshSuccess  uint16 = 0x0104
-	turnMsgTypeSend            uint16 = 0x0006
-	turnMsgTypeData            uint16 = 0x0007
+	turnMsgTypeAllocate         uint16 = 0x0003
+	turnMsgTypeAllocateSuccess  uint16 = 0x0103
+	turnMsgTypeAllocateError    uint16 = 0x0113
+	turnMsgTypeRefresh          uint16 = 0x0004
+	turnMsgTypeRefreshSuccess   uint16 = 0x0104
+	turnMsgTypeSend             uint16 = 0x0006
+	turnMsgTypeData             uint16 = 0x0007
 	turnMsgTypeCreatePermission uint16 = 0x0008
-	turnMsgTypeChannelBind     uint16 = 0x0009
-	turnMsgTypeChannelData     uint16 = 0x0040
+	turnMsgTypeChannelBind      uint16 = 0x0009
+	turnMsgTypeChannelData      uint16 = 0x0040
 
 	turnAttrChannelNumber      uint16 = 0x000C
 	turnAttrLifetime           uint16 = 0x000D
@@ -59,16 +59,16 @@ type TURNClient struct {
 	password string
 	timeout  time.Duration
 
-	conn          net.PacketConn
-	relayAddr     netip.AddrPort
-	lifetime      time.Duration
-	realm         string
-	nonce         string
-	channels      map[netip.AddrPort]uint16 // Peer -> Channel number
-	nextChannel   uint16
-	permissions   map[netip.Addr]time.Time // Peer IP -> Expiry
-	allocated     bool
-	allocatedAt   time.Time
+	conn        net.PacketConn
+	relayAddr   netip.AddrPort
+	lifetime    time.Duration
+	realm       string
+	nonce       string
+	channels    map[netip.AddrPort]uint16 // Peer -> Channel number
+	nextChannel uint16
+	permissions map[netip.Addr]time.Time // Peer IP -> Expiry
+	allocated   bool
+	allocatedAt time.Time
 
 	mu sync.Mutex
 }
@@ -123,11 +123,11 @@ func (c *TURNClient) Allocate(ctx context.Context) error {
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	if err := c.conn.SetDeadline(deadline); err != nil {
-		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-			slog.Debug("failed to set deadline on TURN connection", "error", err)
+	if deadlineErr := c.conn.SetDeadline(deadline); deadlineErr != nil {
+		if netErr, ok := deadlineErr.(net.Error); ok && netErr.Timeout() {
+			slog.Debug("failed to set deadline on TURN connection", "error", deadlineErr)
 		} else {
-			slog.Warn("failed to set deadline on TURN connection", "error", err)
+			slog.Warn("failed to set deadline on TURN connection", "error", deadlineErr)
 		}
 	}
 
@@ -135,8 +135,8 @@ func (c *TURNClient) Allocate(ctx context.Context) error {
 	transactionID := generateTransactionID()
 	request := c.buildAllocateRequest(transactionID, false)
 
-	if _, err := c.conn.WriteTo(request, addr); err != nil {
-		return fmt.Errorf("failed to send allocate request: %w", err)
+	if _, writeErr := c.conn.WriteTo(request, addr); writeErr != nil {
+		return fmt.Errorf("failed to send allocate request: %w", writeErr)
 	}
 
 	buf := make([]byte, 4096)
@@ -164,15 +164,15 @@ func (c *TURNClient) Allocate(ctx context.Context) error {
 		transactionID = generateTransactionID()
 		request = c.buildAllocateRequest(transactionID, true)
 
-		if _, err := c.conn.WriteTo(request, addr); err != nil {
-			return fmt.Errorf("failed to send authenticated allocate request: %w", err)
+		if _, writeErr := c.conn.WriteTo(request, addr); writeErr != nil {
+			return fmt.Errorf("failed to send authenticated allocate request: %w", writeErr)
 		}
 
-		if err := c.conn.SetDeadline(deadline); err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-				slog.Debug("failed to set deadline for authenticated request", "error", err)
+		if deadlineErr := c.conn.SetDeadline(deadline); deadlineErr != nil {
+			if netErr, ok := deadlineErr.(net.Error); ok && netErr.Timeout() {
+				slog.Debug("failed to set deadline for authenticated request", "error", deadlineErr)
 			} else {
-				slog.Warn("failed to set deadline for authenticated request", "error", err)
+				slog.Warn("failed to set deadline for authenticated request", "error", deadlineErr)
 			}
 		}
 		n, _, err = c.conn.ReadFrom(buf)
@@ -192,7 +192,7 @@ func (c *TURNClient) Allocate(ctx context.Context) error {
 
 	// Parse relay address
 	if relayData, ok := attrs[turnAttrXORRelayedAddress]; ok {
-		c.relayAddr, _ = parseXORMappedAddress(relayData)
+		c.relayAddr, _ = parseXORMappedAddress(relayData) //nolint:errcheck // Zero value is valid fallback
 	} else {
 		return ErrTURNNoRelayAddress
 	}
@@ -230,7 +230,7 @@ func (c *TURNClient) CreatePermission(ctx context.Context, peerIP netip.Addr) er
 		return ErrTURNNoRelayAddress
 	}
 
-	addr, _ := resolveTURNServer(c.server)
+	addr, _ := resolveTURNServer(c.server) //nolint:errcheck // Address already resolved during allocation
 
 	transactionID := generateTransactionID()
 	request := c.buildCreatePermissionRequest(transactionID, peerIP)
@@ -282,7 +282,7 @@ func (c *TURNClient) BindChannel(ctx context.Context, peerAddr netip.AddrPort) (
 	channel := c.nextChannel
 	c.nextChannel++
 
-	addr, _ := resolveTURNServer(c.server)
+	addr, _ := resolveTURNServer(c.server) //nolint:errcheck // Address already resolved during allocation
 
 	transactionID := generateTransactionID()
 	request := c.buildChannelBindRequest(transactionID, channel, peerAddr)
@@ -326,13 +326,13 @@ func (c *TURNClient) Send(peerAddr netip.AddrPort, data []byte) error {
 		return ErrTURNNoRelayAddress
 	}
 
-	addr, _ := resolveTURNServer(c.server)
+	addr, _ := resolveTURNServer(c.server) //nolint:errcheck // Address was validated during allocation
 
 	// Use channel data if bound
 	if channel, exists := c.channels[peerAddr]; exists {
 		packet := make([]byte, 4+len(data))
 		binary.BigEndian.PutUint16(packet[0:2], channel)
-		binary.BigEndian.PutUint16(packet[2:4], uint16(len(data)))
+		binary.BigEndian.PutUint16(packet[2:4], uint16(len(data))) //nolint:gosec // G115: data len is bounded by MTU (< 65535)
 		copy(packet[4:], data)
 
 		_, err := c.conn.WriteTo(packet, addr)
@@ -392,7 +392,7 @@ func (c *TURNClient) Receive(buf []byte) (int, netip.AddrPort, error) {
 	}
 
 	if peerData, ok := attrs[turnAttrXORPeerAddress]; ok {
-		peerAddr, _ := parseXORMappedAddress(peerData)
+		peerAddr, _ := parseXORMappedAddress(peerData) //nolint:errcheck // Zero value is valid fallback
 		if data, ok := attrs[turnAttrData]; ok {
 			copied := copy(buf, data)
 			return copied, peerAddr, nil
@@ -411,7 +411,7 @@ func (c *TURNClient) Refresh(ctx context.Context) error {
 		return nil
 	}
 
-	addr, _ := resolveTURNServer(c.server)
+	addr, _ := resolveTURNServer(c.server) //nolint:errcheck // Address was validated during allocation
 
 	transactionID := generateTransactionID()
 	request := c.buildRefreshRequest(transactionID)
@@ -452,7 +452,7 @@ func (c *TURNClient) Close() error {
 
 	if c.conn != nil {
 		// Send refresh with lifetime=0 to release allocation
-		addr, _ := resolveTURNServer(c.server)
+		addr, _ := resolveTURNServer(c.server) //nolint:errcheck // Address was validated during allocation
 		transactionID := generateTransactionID()
 		request := c.buildRefreshRequest(transactionID)
 
@@ -588,7 +588,7 @@ func resolveTURNServer(server string) (*net.UDPAddr, error) {
 	}
 
 	portNum := 3478
-	fmt.Sscanf(port, "%d", &portNum)
+	_, _ = fmt.Sscanf(port, "%d", &portNum) //nolint:errcheck // Default port used if parse fails
 
 	return &net.UDPAddr{IP: ips[0], Port: portNum}, nil
 }
@@ -622,7 +622,7 @@ func buildSTUNMessage(msgType uint16, transactionID []byte, attrs []struct {
 
 	// Header
 	binary.BigEndian.PutUint16(msg[0:2], msgType)
-	binary.BigEndian.PutUint16(msg[2:4], uint16(attrsLen))
+	binary.BigEndian.PutUint16(msg[2:4], uint16(attrsLen)) //nolint:gosec // G115: STUN message attrs are always small
 	binary.BigEndian.PutUint32(msg[4:8], stunMagicCookie)
 	copy(msg[8:20], transactionID)
 
@@ -630,7 +630,7 @@ func buildSTUNMessage(msgType uint16, transactionID []byte, attrs []struct {
 	offset := stunHeaderSize
 	for _, attr := range attrs {
 		binary.BigEndian.PutUint16(msg[offset:offset+2], attr.typ)
-		binary.BigEndian.PutUint16(msg[offset+2:offset+4], uint16(len(attr.data)))
+		binary.BigEndian.PutUint16(msg[offset+2:offset+4], uint16(len(attr.data))) //nolint:gosec // G115: STUN attr data is always small
 		copy(msg[offset+4:], attr.data)
 		offset += 4 + len(attr.data)
 		if len(attr.data)%4 != 0 {
@@ -641,7 +641,7 @@ func buildSTUNMessage(msgType uint16, transactionID []byte, attrs []struct {
 	// MESSAGE-INTEGRITY
 	if authenticated && username != "" {
 		key := computeLongTermKey(username, realm, password)
-		binary.BigEndian.PutUint16(msg[2:4], uint16(offset-stunHeaderSize+24))
+		binary.BigEndian.PutUint16(msg[2:4], uint16(offset-stunHeaderSize+24)) //nolint:gosec // G115: offset is bounded by message size
 		mac := hmac.New(sha1.New, key)
 		mac.Write(msg[:offset])
 		integrity := mac.Sum(nil)
@@ -655,7 +655,7 @@ func buildSTUNMessage(msgType uint16, transactionID []byte, attrs []struct {
 }
 
 func computeLongTermKey(username, realm, password string) []byte {
-	h := sha1.New()
+	h := sha1.New() //nolint:gosec // G401: SHA1 is required by RFC 5766 (TURN) for long-term credentials
 	h.Write([]byte(username + ":" + realm + ":" + password))
 	return h.Sum(nil)[:16] // Use first 16 bytes
 }

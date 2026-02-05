@@ -64,11 +64,11 @@ type ProtocolMessage struct {
 
 // RouteAnnouncement contains route information.
 type RouteAnnouncement struct {
-	DestPeerID string        `json:"dest_peer_id"`
-	DestIP     netip.Addr    `json:"dest_ip"`
-	Metric     int           `json:"metric"`
-	HopCount   int           `json:"hop_count"`
-	Path       []string      `json:"path,omitempty"` // For loop prevention
+	DestPeerID string     `json:"dest_peer_id"`
+	DestIP     netip.Addr `json:"dest_ip"`
+	Metric     int        `json:"metric"`
+	HopCount   int        `json:"hop_count"`
+	Path       []string   `json:"path,omitempty"` // For loop prevention
 }
 
 // RouteWithdrawal indicates a route is no longer available.
@@ -78,26 +78,26 @@ type RouteWithdrawal struct {
 
 // HelloMessage is a periodic keepalive.
 type HelloMessage struct {
-	PeerID    string        `json:"peer_id"`
-	VirtualIP netip.Addr    `json:"virtual_ip"`
-	Timestamp time.Time     `json:"timestamp"`
-	Neighbors []string      `json:"neighbors,omitempty"`
+	PeerID    string     `json:"peer_id"`
+	VirtualIP netip.Addr `json:"virtual_ip"`
+	Timestamp time.Time  `json:"timestamp"`
+	Neighbors []string   `json:"neighbors,omitempty"`
 }
 
 // HelloAckMessage acknowledges a hello.
 type HelloAckMessage struct {
-	PeerID         string        `json:"peer_id"`
-	VirtualIP      netip.Addr    `json:"virtual_ip"`
-	RequestTime    time.Time     `json:"request_time"`
-	ResponseTime   time.Time     `json:"response_time"`
+	PeerID       string     `json:"peer_id"`
+	VirtualIP    netip.Addr `json:"virtual_ip"`
+	RequestTime  time.Time  `json:"request_time"`
+	ResponseTime time.Time  `json:"response_time"`
 }
 
 // LinkStateUpdate contains link state information.
 type LinkStateUpdate struct {
-	PeerID    string            `json:"peer_id"`
-	SeqNum    uint64            `json:"seq_num"`
-	Links     []LinkInfo        `json:"links"`
-	Timestamp time.Time         `json:"timestamp"`
+	PeerID    string     `json:"peer_id"`
+	SeqNum    uint64     `json:"seq_num"`
+	Links     []LinkInfo `json:"links"`
+	Timestamp time.Time  `json:"timestamp"`
 }
 
 // LinkInfo describes a link to a neighbor.
@@ -558,7 +558,7 @@ func (p *RoutingProtocol) forwardLinkState(excludePeerID string, payload json.Ra
 		if neighbor == excludePeerID {
 			continue
 		}
-		p.send(neighbor, msgBytes)
+		_ = p.send(neighbor, msgBytes) //nolint:errcheck // Best effort message send
 	}
 }
 
@@ -623,7 +623,7 @@ func (p *RoutingProtocol) NotifyPeerConnected(peerID string, peerIP netip.Addr, 
 
 	for _, neighbor := range p.router.GetDirectPeers() {
 		if neighbor != peerID {
-			p.send(neighbor, msgBytes)
+			_ = p.send(neighbor, msgBytes) //nolint:errcheck // Best effort message send
 		}
 	}
 }

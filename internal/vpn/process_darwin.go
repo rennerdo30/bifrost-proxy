@@ -138,7 +138,7 @@ func (d *darwinProcessLookup) matchAddrPort(s string, ap netip.AddrPort) bool {
 		if err != nil {
 			return false
 		}
-		return uint16(port) == ap.Port()
+		return uint16(port) == ap.Port() //nolint:gosec // G115: port is parsed from system output, always 0-65535
 	}
 
 	// Parse as address:port
@@ -163,13 +163,13 @@ func (d *darwinProcessLookup) matchAddrPort(s string, ap netip.AddrPort) bool {
 		return false
 	}
 
-	return addr == ap.Addr() && uint16(port) == ap.Port()
+	return addr == ap.Addr() && uint16(port) == ap.Port() //nolint:gosec // G115: port is parsed from system output, always 0-65535
 }
 
 // getProcessPath gets the executable path for a PID using ps.
 func (d *darwinProcessLookup) getProcessPath(pid int) string {
 	// Use ps to get the command path
-	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=")
+	cmd := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=") //nolint:gosec // G204: PID is an integer from system, not user input
 	output, err := cmd.Output()
 	if err != nil {
 		return ""

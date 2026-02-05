@@ -11,52 +11,52 @@ import (
 
 // Technology identifiers from NordVPN API.
 const (
-	TechOpenVPNUDP     = "openvpn_udp"
-	TechOpenVPNTCP     = "openvpn_tcp"
-	TechWireGuard      = "wireguard_udp"
-	TechNordLynx       = "nordlynx" // NordVPN's WireGuard implementation
-	TechIKEv2          = "ikev2"
-	TechHTTPProxy      = "proxy"
-	TechHTTPSProxy     = "proxy_ssl"
-	TechSOCKS5Proxy    = "socks"
-	TechHTTPCyberSec   = "proxy_cybersec"
+	TechOpenVPNUDP      = "openvpn_udp"
+	TechOpenVPNTCP      = "openvpn_tcp"
+	TechWireGuard       = "wireguard_udp"
+	TechNordLynx        = "nordlynx" // NordVPN's WireGuard implementation
+	TechIKEv2           = "ikev2"
+	TechHTTPProxy       = "proxy"
+	TechHTTPSProxy      = "proxy_ssl"
+	TechSOCKS5Proxy     = "socks"
+	TechHTTPCyberSec    = "proxy_cybersec"
 	TechHTTPSSLCyberSec = "proxy_ssl_cybersec"
 )
 
 // Group identifiers from NordVPN API.
 const (
-	GroupStandardVPN   = "legacy_standard"
-	GroupP2P           = "legacy_p2p"
-	GroupDoubleVPN     = "legacy_double_vpn"
-	GroupOnionOverVPN  = "legacy_onion_over_vpn"
-	GroupDedicatedIP   = "legacy_dedicated_ip"
-	GroupObfuscated    = "legacy_obfuscated_servers"
-	GroupAntiDDoS      = "legacy_anti_ddos"
+	GroupStandardVPN  = "legacy_standard"
+	GroupP2P          = "legacy_p2p"
+	GroupDoubleVPN    = "legacy_double_vpn"
+	GroupOnionOverVPN = "legacy_onion_over_vpn"
+	GroupDedicatedIP  = "legacy_dedicated_ip"
+	GroupObfuscated   = "legacy_obfuscated_servers"
+	GroupAntiDDoS     = "legacy_anti_ddos"
 )
 
 // Default ports for NordVPN services.
 const (
-	DefaultOpenVPNUDPPort  = 1194
-	DefaultOpenVPNTCPPort  = 443
-	DefaultWireGuardPort   = 51820
+	DefaultOpenVPNUDPPort = 1194
+	DefaultOpenVPNTCPPort = 443
+	DefaultWireGuardPort  = 51820
 )
 
 // APIServer represents a server from the NordVPN API.
 type APIServer struct {
-	ID        int              `json:"id"`
-	Name      string           `json:"name"`
-	Station   string           `json:"station"` // IP address
-	Hostname  string           `json:"hostname"`
-	Load      int              `json:"load"`
-	Status    string           `json:"status"`
-	CreatedAt string           `json:"created_at"`
-	UpdatedAt string           `json:"updated_at"`
-	Locations []APILocation    `json:"locations"`
-	Services  []APIService     `json:"services"`
+	ID           int             `json:"id"`
+	Name         string          `json:"name"`
+	Station      string          `json:"station"` // IP address
+	Hostname     string          `json:"hostname"`
+	Load         int             `json:"load"`
+	Status       string          `json:"status"`
+	CreatedAt    string          `json:"created_at"`
+	UpdatedAt    string          `json:"updated_at"`
+	Locations    []APILocation   `json:"locations"`
+	Services     []APIService    `json:"services"`
 	Technologies []APITechnology `json:"technologies"`
-	Groups    []APIGroup       `json:"groups"`
-	Specs     []APISpec        `json:"specifications"`
-	IPs       []APIIP          `json:"ips"`
+	Groups       []APIGroup      `json:"groups"`
+	Specs        []APISpec       `json:"specifications"`
+	IPs          []APIIP         `json:"ips"`
 }
 
 // APILocation represents a server location.
@@ -69,20 +69,20 @@ type APILocation struct {
 
 // APICountry represents country information.
 type APICountry struct {
-	ID   int       `json:"id"`
-	Name string    `json:"name"`
-	Code string    `json:"code"`
-	City APICity   `json:"city"`
+	ID   int     `json:"id"`
+	Name string  `json:"name"`
+	Code string  `json:"code"`
+	City APICity `json:"city"`
 }
 
 // APICity represents city information.
 type APICity struct {
-	ID       int     `json:"id"`
-	Name     string  `json:"name"`
-	Latitude float64 `json:"latitude"`
+	ID        int     `json:"id"`
+	Name      string  `json:"name"`
+	Latitude  float64 `json:"latitude"`
 	Longitude float64 `json:"longitude"`
-	DNSName  string  `json:"dns_name"`
-	HubScore int     `json:"hub_score"`
+	DNSName   string  `json:"dns_name"`
+	HubScore  int     `json:"hub_score"`
 }
 
 // APIService represents a service offered by the server.
@@ -94,10 +94,10 @@ type APIService struct {
 
 // APITechnology represents a technology/protocol supported by the server.
 type APITechnology struct {
-	ID         int              `json:"id"`
-	Name       string           `json:"name"`
-	Identifier string           `json:"identifier"`
-	Pivot      APITechPivot     `json:"pivot"`
+	ID         int               `json:"id"`
+	Name       string            `json:"name"`
+	Identifier string            `json:"identifier"`
+	Pivot      APITechPivot      `json:"pivot"`
 	Metadata   []APITechMetadata `json:"metadata"`
 }
 
@@ -182,11 +182,11 @@ type APICityInfo struct {
 
 // RecommendationFilter represents filter parameters for server recommendations.
 type RecommendationFilter struct {
-	CountryID    int    `json:"country_id,omitempty"`
-	CityID       int    `json:"city_id,omitempty"`
-	GroupID      int    `json:"group_id,omitempty"`
-	TechnologyID int    `json:"technology_id,omitempty"`
-	Limit        int    `json:"limit,omitempty"`
+	CountryID    int `json:"country_id,omitempty"`
+	CityID       int `json:"city_id,omitempty"`
+	GroupID      int `json:"group_id,omitempty"`
+	TechnologyID int `json:"technology_id,omitempty"`
+	Limit        int `json:"limit,omitempty"`
 }
 
 // ToServer converts an API server to the common Server format.

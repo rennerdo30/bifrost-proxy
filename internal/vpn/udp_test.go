@@ -39,7 +39,7 @@ func TestBuildIPv4UDPPacket(t *testing.T) {
 	assert.Equal(t, expectedLen, totalLen)
 
 	// Verify protocol (UDP = 17)
-	assert.Equal(t, byte(ProtocolUDP), packet[9])
+	assert.Equal(t, ProtocolUDP, packet[9])
 
 	// Verify source IP
 	src4 := srcIP.As4()
@@ -86,7 +86,7 @@ func TestBuildIPv6UDPPacket(t *testing.T) {
 	assert.Equal(t, 8+len(payload), payloadLen)
 
 	// Verify next header (UDP = 17)
-	assert.Equal(t, byte(ProtocolUDP), packet[6])
+	assert.Equal(t, ProtocolUDP, packet[6])
 
 	// Verify source IP
 	src16 := srcIP.As16()

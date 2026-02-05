@@ -322,10 +322,10 @@ func (p *Peer) Clone() *Peer {
 
 // PeerRegistry manages all known peers in a mesh network.
 type PeerRegistry struct {
-	peers  map[string]*Peer // Keyed by peer ID
-	byIP   map[netip.Addr]*Peer
-	byMAC  map[string]*Peer // Keyed by MAC string
-	mu     sync.RWMutex
+	peers map[string]*Peer // Keyed by peer ID
+	byIP  map[netip.Addr]*Peer
+	byMAC map[string]*Peer // Keyed by MAC string
+	mu    sync.RWMutex
 }
 
 // NewPeerRegistry creates a new peer registry.

@@ -6,7 +6,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: SHA1 is required by RFC 4226 (HOTP) for compatibility with hardware tokens
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/subtle"
@@ -244,12 +244,12 @@ func parseSecrets(v any) ([]*userSecret, error) {
 
 // parseSecret parses a single secret configuration.
 func parseSecret(m map[string]any) (*userSecret, error) {
-	username, _ := m["username"].(string)
+	username, _ := m["username"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if username == "" {
 		return nil, fmt.Errorf("username is required")
 	}
 
-	secret, _ := m["secret"].(string)
+	secret, _ := m["secret"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if secret == "" {
 		return nil, fmt.Errorf("secret is required for user %s", username)
 	}
@@ -263,7 +263,7 @@ func parseSecret(m map[string]any) (*userSecret, error) {
 
 	var counter uint64
 	if c, ok := m["counter"].(int); ok {
-		counter = uint64(c)
+		counter = uint64(c) //nolint:gosec // G115: counter values in config are always non-negative
 	} else if c, ok := m["counter"].(float64); ok {
 		counter = uint64(c)
 	}
@@ -273,7 +273,7 @@ func parseSecret(m map[string]any) (*userSecret, error) {
 		groups = toStringSlice(groupsAny)
 	}
 
-	disabled, _ := m["disabled"].(bool)
+	disabled, _ := m["disabled"].(bool) //nolint:errcheck // Type assertion - false is valid if missing
 
 	return &userSecret{
 		Username: username,
@@ -375,7 +375,7 @@ func (a *Authenticator) validateCode(secret *userSecret, code string) (bool, uin
 
 	// Check current counter and look-ahead window
 	for i := 0; i <= a.config.LookAhead; i++ {
-		counter := secret.Counter + uint64(i)
+		counter := secret.Counter + uint64(i) //nolint:gosec // G115: i is always non-negative (loop from 0)
 		expectedCode := a.generateCode(secretBytes, counter)
 		if subtle.ConstantTimeCompare([]byte(code), []byte(expectedCode)) == 1 {
 			return true, counter + 1 // Return next counter value

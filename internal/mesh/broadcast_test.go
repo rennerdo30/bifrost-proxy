@@ -37,6 +37,7 @@ func TestDefaultBroadcastConfig(t *testing.T) {
 	assert.Equal(t, time.Minute, cfg.CleanupInterval)
 }
 
+//nolint:unparam // localPeerID is always "local-peer" in tests but kept for test readability
 func createTestRouter(localPeerID string) *MeshRouter {
 	return NewMeshRouter(RouterConfig{
 		LocalPeerID:  localPeerID,

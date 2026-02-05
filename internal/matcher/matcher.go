@@ -15,7 +15,7 @@ const (
 
 // Matcher errors
 var (
-	ErrPatternsAtLimit = errors.New("matcher: patterns at maximum limit")
+	ErrPatternsAtLimit  = errors.New("matcher: patterns at maximum limit")
 	ErrDuplicatePattern = errors.New("matcher: duplicate pattern")
 )
 
@@ -37,7 +37,7 @@ type pattern struct {
 func New(patterns []string) *Matcher {
 	m := &Matcher{}
 	for _, p := range patterns {
-		m.AddPattern(p)
+		_ = m.AddPattern(p) //nolint:errcheck // Silently skip invalid patterns during construction
 	}
 	return m
 }

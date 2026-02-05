@@ -172,13 +172,13 @@ func parseConfig(config map[string]any) (*ldapConfig, error) {
 	}
 
 	// Required fields
-	url, _ := config["url"].(string)
+	url, _ := config["url"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if url == "" {
 		return nil, auth.NewAuthError("ldap", "config", fmt.Errorf("URL is required"))
 	}
 	cfg.url = url
 
-	baseDN, _ := config["base_dn"].(string)
+	baseDN, _ := config["base_dn"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if baseDN == "" {
 		return nil, auth.NewAuthError("ldap", "config", fmt.Errorf("base_dn is required"))
 	}
@@ -241,7 +241,7 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 
 	// Bind with service account if configured
 	if a.config.bindDN != "" {
-		if err := conn.Bind(a.config.bindDN, a.config.bindPassword); err != nil {
+		if bindErr := conn.Bind(a.config.bindDN, a.config.bindPassword); bindErr != nil {
 			return nil, auth.NewAuthError("ldap", "bind", auth.ErrConnectionFailed)
 		}
 	}
@@ -273,7 +273,7 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 	userDN := userEntry.DN
 
 	// Bind as user to verify password
-	if err := conn.Bind(userDN, password); err != nil {
+	if userBindErr := conn.Bind(userDN, password); userBindErr != nil {
 		return nil, auth.NewAuthError("ldap", "authenticate", auth.ErrInvalidCredentials)
 	}
 
@@ -331,7 +331,7 @@ func (a *Authenticator) connectWithContext(ctx context.Context) (*ldap.Conn, err
 	// Add TLS config if needed
 	if a.config.useTLS || strings.HasPrefix(a.config.url, "ldaps://") {
 		tlsConfig := &tls.Config{
-			InsecureSkipVerify: a.config.insecureSkipVerify,
+			InsecureSkipVerify: a.config.insecureSkipVerify, //nolint:gosec // G402: User-configurable for internal LDAP servers with self-signed certs
 		}
 		dialOpts = append(dialOpts, ldap.DialWithTLSConfig(tlsConfig))
 	}

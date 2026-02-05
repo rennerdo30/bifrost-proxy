@@ -1349,7 +1349,7 @@ func TestMiddleware_MultiProxyAuthHandler_APIKey(t *testing.T) {
 					"key_plain": "my-api-key-12345",
 					"name":      "api-client-1",
 					"username":  "apiuser",
-					"groups":   []string{"api-clients"},
+					"groups":    []string{"api-clients"},
 				},
 			},
 		},
@@ -1741,7 +1741,7 @@ func TestFactory_CreateChain_InvalidConfig(t *testing.T) {
 			Name:    "ldap-invalid",
 			Type:    "ldap",
 			Enabled: true,
-			Config: map[string]any{
+			Config:  map[string]any{
 				// Missing required fields
 			},
 		},

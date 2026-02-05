@@ -299,8 +299,8 @@ func TestManager_CheckNow(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := listener.Accept()
-			if err != nil {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			conn.Close()
@@ -932,8 +932,8 @@ func TestManager_CheckNow_UpdatesResult(t *testing.T) {
 
 	go func() {
 		for {
-			conn, err := listener.Accept()
-			if err != nil {
+			conn, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			conn.Close()

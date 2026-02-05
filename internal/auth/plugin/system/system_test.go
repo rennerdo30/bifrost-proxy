@@ -281,11 +281,11 @@ func TestPluginCreateWithConfig(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                  string
-		config                map[string]any
-		expectedService       string
-		expectedUsersCount    int
-		expectedGroupsCount   int
+		name                string
+		config              map[string]any
+		expectedService     string
+		expectedUsersCount  int
+		expectedGroupsCount int
 	}{
 		{
 			name:                "with custom service",
@@ -891,7 +891,7 @@ func TestAuthenticateWithGroupCheckPath(t *testing.T) {
 
 	// Create authenticator with a group the user is NOT in
 	a = &Authenticator{
-		allowedUsers:  map[string]bool{}, // Allow all users
+		allowedUsers: map[string]bool{}, // Allow all users
 		allowedGroups: map[string]bool{
 			"nonexistent_group_xyz_99999": true, // User won't be in this group
 		},

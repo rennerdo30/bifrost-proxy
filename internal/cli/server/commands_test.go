@@ -105,8 +105,8 @@ func TestAPIClient_ListBackends(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode([]map[string]interface{}{
 			{
-				"name":   "backend1",
-				"type":   "direct",
+				"name":    "backend1",
+				"type":    "direct",
 				"healthy": true,
 				"stats": map[string]interface{}{
 					"active_connections": 5.0,
@@ -127,8 +127,8 @@ func TestAPIClient_ShowBackend(t *testing.T) {
 		assert.Equal(t, "/api/v1/backends/test-backend", r.URL.Path)
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"name":   "test-backend",
-			"type":   "direct",
+			"name":    "test-backend",
+			"type":    "direct",
 			"healthy": true,
 		})
 	}))
@@ -415,7 +415,10 @@ func TestNewCommands_WithToken(t *testing.T) {
 func TestAPIClient_doRequest_InvalidMethod(t *testing.T) {
 	client := NewAPIClient("http://localhost:8082", "")
 	// Invalid method with control character will cause NewRequest to fail
-	_, err := client.doRequest("INVALID\x00METHOD", "/api/v1/test", nil)
+	resp, err := client.doRequest("INVALID\x00METHOD", "/api/v1/test", nil)
+	if resp != nil {
+		resp.Body.Close()
+	}
 	assert.Error(t, err)
 }
 

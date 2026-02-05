@@ -10,9 +10,9 @@ import (
 
 // IPMatcher matches IP addresses against a list of IPs and CIDR ranges.
 type IPMatcher struct {
-	ips    map[string]bool
-	cidrs  []*net.IPNet
-	mu     sync.RWMutex
+	ips   map[string]bool
+	cidrs []*net.IPNet
+	mu    sync.RWMutex
 }
 
 // NewIPMatcher creates a new IP matcher.

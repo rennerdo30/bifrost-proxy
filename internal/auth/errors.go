@@ -7,14 +7,14 @@ import (
 
 // Common authentication errors.
 var (
-	ErrInvalidCredentials = errors.New("invalid credentials")
-	ErrUserNotFound       = errors.New("user not found")
-	ErrUserDisabled       = errors.New("user disabled")
-	ErrAuthRequired       = errors.New("authentication required")
+	ErrInvalidCredentials    = errors.New("invalid credentials")
+	ErrUserNotFound          = errors.New("user not found")
+	ErrUserDisabled          = errors.New("user disabled")
+	ErrAuthRequired          = errors.New("authentication required")
 	ErrAuthMethodUnsupported = errors.New("authentication method not supported")
-	ErrConfigInvalid      = errors.New("invalid auth configuration")
-	ErrConnectionFailed   = errors.New("authentication service connection failed")
-	ErrTimeout            = errors.New("authentication timeout")
+	ErrConfigInvalid         = errors.New("invalid auth configuration")
+	ErrConnectionFailed      = errors.New("authentication service connection failed")
+	ErrTimeout               = errors.New("authentication timeout")
 )
 
 // AuthError wraps an authentication error with additional context.

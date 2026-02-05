@@ -625,16 +625,16 @@ func TestIsValidDomain(t *testing.T) {
 		{"a.co", true},
 
 		// Invalid domains
-		{"", false},                                               // Empty
-		{"-invalid.com", false},                                   // Starts with hyphen
-		{"invalid-.com", false},                                   // Ends with hyphen
-		{"example..com", false},                                   // Double dot
-		{".example.com", false},                                   // Starts with dot
-		{"example.com.", false},                                   // Ends with dot
-		{"a" + string(make([]byte, 254)), false},                  // Too long (>253 chars)
-		{"test_invalid.com", false},                               // Underscore not allowed
-		{"test!invalid.com", false},                               // Special character
-		{"test@invalid.com", false},                               // @ symbol
+		{"", false},                              // Empty
+		{"-invalid.com", false},                  // Starts with hyphen
+		{"invalid-.com", false},                  // Ends with hyphen
+		{"example..com", false},                  // Double dot
+		{".example.com", false},                  // Starts with dot
+		{"example.com.", false},                  // Ends with dot
+		{"a" + string(make([]byte, 254)), false}, // Too long (>253 chars)
+		{"test_invalid.com", false},              // Underscore not allowed
+		{"test!invalid.com", false},              // Special character
+		{"test@invalid.com", false},              // @ symbol
 	}
 
 	for _, tt := range tests {
@@ -690,8 +690,8 @@ func TestSOCKS5Handler_handleConnect_InvalidDomain(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		conn, err := listener.Accept()
-		if err != nil {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
 			return
 		}
 		defer conn.Close()
@@ -766,7 +766,7 @@ func TestSOCKS5Handler_handlePasswordAuth_EmptyCredentials(t *testing.T) {
 	assert.Equal(t, socks5AuthPassword, resp[1])
 
 	// Send empty username and password
-	authData := []byte{0x01}     // version
+	authData := []byte{0x01}             // version
 	authData = append(authData, byte(0)) // empty username length
 	authData = append(authData, byte(0)) // empty password length
 

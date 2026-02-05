@@ -126,7 +126,7 @@ func (h *WebSocketHub) ServeWS(ws *websocket.Conn) {
 	// Keep connection alive and read messages (for ping/pong)
 	for {
 		// Set read deadline to prevent connections from being held indefinitely
-		ws.SetReadDeadline(time.Now().Add(WebSocketReadTimeout))
+		_ = ws.SetReadDeadline(time.Now().Add(WebSocketReadTimeout)) //nolint:errcheck // Best effort deadline
 
 		var msg string
 		if err := websocket.Message.Receive(ws, &msg); err != nil {
@@ -134,7 +134,7 @@ func (h *WebSocketHub) ServeWS(ws *websocket.Conn) {
 		}
 		// Handle ping
 		if msg == "ping" {
-			websocket.Message.Send(ws, "pong")
+			_ = websocket.Message.Send(ws, "pong") //nolint:errcheck // Best effort pong response
 		}
 	}
 }

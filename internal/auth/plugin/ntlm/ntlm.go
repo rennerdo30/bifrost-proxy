@@ -46,10 +46,7 @@ func (p *plugin) Description() string {
 
 // Create creates a new NTLM authenticator from the configuration.
 func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
-	cfg, err := parseConfig(config)
-	if err != nil {
-		return nil, err
-	}
+	cfg := parseConfig(config)
 
 	authenticator := &Authenticator{
 		config:     cfg,
@@ -60,9 +57,8 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 }
 
 // ValidateConfig validates the configuration.
-func (p *plugin) ValidateConfig(config map[string]any) error {
-	_, err := parseConfig(config)
-	return err
+func (p *plugin) ValidateConfig(_ map[string]any) error {
+	return nil
 }
 
 // DefaultConfig returns the default configuration.
@@ -117,7 +113,7 @@ type ntlmConfig struct {
 }
 
 // parseConfig parses the configuration map.
-func parseConfig(config map[string]any) (*ntlmConfig, error) {
+func parseConfig(config map[string]any) *ntlmConfig {
 	if config == nil {
 		config = make(map[string]any)
 	}
@@ -151,12 +147,11 @@ func parseConfig(config map[string]any) (*ntlmConfig, error) {
 		cfg.ServerChallengeSecret = secret
 	}
 
-	return cfg, nil
+	return cfg
 }
 
 // challengeState tracks NTLM handshake state.
 type challengeState struct {
-	challenge []byte
 	domain    string
 	timestamp int64
 }
@@ -223,7 +218,7 @@ func (a *Authenticator) validateNTLMToken(ctx context.Context, token []byte) (*a
 }
 
 // handleType1 handles NTLM Type 1 (Negotiate) messages.
-func (a *Authenticator) handleType1(ctx context.Context, token []byte) (*auth.UserInfo, error) {
+func (a *Authenticator) handleType1(_ context.Context, token []byte) (*auth.UserInfo, error) {
 	// Parse Type 1 message to extract domain and workstation
 	// For now, we just acknowledge receipt and indicate a challenge is needed
 
@@ -236,7 +231,7 @@ func (a *Authenticator) handleType1(ctx context.Context, token []byte) (*auth.Us
 }
 
 // handleType3 handles NTLM Type 3 (Authenticate) messages.
-func (a *Authenticator) handleType3(ctx context.Context, token []byte) (*auth.UserInfo, error) {
+func (a *Authenticator) handleType3(_ context.Context, token []byte) (*auth.UserInfo, error) {
 	// Parse NTLM Type 3 message to extract username and domain
 	domain, username, err := parseType3Message(token)
 	if err != nil {

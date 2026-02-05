@@ -8,12 +8,12 @@ import (
 type contextKey string
 
 const (
-	requestIDKey  contextKey = "request_id"
-	usernameKey   contextKey = "username"
-	clientIPKey   contextKey = "client_ip"
-	startTimeKey  contextKey = "start_time"
-	backendKey    contextKey = "backend"
-	domainKey     contextKey = "domain"
+	requestIDKey contextKey = "request_id"
+	usernameKey  contextKey = "username"
+	clientIPKey  contextKey = "client_ip"
+	startTimeKey contextKey = "start_time"
+	backendKey   contextKey = "backend"
+	domainKey    contextKey = "domain"
 )
 
 // WithRequestID adds a request ID to the context.

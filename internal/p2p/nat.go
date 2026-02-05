@@ -116,7 +116,7 @@ func (d *NATDetector) Detect(ctx context.Context) (*NATInfo, error) {
 
 	// Get local address
 	localPort := d.stunClient.GetLocalPort()
-	localAddr := netip.AddrPortFrom(netip.Addr{}, uint16(localPort))
+	localAddr := netip.AddrPortFrom(netip.Addr{}, uint16(localPort)) //nolint:gosec // G115: localPort is from system port allocation (0-65535)
 
 	// Determine if we're behind NAT by comparing local and mapped addresses
 	isBehindNAT := true // Assume NAT unless proven otherwise

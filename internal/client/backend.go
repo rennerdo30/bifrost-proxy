@@ -53,7 +53,7 @@ func (b *ClientBackend) dialDirect(ctx context.Context, network, address string)
 }
 
 // dialServer connects through the Bifrost server.
-func (b *ClientBackend) dialServer(ctx context.Context, network, address string) (net.Conn, error) {
+func (b *ClientBackend) dialServer(ctx context.Context, _, address string) (net.Conn, error) {
 	return b.serverConn.Connect(ctx, address)
 }
 

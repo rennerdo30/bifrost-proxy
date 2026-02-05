@@ -613,12 +613,12 @@ func TestProcess_Stop_WithMgmtConn(t *testing.T) {
 
 	// Accept connections in background
 	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
+		acceptedConn, acceptErr := listener.Accept()
+		if acceptErr == nil {
 			// Read the signal command
-			reader := bufio.NewReader(conn)
+			reader := bufio.NewReader(acceptedConn)
 			reader.ReadString('\n')
-			conn.Close()
+			acceptedConn.Close()
 		}
 	}()
 
@@ -852,15 +852,15 @@ func TestProcess_handleManagement_ContextCancelled(t *testing.T) {
 	defer listener.Close()
 
 	done := make(chan struct{})
-	
+
 	// Accept connection in background
 	go func() {
-		conn, err := listener.Accept()
-		if err == nil {
+		acceptedConn, acceptErr := listener.Accept()
+		if acceptErr == nil {
 			// Keep connection open but send no data
 			// Wait until test is done
 			<-done
-			conn.Close()
+			acceptedConn.Close()
 		}
 	}()
 
@@ -874,7 +874,7 @@ func TestProcess_handleManagement_ContextCancelled(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	// Start handler in background
 	handlerDone := make(chan struct{})
 	go func() {

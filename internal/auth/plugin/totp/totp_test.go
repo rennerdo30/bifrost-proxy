@@ -54,6 +54,7 @@ func generateTOTPWithAlgorithm(secret string, timestamp time.Time, digits int, p
 	return fmt.Sprintf(format, code)
 }
 
+//nolint:unparam // period is always 30 in tests but kept for test readability
 func generateTOTP(secret string, timestamp time.Time, digits int, period int) string {
 	return generateTOTPWithAlgorithm(secret, timestamp, digits, period, "SHA1")
 }

@@ -50,7 +50,7 @@ func TestHTTPHandler_ServeConn(t *testing.T) {
 	}()
 
 	// Send HTTP request
-	req, err := http.NewRequest("GET", targetServer.URL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", targetServer.URL, nil)
 	require.NoError(t, err)
 	req.Host = targetServer.Listener.Addr().String()
 
@@ -283,7 +283,7 @@ func TestHTTPHandler_handleConnect(t *testing.T) {
 	})
 
 	// Create CONNECT request
-	req, err := http.NewRequest("CONNECT", "http://"+targetHost, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "CONNECT", "http://"+targetHost, nil)
 	require.NoError(t, err)
 	req.Host = targetHost
 
@@ -300,6 +300,7 @@ func TestHTTPHandler_handleConnect(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
@@ -319,7 +320,7 @@ func TestHTTPHandler_handleConnect_NoBackend(t *testing.T) {
 		},
 	})
 
-	req, err := http.NewRequest("CONNECT", "http://example.com:443", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "CONNECT", "http://example.com:443", nil)
 	require.NoError(t, err)
 
 	go func() {
@@ -333,6 +334,7 @@ func TestHTTPHandler_handleConnect_NoBackend(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
@@ -356,7 +358,7 @@ func TestHTTPHandler_handleConnect_HostWithoutPort(t *testing.T) {
 		},
 	})
 
-	req, err := http.NewRequest("CONNECT", "http://example.com", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "CONNECT", "http://example.com", nil)
 	require.NoError(t, err)
 	req.Host = "example.com" // No port
 
@@ -371,6 +373,7 @@ func TestHTTPHandler_handleConnect_HostWithoutPort(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	// Should default to 443
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
@@ -421,6 +424,7 @@ func TestHTTPHandler_sendHTTPError(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, nil)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 	assert.Contains(t, resp.Header.Get("Content-Type"), "text/html")
 
@@ -454,7 +458,7 @@ func TestHTTPHandler_handleHTTP_HTTPS(t *testing.T) {
 	})
 
 	// Create HTTP request with https scheme
-	req, err := http.NewRequest("GET", "https://example.com/path", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "https://example.com/path", nil)
 	require.NoError(t, err)
 	req.Host = targetServer.Listener.Addr().String()
 
@@ -470,6 +474,7 @@ func TestHTTPHandler_handleHTTP_HTTPS(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
@@ -489,7 +494,7 @@ func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
 		},
 	})
 
-	req, err := http.NewRequest("GET", "http://example.com/path", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path", nil)
 	require.NoError(t, err)
 
 	go func() {
@@ -503,6 +508,7 @@ func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
 	time.Sleep(50 * time.Millisecond)
@@ -600,6 +606,7 @@ func TestHTTPHandler_ServeConn_EmptyHost(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, nil)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -623,7 +630,7 @@ func TestHTTPHandler_handleConnect_DialFailure(t *testing.T) {
 	})
 
 	// CONNECT to an unreachable address
-	req, err := http.NewRequest("CONNECT", "http://192.0.2.1:12345", nil) // TEST-NET-1, RFC 5737
+	req, err := http.NewRequestWithContext(context.Background(), "CONNECT", "http://192.0.2.1:12345", nil) // TEST-NET-1, RFC 5737
 	require.NoError(t, err)
 	req.Host = "192.0.2.1:12345"
 
@@ -638,6 +645,7 @@ func TestHTTPHandler_handleConnect_DialFailure(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
 	time.Sleep(200 * time.Millisecond)
@@ -664,7 +672,7 @@ func TestHTTPHandler_handleHTTP_DialFailure(t *testing.T) {
 	})
 
 	// GET to an unreachable address
-	req, err := http.NewRequest("GET", "http://192.0.2.1:12345/path", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://192.0.2.1:12345/path", nil)
 	require.NoError(t, err)
 	req.Host = "192.0.2.1:12345"
 
@@ -679,6 +687,7 @@ func TestHTTPHandler_handleHTTP_DialFailure(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
 	time.Sleep(200 * time.Millisecond)
@@ -718,6 +727,7 @@ func TestHTTPHandler_handleHTTP_EmptyHostFromRequest(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, nil)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
@@ -790,8 +800,8 @@ func TestHTTPHandler_handleHTTP_WriteRequestError(t *testing.T) {
 
 	// Server that accepts then immediately closes
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
 			return
 		}
 		conn.Close() // Close immediately
@@ -818,7 +828,7 @@ func TestHTTPHandler_handleHTTP_WriteRequestError(t *testing.T) {
 		handler.ServeConn(context.Background(), serverConn)
 	}()
 
-	req, err := http.NewRequest("GET", "http://"+serverAddr+"/path", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://"+serverAddr+"/path", nil)
 	require.NoError(t, err)
 	req.Host = serverAddr
 
@@ -849,13 +859,13 @@ func TestCopyBidirectional_WithTCPConn(t *testing.T) {
 	acceptDone := make(chan struct{})
 
 	go func() {
-		var err error
-		server1Conn, err = listener1.Accept()
-		if err != nil {
+		var acceptErr error
+		server1Conn, acceptErr = listener1.Accept()
+		if acceptErr != nil {
 			return
 		}
-		server2Conn, err = listener2.Accept()
-		if err != nil {
+		server2Conn, acceptErr = listener2.Accept()
+		if acceptErr != nil {
 			return
 		}
 		close(acceptDone)
@@ -957,7 +967,7 @@ func TestHTTPHandler_ServeConn_NonTCPAddr(t *testing.T) {
 	}()
 
 	// Write HTTP request
-	req, err := http.NewRequest("GET", targetServer.URL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", targetServer.URL, nil)
 	require.NoError(t, err)
 	req.Host = targetServer.Listener.Addr().String()
 	err = req.Write(clientConn)
@@ -967,6 +977,7 @@ func TestHTTPHandler_ServeConn_NonTCPAddr(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, req)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	clientConn.Close()
@@ -1006,6 +1017,7 @@ func TestHTTPHandler_handleHTTP_EmptyHostFallbackToURLHost(t *testing.T) {
 	reader := bufio.NewReader(clientConn)
 	resp, err := http.ReadResponse(reader, nil)
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	clientConn.Close()
 }
@@ -1042,7 +1054,7 @@ func TestHTTPHandler_handleHTTP_WriteResponseError(t *testing.T) {
 	}()
 
 	// Write request then close immediately before response can be written back
-	req, err := http.NewRequest("GET", targetServer.URL, nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", targetServer.URL, nil)
 	require.NoError(t, err)
 	req.Host = targetServer.Listener.Addr().String()
 	err = req.Write(clientConn)
@@ -1067,8 +1079,8 @@ func TestHTTPHandler_handleHTTP_ReadResponseError(t *testing.T) {
 
 	// Server that sends a partial response then closes
 	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
 			return
 		}
 		// Read the request
@@ -1100,7 +1112,7 @@ func TestHTTPHandler_handleHTTP_ReadResponseError(t *testing.T) {
 		handler.ServeConn(context.Background(), serverConn)
 	}()
 
-	req, err := http.NewRequest("GET", "http://"+serverAddr+"/path", nil)
+	req, err := http.NewRequestWithContext(context.Background(), "GET", "http://"+serverAddr+"/path", nil)
 	require.NoError(t, err)
 	req.Host = serverAddr
 
@@ -1109,7 +1121,10 @@ func TestHTTPHandler_handleHTTP_ReadResponseError(t *testing.T) {
 
 	// Read response (may be partial)
 	reader := bufio.NewReader(clientConn)
-	_, _ = http.ReadResponse(reader, req)
+	resp, _ := http.ReadResponse(reader, req)
+	if resp != nil && resp.Body != nil {
+		resp.Body.Close()
+	}
 
 	time.Sleep(100 * time.Millisecond)
 	clientConn.Close()

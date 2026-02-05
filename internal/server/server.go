@@ -77,8 +77,8 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 
 	// Create router
 	r := router.NewServerRouter(backends)
-	if err := r.LoadRoutes(cfg.Routes); err != nil {
-		return nil, fmt.Errorf("load routes: %w", err)
+	if loadErr := r.LoadRoutes(cfg.Routes); loadErr != nil {
+		return nil, fmt.Errorf("load routes: %w", loadErr)
 	}
 
 	// Create authenticator
@@ -126,13 +126,13 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	// Parse bandwidth throttling limits
 	var bandwidthConfig *ratelimit.BandwidthConfig
 	if cfg.RateLimit.Bandwidth != nil && cfg.RateLimit.Bandwidth.Enabled {
-		upload, err := ratelimit.ParseBandwidth(cfg.RateLimit.Bandwidth.Upload)
-		if err != nil {
-			return nil, fmt.Errorf("parse upload bandwidth: %w", err)
+		upload, uploadErr := ratelimit.ParseBandwidth(cfg.RateLimit.Bandwidth.Upload)
+		if uploadErr != nil {
+			return nil, fmt.Errorf("parse upload bandwidth: %w", uploadErr)
 		}
-		download, err := ratelimit.ParseBandwidth(cfg.RateLimit.Bandwidth.Download)
-		if err != nil {
-			return nil, fmt.Errorf("parse download bandwidth: %w", err)
+		download, downloadErr := ratelimit.ParseBandwidth(cfg.RateLimit.Bandwidth.Download)
+		if downloadErr != nil {
+			return nil, fmt.Errorf("parse download bandwidth: %w", downloadErr)
 		}
 		if upload > 0 || download > 0 {
 			bandwidthConfig = &ratelimit.BandwidthConfig{
@@ -492,8 +492,9 @@ func (s *Server) Start(ctx context.Context) error {
 		handler := s.api.RouterWithWebSocket(s.wsHub)
 
 		s.apiServer = &http.Server{
-			Addr:    s.config.API.Listen,
-			Handler: handler,
+			Addr:              s.config.API.Listen,
+			Handler:           handler,
+			ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 		}
 	}
 
@@ -533,8 +534,9 @@ func (s *Server) Start(ctx context.Context) error {
 		mux.Handle(path, s.metrics.Handler())
 
 		s.metricsServer = &http.Server{
-			Addr:    s.config.Metrics.Listen,
-			Handler: mux,
+			Addr:              s.config.Metrics.Listen,
+			Handler:           mux,
+			ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 		}
 
 		s.wg.Add(1)
@@ -586,12 +588,16 @@ func (s *Server) Stop(ctx context.Context) error {
 
 	// Stop metrics server
 	if s.metricsServer != nil {
-		s.metricsServer.Shutdown(ctx)
+		if err := s.metricsServer.Shutdown(ctx); err != nil {
+			logging.Error("Error shutting down metrics server", "error", err)
+		}
 	}
 
 	// Stop API server
 	if s.apiServer != nil {
-		s.apiServer.Shutdown(ctx)
+		if err := s.apiServer.Shutdown(ctx); err != nil {
+			logging.Error("Error shutting down API server", "error", err)
+		}
 	}
 
 	// Wait for connections with grace period
@@ -926,13 +932,13 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 		current := atomic.AddInt32(&s.httpActiveConns, 1)
 		defer atomic.AddInt32(&s.httpActiveConns, -1)
 
-		if current > int32(maxConns) {
+		if current > int32(maxConns) { //nolint:gosec // G115: maxConns is a small config value
 			logging.Warn("HTTP connection limit exceeded",
 				"current", current,
 				"max", maxConns,
 				"client", conn.RemoteAddr().String(),
 			)
-			conn.Write([]byte("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nConnection: close\r\n\r\n"))
+			_, _ = conn.Write([]byte("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nConnection: close\r\n\r\n")) //nolint:errcheck // Best effort error response
 			conn.Close()
 			return
 		}
@@ -951,7 +957,7 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	if s.rateLimiterIP != nil {
 		if !s.rateLimiterIP.Allow(clientIP) {
 			s.metricsCollector.RecordRateLimit("ip")
-			conn.Write([]byte("HTTP/1.1 429 Too Many Requests\r\n\r\n"))
+			_, _ = conn.Write([]byte("HTTP/1.1 429 Too Many Requests\r\n\r\n")) //nolint:errcheck // Best effort error response
 			conn.Close()
 			return
 		}
@@ -1026,7 +1032,7 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 		current := atomic.AddInt32(&s.socks5ActiveConns, 1)
 		defer atomic.AddInt32(&s.socks5ActiveConns, -1)
 
-		if current > int32(maxConns) {
+		if current > int32(maxConns) { //nolint:gosec // G115: maxConns is a small config value
 			logging.Warn("SOCKS5 connection limit exceeded",
 				"current", current,
 				"max", maxConns,

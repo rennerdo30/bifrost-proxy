@@ -34,21 +34,21 @@ type IPAllocator interface {
 
 // Lease represents an IP address lease.
 type Lease struct {
-	PeerID    string        `json:"peer_id"`
-	Address   netip.Addr    `json:"address"`
-	Allocated time.Time     `json:"allocated"`
-	Expires   time.Time     `json:"expires,omitempty"`
-	Static    bool          `json:"static"`
+	PeerID    string     `json:"peer_id"`
+	Address   netip.Addr `json:"address"`
+	Allocated time.Time  `json:"allocated"`
+	Expires   time.Time  `json:"expires,omitempty"`
+	Static    bool       `json:"static"`
 }
 
 // PoolAllocator allocates IP addresses from a pool.
 type PoolAllocator struct {
-	prefix     netip.Prefix
-	leases     map[string]*Lease // PeerID -> Lease
-	byAddr     map[netip.Addr]string // Address -> PeerID
-	reserved   map[netip.Addr]bool   // Reserved addresses (network, broadcast, gateway)
-	leaseTTL   time.Duration
-	mu         sync.RWMutex
+	prefix   netip.Prefix
+	leases   map[string]*Lease     // PeerID -> Lease
+	byAddr   map[netip.Addr]string // Address -> PeerID
+	reserved map[netip.Addr]bool   // Reserved addresses (network, broadcast, gateway)
+	leaseTTL time.Duration
+	mu       sync.RWMutex
 }
 
 // PoolConfig contains IP pool configuration.
@@ -148,7 +148,7 @@ func (a *PoolAllocator) Allocate(peerID string) (netip.Addr, error) {
 	addr := a.prefix.Addr()
 	for a.prefix.Contains(addr) {
 		if !a.isAddressUsed(addr) {
-			return a.allocateAddress(peerID, addr, false)
+			return a.allocateAddress(peerID, addr, false), nil
 		}
 		addr = addr.Next()
 	}
@@ -189,12 +189,12 @@ func (a *PoolAllocator) AllocateSpecific(peerID string, addr netip.Addr) error {
 		delete(a.byAddr, oldLease.Address)
 	}
 
-	_, err := a.allocateAddress(peerID, addr, true)
-	return err
+	a.allocateAddress(peerID, addr, true)
+	return nil
 }
 
 // allocateAddress allocates an address (must hold write lock).
-func (a *PoolAllocator) allocateAddress(peerID string, addr netip.Addr, static bool) (netip.Addr, error) {
+func (a *PoolAllocator) allocateAddress(peerID string, addr netip.Addr, static bool) netip.Addr {
 	now := time.Now()
 	var expires time.Time
 	if a.leaseTTL > 0 && !static {
@@ -212,7 +212,7 @@ func (a *PoolAllocator) allocateAddress(peerID string, addr netip.Addr, static b
 	a.leases[peerID] = lease
 	a.byAddr[addr] = peerID
 
-	return addr, nil
+	return addr
 }
 
 // Release releases an IP address allocation.

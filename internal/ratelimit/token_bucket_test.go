@@ -73,7 +73,7 @@ func TestTokenBucket_Wait(t *testing.T) {
 
 func TestTokenBucket_WaitCancellation(t *testing.T) {
 	bucket := NewTokenBucket(1, 1) // 1 per second
-	bucket.AllowN(1) // Exhaust
+	bucket.AllowN(1)               // Exhaust
 
 	ctx, cancel := context.WithCancel(context.Background())
 

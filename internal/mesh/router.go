@@ -71,9 +71,9 @@ type MeshRouter struct {
 	localPeerID string
 	localIP     netip.Addr
 
-	routes       map[string][]*Route // DestPeerID -> routes
-	routesByIP   map[netip.Addr]*Route
-	directPeers  map[string]bool
+	routes      map[string][]*Route // DestPeerID -> routes
+	routesByIP  map[netip.Addr]*Route
+	directPeers map[string]bool
 
 	pathCostFunc PathCostFunc
 	maxHops      int

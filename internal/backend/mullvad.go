@@ -15,19 +15,19 @@ import (
 
 // MullvadBackend provides connections through Mullvad VPN.
 type MullvadBackend struct {
-	name            string
-	config          MullvadConfig
-	client          *mullvad.Client
-	delegate        Backend // Either WireGuard or OpenVPN backend
-	selectedServer  *vpnprovider.Server
-	startTime       time.Time
-	healthy         atomic.Bool
-	stats           mullvadStats
-	mu              sync.RWMutex
-	running         bool
-	stopChan        chan struct{}
-	refreshTicker   *time.Ticker
-	logger          *slog.Logger
+	name           string
+	config         MullvadConfig
+	client         *mullvad.Client
+	delegate       Backend // Either WireGuard or OpenVPN backend
+	selectedServer *vpnprovider.Server
+	startTime      time.Time
+	healthy        atomic.Bool
+	stats          mullvadStats
+	mu             sync.RWMutex
+	running        bool
+	stopChan       chan struct{}
+	refreshTicker  *time.Ticker
+	logger         *slog.Logger
 }
 
 type mullvadStats struct {
@@ -44,14 +44,14 @@ type mullvadStats struct {
 // MullvadConfig holds configuration for a Mullvad backend.
 type MullvadConfig struct {
 	Name            string        `yaml:"name"`
-	AccountID       string        `yaml:"account_id"`                  // Required: 16-digit Mullvad account number
-	Country         string        `yaml:"country,omitempty"`           // ISO country code (e.g., "US", "DE")
-	City            string        `yaml:"city,omitempty"`              // City name
-	Protocol        string        `yaml:"protocol,omitempty"`          // "wireguard" or "openvpn" (default: wireguard)
-	AutoSelect      bool          `yaml:"auto_select,omitempty"`       // Automatically select best server
-	MaxLoad         int           `yaml:"max_load,omitempty"`          // Max server load percentage (0-100)
-	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"`  // How often to check for better servers
-	Features        []string      `yaml:"features,omitempty"`          // Required features
+	AccountID       string        `yaml:"account_id"`                 // Required: 16-digit Mullvad account number
+	Country         string        `yaml:"country,omitempty"`          // ISO country code (e.g., "US", "DE")
+	City            string        `yaml:"city,omitempty"`             // City name
+	Protocol        string        `yaml:"protocol,omitempty"`         // "wireguard" or "openvpn" (default: wireguard)
+	AutoSelect      bool          `yaml:"auto_select,omitempty"`      // Automatically select best server
+	MaxLoad         int           `yaml:"max_load,omitempty"`         // Max server load percentage (0-100)
+	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"` // How often to check for better servers
+	Features        []string      `yaml:"features,omitempty"`         // Required features
 }
 
 // NewMullvadBackend creates a new Mullvad backend.

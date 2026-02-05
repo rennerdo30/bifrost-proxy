@@ -14,9 +14,9 @@ type ChainAuthenticator struct {
 }
 
 type authenticatorEntry struct {
-	name        string
-	priority    int
-	auth        Authenticator
+	name     string
+	priority int
+	auth     Authenticator
 }
 
 // NewChainAuthenticator creates a new chain authenticator.

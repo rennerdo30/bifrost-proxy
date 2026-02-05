@@ -7,31 +7,31 @@ import (
 
 // RequestLogEntry represents a single request log entry.
 type RequestLogEntry struct {
-	ID          int64     `json:"id"`
-	Timestamp   time.Time `json:"timestamp"`
-	Method      string    `json:"method"`
-	Host        string    `json:"host"`
-	Path        string    `json:"path"`
-	URL         string    `json:"url"`
-	UserAgent   string    `json:"user_agent"`
-	ClientIP    string    `json:"client_ip"`
-	Username    string    `json:"username,omitempty"`
-	Backend     string    `json:"backend"`
-	StatusCode  int       `json:"status_code"`
-	BytesSent   int64     `json:"bytes_sent"`
-	BytesRecv   int64     `json:"bytes_recv"`
-	Duration    int64     `json:"duration_ms"`
-	Error       string    `json:"error,omitempty"`
-	Protocol    string    `json:"protocol"` // HTTP, SOCKS5, CONNECT
+	ID         int64     `json:"id"`
+	Timestamp  time.Time `json:"timestamp"`
+	Method     string    `json:"method"`
+	Host       string    `json:"host"`
+	Path       string    `json:"path"`
+	URL        string    `json:"url"`
+	UserAgent  string    `json:"user_agent"`
+	ClientIP   string    `json:"client_ip"`
+	Username   string    `json:"username,omitempty"`
+	Backend    string    `json:"backend"`
+	StatusCode int       `json:"status_code"`
+	BytesSent  int64     `json:"bytes_sent"`
+	BytesRecv  int64     `json:"bytes_recv"`
+	Duration   int64     `json:"duration_ms"`
+	Error      string    `json:"error,omitempty"`
+	Protocol   string    `json:"protocol"` // HTTP, SOCKS5, CONNECT
 }
 
 // RequestLog maintains a ring buffer of recent requests.
 type RequestLog struct {
-	mu       sync.RWMutex
-	entries  []RequestLogEntry
-	maxSize  int
-	nextID   int64
-	enabled  bool
+	mu      sync.RWMutex
+	entries []RequestLogEntry
+	maxSize int
+	nextID  int64
+	enabled bool
 }
 
 // NewRequestLog creates a new request log with the given max size.

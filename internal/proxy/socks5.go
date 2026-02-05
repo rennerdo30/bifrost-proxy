@@ -145,7 +145,7 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 			entry.StatusCode = int(socks5ReplyGeneralFailure)
 		}
 		if h.accessLogger != nil {
-			_ = h.accessLogger.Log(*entry)
+			_ = h.accessLogger.Log(*entry) //nolint:errcheck // Best effort access logging
 		}
 	}()
 
@@ -510,7 +510,7 @@ func (h *SOCKS5Handler) sendReply(conn net.Conn, reply byte, bindAddr net.Addr) 
 				resp = append(resp, addr.IP...)
 			}
 			port := make([]byte, 2)
-			binary.BigEndian.PutUint16(port, uint16(addr.Port))
+			binary.BigEndian.PutUint16(port, uint16(addr.Port)) //nolint:gosec // G115: TCP port is always 0-65535
 			resp = append(resp, port...)
 		default:
 			resp = append(resp, socks5AddrIPv4, 0, 0, 0, 0, 0, 0)

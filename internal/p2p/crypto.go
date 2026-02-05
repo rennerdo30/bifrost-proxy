@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
-	"sync"
 	"sync/atomic"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -14,8 +13,8 @@ import (
 
 // Crypto errors.
 var (
-	ErrInvalidKeySize      = errors.New("crypto: invalid key size")
-	ErrInvalidNonce        = errors.New("crypto: invalid nonce")
+	ErrInvalidKeySize       = errors.New("crypto: invalid key size")
+	ErrInvalidNonce         = errors.New("crypto: invalid nonce")
 	ErrAuthenticationFailed = errors.New("crypto: authentication failed")
 	ErrHandshakeNotComplete = errors.New("crypto: handshake not complete")
 )
@@ -84,10 +83,10 @@ func PublicKeyFromPrivate(privateKey []byte) ([]byte, error) {
 
 // CryptoSession manages an encrypted session with a peer.
 type CryptoSession struct {
-	localPrivate  [PrivateKeySize]byte
-	localPublic   [PublicKeySize]byte
-	remotePublic  [PublicKeySize]byte
-	sharedSecret  [32]byte
+	localPrivate [PrivateKeySize]byte
+	localPublic  [PublicKeySize]byte
+	remotePublic [PublicKeySize]byte
+	sharedSecret [32]byte
 
 	sendCipher cipher.AEAD
 	recvCipher cipher.AEAD
@@ -96,7 +95,6 @@ type CryptoSession struct {
 	recvNonce atomic.Uint64
 
 	handshakeComplete atomic.Bool
-	mu                sync.Mutex
 }
 
 // NewCryptoSession creates a new crypto session.
@@ -137,8 +135,12 @@ func (cs *CryptoSession) CreateHandshakeInit(remotePublicKey []byte) ([]byte, er
 
 	copy(cs.remotePublic[:], remotePublicKey)
 
-	// Compute shared secret
-	curve25519.ScalarMult(&cs.sharedSecret, &cs.localPrivate, &cs.remotePublic)
+	// Compute shared secret using X25519
+	sharedSecret, err := curve25519.X25519(cs.localPrivate[:], cs.remotePublic[:])
+	if err != nil {
+		return nil, err
+	}
+	copy(cs.sharedSecret[:], sharedSecret)
 
 	// Build init message: type (1) + local public key (32) + random (32)
 	msg := make([]byte, 1+PublicKeySize+32)
@@ -166,8 +168,12 @@ func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
 	// Extract remote public key
 	copy(cs.remotePublic[:], msg[1:33])
 
-	// Compute shared secret
-	curve25519.ScalarMult(&cs.sharedSecret, &cs.localPrivate, &cs.remotePublic)
+	// Compute shared secret using X25519
+	sharedSecret, err := curve25519.X25519(cs.localPrivate[:], cs.remotePublic[:])
+	if err != nil {
+		return nil, err
+	}
+	copy(cs.sharedSecret[:], sharedSecret)
 
 	// Initialize ciphers
 	if err := cs.initializeCiphers(); err != nil {
@@ -336,13 +342,10 @@ type NoiseHandshake struct {
 	pattern   string
 	initiator bool
 
-	localStatic    *KeyPair
-	localEphemeral *KeyPair
-	remoteStatic   [PublicKeySize]byte
+	localStatic     *KeyPair
+	localEphemeral  *KeyPair
+	remoteStatic    [PublicKeySize]byte
 	remoteEphemeral [PublicKeySize]byte
-
-	chainingKey [32]byte
-	handshakeHash [32]byte
 
 	complete bool
 }
@@ -398,9 +401,13 @@ func (h *NoiseHandshake) Split() (cipher.AEAD, cipher.AEAD, error) {
 		return nil, nil, ErrHandshakeNotComplete
 	}
 
-	// Compute shared secret from ephemeral keys
+	// Compute shared secret from ephemeral keys using X25519
+	sharedSecretBytes, err := curve25519.X25519(h.localEphemeral.PrivateKey[:], h.remoteEphemeral[:])
+	if err != nil {
+		return nil, nil, err
+	}
 	var sharedSecret [32]byte
-	curve25519.ScalarMult(&sharedSecret, &h.localEphemeral.PrivateKey, &h.remoteEphemeral)
+	copy(sharedSecret[:], sharedSecretBytes)
 
 	// Derive keys
 	sendKey := deriveKey(sharedSecret[:], []byte("send"))

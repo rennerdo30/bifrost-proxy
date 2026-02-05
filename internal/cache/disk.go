@@ -141,9 +141,7 @@ func (d *DiskStorage) Stop(ctx context.Context) error {
 	d.closed = true
 
 	// Save index
-	if err := d.saveIndex(); err != nil {
-		slog.Error("failed to save cache index", "error", err)
-	}
+	d.saveIndex()
 
 	slog.Info("disk cache storage stopped")
 	return nil
@@ -583,10 +581,10 @@ func (d *DiskStorage) loadIndex() error {
 		}
 
 		var meta Metadata
-		if err := json.Unmarshal(data, &meta); err != nil {
+		if unmarshalErr := json.Unmarshal(data, &meta); unmarshalErr != nil {
 			slog.Warn("failed to read cache data",
 				"path", path,
-				"error", err,
+				"error", unmarshalErr,
 			)
 			return nil // Skip invalid files
 		}
@@ -633,13 +631,12 @@ func (d *DiskStorage) loadIndex() error {
 }
 
 // saveIndex saves metadata for all entries.
-func (d *DiskStorage) saveIndex() error {
+func (d *DiskStorage) saveIndex() {
 	for key, meta := range d.index {
 		if err := d.saveMetadata(key, meta); err != nil {
 			slog.Warn("failed to save metadata", "key", truncateKey(key), "error", err)
 		}
 	}
-	return nil
 }
 
 // saveMetadata saves metadata for a single entry.
@@ -650,7 +647,7 @@ func (d *DiskStorage) saveMetadata(key string, meta *Metadata) error {
 	}
 
 	metaPath := d.metaFilePath(key)
-	return os.WriteFile(metaPath, data, 0644)
+	return os.WriteFile(metaPath, data, 0600)
 }
 
 // cleanupLoop runs periodic cleanup.

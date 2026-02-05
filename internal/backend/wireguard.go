@@ -40,11 +40,11 @@ type wireguardStats struct {
 
 // WireGuardConfig holds configuration for a WireGuard backend.
 type WireGuardConfig struct {
-	Name       string   `yaml:"name"`
-	PrivateKey string   `yaml:"private_key"`
-	Address    string   `yaml:"address"`     // Local IP address (e.g., "10.0.0.2/24")
-	DNS        []string `yaml:"dns"`         // DNS servers
-	MTU        int      `yaml:"mtu"`
+	Name       string        `yaml:"name"`
+	PrivateKey string        `yaml:"private_key"`
+	Address    string        `yaml:"address"` // Local IP address (e.g., "10.0.0.2/24")
+	DNS        []string      `yaml:"dns"`     // DNS servers
+	MTU        int           `yaml:"mtu"`
 	Peer       WireGuardPeer `yaml:"peer"`
 }
 
@@ -102,7 +102,7 @@ func (b *WireGuardBackend) Dial(ctx context.Context, network, address string) (n
 		// Connect to the target through the WireGuard tunnel
 		conn, err = tnet.DialContextTCPAddrPort(ctx, netip.AddrPortFrom(
 			netip.MustParseAddr(tcpAddr.IP.String()),
-			uint16(tcpAddr.Port),
+			uint16(tcpAddr.Port), //nolint:gosec // G115: TCP port is always 0-65535
 		))
 	case "udp", "udp4", "udp6":
 		udpAddr, resolveErr := net.ResolveUDPAddr(network, address)
@@ -114,7 +114,7 @@ func (b *WireGuardBackend) Dial(ctx context.Context, network, address string) (n
 			netip.AddrPort{},
 			netip.AddrPortFrom(
 				netip.MustParseAddr(udpAddr.IP.String()),
-				uint16(udpAddr.Port),
+				uint16(udpAddr.Port), //nolint:gosec // G115: UDP port is always 0-65535
 			),
 		)
 	default:

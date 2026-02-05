@@ -55,11 +55,11 @@ type mibUDP6RowOwnerPID struct {
 }
 
 var (
-	modiphlpapi              = windows.NewLazySystemDLL("iphlpapi.dll")
-	procGetExtendedTcpTable  = modiphlpapi.NewProc("GetExtendedTcpTable")
-	procGetExtendedUdpTable  = modiphlpapi.NewProc("GetExtendedUdpTable")
+	modiphlpapi             = windows.NewLazySystemDLL("iphlpapi.dll")
+	procGetExtendedTcpTable = modiphlpapi.NewProc("GetExtendedTcpTable")
+	procGetExtendedUdpTable = modiphlpapi.NewProc("GetExtendedUdpTable")
 
-	modkernel32           = windows.NewLazySystemDLL("kernel32.dll")
+	modkernel32                   = windows.NewLazySystemDLL("kernel32.dll")
 	procQueryFullProcessImageName = modkernel32.NewProc("QueryFullProcessImageNameW")
 )
 

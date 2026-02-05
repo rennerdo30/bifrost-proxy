@@ -17,34 +17,34 @@ func TestKeyGenerator_GenerateKey(t *testing.T) {
 	kg := DefaultKeyGenerator()
 
 	t.Run("basic key generation", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://example.com/path", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path", nil)
 		key := kg.GenerateKey(req)
 		assert.NotEmpty(t, key)
 		assert.Len(t, key, 64) // SHA256 hex
 	})
 
 	t.Run("same request produces same key", func(t *testing.T) {
-		req1, _ := http.NewRequest("GET", "http://example.com/path", nil)
-		req2, _ := http.NewRequest("GET", "http://example.com/path", nil)
+		req1, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path", nil)
+		req2, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path", nil)
 		assert.Equal(t, kg.GenerateKey(req1), kg.GenerateKey(req2))
 	})
 
 	t.Run("different paths produce different keys", func(t *testing.T) {
-		req1, _ := http.NewRequest("GET", "http://example.com/path1", nil)
-		req2, _ := http.NewRequest("GET", "http://example.com/path2", nil)
+		req1, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path1", nil)
+		req2, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path2", nil)
 		assert.NotEqual(t, kg.GenerateKey(req1), kg.GenerateKey(req2))
 	})
 
 	t.Run("query strings affect key", func(t *testing.T) {
-		req1, _ := http.NewRequest("GET", "http://example.com/path?a=1", nil)
-		req2, _ := http.NewRequest("GET", "http://example.com/path?a=2", nil)
+		req1, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path?a=1", nil)
+		req2, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path?a=2", nil)
 		assert.NotEqual(t, kg.GenerateKey(req1), kg.GenerateKey(req2))
 	})
 
 	t.Run("ignore query when configured", func(t *testing.T) {
 		kgIgnore := &KeyGenerator{IgnoreQuery: true}
-		req1, _ := http.NewRequest("GET", "http://example.com/path?a=1", nil)
-		req2, _ := http.NewRequest("GET", "http://example.com/path?a=2", nil)
+		req1, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path?a=1", nil)
+		req2, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/path?a=2", nil)
 		assert.Equal(t, kgIgnore.GenerateKey(req1), kgIgnore.GenerateKey(req2))
 	})
 }
@@ -242,21 +242,21 @@ func TestRuleSet_Match(t *testing.T) {
 	rs.Add(rule2)
 
 	t.Run("matches high priority rule", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://cdn.steamcontent.com/file.bin", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://cdn.steamcontent.com/file.bin", nil)
 		rule := rs.Match(req)
 		require.NotNil(t, rule)
 		assert.Equal(t, "steam", rule.Name)
 	})
 
 	t.Run("falls back to generic", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://other.com/file.bin", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://other.com/file.bin", nil)
 		rule := rs.Match(req)
 		require.NotNil(t, rule)
 		assert.Equal(t, "generic", rule.Name)
 	})
 
 	t.Run("no match for POST", func(t *testing.T) {
-		req, _ := http.NewRequest("POST", "http://cdn.steamcontent.com/file.bin", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://cdn.steamcontent.com/file.bin", nil)
 		rule := rs.Match(req)
 		assert.Nil(t, rule) // Default is GET only
 	})
@@ -445,7 +445,7 @@ func TestManager_ShouldCache(t *testing.T) {
 		Storage: StorageConfig{
 			Type: "memory",
 			Memory: &MemoryConfig{
-				MaxSize:    ByteSize(10 * MB),
+				MaxSize:    10 * MB,
 				MaxEntries: 100,
 			},
 		},
@@ -460,17 +460,17 @@ func TestManager_ShouldCache(t *testing.T) {
 	defer manager.Stop(ctx)
 
 	t.Run("should cache steam content", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://cdn.steamcontent.com/depot/123/chunk", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://cdn.steamcontent.com/depot/123/chunk", nil)
 		assert.True(t, manager.ShouldCache(req))
 	})
 
 	t.Run("should not cache POST", func(t *testing.T) {
-		req, _ := http.NewRequest("POST", "http://cdn.steamcontent.com/depot/123/chunk", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://cdn.steamcontent.com/depot/123/chunk", nil)
 		assert.False(t, manager.ShouldCache(req))
 	})
 
 	t.Run("should not cache unmatched domain", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://random-domain.com/file", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://random-domain.com/file", nil)
 		assert.False(t, manager.ShouldCache(req))
 	})
 }
@@ -483,7 +483,7 @@ func TestConfig_Validate(t *testing.T) {
 			Storage: StorageConfig{
 				Type: "memory",
 				Memory: &MemoryConfig{
-					MaxSize: ByteSize(100 * MB),
+					MaxSize: 100 * MB,
 				},
 			},
 		}
@@ -508,7 +508,7 @@ func TestConfig_Validate(t *testing.T) {
 			Enabled: true,
 			Storage: StorageConfig{
 				Type:   "memory",
-				Memory: &MemoryConfig{MaxSize: ByteSize(100 * MB)},
+				Memory: &MemoryConfig{MaxSize: 100 * MB},
 			},
 			Rules: []RuleConfig{
 				{Name: "rule1", Domains: []string{"*.example.com"}},

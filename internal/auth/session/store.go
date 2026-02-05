@@ -14,13 +14,13 @@ import (
 
 // Session represents an authenticated session.
 type Session struct {
-	ID        string         `json:"id"`
-	UserInfo  *auth.UserInfo `json:"user_info"`
-	CreatedAt time.Time      `json:"created_at"`
-	ExpiresAt time.Time      `json:"expires_at"`
-	LastUsed  time.Time      `json:"last_used"`
-	IPAddress string         `json:"ip_address,omitempty"`
-	UserAgent string         `json:"user_agent,omitempty"`
+	ID        string            `json:"id"`
+	UserInfo  *auth.UserInfo    `json:"user_info"`
+	CreatedAt time.Time         `json:"created_at"`
+	ExpiresAt time.Time         `json:"expires_at"`
+	LastUsed  time.Time         `json:"last_used"`
+	IPAddress string            `json:"ip_address,omitempty"`
+	UserAgent string            `json:"user_agent,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
@@ -236,7 +236,7 @@ func (s *MemoryStore) cleanupLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			_ = s.Cleanup()
+			_ = s.Cleanup() //nolint:errcheck // Best effort periodic cleanup
 		case <-s.stopCh:
 			return
 		}

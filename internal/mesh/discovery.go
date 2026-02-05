@@ -44,11 +44,11 @@ type PeerEvent struct {
 
 // PeerInfo is the peer information exchanged with the discovery server.
 type PeerInfo struct {
-	ID        string     `json:"id"`
-	Name      string     `json:"name"`
-	PublicKey string     `json:"public_key"`
-	VirtualIP string     `json:"virtual_ip,omitempty"`
-	Endpoints []Endpoint `json:"endpoints,omitempty"`
+	ID        string            `json:"id"`
+	Name      string            `json:"name"`
+	PublicKey string            `json:"public_key"`
+	VirtualIP string            `json:"virtual_ip,omitempty"`
+	Endpoints []Endpoint        `json:"endpoints,omitempty"`
 	Metadata  map[string]string `json:"metadata,omitempty"`
 }
 
@@ -60,9 +60,9 @@ type RegistrationRequest struct {
 
 // RegistrationResponse is received from the discovery server.
 type RegistrationResponse struct {
-	Success   bool     `json:"success"`
-	VirtualIP string   `json:"virtual_ip"`
-	Message   string   `json:"message,omitempty"`
+	Success   bool       `json:"success"`
+	VirtualIP string     `json:"virtual_ip"`
+	Message   string     `json:"message,omitempty"`
 	Peers     []PeerInfo `json:"peers,omitempty"`
 }
 
@@ -181,7 +181,7 @@ func (c *DiscoveryClient) register() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort error message
 		return fmt.Errorf("%w: status %d: %s", ErrDiscoveryFailed, resp.StatusCode, string(body))
 	}
 
