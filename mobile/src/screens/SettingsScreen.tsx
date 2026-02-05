@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, ClientConfig, getAPIConfig, setAPIConfig, validateServerAddress } from '../services/api'
+import { api, ClientConfig, getAPIConfig, setServerUrl, validateServerAddress, extractServerAddress } from '../services/api'
 import { useToast } from '../components/Toast'
 
 interface SettingItemProps {
@@ -106,7 +106,9 @@ export function SettingsScreen() {
     } as Partial<ClientConfig>)
   }
 
-  const handleSaveServer = (address: string) => {
+  const [isSavingServer, setIsSavingServer] = useState(false)
+
+  const handleSaveServer = async (address: string) => {
     // Validate server address format
     const validationError = validateServerAddress(address)
     if (validationError) {
@@ -114,18 +116,41 @@ export function SettingsScreen() {
       return
     }
 
-    // Update the API base URL
-    const newBaseUrl = `http://${address}/api/v1`
-    setAPIConfig({ baseUrl: newBaseUrl })
+    setIsSavingServer(true)
+    try {
+      // Update and persist the API base URL
+      await setServerUrl(address)
 
-    updateConfigMutation.mutate({
-      server: {
-        ...config?.server,
-        address,
-      },
-    } as Partial<ClientConfig>)
+      // Test connection to the new server
+      const testResult = await api.testConnection()
+      if (!testResult.success) {
+        showToast(`Could not connect to server: ${testResult.error}`, 'error')
+        setIsSavingServer(false)
+        return
+      }
 
-    showToast('Server address saved', 'success')
+      // Update the server config on the backend (may fail if server doesn't support this endpoint)
+      try {
+        await api.updateConfig({
+          server: {
+            ...config?.server,
+            address,
+          },
+        } as Partial<ClientConfig>)
+      } catch {
+        // Ignore errors from updating backend config - the server URL is already saved locally
+      }
+
+      // Invalidate queries to refetch with new server
+      queryClient.invalidateQueries()
+
+      showToast('Server address saved and connected', 'success')
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save server address'
+      showToast(errorMessage, 'error')
+    } finally {
+      setIsSavingServer(false)
+    }
   }
 
   const handleClearData = () => {
@@ -143,11 +168,15 @@ export function SettingsScreen() {
     )
   }
 
-  // Local state for server address input (initialized from config)
-  const [serverAddress, setServerAddress] = useState('')
+  // Local state for server address input (initialized from API config or backend config)
+  const [serverAddress, setServerAddress] = useState(() => {
+    // Initialize from current API config
+    return extractServerAddress(apiConfig.baseUrl)
+  })
 
   useEffect(() => {
-    if (config?.server?.address) {
+    // Update from backend config if available and local state is still default
+    if (config?.server?.address && serverAddress === extractServerAddress(apiConfig.baseUrl)) {
       setServerAddress(config.server.address)
     }
   }, [config?.server?.address])
@@ -234,17 +263,17 @@ export function SettingsScreen() {
             placeholderTextColor="#6b7280"
             autoCapitalize="none"
             autoCorrect={false}
-            editable={!isMutating}
+            editable={!isMutating && !isSavingServer}
           />
           <TouchableOpacity
-            style={[styles.saveButton, isMutating && styles.saveButtonDisabled]}
+            style={[styles.saveButton, (isMutating || isSavingServer) && styles.saveButtonDisabled]}
             onPress={() => handleSaveServer(serverAddress)}
-            disabled={isMutating}
+            disabled={isMutating || isSavingServer}
             accessibilityLabel="Save server address"
             accessibilityRole="button"
-            accessibilityState={{ disabled: isMutating }}
+            accessibilityState={{ disabled: isMutating || isSavingServer }}
           >
-            {isMutating ? (
+            {isSavingServer ? (
               <ActivityIndicator size="small" color="#ffffff" />
             ) : (
               <Text style={styles.saveButtonText}>Save</Text>

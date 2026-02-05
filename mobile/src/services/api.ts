@@ -1,6 +1,9 @@
 // API service for communicating with Bifrost client
 
+import { getStoredServerUrl, setStoredServerUrl } from './storage'
+
 const DEFAULT_TIMEOUT = 10000
+const DEFAULT_BASE_URL = 'http://localhost:7383/api/v1'
 
 interface APIConfig {
   baseUrl: string
@@ -8,7 +11,35 @@ interface APIConfig {
 }
 
 let config: APIConfig = {
-  baseUrl: 'http://localhost:7383/api/v1',
+  baseUrl: DEFAULT_BASE_URL,
+}
+
+let isInitialized = false
+
+/**
+ * Initialize the API config from stored settings.
+ * Should be called once when the app starts.
+ */
+export async function initializeAPIConfig(): Promise<void> {
+  if (isInitialized) return
+
+  try {
+    const storedUrl = await getStoredServerUrl()
+    if (storedUrl) {
+      config.baseUrl = storedUrl
+    }
+    isInitialized = true
+  } catch (error) {
+    console.error('Failed to initialize API config:', error)
+    isInitialized = true
+  }
+}
+
+/**
+ * Check if the API has been initialized
+ */
+export function isAPIInitialized(): boolean {
+  return isInitialized
 }
 
 export function setAPIConfig(newConfig: Partial<APIConfig>) {
@@ -17,6 +48,43 @@ export function setAPIConfig(newConfig: Partial<APIConfig>) {
 
 export function getAPIConfig(): APIConfig {
   return { ...config }
+}
+
+/**
+ * Update and persist the server URL
+ */
+export async function setServerUrl(serverAddress: string): Promise<void> {
+  const baseUrl = `http://${serverAddress}/api/v1`
+  setAPIConfig({ baseUrl })
+  await setStoredServerUrl(baseUrl)
+}
+
+/**
+ * Get the default base URL
+ */
+export function getDefaultBaseUrl(): string {
+  return DEFAULT_BASE_URL
+}
+
+/**
+ * Extract server address (host:port) from a base URL
+ */
+export function extractServerAddress(baseUrl: string): string {
+  try {
+    const url = new URL(baseUrl)
+    return `${url.hostname}${url.port ? ':' + url.port : ''}`
+  } catch {
+    // Fallback: try to parse manually
+    const match = baseUrl.match(/\/\/([^/]+)/)
+    return match ? match[1] : 'localhost:7383'
+  }
+}
+
+/**
+ * Get the current connected server info from config
+ */
+export function getCurrentServerAddress(): string {
+  return extractServerAddress(config.baseUrl)
 }
 
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
@@ -169,6 +237,10 @@ export const api = {
 
   // Servers
   getServers: () => fetchJSON<ServerInfo[]>('/servers'),
+  getActiveServer: async (): Promise<ServerInfo | null> => {
+    const servers = await fetchJSON<ServerInfo[]>('/servers')
+    return servers.find(s => s.is_default) || servers[0] || null
+  },
   selectServer: (id: string) =>
     fetchJSON<{ status: string }>(`/servers/${encodeURIComponent(id)}/select`, { method: 'POST' }),
 
@@ -178,6 +250,19 @@ export const api = {
 
   // Data management
   clearCache: () => fetchJSON<{ status: string }>('/debug/entries', { method: 'DELETE' }),
+
+  // Connection testing
+  testConnection: async (): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await fetchJSON<{ status: string }>('/health')
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Connection failed',
+      }
+    }
+  },
 }
 
 // Utility functions
