@@ -5,6 +5,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Backends } from './pages/Backends'
 import { RequestLog } from './pages/RequestLog'
 import { Clients } from './pages/Clients'
+import { Cache } from './pages/Cache'
 import { Config } from './pages/Config'
 import { ConfigGenerator } from './pages/ConfigGenerator'
 import { SetupGuide } from './pages/SetupGuide'
@@ -20,6 +21,7 @@ export default function App() {
             <Route path="backends" element={<Backends />} />
             <Route path="requests" element={<RequestLog />} />
             <Route path="clients" element={<Clients />} />
+            <Route path="cache" element={<Cache />} />
             <Route path="config" element={<Config />} />
             <Route path="generator" element={<ConfigGenerator />} />
             <Route path="setup" element={<SetupGuide />} />

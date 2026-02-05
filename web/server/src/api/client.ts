@@ -17,6 +17,13 @@ import type {
   RemoveBackendResponse,
   TestBackendRequest,
   TestBackendResponse,
+  CacheStatsResponse,
+  CacheEntriesResponse,
+  CacheEntryMetadata,
+  CacheRulesResponse,
+  CachePresetsResponse,
+  CacheMessageResponse,
+  AddCacheRuleRequest,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -126,6 +133,55 @@ export const api = {
   // Connections
   getConnections: () => fetchJSON<ConnectionsResponse>('/connections/'),
   getClients: () => fetchJSON<ClientsResponse>('/connections/clients'),
+
+  // Cache
+  getCacheStats: () => fetchJSON<CacheStatsResponse>('/cache/stats'),
+  getCacheEntries: (options?: { domain?: string; offset?: number; limit?: number }) => {
+    const params = new URLSearchParams()
+    if (options?.domain) params.set('domain', options.domain)
+    if (options?.offset !== undefined) params.set('offset', String(options.offset))
+    if (options?.limit !== undefined) params.set('limit', String(options.limit))
+    const query = params.toString()
+    return fetchJSON<CacheEntriesResponse>(`/cache/entries${query ? `?${query}` : ''}`)
+  },
+  getCacheEntry: (key: string) =>
+    fetchJSON<CacheEntryMetadata>(`/cache/entries/${encodeURIComponent(key)}`),
+  deleteCacheEntry: (key: string) =>
+    fetchJSON<CacheMessageResponse>(`/cache/entries/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    }),
+  clearCache: () =>
+    fetchJSON<CacheMessageResponse>('/cache/entries?confirm=true', {
+      method: 'DELETE',
+    }),
+  purgeDomain: (domain: string) =>
+    fetchJSON<CacheMessageResponse>(`/cache/domain/${encodeURIComponent(domain)}`, {
+      method: 'DELETE',
+    }),
+  getCacheRules: () => fetchJSON<CacheRulesResponse>('/cache/rules'),
+  addCacheRule: (rule: AddCacheRuleRequest) =>
+    fetchJSON<CacheMessageResponse>('/cache/rules', {
+      method: 'POST',
+      body: JSON.stringify(rule),
+    }),
+  updateCacheRule: (name: string, update: { enabled?: boolean }) =>
+    fetchJSON<CacheMessageResponse>(`/cache/rules/${encodeURIComponent(name)}`, {
+      method: 'PUT',
+      body: JSON.stringify(update),
+    }),
+  deleteCacheRule: (name: string) =>
+    fetchJSON<CacheMessageResponse>(`/cache/rules/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+  getCachePresets: () => fetchJSON<CachePresetsResponse>('/cache/presets'),
+  enableCachePreset: (name: string) =>
+    fetchJSON<CacheMessageResponse>(`/cache/presets/${encodeURIComponent(name)}/enable`, {
+      method: 'POST',
+    }),
+  disableCachePreset: (name: string) =>
+    fetchJSON<CacheMessageResponse>(`/cache/presets/${encodeURIComponent(name)}/disable`, {
+      method: 'POST',
+    }),
 }
 
 // Token management

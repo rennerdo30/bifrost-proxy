@@ -549,3 +549,108 @@ export interface WSEvent {
   type: 'stats' | 'backend_status' | 'config_reload' | 'request'
   data: unknown
 }
+
+// ============================================
+// Cache API Types
+// ============================================
+
+// Cache statistics response
+export interface CacheStatsResponse {
+  enabled: boolean
+  storage_type: string
+  entries: number
+  total_size_bytes: number
+  max_size_bytes: number
+  used_percent: number
+  hit_count: number
+  miss_count: number
+  hit_rate: number
+  eviction_count: number
+  rules_count: number
+  presets_count: number
+  custom_rules_count: number
+}
+
+// Cache entry from list endpoint
+export interface CacheEntry {
+  key: string
+  url: string
+  host: string
+  size: number
+  content_type: string
+  created_at: string
+  expires_at: string
+  access_count: number
+  tier: string
+}
+
+// Single cache entry metadata (more detailed)
+export interface CacheEntryMetadata extends CacheEntry {
+  status_code: number
+  etag: string
+  accessed_at: string
+}
+
+// List entries response
+export interface CacheEntriesResponse {
+  entries: CacheEntry[]
+  total: number
+  offset: number
+  limit: number
+}
+
+// Cache rule from API
+export interface CacheRule {
+  name: string
+  domains: string[]
+  enabled: boolean
+  ttl: string
+  priority: number
+  preset?: string
+}
+
+// Rules list response
+export interface CacheRulesResponse {
+  rules: CacheRule[]
+  count: number
+}
+
+// Add rule request
+export interface AddCacheRuleRequest {
+  name: string
+  domains: string[]
+  enabled: boolean
+  ttl: string
+  priority: number
+  content_types?: string[]
+  max_size?: string
+  ignore_query?: boolean
+  respect_cache_control?: boolean
+}
+
+// Cache preset
+export interface CachePreset {
+  name: string
+  description: string
+  domains: string[]
+  ttl: string
+  enabled: boolean
+}
+
+// Presets list response
+export interface CachePresetsResponse {
+  presets: CachePreset[]
+  count: number
+}
+
+// Generic message responses
+export interface CacheMessageResponse {
+  message: string
+  key?: string
+  rule?: string
+  preset?: string
+  domain?: string
+  deleted?: number
+  time?: string
+  enabled?: boolean
+}
