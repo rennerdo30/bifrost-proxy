@@ -1,0 +1,246 @@
+---
+title: "API Reference"
+description: "Complete REST API and WebSocket API documentation for Bifrost Proxy"
+---
+
+# API Reference
+
+Bifrost Proxy provides comprehensive REST APIs for both server and client components, enabling programmatic management, monitoring, and integration with external systems.
+
+## API Overview
+
+| Component | Default Address | Description |
+|-----------|-----------------|-------------|
+| Server API | `http://localhost:7082` | Central proxy server management |
+| Client API | `http://localhost:7383` | Local client management |
+
+## Quick Links
+
+- [Server API](/api/server/) - Backend management, configuration, caching, mesh networking
+- [Client API](/api/client/) - VPN control, routing, debugging, desktop app integration
+- [WebSocket API](/api/websocket/) - Real-time events and traffic streaming
+- [Authentication](/api/authentication/) - Security, tokens, CSRF protection
+- [Rate Limiting](/api/rate-limiting/) - Request throttling and bandwidth control
+- [OpenAPI Specification](/api/openapi/) - Machine-readable API documentation
+
+## API Versioning
+
+All API endpoints are prefixed with `/api/v1/`. Future breaking changes will use a new version prefix (e.g., `/api/v2/`).
+
+```http
+GET /api/v1/status
+```
+
+## Naming Conventions
+
+The API follows consistent naming conventions:
+
+| Element | Convention | Example |
+|---------|------------|---------|
+| JSON fields | `snake_case` | `git_commit`, `build_time` |
+| URL paths | `kebab-case` | `/cache/entries`, `/split/apps` |
+| Query parameters | `snake_case` | `?limit=10&offset=0` |
+
+## Common Response Fields
+
+Many endpoints return these standard fields:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | Operation result (`healthy`, `running`, `created`, etc.) |
+| `time` | string | ISO 8601 timestamp of response |
+| `version` | string | Semantic version (e.g., `1.0.0`) |
+| `git_commit` | string | Short git commit hash |
+| `build_time` | string | ISO 8601 timestamp of build |
+| `go_version` | string | Go runtime version |
+| `platform` | string | OS/architecture (e.g., `linux/amd64`) |
+
+## Error Responses
+
+All error responses follow this format:
+
+```json
+{
+  "error": "Error message describing what went wrong",
+  "message": "Additional details (optional)",
+  "code": "ERROR_CODE (optional)"
+}
+```
+
+### HTTP Status Codes
+
+| Code | Meaning |
+|------|---------|
+| `200` | Success |
+| `201` | Created |
+| `204` | No Content (successful deletion) |
+| `400` | Bad Request (invalid input) |
+| `401` | Unauthorized (missing/invalid token) |
+| `403` | Forbidden (CSRF validation failed) |
+| `404` | Not Found |
+| `409` | Conflict (resource already exists) |
+| `500` | Internal Server Error |
+| `503` | Service Unavailable |
+
+## Quick Start
+
+### Check Server Health
+
+```bash
+curl http://localhost:7082/api/v1/health
+```
+
+Response:
+```json
+{
+  "status": "healthy",
+  "time": "2024-01-15T10:00:00Z"
+}
+```
+
+### Authenticated Request
+
+```bash
+curl -H "Authorization: Bearer your-token" \
+     http://localhost:7082/api/v1/status
+```
+
+### Making Changes (with CSRF)
+
+```bash
+curl -X POST \
+     -H "Authorization: Bearer your-token" \
+     -H "X-Requested-With: XMLHttpRequest" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "my-route", "domains": ["*.example.com"], "backend": "direct"}' \
+     http://localhost:7082/api/v1/routes
+```
+
+## SDK Examples
+
+### JavaScript/TypeScript
+
+```typescript
+const API_BASE = 'http://localhost:7082';
+const TOKEN = 'your-token';
+
+async function getBackends() {
+  const response = await fetch(`${API_BASE}/api/v1/backends`, {
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+    },
+  });
+  return response.json();
+}
+
+async function addRoute(route: { name: string; domains: string[]; backend: string }) {
+  const response = await fetch(`${API_BASE}/api/v1/routes`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    body: JSON.stringify(route),
+  });
+  return response.json();
+}
+```
+
+### Python
+
+```python
+import requests
+
+API_BASE = 'http://localhost:7082'
+TOKEN = 'your-token'
+
+headers = {
+    'Authorization': f'Bearer {TOKEN}',
+    'X-Requested-With': 'XMLHttpRequest',
+}
+
+# Get all backends
+response = requests.get(f'{API_BASE}/api/v1/backends', headers=headers)
+backends = response.json()
+
+# Add a route
+route = {
+    'name': 'my-route',
+    'domains': ['*.example.com'],
+    'backend': 'direct',
+}
+response = requests.post(
+    f'{API_BASE}/api/v1/routes',
+    headers=headers,
+    json=route
+)
+```
+
+### Go
+
+```go
+package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+const (
+    apiBase = "http://localhost:7082"
+    token   = "your-token"
+)
+
+func main() {
+    client := &http.Client{}
+
+    // Get backends
+    req, _ := http.NewRequest("GET", apiBase+"/api/v1/backends", nil)
+    req.Header.Set("Authorization", "Bearer "+token)
+    resp, _ := client.Do(req)
+    defer resp.Body.Close()
+
+    // Add route
+    route := map[string]interface{}{
+        "name":    "my-route",
+        "domains": []string{"*.example.com"},
+        "backend": "direct",
+    }
+    body, _ := json.Marshal(route)
+
+    req, _ = http.NewRequest("POST", apiBase+"/api/v1/routes", bytes.NewReader(body))
+    req.Header.Set("Authorization", "Bearer "+token)
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("X-Requested-With", "XMLHttpRequest")
+    resp, _ = client.Do(req)
+}
+```
+
+## WebSocket Connection
+
+Connect to receive real-time events:
+
+```javascript
+const ws = new WebSocket('ws://localhost:7082/api/v1/ws?token=your-token');
+
+ws.onopen = () => {
+  console.log('Connected to Bifrost WebSocket');
+};
+
+ws.onmessage = (event) => {
+  const data = JSON.parse(event.data);
+  console.log('Event:', data.type, data.data);
+};
+
+// Keep alive
+setInterval(() => ws.send('ping'), 30000);
+```
+
+## Next Steps
+
+- [Server API Reference](/api/server/) - Full server endpoint documentation
+- [Client API Reference](/api/client/) - Full client endpoint documentation
+- [WebSocket API](/api/websocket/) - Real-time events documentation
+- [Authentication Guide](/api/authentication/) - Security configuration

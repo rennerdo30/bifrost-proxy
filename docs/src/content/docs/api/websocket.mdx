@@ -1,0 +1,694 @@
+---
+title: "WebSocket API"
+description: "Real-time event streaming via WebSocket for Bifrost Proxy"
+---
+
+# WebSocket API
+
+Bifrost provides WebSocket APIs for real-time event streaming, allowing applications to receive instant notifications about connections, backend health, configuration changes, and statistics.
+
+## Server WebSocket
+
+### Connection
+
+Connect to the server WebSocket endpoint:
+
+```
+ws://localhost:7082/api/v1/ws
+```
+
+**With Authentication:**
+```
+ws://localhost:7082/api/v1/ws?token=your-api-token
+```
+
+### Connection Limits
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Max Clients | 100 | Maximum concurrent WebSocket connections |
+| Read Timeout | 60s | Time to wait for client messages |
+| Low-Power Mode | 5-10 | Recommended for OpenWrt/embedded devices |
+
+### Keep-Alive
+
+Send periodic ping messages to keep the connection alive:
+
+```javascript
+const ws = new WebSocket('ws://localhost:7082/api/v1/ws?token=your-token');
+
+// Send ping every 30 seconds
+setInterval(() => {
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send('ping');
+  }
+}, 30000);
+
+ws.onmessage = (event) => {
+  if (event.data === 'pong') {
+    console.log('Keep-alive acknowledged');
+    return;
+  }
+  // Handle other messages
+  const data = JSON.parse(event.data);
+  handleEvent(data);
+};
+```
+
+---
+
+## Event Types
+
+All events follow this structure:
+
+```json
+{
+  "type": "event.type",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": { /* event-specific data */ }
+}
+```
+
+### backend.health
+
+Fired when a backend's health status changes.
+
+```json
+{
+  "type": "backend.health",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "name": "wireguard-us",
+    "healthy": false
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Backend name |
+| `healthy` | boolean | Current health status |
+
+**Use Cases:**
+- Update dashboard health indicators
+- Trigger failover notifications
+- Log health state changes
+
+---
+
+### connection.new
+
+Fired when a new connection is established through the proxy.
+
+```json
+{
+  "type": "connection.new",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "protocol": "CONNECT",
+    "host": "api.example.com:443",
+    "backend": "direct",
+    "client_ip": "192.168.1.100"
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `protocol` | string | `HTTP`, `CONNECT`, or `SOCKS5` |
+| `host` | string | Destination host and port |
+| `backend` | string | Backend handling the connection |
+| `client_ip` | string | Client's IP address |
+
+**Use Cases:**
+- Real-time traffic monitoring
+- Connection counting
+- Live activity feeds
+
+---
+
+### connection.close
+
+Fired when a connection is closed.
+
+```json
+{
+  "type": "connection.close",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "protocol": "CONNECT",
+    "host": "api.example.com:443",
+    "backend": "direct",
+    "client_ip": "192.168.1.100"
+  }
+}
+```
+
+Same structure as `connection.new`.
+
+---
+
+### config.reload
+
+Fired when configuration is reloaded.
+
+```json
+{
+  "type": "config.reload",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "changed_sections": ["routes", "rate_limit"],
+    "requires_restart": false
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `changed_sections` | string[] | Config sections that changed |
+| `requires_restart` | boolean | Whether restart is needed |
+
+---
+
+### config.saved
+
+Fired when configuration is saved to disk.
+
+```json
+{
+  "type": "config.saved",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "changed_sections": ["backends"],
+    "requires_restart": true
+  }
+}
+```
+
+---
+
+### stats.update
+
+Periodic statistics update (when enabled).
+
+```json
+{
+  "type": "stats.update",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "active_connections": 25,
+    "total_connections": 5000,
+    "bytes_sent": 104857600,
+    "bytes_received": 209715200
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `active_connections` | int | Current active connections |
+| `total_connections` | int | Total connections since start |
+| `bytes_sent` | int | Total bytes sent |
+| `bytes_received` | int | Total bytes received |
+
+---
+
+## Client Log Streaming
+
+The client provides Server-Sent Events (SSE) for log streaming.
+
+### Connection
+
+```http
+GET /api/v1/logs/stream
+```
+
+**Content-Type:** `text/event-stream`
+
+### Subscriber Limits
+
+| Setting | Value | Description |
+|---------|-------|-------------|
+| Max Subscribers | 100 | Maximum concurrent log stream connections |
+| Buffer Size | 100 | Messages buffered per subscriber |
+
+### Event Format
+
+```
+data: {"type": "connected"}
+
+data: {"timestamp": "2024-01-15T10:00:00Z", "level": "info", "message": "GET https://api.example.com/v1/users", "fields": {"method": "GET", "status_code": 200}}
+
+data: {"timestamp": "2024-01-15T10:00:01Z", "level": "error", "message": "Connection failed", "fields": {"error": "timeout", "host": "slow-api.example.com"}}
+```
+
+### Log Entry Structure
+
+```json
+{
+  "timestamp": "2024-01-15T10:00:00Z",
+  "level": "info",
+  "message": "GET https://api.example.com/v1/users",
+  "fields": {
+    "method": "GET",
+    "url": "api.example.com/v1/users",
+    "status_code": 200,
+    "duration_ms": 150,
+    "action": "server",
+    "error": ""
+  }
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `timestamp` | string | ISO 8601 timestamp |
+| `level` | string | `debug`, `info`, `warn`, `error` |
+| `message` | string | Human-readable message |
+| `fields` | object | Additional structured data |
+
+---
+
+## Mesh Network Events
+
+The server provides WebSocket events for mesh network peer changes.
+
+### Connection
+
+```
+ws://localhost:7082/api/v1/mesh/networks/{networkID}/events
+```
+
+### Event Types
+
+#### peer.joined
+
+```json
+{
+  "type": "peer.joined",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "peer_id": "peer-xyz789",
+    "name": "laptop-work",
+    "virtual_ip": "10.100.0.5"
+  }
+}
+```
+
+#### peer.left
+
+```json
+{
+  "type": "peer.left",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "peer_id": "peer-xyz789",
+    "name": "laptop-work"
+  }
+}
+```
+
+#### peer.updated
+
+```json
+{
+  "type": "peer.updated",
+  "timestamp": "2024-01-15T10:00:00Z",
+  "data": {
+    "peer_id": "peer-xyz789",
+    "endpoints": [
+      {"address": "192.168.1.100", "port": 51820, "type": "lan"}
+    ]
+  }
+}
+```
+
+---
+
+## Implementation Examples
+
+### JavaScript/TypeScript
+
+```typescript
+class BifrostWebSocket {
+  private ws: WebSocket | null = null;
+  private reconnectAttempts = 0;
+  private maxReconnectAttempts = 5;
+  private reconnectDelay = 1000;
+
+  constructor(
+    private url: string,
+    private token: string,
+    private handlers: {
+      onBackendHealth?: (data: { name: string; healthy: boolean }) => void;
+      onConnectionNew?: (data: ConnectionEvent) => void;
+      onConnectionClose?: (data: ConnectionEvent) => void;
+      onStatsUpdate?: (data: StatsEvent) => void;
+      onConfigReload?: (data: ConfigEvent) => void;
+    }
+  ) {}
+
+  connect(): void {
+    const wsUrl = `${this.url}?token=${this.token}`;
+    this.ws = new WebSocket(wsUrl);
+
+    this.ws.onopen = () => {
+      console.log('Connected to Bifrost WebSocket');
+      this.reconnectAttempts = 0;
+      this.startHeartbeat();
+    };
+
+    this.ws.onmessage = (event) => {
+      if (event.data === 'pong') return;
+
+      const message = JSON.parse(event.data);
+      this.handleMessage(message);
+    };
+
+    this.ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      this.scheduleReconnect();
+    };
+
+    this.ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+  }
+
+  private handleMessage(message: { type: string; data: any }): void {
+    switch (message.type) {
+      case 'backend.health':
+        this.handlers.onBackendHealth?.(message.data);
+        break;
+      case 'connection.new':
+        this.handlers.onConnectionNew?.(message.data);
+        break;
+      case 'connection.close':
+        this.handlers.onConnectionClose?.(message.data);
+        break;
+      case 'stats.update':
+        this.handlers.onStatsUpdate?.(message.data);
+        break;
+      case 'config.reload':
+      case 'config.saved':
+        this.handlers.onConfigReload?.(message.data);
+        break;
+    }
+  }
+
+  private startHeartbeat(): void {
+    setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send('ping');
+      }
+    }, 30000);
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached');
+      return;
+    }
+
+    const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
+    this.reconnectAttempts++;
+
+    setTimeout(() => this.connect(), delay);
+  }
+
+  disconnect(): void {
+    this.ws?.close();
+  }
+}
+
+// Usage
+const bifrost = new BifrostWebSocket(
+  'ws://localhost:7082/api/v1/ws',
+  'your-api-token',
+  {
+    onBackendHealth: (data) => {
+      console.log(`Backend ${data.name} is ${data.healthy ? 'healthy' : 'unhealthy'}`);
+    },
+    onConnectionNew: (data) => {
+      console.log(`New connection: ${data.host} via ${data.backend}`);
+    },
+    onStatsUpdate: (data) => {
+      console.log(`Active connections: ${data.active_connections}`);
+    },
+  }
+);
+
+bifrost.connect();
+```
+
+### Python
+
+```python
+import asyncio
+import websockets
+import json
+
+class BifrostWebSocket:
+    def __init__(self, url: str, token: str):
+        self.url = f"{url}?token={token}"
+        self.ws = None
+
+    async def connect(self):
+        async with websockets.connect(self.url) as ws:
+            self.ws = ws
+
+            # Start heartbeat task
+            heartbeat_task = asyncio.create_task(self._heartbeat())
+
+            try:
+                async for message in ws:
+                    if message == "pong":
+                        continue
+                    await self._handle_message(json.loads(message))
+            finally:
+                heartbeat_task.cancel()
+
+    async def _heartbeat(self):
+        while True:
+            await asyncio.sleep(30)
+            if self.ws:
+                await self.ws.send("ping")
+
+    async def _handle_message(self, message: dict):
+        event_type = message.get("type")
+        data = message.get("data", {})
+
+        if event_type == "backend.health":
+            print(f"Backend {data['name']}: {'healthy' if data['healthy'] else 'unhealthy'}")
+        elif event_type == "connection.new":
+            print(f"New connection: {data['host']} via {data['backend']}")
+        elif event_type == "stats.update":
+            print(f"Active connections: {data['active_connections']}")
+
+# Usage
+async def main():
+    client = BifrostWebSocket("ws://localhost:7082/api/v1/ws", "your-token")
+    await client.connect()
+
+asyncio.run(main())
+```
+
+### Go
+
+```go
+package main
+
+import (
+    "encoding/json"
+    "log"
+    "time"
+
+    "golang.org/x/net/websocket"
+)
+
+type Event struct {
+    Type      string                 `json:"type"`
+    Timestamp string                 `json:"timestamp"`
+    Data      map[string]interface{} `json:"data"`
+}
+
+func main() {
+    origin := "http://localhost:7082"
+    url := "ws://localhost:7082/api/v1/ws?token=your-token"
+
+    ws, err := websocket.Dial(url, "", origin)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer ws.Close()
+
+    // Heartbeat goroutine
+    go func() {
+        ticker := time.NewTicker(30 * time.Second)
+        for range ticker.C {
+            websocket.Message.Send(ws, "ping")
+        }
+    }()
+
+    // Message handler
+    for {
+        var msg string
+        if err := websocket.Message.Receive(ws, &msg); err != nil {
+            log.Printf("Error receiving: %v", err)
+            break
+        }
+
+        if msg == "pong" {
+            continue
+        }
+
+        var event Event
+        if err := json.Unmarshal([]byte(msg), &event); err != nil {
+            log.Printf("Error parsing event: %v", err)
+            continue
+        }
+
+        switch event.Type {
+        case "backend.health":
+            log.Printf("Backend %s: healthy=%v",
+                event.Data["name"], event.Data["healthy"])
+        case "connection.new":
+            log.Printf("New connection: %s via %s",
+                event.Data["host"], event.Data["backend"])
+        case "stats.update":
+            log.Printf("Active connections: %v",
+                event.Data["active_connections"])
+        }
+    }
+}
+```
+
+---
+
+## SSE Log Streaming Example
+
+### JavaScript
+
+```javascript
+class LogStreamer {
+  constructor(baseUrl, token) {
+    this.baseUrl = baseUrl;
+    this.token = token;
+    this.eventSource = null;
+  }
+
+  connect(onLog, onError) {
+    const url = `${this.baseUrl}/api/v1/logs/stream`;
+    this.eventSource = new EventSource(url);
+
+    this.eventSource.onopen = () => {
+      console.log('Log stream connected');
+    };
+
+    this.eventSource.onmessage = (event) => {
+      const log = JSON.parse(event.data);
+
+      if (log.type === 'connected') {
+        console.log('Log stream ready');
+        return;
+      }
+
+      onLog(log);
+    };
+
+    this.eventSource.onerror = (error) => {
+      console.error('Log stream error:', error);
+      onError?.(error);
+    };
+  }
+
+  disconnect() {
+    this.eventSource?.close();
+  }
+}
+
+// Usage
+const streamer = new LogStreamer('http://localhost:7383', 'your-token');
+
+streamer.connect(
+  (log) => {
+    const color = log.level === 'error' ? 'red' : 'inherit';
+    console.log(`%c[${log.level}] ${log.message}`, `color: ${color}`);
+  },
+  (error) => {
+    console.error('Stream error:', error);
+  }
+);
+```
+
+### React Hook
+
+```typescript
+import { useEffect, useState, useCallback } from 'react';
+
+interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+  fields?: Record<string, any>;
+}
+
+export function useLogStream(baseUrl: string, maxLogs = 1000) {
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    const eventSource = new EventSource(`${baseUrl}/api/v1/logs/stream`);
+
+    eventSource.onopen = () => {
+      setConnected(true);
+      setError(null);
+    };
+
+    eventSource.onmessage = (event) => {
+      const log = JSON.parse(event.data);
+      if (log.type === 'connected') return;
+
+      setLogs((prev) => {
+        const updated = [log, ...prev];
+        return updated.slice(0, maxLogs);
+      });
+    };
+
+    eventSource.onerror = () => {
+      setConnected(false);
+      setError(new Error('Log stream disconnected'));
+    };
+
+    return () => {
+      eventSource.close();
+    };
+  }, [baseUrl, maxLogs]);
+
+  const clearLogs = useCallback(() => {
+    setLogs([]);
+  }, []);
+
+  return { logs, connected, error, clearLogs };
+}
+
+// Usage in component
+function LogViewer() {
+  const { logs, connected, clearLogs } = useLogStream('http://localhost:7383');
+
+  return (
+    <div>
+      <div>Status: {connected ? 'Connected' : 'Disconnected'}</div>
+      <button onClick={clearLogs}>Clear</button>
+      <ul>
+        {logs.map((log, i) => (
+          <li key={i} className={`log-${log.level}`}>
+            [{log.timestamp}] {log.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```

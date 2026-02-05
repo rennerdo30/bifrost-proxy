@@ -1,0 +1,475 @@
+---
+title: "API Authentication"
+description: "Authentication and security requirements for Bifrost Proxy APIs"
+---
+
+# API Authentication
+
+This guide covers authentication methods, security headers, and CSRF protection for the Bifrost REST APIs.
+
+## Authentication Methods
+
+### Bearer Token Authentication
+
+The primary authentication method uses a Bearer token in the HTTP `Authorization` header.
+
+**Configuration:**
+```yaml
+api:
+  listen: ":7082"
+  token: "your-secure-api-token"  # Set to empty string to disable auth
+```
+
+**Request:**
+```bash
+curl -H "Authorization: Bearer your-secure-api-token" \
+     http://localhost:7082/api/v1/status
+```
+
+### Query Parameter Token
+
+For WebSocket connections where headers cannot be easily set, use the `token` query parameter.
+
+```bash
+# WebSocket connection
+ws://localhost:7082/api/v1/ws?token=your-secure-api-token
+
+# HTTP request (fallback)
+curl "http://localhost:7082/api/v1/status?token=your-secure-api-token"
+```
+
+### No Authentication
+
+If no token is configured (empty string), all API endpoints are publicly accessible. This is suitable for:
+- Development environments
+- Trusted internal networks
+- When authentication is handled externally (reverse proxy, VPN)
+
+```yaml
+api:
+  listen: ":7082"
+  token: ""  # Authentication disabled
+```
+
+---
+
+## CSRF Protection
+
+Bifrost implements CSRF (Cross-Site Request Forgery) protection for all mutating requests.
+
+### How It Works
+
+All `POST`, `PUT`, `DELETE`, and `PATCH` requests require the `X-Requested-With` header:
+
+```http
+X-Requested-With: XMLHttpRequest
+```
+
+This header cannot be set by cross-origin requests without CORS approval, preventing CSRF attacks from malicious websites.
+
+### Example Request
+
+```bash
+curl -X POST \
+     -H "Authorization: Bearer your-token" \
+     -H "X-Requested-With: XMLHttpRequest" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "my-route", "domains": ["*.example.com"], "backend": "direct"}' \
+     http://localhost:7082/api/v1/routes
+```
+
+### CSRF Error Response
+
+If the `X-Requested-With` header is missing:
+
+```http
+HTTP/1.1 403 Forbidden
+Content-Type: text/plain
+
+CSRF validation failed: missing X-Requested-With header
+```
+
+---
+
+## Security Headers
+
+All API responses include security headers to protect against common web vulnerabilities.
+
+### Headers Applied
+
+| Header | Value | Purpose |
+|--------|-------|---------|
+| `X-Content-Type-Options` | `nosniff` | Prevent MIME type sniffing |
+| `X-Frame-Options` | `DENY` | Prevent clickjacking |
+| `X-XSS-Protection` | `1; mode=block` | Legacy XSS protection |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer information |
+| `Content-Security-Policy` | See below | Restrict resource loading |
+
+### Content Security Policy
+
+```
+default-src 'self';
+script-src 'self' 'unsafe-inline';
+style-src 'self' 'unsafe-inline';
+font-src 'self';
+img-src 'self' data: https:;
+connect-src 'self' ws: wss:;
+frame-ancestors 'none'
+```
+
+This CSP:
+- Allows scripts and styles from the same origin
+- Permits inline scripts/styles for React/Vite
+- Allows WebSocket connections
+- Blocks framing (clickjacking protection)
+- Allows images from HTTPS sources
+
+---
+
+## CORS Policy
+
+The client API includes CORS (Cross-Origin Resource Sharing) support for local development.
+
+### Allowed Origins
+
+Requests are allowed from:
+- `http://localhost:*`
+- `https://localhost:*`
+- `http://127.0.0.1:*`
+- `https://127.0.0.1:*`
+- `http://[::1]:*`
+- `https://[::1]:*`
+
+### CORS Headers
+
+For allowed origins:
+```http
+Access-Control-Allow-Origin: http://localhost:5173
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+Access-Control-Allow-Headers: Accept, Authorization, Content-Type, X-Requested-With
+Access-Control-Allow-Credentials: true
+```
+
+### Preflight Requests
+
+`OPTIONS` requests receive a `204 No Content` response with CORS headers.
+
+---
+
+## Token Security Best Practices
+
+### Generating Secure Tokens
+
+```bash
+# Using OpenSSL
+openssl rand -base64 32
+
+# Using /dev/urandom
+head -c 32 /dev/urandom | base64
+
+# Using Go
+go run -mod=mod github.com/google/uuid/cmd/uuidgen@latest
+```
+
+### Token Storage
+
+- **Never commit tokens** to version control
+- Use environment variables or secrets management
+- Rotate tokens periodically
+- Use different tokens per environment
+
+```yaml
+# config.yaml
+api:
+  token: ${BIFROST_API_TOKEN}  # Environment variable
+```
+
+```bash
+# Set environment variable
+export BIFROST_API_TOKEN="your-secure-token"
+```
+
+### Token Length
+
+Recommended minimum token length: **32 characters**
+
+The token comparison uses constant-time comparison to prevent timing attacks.
+
+---
+
+## Error Responses
+
+### 401 Unauthorized
+
+Returned when:
+- Token is missing
+- Token is invalid
+
+```json
+{
+  "error": "Unauthorized"
+}
+```
+
+### 403 Forbidden
+
+Returned when:
+- CSRF validation fails
+
+```
+CSRF validation failed: missing X-Requested-With header
+```
+
+---
+
+## Middleware Stack
+
+Requests pass through these middleware layers in order:
+
+```mermaid
+graph TD
+    A[Request] --> B[Request ID]
+    B --> C[Real IP Detection]
+    C --> D[Logger]
+    D --> E[Recoverer]
+    E --> F[Timeout 30s]
+    F --> G[Security Headers]
+    G --> H{Token Set?}
+    H -->|Yes| I[Auth Check]
+    H -->|No| J[CSRF Check]
+    I --> J
+    J --> K[Handler]
+```
+
+1. **Request ID** - Assigns unique ID for tracking
+2. **Real IP** - Extracts client IP (supports X-Forwarded-For)
+3. **Logger** - Logs HTTP requests
+4. **Recoverer** - Catches panics, returns 500
+5. **Timeout** - 30-second request timeout
+6. **Security Headers** - Adds security headers
+7. **Auth Middleware** - Validates token (if configured)
+8. **CSRF Middleware** - Validates X-Requested-With header
+
+---
+
+## Client Code Examples
+
+### JavaScript/TypeScript
+
+```typescript
+const API_BASE = 'http://localhost:7082';
+const TOKEN = 'your-api-token';
+
+// GET request (read-only)
+async function getStatus() {
+  const response = await fetch(`${API_BASE}/api/v1/status`, {
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+    },
+  });
+  return response.json();
+}
+
+// POST request (requires CSRF header)
+async function addRoute(route: { name: string; domains: string[]; backend: string }) {
+  const response = await fetch(`${API_BASE}/api/v1/routes`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${TOKEN}`,
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',  // Required for CSRF
+    },
+    body: JSON.stringify(route),
+  });
+
+  if (response.status === 401) {
+    throw new Error('Unauthorized: Invalid or missing API token');
+  }
+  if (response.status === 403) {
+    throw new Error('Forbidden: CSRF validation failed');
+  }
+
+  return response.json();
+}
+```
+
+### Python
+
+```python
+import requests
+
+class BifrostClient:
+    def __init__(self, base_url: str, token: str):
+        self.base_url = base_url
+        self.session = requests.Session()
+        self.session.headers.update({
+            'Authorization': f'Bearer {token}',
+            'X-Requested-With': 'XMLHttpRequest',
+        })
+
+    def get_status(self) -> dict:
+        response = self.session.get(f'{self.base_url}/api/v1/status')
+        response.raise_for_status()
+        return response.json()
+
+    def add_route(self, name: str, domains: list[str], backend: str) -> dict:
+        response = self.session.post(
+            f'{self.base_url}/api/v1/routes',
+            json={'name': name, 'domains': domains, 'backend': backend}
+        )
+        response.raise_for_status()
+        return response.json()
+
+# Usage
+client = BifrostClient('http://localhost:7082', 'your-token')
+status = client.get_status()
+```
+
+### Go
+
+```go
+package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "net/http"
+)
+
+type BifrostClient struct {
+    BaseURL string
+    Token   string
+    Client  *http.Client
+}
+
+func NewBifrostClient(baseURL, token string) *BifrostClient {
+    return &BifrostClient{
+        BaseURL: baseURL,
+        Token:   token,
+        Client:  &http.Client{},
+    }
+}
+
+func (c *BifrostClient) doRequest(method, path string, body interface{}) (*http.Response, error) {
+    var bodyReader *bytes.Reader
+    if body != nil {
+        jsonBody, _ := json.Marshal(body)
+        bodyReader = bytes.NewReader(jsonBody)
+    }
+
+    req, _ := http.NewRequest(method, c.BaseURL+path, bodyReader)
+    req.Header.Set("Authorization", "Bearer "+c.Token)
+    req.Header.Set("Content-Type", "application/json")
+
+    // Add CSRF header for mutating requests
+    if method != "GET" && method != "HEAD" {
+        req.Header.Set("X-Requested-With", "XMLHttpRequest")
+    }
+
+    return c.Client.Do(req)
+}
+
+func (c *BifrostClient) GetStatus() (map[string]interface{}, error) {
+    resp, err := c.doRequest("GET", "/api/v1/status", nil)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode == 401 {
+        return nil, fmt.Errorf("unauthorized: invalid or missing API token")
+    }
+
+    var result map[string]interface{}
+    json.NewDecoder(resp.Body).Decode(&result)
+    return result, nil
+}
+
+func (c *BifrostClient) AddRoute(name string, domains []string, backend string) error {
+    route := map[string]interface{}{
+        "name":    name,
+        "domains": domains,
+        "backend": backend,
+    }
+
+    resp, err := c.doRequest("POST", "/api/v1/routes", route)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode == 401 {
+        return fmt.Errorf("unauthorized")
+    }
+    if resp.StatusCode == 403 {
+        return fmt.Errorf("CSRF validation failed")
+    }
+
+    return nil
+}
+```
+
+### cURL Wrapper Script
+
+```bash
+#!/bin/bash
+# bifrost-api.sh - Wrapper for Bifrost API calls
+
+BIFROST_URL="${BIFROST_URL:-http://localhost:7082}"
+BIFROST_TOKEN="${BIFROST_TOKEN:-}"
+
+bifrost_get() {
+    local path="$1"
+    curl -s -H "Authorization: Bearer $BIFROST_TOKEN" \
+         "$BIFROST_URL$path"
+}
+
+bifrost_post() {
+    local path="$1"
+    local data="$2"
+    curl -s -X POST \
+         -H "Authorization: Bearer $BIFROST_TOKEN" \
+         -H "Content-Type: application/json" \
+         -H "X-Requested-With: XMLHttpRequest" \
+         -d "$data" \
+         "$BIFROST_URL$path"
+}
+
+bifrost_delete() {
+    local path="$1"
+    curl -s -X DELETE \
+         -H "Authorization: Bearer $BIFROST_TOKEN" \
+         -H "X-Requested-With: XMLHttpRequest" \
+         "$BIFROST_URL$path"
+}
+
+# Usage examples:
+# bifrost_get /api/v1/status
+# bifrost_post /api/v1/routes '{"name":"test","domains":["*.test.com"],"backend":"direct"}'
+# bifrost_delete /api/v1/routes/test
+```
+
+---
+
+## Troubleshooting
+
+### "Unauthorized" Error
+
+1. Verify token is correct
+2. Check `Authorization` header format: `Bearer <token>`
+3. Ensure no extra whitespace in token
+4. Verify token matches server config
+
+### "CSRF validation failed" Error
+
+1. Add `X-Requested-With: XMLHttpRequest` header
+2. Ensure header is included for POST/PUT/DELETE/PATCH requests
+3. Check for proxy stripping custom headers
+
+### Connection Refused
+
+1. Verify server is running
+2. Check API listen address in config
+3. Ensure firewall allows connections
+4. Try with explicit IP: `http://127.0.0.1:7082` instead of `localhost`

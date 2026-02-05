@@ -1,0 +1,1118 @@
+---
+title: "Server API Reference"
+description: "Complete REST API documentation for Bifrost Proxy Server"
+---
+
+# Server API Reference
+
+The Bifrost server exposes a REST API for management, monitoring, and configuration.
+
+**Default Address:** `http://localhost:7082`
+
+## Health & Status
+
+### Health Check
+
+Check if the server is healthy and operational.
+
+```http
+GET /api/v1/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "time": "2024-01-15T10:00:00Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | `healthy` or `degraded` |
+| `time` | string | ISO 8601 timestamp |
+
+---
+
+### Version
+
+Get server version information.
+
+```http
+GET /api/v1/version
+```
+
+**Response:**
+```json
+{
+  "version": "1.0.0",
+  "git_commit": "abc123",
+  "build_time": "2024-01-15T10:00:00Z",
+  "go_version": "go1.22.0",
+  "platform": "linux/amd64"
+}
+```
+
+---
+
+### Status
+
+Get server running status.
+
+```http
+GET /api/v1/status
+```
+
+**Response:**
+```json
+{
+  "status": "running",
+  "time": "2024-01-15T10:00:00Z",
+  "version": "1.0.0",
+  "backends": 3
+}
+```
+
+---
+
+### Statistics
+
+Get aggregated server statistics.
+
+```http
+GET /api/v1/stats
+```
+
+**Response:**
+```json
+{
+  "total_connections": 5000,
+  "active_connections": 25,
+  "bytes_sent": 104857600,
+  "bytes_received": 209715200,
+  "backends": {
+    "total": 3,
+    "healthy": 3
+  },
+  "time": "2024-01-15T10:00:00Z"
+}
+```
+
+---
+
+## Backend Management
+
+### List Backends
+
+Get all configured backends with their status and statistics.
+
+```http
+GET /api/v1/backends
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "direct",
+    "type": "direct",
+    "healthy": true,
+    "stats": {
+      "active_connections": 5,
+      "total_connections": 100,
+      "bytes_sent": 1024000,
+      "bytes_received": 2048000
+    }
+  },
+  {
+    "name": "wireguard-us",
+    "type": "wireguard",
+    "healthy": true,
+    "stats": {
+      "active_connections": 10,
+      "total_connections": 500,
+      "bytes_sent": 5120000,
+      "bytes_received": 10240000
+    }
+  }
+]
+```
+
+---
+
+### Get Backend
+
+Get a specific backend by name.
+
+```http
+GET /api/v1/backends/{name}
+```
+
+**Path Parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | string | Backend name |
+
+**Response:**
+```json
+{
+  "name": "wireguard-us",
+  "type": "wireguard",
+  "healthy": true,
+  "stats": {
+    "active_connections": 10,
+    "total_connections": 500,
+    "bytes_sent": 5120000,
+    "bytes_received": 10240000
+  }
+}
+```
+
+---
+
+### Add Backend
+
+Add a new backend to the proxy server.
+
+```http
+POST /api/v1/backends
+```
+
+**Request Body:**
+```json
+{
+  "name": "my-proxy",
+  "type": "httpproxy",
+  "enabled": true,
+  "httpproxy": {
+    "address": "proxy.example.com:8080",
+    "username": "user",
+    "password": "pass"
+  }
+}
+```
+
+**Supported Backend Types:**
+- `direct` - Direct internet connection
+- `wireguard` - WireGuard VPN tunnel
+- `openvpn` - OpenVPN tunnel
+- `httpproxy` - HTTP/HTTPS proxy
+- `socks5` - SOCKS5 proxy
+
+**Response (201 Created):**
+```json
+{
+  "status": "created",
+  "backend": "my-proxy",
+  "type": "httpproxy"
+}
+```
+
+---
+
+### Remove Backend
+
+Remove a backend from the proxy server.
+
+```http
+DELETE /api/v1/backends/{name}
+```
+
+**Response:**
+```json
+{
+  "status": "removed",
+  "backend": "my-proxy"
+}
+```
+
+---
+
+### Get Backend Stats
+
+Get detailed statistics for a specific backend.
+
+```http
+GET /api/v1/backends/{name}/stats
+```
+
+**Response:**
+```json
+{
+  "active_connections": 10,
+  "total_connections": 500,
+  "bytes_sent": 5120000,
+  "bytes_received": 10240000,
+  "errors": 0,
+  "latency_ms": 45
+}
+```
+
+---
+
+### Test Backend
+
+Test connectivity through a specific backend.
+
+```http
+POST /api/v1/backends/{name}/test
+```
+
+**Request Body (optional):**
+```json
+{
+  "target": "google.com:443",
+  "timeout": "10s"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "backend": "wireguard-us",
+  "target": "google.com:443",
+  "duration": "45ms",
+  "healthy": true
+}
+```
+
+---
+
+## Configuration
+
+### Get Config (Sanitized)
+
+Get the current configuration with sensitive values redacted.
+
+```http
+GET /api/v1/config
+```
+
+**Response:** Sanitized `ServerConfig` object with passwords, keys, and tokens masked.
+
+---
+
+### Get Full Config
+
+Get the complete configuration for editing (use with caution).
+
+```http
+GET /api/v1/config/full
+```
+
+**Response:** Full `ServerConfig` object including sensitive values.
+
+---
+
+### Get Config Metadata
+
+Get metadata about configuration sections, including hot-reload capabilities.
+
+```http
+GET /api/v1/config/meta
+```
+
+**Response:**
+```json
+[
+  {
+    "section": "routes",
+    "hot_reloadable": true,
+    "description": "Routing rules can be changed without restart"
+  },
+  {
+    "section": "rate_limit",
+    "hot_reloadable": true,
+    "description": "Rate limiting settings can be changed without restart"
+  },
+  {
+    "section": "server",
+    "hot_reloadable": false,
+    "description": "Server listener changes require restart"
+  },
+  {
+    "section": "backends",
+    "hot_reloadable": false,
+    "description": "Backend changes require restart"
+  }
+]
+```
+
+---
+
+### Save Config
+
+Save configuration changes.
+
+```http
+PUT /api/v1/config
+```
+
+**Request Body:**
+```json
+{
+  "config": {
+    "server": { ... },
+    "backends": [ ... ],
+    "routes": [ ... ]
+  },
+  "create_backup": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Configuration saved",
+  "requires_restart": false,
+  "changed_sections": ["routes"]
+}
+```
+
+---
+
+### Validate Config
+
+Validate configuration without saving.
+
+```http
+POST /api/v1/config/validate
+```
+
+**Request Body:** `ServerConfig` object
+
+**Response:**
+```json
+{
+  "valid": true,
+  "errors": [],
+  "warnings": ["Backend 'old-vpn' is enabled but not configured"]
+}
+```
+
+---
+
+### Reload Config
+
+Reload configuration from file (hot-reload for supported sections).
+
+```http
+POST /api/v1/config/reload
+```
+
+**Response:**
+```json
+{
+  "message": "Config reloaded successfully",
+  "time": "2024-01-15T10:00:00Z"
+}
+```
+
+---
+
+## Routing Rules
+
+### List Routes
+
+Get all configured routing rules.
+
+```http
+GET /api/v1/routes
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "internal",
+    "domains": ["*.internal.company.com", "intranet.*"],
+    "backend": "wireguard-corp",
+    "enabled": true,
+    "priority": 100
+  },
+  {
+    "name": "streaming",
+    "domains": ["*.netflix.com", "*.youtube.com"],
+    "backends": ["direct", "wireguard-us"],
+    "enabled": true,
+    "priority": 50
+  }
+]
+```
+
+---
+
+### Add Route
+
+Add a new routing rule.
+
+```http
+POST /api/v1/routes
+```
+
+**Request Body:**
+```json
+{
+  "name": "social-media",
+  "domains": ["*.twitter.com", "*.facebook.com", "*.instagram.com"],
+  "backend": "direct",
+  "enabled": true,
+  "priority": 75
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "status": "created",
+  "route": "social-media",
+  "domains": ["*.twitter.com", "*.facebook.com", "*.instagram.com"],
+  "backend": "direct"
+}
+```
+
+---
+
+### Remove Route
+
+Remove a routing rule.
+
+```http
+DELETE /api/v1/routes/{name}
+```
+
+**Response:**
+```json
+{
+  "status": "removed",
+  "route": "social-media"
+}
+```
+
+---
+
+## Request Log
+
+### Get Recent Requests
+
+Get recent request log entries (requires `enable_request_log: true` in config).
+
+```http
+GET /api/v1/requests
+GET /api/v1/requests?limit=50
+GET /api/v1/requests?since=123
+GET /api/v1/requests?offset=100
+```
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | int | 100 | Maximum entries to return |
+| `since` | int | - | Get entries since this ID |
+| `offset` | int | 0 | Skip this many entries |
+
+**Response:**
+```json
+{
+  "enabled": true,
+  "requests": [
+    {
+      "id": 1,
+      "timestamp": "2024-01-15T10:00:00Z",
+      "method": "GET",
+      "host": "api.example.com",
+      "path": "/v1/users",
+      "url": "https://api.example.com/v1/users",
+      "user_agent": "Mozilla/5.0...",
+      "client_ip": "192.168.1.100",
+      "username": "admin",
+      "backend": "direct",
+      "status_code": 200,
+      "bytes_sent": 1024,
+      "bytes_recv": 2048,
+      "duration_ms": 150,
+      "protocol": "HTTP"
+    }
+  ]
+}
+```
+
+---
+
+### Get Request Stats
+
+Get request log statistics.
+
+```http
+GET /api/v1/requests/stats
+```
+
+**Response:**
+```json
+{
+  "enabled": true,
+  "count": 1500,
+  "max_size": 10000
+}
+```
+
+---
+
+### Clear Request Log
+
+Clear all request log entries.
+
+```http
+DELETE /api/v1/requests
+```
+
+**Response:**
+```json
+{
+  "message": "Request log cleared"
+}
+```
+
+---
+
+## Connection Tracking
+
+### Get Active Connections
+
+Get all currently active connections.
+
+```http
+GET /api/v1/connections
+```
+
+**Response:**
+```json
+{
+  "connections": [
+    {
+      "id": "20240115100000-1",
+      "client_ip": "192.168.1.100",
+      "client_port": "54321",
+      "host": "api.example.com:443",
+      "backend": "direct",
+      "protocol": "CONNECT",
+      "start_time": "2024-01-15T10:00:00Z",
+      "bytes_sent": 1024,
+      "bytes_recv": 2048
+    }
+  ],
+  "count": 1,
+  "time": "2024-01-15T10:00:05Z"
+}
+```
+
+---
+
+### Get Connected Clients
+
+Get unique clients with aggregated statistics.
+
+```http
+GET /api/v1/connections/clients
+```
+
+**Response:**
+```json
+{
+  "clients": [
+    {
+      "client_ip": "192.168.1.100",
+      "connections": 5,
+      "bytes_sent": 10240,
+      "bytes_recv": 20480,
+      "first_seen": "2024-01-15T09:00:00Z"
+    }
+  ],
+  "count": 1,
+  "time": "2024-01-15T10:00:05Z"
+}
+```
+
+---
+
+## Cache Management
+
+### Get Cache Stats
+
+Get cache statistics.
+
+```http
+GET /api/v1/cache/stats
+```
+
+**Response:**
+```json
+{
+  "enabled": true,
+  "hit_rate": 0.85,
+  "total_requests": 12450,
+  "cache_hits": 10582,
+  "cache_misses": 1868,
+  "storage_type": "tiered",
+  "rules_count": 5,
+  "memory": {
+    "entries": 4521,
+    "size_bytes": 1073741824,
+    "max_size_bytes": 2147483648
+  },
+  "disk": {
+    "entries": 892,
+    "size_bytes": 107374182400,
+    "max_size_bytes": 536870912000
+  }
+}
+```
+
+---
+
+### List Cache Entries
+
+Get cached entries with optional filtering.
+
+```http
+GET /api/v1/cache/entries
+GET /api/v1/cache/entries?domain=*.steamcontent.com
+GET /api/v1/cache/entries?limit=10&offset=0
+```
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `domain` | string | - | Filter by domain pattern |
+| `limit` | int | 100 | Maximum entries (max 1000) |
+| `offset` | int | 0 | Skip entries for pagination |
+
+**Response:**
+```json
+{
+  "entries": [
+    {
+      "key": "ab12cd34...",
+      "url": "http://cdn.steamcontent.com/depot/123/chunk/abc",
+      "host": "cdn.steamcontent.com",
+      "size": 1048576,
+      "content_type": "application/octet-stream",
+      "created_at": "2024-01-15T10:30:00Z",
+      "expires_at": "2025-01-15T10:30:00Z"
+    }
+  ],
+  "total": 892,
+  "offset": 0,
+  "limit": 10
+}
+```
+
+---
+
+### Get Cache Entry
+
+Get metadata for a specific cache entry.
+
+```http
+GET /api/v1/cache/entries/{key}
+```
+
+---
+
+### Delete Cache Entry
+
+Delete a specific cache entry.
+
+```http
+DELETE /api/v1/cache/entries/{key}
+```
+
+**Response:**
+```json
+{
+  "message": "Cache entry deleted",
+  "key": "ab12cd34..."
+}
+```
+
+---
+
+### Clear All Cache
+
+Clear the entire cache.
+
+```http
+DELETE /api/v1/cache/entries?confirm=true
+```
+
+**Response:**
+```json
+{
+  "message": "Cache cleared",
+  "time": "2024-01-15T10:00:00Z"
+}
+```
+
+---
+
+### Purge Domain
+
+Purge all cache entries for a domain.
+
+```http
+DELETE /api/v1/cache/domain/{domain}
+```
+
+**Response:**
+```json
+{
+  "message": "Domain purged from cache",
+  "domain": "cdn.steamcontent.com",
+  "deleted": 150
+}
+```
+
+---
+
+### List Cache Rules
+
+Get all caching rules.
+
+```http
+GET /api/v1/cache/rules
+```
+
+**Response:**
+```json
+{
+  "rules": [
+    {
+      "name": "steam",
+      "domains": ["*.steamcontent.com", "content*.steampowered.com"],
+      "enabled": true,
+      "ttl": "8760h0m0s",
+      "priority": 100,
+      "preset": "steam"
+    }
+  ],
+  "count": 5
+}
+```
+
+---
+
+### Add Cache Rule
+
+Add a custom caching rule.
+
+```http
+POST /api/v1/cache/rules
+```
+
+**Request Body:**
+```json
+{
+  "name": "my-cdn",
+  "domains": ["cdn.example.com", "assets.example.com"],
+  "enabled": true,
+  "ttl": "168h",
+  "priority": 50
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Cache rule created",
+  "rule": "my-cdn"
+}
+```
+
+---
+
+### Update Cache Rule
+
+Update an existing cache rule.
+
+```http
+PUT /api/v1/cache/rules/{name}
+```
+
+**Request Body:**
+```json
+{
+  "enabled": false
+}
+```
+
+---
+
+### Delete Cache Rule
+
+Delete a cache rule.
+
+```http
+DELETE /api/v1/cache/rules/{name}
+```
+
+---
+
+### List Cache Presets
+
+Get available caching presets.
+
+```http
+GET /api/v1/cache/presets
+```
+
+**Response:**
+```json
+{
+  "presets": [
+    {
+      "name": "steam",
+      "description": "Steam game downloads and updates",
+      "domains": ["*.steamcontent.com", "content*.steampowered.com"],
+      "ttl": "8760h0m0s",
+      "priority": 100
+    },
+    {
+      "name": "epic-games",
+      "description": "Epic Games Store downloads",
+      "domains": ["*.epicgames.com", "download.epicgames.com"],
+      "ttl": "8760h0m0s",
+      "priority": 100
+    }
+  ],
+  "count": 10
+}
+```
+
+---
+
+### Enable/Disable Preset
+
+```http
+POST /api/v1/cache/presets/{name}/enable
+POST /api/v1/cache/presets/{name}/disable
+```
+
+**Response:**
+```json
+{
+  "message": "Preset enabled",
+  "preset": "steam"
+}
+```
+
+---
+
+## Mesh Networking
+
+### List Mesh Networks
+
+Get all mesh networks.
+
+```http
+GET /api/v1/mesh/networks
+```
+
+**Response:**
+```json
+{
+  "networks": [
+    {
+      "id": "net-abc123",
+      "name": "Home Network",
+      "cidr": "10.100.0.0/24",
+      "peer_count": 5,
+      "created": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### Create Mesh Network
+
+Create a new mesh network.
+
+```http
+POST /api/v1/mesh/networks
+```
+
+**Request Body:**
+```json
+{
+  "id": "net-xyz789",
+  "name": "Office Network",
+  "cidr": "10.200.0.0/24"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "net-xyz789",
+  "name": "Office Network",
+  "cidr": "10.200.0.0/24",
+  "peer_count": 0,
+  "created": "2024-01-15T10:00:00Z"
+}
+```
+
+---
+
+### Get Mesh Network
+
+Get details of a specific mesh network.
+
+```http
+GET /api/v1/mesh/networks/{networkID}
+```
+
+---
+
+### Delete Mesh Network
+
+Delete a mesh network.
+
+```http
+DELETE /api/v1/mesh/networks/{networkID}
+```
+
+---
+
+### Register Peer
+
+Register a peer to a mesh network.
+
+```http
+POST /api/v1/mesh/networks/{networkID}/peers
+```
+
+**Request Body:**
+```json
+{
+  "network_id": "net-abc123",
+  "peer": {
+    "id": "peer-xyz789",
+    "name": "laptop-work",
+    "public_key": "base64-encoded-key",
+    "endpoints": [
+      {
+        "address": "192.168.1.100",
+        "port": 51820,
+        "type": "lan",
+        "priority": 100
+      }
+    ]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "virtual_ip": "10.100.0.5",
+  "peers": [
+    {
+      "id": "peer-abc123",
+      "name": "desktop-home",
+      "virtual_ip": "10.100.0.2",
+      "endpoints": [...]
+    }
+  ]
+}
+```
+
+---
+
+### List Network Peers
+
+Get all peers in a mesh network.
+
+```http
+GET /api/v1/mesh/networks/{networkID}/peers
+```
+
+---
+
+### Get Peer Details
+
+Get details of a specific peer.
+
+```http
+GET /api/v1/mesh/networks/{networkID}/peers/{peerID}
+```
+
+---
+
+### Update Peer
+
+Update peer information.
+
+```http
+PATCH /api/v1/mesh/networks/{networkID}/peers/{peerID}
+```
+
+**Request Body:**
+```json
+{
+  "endpoints": [...],
+  "metadata": {"location": "office"}
+}
+```
+
+---
+
+### Deregister Peer
+
+Remove a peer from the mesh network.
+
+```http
+DELETE /api/v1/mesh/networks/{networkID}/peers/{peerID}
+```
+
+---
+
+### Peer Heartbeat
+
+Update peer heartbeat (keep-alive).
+
+```http
+POST /api/v1/mesh/networks/{networkID}/peers/{peerID}/heartbeat
+```
+
+---
+
+## PAC File
+
+Bifrost automatically generates PAC (Proxy Auto-Configuration) files based on routing rules.
+
+### Get PAC File
+
+```http
+GET /proxy.pac
+GET /wpad.dat
+```
+
+**Response (application/x-ns-proxy-autoconfig):**
+```javascript
+function FindProxyForURL(url, host) {
+    if (shExpMatch(host, "*.internal.company.com")) {
+        return "PROXY bifrost.example.com:7080; DIRECT";
+    }
+    return "DIRECT";
+}
+```
+
+**Browser Configuration:**
+- **macOS**: System Preferences → Network → Advanced → Proxies → Automatic Proxy Configuration
+- **Windows**: Settings → Network → Proxy → Use setup script
+- **Firefox**: Settings → Network Settings → Automatic proxy configuration URL
+- **Chrome**: Uses system settings or Proxy SwitchyOmega extension
