@@ -11,6 +11,10 @@ declare global {
           GetStatus: () => Promise<StatusResponse>;
           GetServers: () => Promise<ServerInfo[]>;
           SelectServer: (name: string) => Promise<void>;
+          AddServer: (server: ServerConfig) => Promise<void>;
+          UpdateServer: (originalName: string, server: ServerConfig) => Promise<void>;
+          DeleteServer: (name: string) => Promise<void>;
+          SetDefaultServer: (name: string) => Promise<void>;
           GetQuickSettings: () => Promise<QuickSettings>;
           UpdateQuickSettings: (settings: QuickSettings) => Promise<void>;
           GetProxySettings: () => Promise<ProxySettings>;
@@ -50,9 +54,20 @@ export interface ServerInfo {
   name: string;
   address: string;
   protocol: string;
+  username?: string;
+  password?: string;
   is_default: boolean;
   latency_ms?: number;
   status: string;
+}
+
+export interface ServerConfig {
+  name: string;
+  address: string;
+  protocol: string;
+  username?: string;
+  password?: string;
+  is_default?: boolean;
 }
 
 export interface QuickSettings {
@@ -96,11 +111,15 @@ const mockAPI = {
     timestamp: new Date().toISOString(),
   }),
   GetServers: async (): Promise<ServerInfo[]> => [
-    { name: 'Primary', address: 'us1.bifrost.io:8080', protocol: 'http', is_default: true, latency_ms: 45, status: 'online' },
-    { name: 'Europe', address: 'eu1.bifrost.io:8080', protocol: 'http', is_default: false, latency_ms: 120, status: 'online' },
-    { name: 'Asia', address: 'asia1.bifrost.io:8080', protocol: 'socks5', is_default: false, latency_ms: 200, status: 'offline' },
+    { name: 'Primary', address: 'us1.bifrost.io:8080', protocol: 'http', is_default: true, latency_ms: 45, status: 'connected' },
+    { name: 'Europe', address: 'eu1.bifrost.io:8080', protocol: 'http', is_default: false, latency_ms: 120, status: 'available' },
+    { name: 'Asia', address: 'asia1.bifrost.io:8080', protocol: 'socks5', is_default: false, latency_ms: 200, status: 'available' },
   ],
   SelectServer: async (name: string) => { if (import.meta.env.DEV) console.log('Mock: SelectServer', name); },
+  AddServer: async (server: ServerConfig) => { if (import.meta.env.DEV) console.log('Mock: AddServer', server); },
+  UpdateServer: async (originalName: string, server: ServerConfig) => { if (import.meta.env.DEV) console.log('Mock: UpdateServer', originalName, server); },
+  DeleteServer: async (name: string) => { if (import.meta.env.DEV) console.log('Mock: DeleteServer', name); },
+  SetDefaultServer: async (name: string) => { if (import.meta.env.DEV) console.log('Mock: SetDefaultServer', name); },
   GetQuickSettings: async (): Promise<QuickSettings> => ({
     auto_connect: true,
     start_minimized: false,
@@ -247,6 +266,55 @@ export function useClient() {
     }
   }, [api, refreshServers, refreshSettings]);
 
+  // Add server
+  const addServer = useCallback(async (server: ServerConfig) => {
+    setError(null);
+    try {
+      await api.AddServer(server);
+      await refreshServers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add server');
+      throw err;
+    }
+  }, [api, refreshServers]);
+
+  // Update server
+  const updateServer = useCallback(async (originalName: string, server: ServerConfig) => {
+    setError(null);
+    try {
+      await api.UpdateServer(originalName, server);
+      await refreshServers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update server');
+      throw err;
+    }
+  }, [api, refreshServers]);
+
+  // Delete server
+  const deleteServer = useCallback(async (name: string) => {
+    setError(null);
+    try {
+      await api.DeleteServer(name);
+      await refreshServers();
+      await refreshSettings();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete server');
+      throw err;
+    }
+  }, [api, refreshServers, refreshSettings]);
+
+  // Set default server
+  const setDefaultServer = useCallback(async (name: string) => {
+    setError(null);
+    try {
+      await api.SetDefaultServer(name);
+      await refreshServers();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to set default server');
+      throw err;
+    }
+  }, [api, refreshServers]);
+
   // Update settings
   const updateSettings = useCallback(async (newSettings: Partial<QuickSettings>) => {
     if (!settings) return;
@@ -349,6 +417,10 @@ export function useClient() {
     connect,
     disconnect,
     selectServer,
+    addServer,
+    updateServer,
+    deleteServer,
+    setDefaultServer,
     updateSettings,
     updateProxySettings,
     restartClient,
@@ -356,6 +428,7 @@ export function useClient() {
     openDashboard,
     quit,
     refreshStatus,
+    refreshServers,
     clearError: () => setError(null),
   };
 }

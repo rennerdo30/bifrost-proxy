@@ -2,6 +2,7 @@ import { useClient } from './hooks/useClient';
 import { ConnectButton } from './components/ConnectButton';
 import { StatusIndicator } from './components/StatusIndicator';
 import { ServerSelector } from './components/ServerSelector';
+import { ServerManager } from './components/ServerManager';
 import { QuickSettings } from './components/QuickSettings';
 
 function App() {
@@ -17,6 +18,10 @@ function App() {
     connect,
     disconnect,
     selectServer,
+    addServer,
+    updateServer,
+    deleteServer,
+    setDefaultServer,
     updateSettings,
     updateProxySettings,
     restartClient,
@@ -103,17 +108,29 @@ function App() {
           />
         </div>
 
-        {/* Server Selector */}
+        {/* Quick Server Selector */}
         <ServerSelector
           servers={servers}
           currentServer={settings?.current_server || ''}
           onSelect={selectServer}
           disabled={connectionStatus === 'connecting' || loading}
-          onAddServer={openDashboard}
+          onAddServer={() => {/* Handled by ServerManager below */}}
         />
 
         {/* Status */}
         <StatusIndicator status={status} />
+
+        {/* Server Manager */}
+        <ServerManager
+          servers={servers}
+          currentServer={settings?.current_server || ''}
+          onSelect={selectServer}
+          onAdd={addServer}
+          onUpdate={updateServer}
+          onDelete={deleteServer}
+          onSetDefault={setDefaultServer}
+          disabled={connectionStatus === 'connecting' || loading}
+        />
 
         {/* Quick Settings */}
         <QuickSettings

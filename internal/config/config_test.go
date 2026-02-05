@@ -1278,3 +1278,160 @@ func TestBandwidthConfig_Fields(t *testing.T) {
 	assert.Equal(t, "50Mbps", cfg.Upload)
 	assert.Equal(t, "200Mbps", cfg.Download)
 }
+
+// NamedServer and multi-server tests
+
+func TestNamedServer_Fields(t *testing.T) {
+	server := NamedServer{
+		Name:      "Primary Server",
+		Address:   "proxy.example.com:8080",
+		Protocol:  "http",
+		Username:  "user",
+		Password:  "pass",
+		IsDefault: true,
+	}
+
+	assert.Equal(t, "Primary Server", server.Name)
+	assert.Equal(t, "proxy.example.com:8080", server.Address)
+	assert.Equal(t, "http", server.Protocol)
+	assert.Equal(t, "user", server.Username)
+	assert.Equal(t, "pass", server.Password)
+	assert.True(t, server.IsDefault)
+}
+
+func TestClientConfigValidation_ValidServers(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Servers: []NamedServer{
+			{
+				Name:      "Primary",
+				Address:   "us.example.com:8080",
+				Protocol:  "http",
+				IsDefault: true,
+			},
+			{
+				Name:     "Europe",
+				Address:  "eu.example.com:8080",
+				Protocol: "socks5",
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.NoError(t, err)
+}
+
+func TestClientConfigValidation_ServerMissingName(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Servers: []NamedServer{
+			{
+				Name:    "", // Missing name
+				Address: "us.example.com:8080",
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "server name is required")
+}
+
+func TestClientConfigValidation_ServerMissingAddress(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Servers: []NamedServer{
+			{
+				Name:    "Primary",
+				Address: "", // Missing address
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "address is required")
+}
+
+func TestClientConfigValidation_ServerInvalidAddressFormat(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Servers: []NamedServer{
+			{
+				Name:    "Primary",
+				Address: "invalid-no-port", // Invalid format
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "host:port format")
+}
+
+func TestClientConfigValidation_ServerDuplicateName(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Servers: []NamedServer{
+			{
+				Name:    "Primary",
+				Address: "us.example.com:8080",
+			},
+			{
+				Name:    "Primary", // Duplicate name
+				Address: "eu.example.com:8080",
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "duplicate server name")
+}
+
+func TestClientConfigValidation_ServerInvalidProtocol(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Servers: []NamedServer{
+			{
+				Name:     "Primary",
+				Address:  "us.example.com:8080",
+				Protocol: "invalid", // Invalid protocol
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "protocol must be 'http' or 'socks5'")
+}
+
+func TestClientConfigValidation_ServerEmptyProtocolValid(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Servers: []NamedServer{
+			{
+				Name:     "Primary",
+				Address:  "us.example.com:8080",
+				Protocol: "", // Empty is valid (defaults to http)
+			},
+		},
+	}
+
+	err := cfg.Validate()
+	assert.NoError(t, err)
+}
