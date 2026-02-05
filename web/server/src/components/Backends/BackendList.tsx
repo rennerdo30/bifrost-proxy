@@ -4,9 +4,14 @@ import { formatBytes } from '../../utils'
 interface BackendListProps {
   backends: Backend[] | undefined
   isLoading: boolean
+  onEdit?: (name: string) => void
+  onDelete?: (name: string) => void
+  onTest?: (name: string) => void
 }
 
-export function BackendList({ backends, isLoading }: BackendListProps) {
+export function BackendList({ backends, isLoading, onEdit, onDelete, onTest }: BackendListProps) {
+  const hasActions = onEdit || onDelete || onTest
+
   if (isLoading) {
     return (
       <div className="card">
@@ -20,6 +25,7 @@ export function BackendList({ backends, isLoading }: BackendListProps) {
                 <th className="table-header">Connections</th>
                 <th className="table-header">Data Transfer</th>
                 <th className="table-header">Errors</th>
+                {hasActions && <th className="table-header">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -43,6 +49,11 @@ export function BackendList({ backends, isLoading }: BackendListProps) {
                   <td className="table-cell">
                     <div className="h-4 bg-bifrost-border rounded w-12 animate-pulse" />
                   </td>
+                  {hasActions && (
+                    <td className="table-cell">
+                      <div className="h-4 bg-bifrost-border rounded w-20 animate-pulse" />
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -90,6 +101,7 @@ export function BackendList({ backends, isLoading }: BackendListProps) {
               <th className="table-header text-right">Sent</th>
               <th className="table-header text-right">Received</th>
               <th className="table-header text-right">Errors</th>
+              {hasActions && <th className="table-header text-center">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -135,6 +147,48 @@ export function BackendList({ backends, isLoading }: BackendListProps) {
                     <span className="text-bifrost-muted">0</span>
                   )}
                 </td>
+                {hasActions && (
+                  <td className="table-cell">
+                    <div className="flex items-center justify-center gap-1">
+                      {onTest && (
+                        <button
+                          onClick={() => onTest(backend.name)}
+                          className="p-1.5 text-bifrost-muted hover:text-bifrost-accent hover:bg-bifrost-accent/10 rounded transition-colors"
+                          title="Test backend connectivity"
+                          aria-label={`Test backend ${backend.name}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                        </button>
+                      )}
+                      {onEdit && (
+                        <button
+                          onClick={() => onEdit(backend.name)}
+                          className="p-1.5 text-bifrost-muted hover:text-white hover:bg-white/10 rounded transition-colors"
+                          title="Edit backend"
+                          aria-label={`Edit backend ${backend.name}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                      )}
+                      {onDelete && (
+                        <button
+                          onClick={() => onDelete(backend.name)}
+                          className="p-1.5 text-bifrost-muted hover:text-bifrost-error hover:bg-bifrost-error/10 rounded transition-colors"
+                          title="Delete backend"
+                          aria-label={`Delete backend ${backend.name}`}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
