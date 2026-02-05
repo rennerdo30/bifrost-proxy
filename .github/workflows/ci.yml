@@ -225,4 +225,7 @@ jobs:
           # G306: file permissions (already validated)
           # G401/G402/G407/G505: weak crypto (legacy compatibility, TLS testing)
           # G602: slice bounds (runtime checks, bounded by protocol)
-          args: -exclude=G101,G103,G104,G107,G115,G204,G301,G302,G304,G306,G401,G402,G407,G505,G602 -exclude-dir=web ./...
+          # Excluded directories:
+          # web: separate npm-based frontend builds
+          # desktop: separate Wails module with own go.mod and embedded frontend assets
+          args: -exclude=G101,G103,G104,G107,G115,G204,G301,G302,G304,G306,G401,G402,G407,G505,G602 -exclude-dir=web -exclude-dir=desktop ./...
