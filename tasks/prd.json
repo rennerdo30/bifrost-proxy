@@ -119,13 +119,14 @@
         "Add cache settings (max size, TTL defaults)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "frontend",
         "web-client",
         "cache"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-007",
@@ -721,6 +722,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T05:36:03.025Z"
+    "updatedAt": "2026-02-05T05:44:35.556Z"
   }
 }
