@@ -88,19 +88,19 @@ export function StatusIndicator({ status, loading }: StatusIndicatorProps) {
         <div className="pt-2 border-t border-bifrost-border">
           <div className="flex items-center justify-between text-xs">
             <div className="flex items-center gap-1">
-              <svg className="w-3 h-3 text-bifrost-success" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-3 h-3 text-bifrost-success" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 11l5-5m0 0l5 5m-5-5v12" />
               </svg>
               <span className="text-bifrost-text-muted">{formatBytes(status.bytes_sent)}</span>
             </div>
             <div className="flex items-center gap-1">
-              <svg className="w-3 h-3 text-bifrost-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-3 h-3 text-bifrost-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 13l-5 5m0 0l-5-5m5 5V6" />
               </svg>
               <span className="text-bifrost-text-muted">{formatBytes(status.bytes_received)}</span>
             </div>
             <div className="flex items-center gap-1">
-              <svg className="w-3 h-3 text-bifrost-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg className="w-3 h-3 text-bifrost-warning" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
               <span className="text-bifrost-text-muted">{status.active_connections} active</span>

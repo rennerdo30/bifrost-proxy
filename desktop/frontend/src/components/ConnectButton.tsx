@@ -43,7 +43,7 @@ export function ConnectButton({ status, loading, onConnect, onDisconnect }: Conn
   const getIcon = () => {
     if (isConnecting) {
       return (
-        <svg className="w-16 h-16 animate-spin" fill="none" viewBox="0 0 24 24">
+        <svg className="w-16 h-16 animate-spin" fill="none" viewBox="0 0 24 24" aria-hidden="true">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
@@ -53,7 +53,7 @@ export function ConnectButton({ status, loading, onConnect, onDisconnect }: Conn
     if (isConnected) {
       // Power/shield icon for connected state
       return (
-        <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+        <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
         </svg>
       );
@@ -61,7 +61,7 @@ export function ConnectButton({ status, loading, onConnect, onDisconnect }: Conn
 
     // Power icon for disconnected state
     return (
-      <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+      <svg className="w-16 h-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
         <path strokeLinecap="round" strokeLinejoin="round" d="M5.636 5.636a9 9 0 1012.728 0M12 3v9" />
       </svg>
     );

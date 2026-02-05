@@ -40,7 +40,7 @@ function ToggleSwitch({ enabled, onChange, label, description, loading, disabled
             className="animate-spin w-3.5 h-3.5 text-bifrost-accent"
             fill="none"
             viewBox="0 0 24 24"
-            aria-label="Loading"
+            aria-hidden="true"
           >
             <circle
               className="opacity-25"
