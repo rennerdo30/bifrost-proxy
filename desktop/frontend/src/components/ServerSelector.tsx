@@ -7,9 +7,10 @@ interface ServerSelectorProps {
   currentServer: string;
   onSelect: (name: string) => void;
   disabled?: boolean;
+  onAddServer?: () => void;
 }
 
-export function ServerSelector({ servers, currentServer, onSelect, disabled }: ServerSelectorProps) {
+export function ServerSelector({ servers, currentServer, onSelect, disabled, onAddServer }: ServerSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -25,15 +26,26 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  const selectedServer = servers.find(s => s.name === currentServer) || servers[0];
-
-  if (servers.length === 0) {
+  // Handle empty server list before accessing array elements
+  if (!servers || servers.length === 0) {
     return (
-      <div className="card">
-        <p className="text-sm text-bifrost-text-muted text-center">No servers configured</p>
+      <div className="card text-center py-4">
+        <p className="text-sm text-bifrost-text-muted mb-3">No servers configured</p>
+        {onAddServer && (
+          <button
+            onClick={onAddServer}
+            className="px-4 py-2 bg-bifrost-accent text-white rounded-lg hover:bg-bifrost-accent/80 transition-colors text-sm font-medium"
+            aria-label="Add server"
+          >
+            Add Server
+          </button>
+        )}
       </div>
     );
   }
+
+  // Handle edge case where selected server was removed - fall back to first available server
+  const selectedServer = servers.find(s => s.name === currentServer) || servers[0];
 
   return (
     <div className="relative" ref={dropdownRef}>
