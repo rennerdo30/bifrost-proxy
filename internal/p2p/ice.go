@@ -101,7 +101,7 @@ type ICEAgent struct {
 	stunClient *STUNClient
 	turnClient *TURNClient
 
-	localCandidates []*Candidate
+	localCandidates  []*Candidate
 	remoteCandidates []*Candidate
 	candidatePairs   []*CandidatePair
 	selectedPair     *CandidatePair

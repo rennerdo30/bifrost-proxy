@@ -4,7 +4,6 @@ package vpn
 
 import (
 	"bufio"
-	"encoding/hex"
 	"fmt"
 	"net/netip"
 	"os"
@@ -193,29 +192,4 @@ func (l *linuxProcessLookup) getProcessInfo(pid int) (*ProcessInfo, error) {
 	}
 
 	return info, nil
-}
-
-// hexToAddr converts a hex address from /proc/net/* to netip.Addr.
-func hexToAddr(hexStr string) (netip.Addr, error) {
-	data, err := hex.DecodeString(hexStr)
-	if err != nil {
-		return netip.Addr{}, err
-	}
-
-	if len(data) == 4 {
-		// IPv4: reverse bytes
-		return netip.AddrFrom4([4]byte{data[3], data[2], data[1], data[0]}), nil
-	} else if len(data) == 16 {
-		// IPv6: reverse each 32-bit word
-		var addr [16]byte
-		for i := 0; i < 4; i++ {
-			addr[i*4+0] = data[i*4+3]
-			addr[i*4+1] = data[i*4+2]
-			addr[i*4+2] = data[i*4+1]
-			addr[i*4+3] = data[i*4+0]
-		}
-		return netip.AddrFrom16(addr), nil
-	}
-
-	return netip.Addr{}, fmt.Errorf("invalid address length: %d", len(data))
 }

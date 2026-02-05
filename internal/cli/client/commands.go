@@ -465,12 +465,12 @@ func convertToHAR(entries []map[string]interface{}) map[string]interface{} {
 
 	for _, e := range entries {
 		// Type assertions with ok pattern - safely defaulting to zero values
-		method, _ := e["method"].(string)           //nolint:errcheck
-		host, _ := e["host"].(string)               //nolint:errcheck
-		status, _ := e["status"].(float64)          //nolint:errcheck
-		duration, _ := e["duration"].(float64)      //nolint:errcheck
-		timestamp, _ := e["timestamp"].(string)     //nolint:errcheck
-		requestSize, _ := e["request_size"].(float64)  //nolint:errcheck
+		method, _ := e["method"].(string)               //nolint:errcheck
+		host, _ := e["host"].(string)                   //nolint:errcheck
+		status, _ := e["status"].(float64)              //nolint:errcheck
+		duration, _ := e["duration"].(float64)          //nolint:errcheck
+		timestamp, _ := e["timestamp"].(string)         //nolint:errcheck
+		requestSize, _ := e["request_size"].(float64)   //nolint:errcheck
 		responseSize, _ := e["response_size"].(float64) //nolint:errcheck
 
 		// Build URL

@@ -26,4 +26,3 @@ type ProcessLookup interface {
 func NewProcessLookup() ProcessLookup {
 	return newPlatformProcessLookup()
 }
-
