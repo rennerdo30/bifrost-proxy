@@ -1,0 +1,1083 @@
+---
+title: "Architecture"
+description: "System architecture, component interactions, and design patterns for Bifrost Proxy"
+---
+
+# Architecture
+
+This document provides a comprehensive overview of Bifrost Proxy's architecture, including system design, component interactions, data flows, and extension points.
+
+## Overview
+
+Bifrost is a **dual-architecture proxy system** with distinct client and server components:
+
+- **Server (`bifrost-server`)**: Central proxy hub with sophisticated routing, multiple backend types (WireGuard, OpenVPN, HTTP/SOCKS5 proxies), authentication, caching, and rate limiting
+- **Client (`bifrost-client`)**: Local proxy with traffic debugging, split tunneling, VPN mode, mesh networking, and system proxy integration
+
+Both components share common libraries for proxy handling, routing, and configuration, while implementing role-specific functionality.
+
+## High-Level System Architecture
+
+```mermaid
+graph TB
+    subgraph "Client Machine"
+        Browser[Browser / App]
+        Client[Bifrost Client]
+        TUN[TUN Device<br/>VPN Mode]
+        SysProxy[System Proxy<br/>Settings]
+    end
+
+    subgraph "Bifrost Server"
+        HTTP[HTTP Proxy<br/>Port 7080]
+        SOCKS[SOCKS5 Proxy<br/>Port 7180]
+        API[REST API<br/>Port 7081]
+
+        subgraph "Core"
+            Router[Router]
+            Auth[Auth Chain]
+            Cache[Cache Manager]
+            RateLimit[Rate Limiter]
+        end
+
+        subgraph "Backends"
+            Direct[Direct]
+            WG[WireGuard]
+            OVPN[OpenVPN]
+            HTTPProxy[HTTP Proxy]
+            SOCKS5[SOCKS5 Proxy]
+            VPNProviders[VPN Providers<br/>Nord/Mullvad/PIA/Proton]
+        end
+    end
+
+    subgraph "Destinations"
+        Internet[Internet]
+        VPNEndpoint[VPN Endpoint]
+        UpstreamProxy[Upstream Proxy]
+    end
+
+    Browser -->|HTTP/SOCKS5| Client
+    TUN -->|Intercepted Traffic| Client
+    SysProxy -.->|Auto-Configure| Client
+
+    Client -->|Direct| Internet
+    Client -->|Tunnel| HTTP
+    Client -->|Tunnel| SOCKS
+
+    HTTP --> Router
+    SOCKS --> Router
+    Router --> Auth
+    Auth --> RateLimit
+    RateLimit --> Cache
+    Cache --> Direct
+    Cache --> WG
+    Cache --> OVPN
+    Cache --> HTTPProxy
+    Cache --> SOCKS5
+    Cache --> VPNProviders
+
+    Direct --> Internet
+    WG --> VPNEndpoint
+    OVPN --> VPNEndpoint
+    HTTPProxy --> UpstreamProxy
+    SOCKS5 --> UpstreamProxy
+    VPNProviders --> VPNEndpoint
+
+    style Client fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Router fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style Auth fill:#50c878,stroke:#3a9d5f,color:#fff
+```
+
+## Server Architecture
+
+The server is the central proxy hub that handles incoming connections and routes them through various backends.
+
+### Server Component Diagram
+
+```mermaid
+graph TB
+    subgraph "Listeners"
+        HTTPListener[HTTP Listener<br/>:7080]
+        SOCKSListener[SOCKS5 Listener<br/>:7180]
+        APIListener[API Server<br/>:7081]
+        MetricsListener[Metrics Server<br/>:7090]
+    end
+
+    subgraph "Handlers"
+        HTTPHandler[HTTP Handler]
+        SOCKSHandler[SOCKS5 Handler]
+        APIHandler[REST API]
+        WSHub[WebSocket Hub]
+    end
+
+    subgraph "Core Services"
+        BackendMgr[Backend Manager]
+        ServerRouter[Server Router]
+        AuthChain[Auth Chain]
+        RateLimiter[Rate Limiter]
+        AccessCtrl[Access Controller]
+        CacheMgr[Cache Manager]
+        HealthMgr[Health Manager]
+        MetricsCol[Metrics Collector]
+        AccessLog[Access Logger]
+    end
+
+    subgraph "Configuration"
+        Config[Server Config]
+        HotReload[Hot Reload<br/>SIGHUP]
+    end
+
+    HTTPListener --> HTTPHandler
+    SOCKSListener --> SOCKSHandler
+    APIListener --> APIHandler
+    APIListener --> WSHub
+    MetricsListener --> MetricsCol
+
+    HTTPHandler --> AccessCtrl
+    SOCKSHandler --> AccessCtrl
+    AccessCtrl --> RateLimiter
+    RateLimiter --> AuthChain
+    AuthChain --> ServerRouter
+    ServerRouter --> CacheMgr
+    CacheMgr --> BackendMgr
+
+    BackendMgr --> HealthMgr
+    HTTPHandler --> AccessLog
+    SOCKSHandler --> AccessLog
+
+    Config --> HotReload
+    HotReload -.->|Reload| ServerRouter
+    HotReload -.->|Reload| RateLimiter
+    HotReload -.->|Reload| AccessCtrl
+
+    style BackendMgr fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style ServerRouter fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style AuthChain fill:#50c878,stroke:#3a9d5f,color:#fff
+```
+
+### Server Core Structure
+
+The server's main structure in `internal/server/server.go`:
+
+```go
+Server {
+    config           *config.ServerConfig
+    backends         *backend.Manager           // Connection backends
+    router           *router.ServerRouter       // Domain routing
+    authenticator    auth.Authenticator         // Auth chain
+    rateLimiterIP    *ratelimit.KeyedLimiter    // Per-IP rate limiting
+    rateLimiterUser  *ratelimit.KeyedLimiter    // Per-user rate limiting
+    accessController *accesscontrol.Controller  // Whitelist/blacklist
+    bandwidthConfig  *ratelimit.BandwidthConfig // Throttling
+    healthManager    *health.Manager            // Health checks
+    metrics          *metrics.Metrics           // Prometheus metrics
+    metricsCollector *metrics.Collector         // Stats collection
+    accessLogger     accesslog.Logger           // Access logging
+    cacheManager     *cache.Manager             // HTTP caching
+    cacheInterceptor *cache.Interceptor         // Cache interception
+
+    httpListener     net.Listener               // HTTP proxy socket
+    socks5Listener   net.Listener               // SOCKS5 proxy socket
+    metricsServer    *http.Server               // Prometheus /metrics
+    apiServer        *http.Server               // REST API + WebSocket
+    wsHub            *apiserver.WebSocketHub    // WebSocket events
+}
+```
+
+## Client Architecture
+
+The client acts as a local proxy that decides what traffic goes to the server versus direct connections.
+
+### Client Component Diagram
+
+```mermaid
+graph TB
+    subgraph "User Interface"
+        WebUI[Web UI<br/>:7382]
+        Tray[System Tray]
+        CLI[CLI Commands]
+    end
+
+    subgraph "Listeners"
+        HTTPListener[HTTP Listener<br/>:7380]
+        SOCKSListener[SOCKS5 Listener<br/>:7381]
+    end
+
+    subgraph "Core Services"
+        ClientRouter[Client Router]
+        ServerConn[Server Connection]
+        Debugger[Traffic Debugger]
+        SysProxyMgr[System Proxy Manager]
+    end
+
+    subgraph "Advanced Features"
+        VPNMgr[VPN Manager]
+        MeshNode[Mesh Node]
+        SplitTunnel[Split Tunnel Engine]
+        DNSServer[DNS Server]
+    end
+
+    subgraph "Routing Targets"
+        DirectConn[Direct Connection]
+        ServerTunnel[Server Tunnel]
+        Bypass[Bypass/Block]
+    end
+
+    CLI --> WebUI
+    Tray --> WebUI
+    WebUI --> ClientRouter
+
+    HTTPListener --> Debugger
+    SOCKSListener --> Debugger
+    Debugger --> ClientRouter
+
+    ClientRouter --> DirectConn
+    ClientRouter --> ServerConn
+    ClientRouter --> Bypass
+    ServerConn --> ServerTunnel
+
+    VPNMgr --> SplitTunnel
+    VPNMgr --> DNSServer
+    MeshNode --> ClientRouter
+
+    SysProxyMgr -.->|Configure| HTTPListener
+
+    style ClientRouter fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style ServerConn fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style VPNMgr fill:#50c878,stroke:#3a9d5f,color:#fff
+```
+
+### Client Core Structure
+
+The client's main structure in `internal/client/client.go`:
+
+```go
+Client {
+    config          *config.ClientConfig
+    router          *router.ClientRouter       // Domain-based routing
+    serverConn      *ServerConnection          // Connection to proxy server
+    debugger        *debug.Logger              // Traffic debugging
+    vpnManager      *vpn.Manager               // TUN-based VPN mode
+    sysProxyManager sysproxy.Manager           // System proxy settings
+    tray            *tray.Tray                 // System tray UI
+
+    httpListener    net.Listener               // HTTP proxy socket
+    socks5Listener  net.Listener               // SOCKS5 proxy socket
+    apiServer       *http.Server               // Web UI API server
+}
+```
+
+## Data Flow Diagrams
+
+### HTTP Proxy Request Flow (Server)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant L as Listener
+    participant AC as Access Control
+    participant RL as Rate Limiter
+    participant Auth as Authenticator
+    participant R as Router
+    participant Cache as Cache
+    participant B as Backend
+    participant T as Target
+
+    C->>L: HTTP Request
+    L->>AC: Check IP whitelist/blacklist
+
+    alt IP Blocked
+        AC-->>C: 403 Forbidden
+    else IP Allowed
+        AC->>RL: Check rate limit
+
+        alt Rate Limited
+            RL-->>C: 429 Too Many Requests
+        else Within Limit
+            RL->>Auth: Authenticate (Proxy-Authorization)
+
+            alt Auth Failed
+                Auth-->>C: 407 Proxy Auth Required
+            else Auth Success
+                Auth->>R: Route request
+                R->>R: Match domain to backend
+                R->>Cache: Check cache
+
+                alt Cache Hit
+                    Cache-->>C: Cached Response
+                else Cache Miss
+                    Cache->>B: Get backend
+                    B->>T: Dial connection
+                    T-->>B: Connection established
+                    B-->>Cache: Stream response
+                    Cache->>Cache: Store if cacheable
+                    Cache-->>C: Response
+                end
+            end
+        end
+    end
+```
+
+### Client Routing Decision Flow
+
+```mermaid
+flowchart TD
+    Start[Incoming Request] --> Parse[Parse Host/Domain]
+    Parse --> Match[Router.Match Domain]
+
+    Match --> Decision{Routing<br/>Action?}
+
+    Decision -->|server| Server[Route to Server]
+    Decision -->|direct| Direct[Direct Connection]
+    Decision -->|bypass| Bypass[Bypass/Block]
+
+    Server --> Protocol{Server<br/>Protocol?}
+    Protocol -->|HTTP| HTTPConnect[HTTP CONNECT]
+    Protocol -->|SOCKS5| SOCKS5Connect[SOCKS5 Connect]
+
+    HTTPConnect --> Auth{Auth<br/>Enabled?}
+    SOCKS5Connect --> Auth
+
+    Auth -->|Yes| AddAuth[Add Proxy-Authorization]
+    Auth -->|No| Connect[Establish Connection]
+    AddAuth --> Connect
+
+    Connect --> Retry{Success?}
+    Retry -->|No| RetryLogic[Retry with delay]
+    RetryLogic --> Connect
+    Retry -->|Yes| Stream[Bidirectional Stream]
+
+    Direct --> DirectDial[TCP Dial to Target]
+    DirectDial --> Stream
+
+    Stream --> Complete[Request Complete]
+
+    style Decision fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style Protocol fill:#4a90e2,stroke:#2c5aa0,color:#fff
+```
+
+### VPN Mode Traffic Flow
+
+```mermaid
+flowchart TD
+    subgraph "Application Layer"
+        App[Application]
+    end
+
+    subgraph "TUN Device"
+        TUN[bifrost0<br/>TUN Interface]
+    end
+
+    subgraph "VPN Manager"
+        Intercept[Packet Interceptor]
+        DNS[DNS Server]
+        Split[Split Tunnel Engine]
+        ConnTrack[Connection Tracker]
+    end
+
+    subgraph "Routing"
+        SplitCheck{Split<br/>Tunnel?}
+        DirectPath[Direct Path]
+        ProxyPath[Proxy Path]
+    end
+
+    subgraph "Server Connection"
+        TCPRelay[TCP Relay]
+        UDPRelay[UDP Relay]
+    end
+
+    App -->|IP Packet| TUN
+    TUN --> Intercept
+    Intercept --> DNS
+    DNS --> Split
+    Split --> SplitCheck
+
+    SplitCheck -->|Excluded| DirectPath
+    SplitCheck -->|Included| ConnTrack
+
+    ConnTrack --> TCPRelay
+    ConnTrack --> UDPRelay
+
+    TCPRelay --> ProxyPath
+    UDPRelay --> ProxyPath
+
+    DirectPath --> Internet[Internet]
+    ProxyPath --> Server[Bifrost Server]
+    Server --> Internet
+
+    style TUN fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Split fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style SplitCheck fill:#50c878,stroke:#3a9d5f,color:#fff
+```
+
+## Threading and Concurrency Model
+
+### Goroutine Architecture
+
+Bifrost uses Go's concurrency primitives extensively for high-performance proxy handling.
+
+```mermaid
+graph TB
+    subgraph "Main Goroutine"
+        Main[main]
+        Signals[Signal Handler]
+    end
+
+    subgraph "Listener Goroutines"
+        HTTPServe[serveHTTP]
+        SOCKSServe[serveSOCKS5]
+        APIServe[serveAPI]
+    end
+
+    subgraph "Per-Connection Goroutines"
+        Conn1[Connection Handler 1]
+        Conn2[Connection Handler 2]
+        ConnN[Connection Handler N]
+    end
+
+    subgraph "Bidirectional Copy"
+        CopyUp[Copy Client→Server]
+        CopyDown[Copy Server→Client]
+    end
+
+    subgraph "Background Workers"
+        HealthCheck[Health Check Worker]
+        MetricsCollect[Metrics Collector]
+        CacheExpiry[Cache Expiry Worker]
+        MACExpiry[MAC Table Expiry]
+    end
+
+    subgraph "Synchronization"
+        WG[sync.WaitGroup]
+        Mutex[sync.RWMutex]
+        Atomic[atomic.Int64]
+        Channels[Channels]
+    end
+
+    Main --> Signals
+    Main --> HTTPServe
+    Main --> SOCKSServe
+    Main --> APIServe
+
+    HTTPServe --> Conn1
+    HTTPServe --> Conn2
+    SOCKSServe --> ConnN
+
+    Conn1 --> CopyUp
+    Conn1 --> CopyDown
+
+    Main --> HealthCheck
+    Main --> MetricsCollect
+    Main --> CacheExpiry
+    Main --> MACExpiry
+
+    WG -.->|Track| HTTPServe
+    WG -.->|Track| SOCKSServe
+    Mutex -.->|Protect| Backend Manager
+    Mutex -.->|Protect| Router
+    Atomic -.->|Count| Active Connections
+
+    style Main fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style WG fill:#7b68ee,stroke:#5a4fcf,color:#fff
+```
+
+### Concurrency Patterns
+
+| Pattern | Usage | Implementation |
+|---------|-------|----------------|
+| **Goroutine per Connection** | Handle concurrent clients | `go handleHTTPConn(conn)` |
+| **WaitGroup** | Graceful shutdown | Track all connection handlers |
+| **RWMutex** | Shared state access | Backend Manager, Router, Cache |
+| **Atomic Operations** | Connection counters | Active connection tracking |
+| **Channels** | Event broadcasting | WebSocket hub, shutdown signals |
+| **Context** | Request lifecycle | Timeout, cancellation, tracing |
+
+### Graceful Shutdown Sequence
+
+```mermaid
+stateDiagram-v2
+    [*] --> Running: Server Started
+
+    Running --> Stopping: SIGTERM/SIGINT
+
+    Stopping --> CloseListeners: Stop Accepting
+    CloseListeners --> DrainConnections: Drain Active
+
+    DrainConnections --> Cleanup: All Drained
+    DrainConnections --> Cleanup: Timeout (30s)
+
+    Cleanup --> StopBackends: Close Backends
+    StopBackends --> FlushLogs: Flush Logs
+    FlushLogs --> [*]: Exit
+
+    note right of DrainConnections
+        Wait for active connections
+        to complete or timeout
+    end note
+```
+
+### Thread Safety Guarantees
+
+| Component | Protection | Notes |
+|-----------|------------|-------|
+| Backend Manager | `sync.RWMutex` | Safe add/remove during operation |
+| Route Table | `sync.RWMutex` | Hot-reload safe |
+| Rate Limiters | `atomic` operations | Lock-free for performance |
+| Cache Manager | `sync.RWMutex` | Concurrent reads, exclusive writes |
+| MAC Table | `sync.RWMutex` | High-read, low-write workload |
+| Metrics | `atomic` counters | No locking overhead |
+| WebSocket Hub | Channel-based | Broadcast to all clients |
+
+## Module Dependencies
+
+### Package Dependency Graph
+
+```mermaid
+graph TB
+    subgraph "Commands"
+        CmdServer[cmd/server]
+        CmdClient[cmd/client]
+    end
+
+    subgraph "Core Packages"
+        Server[internal/server]
+        Client[internal/client]
+        Config[internal/config]
+        Logging[internal/logging]
+    end
+
+    subgraph "Proxy Layer"
+        Proxy[internal/proxy]
+        Router[internal/router]
+        Matcher[internal/matcher]
+    end
+
+    subgraph "Backend Layer"
+        Backend[internal/backend]
+        Health[internal/health]
+    end
+
+    subgraph "Security Layer"
+        Auth[internal/auth]
+        RateLimit[internal/ratelimit]
+        AccessControl[internal/accesscontrol]
+    end
+
+    subgraph "Feature Packages"
+        Cache[internal/cache]
+        Metrics[internal/metrics]
+        AccessLog[internal/accesslog]
+        VPN[internal/vpn]
+        Mesh[internal/mesh]
+        Frame[internal/frame]
+    end
+
+    subgraph "API Layer"
+        APIServer[internal/api/server]
+        APIClient[internal/api/client]
+    end
+
+    CmdServer --> Server
+    CmdClient --> Client
+
+    Server --> Config
+    Server --> Proxy
+    Server --> Backend
+    Server --> Router
+    Server --> Auth
+    Server --> RateLimit
+    Server --> AccessControl
+    Server --> Cache
+    Server --> Metrics
+    Server --> AccessLog
+    Server --> Health
+    Server --> APIServer
+    Server --> Logging
+
+    Client --> Config
+    Client --> Proxy
+    Client --> Router
+    Client --> VPN
+    Client --> Mesh
+    Client --> APIClient
+    Client --> Logging
+
+    Proxy --> Backend
+    Proxy --> Router
+    Router --> Matcher
+    Mesh --> Frame
+    VPN --> Router
+
+    Backend --> Health
+    Auth --> Config
+
+    style Server fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Client fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Backend fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style Auth fill:#50c878,stroke:#3a9d5f,color:#fff
+```
+
+### Import Hierarchy
+
+The codebase follows a strict import hierarchy to prevent circular dependencies:
+
+1. **Utilities** (`internal/util/`, `internal/logging/`) - No internal dependencies
+2. **Configuration** (`internal/config/`) - Only utilities
+3. **Core Abstractions** (`internal/backend/`, `internal/auth/`, `internal/matcher/`) - Config + utilities
+4. **Features** (`internal/cache/`, `internal/ratelimit/`, etc.) - Abstractions + config
+5. **Handlers** (`internal/proxy/`, `internal/router/`) - Features + abstractions
+6. **Applications** (`internal/server/`, `internal/client/`) - All internal packages
+7. **Commands** (`cmd/`) - Applications only
+
+## Extension Points and Plugin Architecture
+
+### Authentication Plugin System
+
+The authentication system uses a plugin architecture allowing multiple providers to be combined in a chain.
+
+```mermaid
+graph TB
+    subgraph "Plugin Registry"
+        Registry[Plugin Registry]
+        Factory[Auth Factory]
+    end
+
+    subgraph "Plugin Interface"
+        Interface[Authenticator Interface]
+    end
+
+    subgraph "Built-in Plugins"
+        None[none]
+        Native[native]
+        System[system]
+        LDAP[ldap]
+        OAuth[oauth]
+        JWT[jwt]
+        mTLS[mtls]
+        TOTP[totp]
+        HOTP[hotp]
+        Kerberos[kerberos]
+        NTLM[ntlm]
+        APIKey[apikey]
+    end
+
+    subgraph "MFA Wrapper"
+        MFA[MFA Wrapper]
+        Primary[Primary Auth]
+        Secondary[OTP Provider]
+    end
+
+    subgraph "Auth Chain"
+        Chain[Chain Authenticator]
+        Priority[Priority Order]
+    end
+
+    Registry --> Factory
+    Factory --> Interface
+
+    Interface --> None
+    Interface --> Native
+    Interface --> System
+    Interface --> LDAP
+    Interface --> OAuth
+    Interface --> JWT
+    Interface --> mTLS
+    Interface --> TOTP
+    Interface --> HOTP
+    Interface --> Kerberos
+    Interface --> NTLM
+    Interface --> APIKey
+
+    MFA --> Primary
+    MFA --> Secondary
+    Primary --> Native
+    Secondary --> TOTP
+
+    Chain --> Priority
+    Priority --> LDAP
+    Priority --> Native
+    Priority --> None
+
+    style Registry fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Interface fill:#7b68ee,stroke:#5a4fcf,color:#fff
+    style Chain fill:#50c878,stroke:#3a9d5f,color:#fff
+```
+
+#### Authenticator Interface
+
+```go
+type Authenticator interface {
+    // Authenticate validates credentials and returns user info
+    Authenticate(ctx context.Context, username, password string) (*UserInfo, error)
+
+    // Name returns the unique identifier for this plugin
+    Name() string
+
+    // Type returns the plugin type (e.g., "native", "ldap")
+    Type() string
+}
+
+type UserInfo struct {
+    Username string
+    Groups   []string
+    Email    string
+    FullName string
+    Metadata map[string]string
+}
+```
+
+#### Registering a New Auth Plugin
+
+Plugins are registered via Go's `init()` function:
+
+```go
+// internal/auth/plugin/myplugin/myplugin.go
+func init() {
+    auth.RegisterPlugin("myplugin", func(cfg map[string]interface{}) (auth.Authenticator, error) {
+        return NewMyPlugin(cfg)
+    })
+}
+```
+
+Import the plugin in `cmd/server/main.go`:
+
+```go
+import (
+    _ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/myplugin"
+)
+```
+
+### Backend Plugin System
+
+Backends are created via a factory pattern, making it easy to add new backend types.
+
+```mermaid
+graph LR
+    subgraph "Backend Interface"
+        Interface[Backend Interface]
+    end
+
+    subgraph "Factory"
+        Factory[Backend Factory]
+        Create[Create Method]
+    end
+
+    subgraph "Backend Types"
+        Direct[direct]
+        HTTP[http_proxy]
+        SOCKS5[socks5_proxy]
+        WG[wireguard]
+        OVPN[openvpn]
+        Nord[nordvpn]
+        Mullvad[mullvad]
+        PIA[pia]
+        Proton[protonvpn]
+    end
+
+    Factory --> Create
+    Create --> Interface
+
+    Interface --> Direct
+    Interface --> HTTP
+    Interface --> SOCKS5
+    Interface --> WG
+    Interface --> OVPN
+    Interface --> Nord
+    Interface --> Mullvad
+    Interface --> PIA
+    Interface --> Proton
+
+    style Factory fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Interface fill:#7b68ee,stroke:#5a4fcf,color:#fff
+```
+
+#### Backend Interface
+
+```go
+type Backend interface {
+    // Core operations
+    Name() string
+    Type() string
+    Dial(ctx context.Context, network, address string) (net.Conn, error)
+    DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error)
+
+    // Lifecycle
+    Start(ctx context.Context) error
+    Stop(ctx context.Context) error
+
+    // Health
+    IsHealthy() bool
+    Stats() Stats
+}
+
+type Stats struct {
+    ActiveConnections int64
+    TotalConnections  int64
+    BytesSent         int64
+    BytesReceived     int64
+    ErrorCount        int64
+    LastError         error
+    Latency           time.Duration
+    Uptime            time.Duration
+}
+```
+
+#### Adding a New Backend Type
+
+1. Create the backend implementation:
+
+```go
+// internal/backend/mybackend.go
+type MyBackend struct {
+    name   string
+    config MyBackendConfig
+    // ...
+}
+
+func NewMyBackend(name string, cfg MyBackendConfig) (*MyBackend, error) {
+    return &MyBackend{name: name, config: cfg}, nil
+}
+
+func (b *MyBackend) Dial(ctx context.Context, network, address string) (net.Conn, error) {
+    // Implementation
+}
+
+// Implement remaining Backend interface methods...
+```
+
+2. Register in the factory (`internal/backend/factory.go`):
+
+```go
+case "mybackend":
+    return NewMyBackend(name, cfg.MyBackend)
+```
+
+3. Add configuration struct (`internal/config/server.go`):
+
+```go
+type BackendConfig struct {
+    // ...existing fields...
+    MyBackend MyBackendConfig `yaml:"mybackend"`
+}
+```
+
+### Cache Storage Backends
+
+The cache system supports pluggable storage backends.
+
+```mermaid
+graph TB
+    subgraph "Cache Manager"
+        Manager[Cache Manager]
+        Rules[Rule Matcher]
+        KeyGen[Key Generator]
+    end
+
+    subgraph "Storage Interface"
+        Interface[Storage Interface]
+    end
+
+    subgraph "Storage Backends"
+        Memory[Memory Storage]
+        Disk[Disk Storage]
+        Tiered[Tiered Storage<br/>Memory + Disk]
+    end
+
+    Manager --> Rules
+    Manager --> KeyGen
+    Manager --> Interface
+
+    Interface --> Memory
+    Interface --> Disk
+    Interface --> Tiered
+
+    Tiered --> Memory
+    Tiered --> Disk
+
+    style Manager fill:#4a90e2,stroke:#2c5aa0,color:#fff
+    style Interface fill:#7b68ee,stroke:#5a4fcf,color:#fff
+```
+
+#### Storage Interface
+
+```go
+type Storage interface {
+    Get(key string) (*CacheEntry, bool)
+    Set(key string, entry *CacheEntry) error
+    Delete(key string) error
+    Clear() error
+    Stats() StorageStats
+}
+```
+
+### Hot-Reloadable Components
+
+Certain components support hot-reload without dropping connections:
+
+| Component | Hot-Reload | Signal |
+|-----------|------------|--------|
+| Routes | ✅ Yes | `SIGHUP` |
+| Rate Limits | ✅ Yes | `SIGHUP` |
+| Access Control | ✅ Yes | `SIGHUP` |
+| Backends | ✅ Yes | `SIGHUP` |
+| Cache Rules | ✅ Yes | `SIGHUP` |
+| Log Levels | ✅ Yes | `SIGHUP` |
+| Port Bindings | ❌ No | Restart |
+| TLS Certificates | ❌ No | Restart |
+| Auth Mode | ❌ No | Restart |
+
+## Design Patterns
+
+### Patterns Used
+
+| Pattern | Usage | Example |
+|---------|-------|---------|
+| **Factory** | Object creation | Backend Factory, Auth Factory |
+| **Chain of Responsibility** | Auth chain | Try providers in priority order |
+| **Strategy** | Algorithm selection | Load balancer strategies |
+| **Observer** | Event notification | WebSocket broadcasting |
+| **Decorator** | Wrapping behavior | Health-wrapped backends |
+| **Template Method** | Common flow | Proxy handler base |
+
+### Factory Pattern Example
+
+```mermaid
+classDiagram
+    class BackendFactory {
+        +Create(name, type, config) Backend
+    }
+
+    class Backend {
+        <<interface>>
+        +Name() string
+        +Type() string
+        +Dial(ctx, network, addr) Conn
+        +Start(ctx) error
+        +Stop(ctx) error
+    }
+
+    class DirectBackend {
+        +Name() string
+        +Dial(ctx, network, addr) Conn
+    }
+
+    class WireGuardBackend {
+        +Name() string
+        +Dial(ctx, network, addr) Conn
+    }
+
+    class HTTPProxyBackend {
+        +Name() string
+        +Dial(ctx, network, addr) Conn
+    }
+
+    BackendFactory ..> Backend : creates
+    Backend <|.. DirectBackend
+    Backend <|.. WireGuardBackend
+    Backend <|.. HTTPProxyBackend
+```
+
+### Chain of Responsibility (Auth)
+
+```mermaid
+sequenceDiagram
+    participant H as Handler
+    participant C as Chain Auth
+    participant L as LDAP Plugin
+    participant N as Native Plugin
+    participant O as None Plugin
+
+    H->>C: Authenticate(user, pass)
+    C->>L: Authenticate(user, pass)
+
+    alt LDAP Success
+        L-->>C: UserInfo
+        C-->>H: UserInfo
+    else LDAP Failure
+        L-->>C: Error
+        C->>N: Authenticate(user, pass)
+
+        alt Native Success
+            N-->>C: UserInfo
+            C-->>H: UserInfo
+        else Native Failure
+            N-->>C: Error
+            C->>O: Authenticate(user, pass)
+            O-->>C: Anonymous UserInfo
+            C-->>H: UserInfo
+        end
+    end
+```
+
+## Performance Optimizations
+
+### Connection Handling
+
+- **Connection Pooling**: Keep-alive connections to backends
+- **Bidirectional Copy**: Concurrent goroutines for each direction
+- **Zero-Copy**: Where possible, avoid buffer copies
+- **Buffer Pooling**: Reuse buffers via `sync.Pool`
+
+### Memory Management
+
+- **Pre-allocated Maps**: Sized based on expected load
+- **Entry Expiration**: Prevent unbounded growth in caches/tables
+- **Lazy Initialization**: Defer expensive operations
+
+### Network Optimizations
+
+- **TCP Fast Open**: Supported on compatible platforms
+- **TCP_NODELAY**: Disable Nagle's algorithm for latency
+- **SO_REUSEPORT**: Multiple listeners for load distribution
+
+### Configuration Tuning
+
+```yaml
+# Low-power device optimizations
+metrics:
+  collection_interval: "60s"  # Reduce from 15s default
+
+websocket:
+  max_clients: 10  # Reduce from 100 default
+
+connection_limits:
+  max_connections: 1000  # Reduce from 10000
+```
+
+## Context and Request Tracing
+
+### Request Context Fields
+
+Each request carries context with tracing information:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `request_id` | string | Unique ID (nanosecond timestamp) |
+| `client_ip` | string | Remote client address |
+| `start_time` | time.Time | Request start timestamp |
+| `domain` | string | Target domain/host |
+| `username` | string | Authenticated user (if any) |
+| `backend` | string | Selected backend name |
+
+### Tracing Flow
+
+```mermaid
+flowchart LR
+    Start[Request Received] --> ID[Generate Request ID]
+    ID --> Ctx[Create Context]
+    Ctx --> Log1[Log Start]
+    Log1 --> Process[Process Request]
+    Process --> Log2[Log Complete]
+    Log2 --> Metrics[Record Metrics]
+
+    Ctx -->|request_id| Log1
+    Ctx -->|request_id| Log2
+    Ctx -->|request_id| Metrics
+```
+
+## Related Documentation
+
+- [Frame Processing](/internals/frame-processing/) - Ethernet frame handling for mesh networking
+- [Authentication](/configuration/authentication/) - Auth plugin configuration
+- [Backends](/configuration/backends/) - Backend types and configuration
+- [VPN Mode](/vpn-mode/) - TUN-based VPN configuration
+- [Mesh Networking](/mesh-networking/) - P2P mesh setup
