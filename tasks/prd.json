@@ -718,12 +718,13 @@
         "Include FAQ section"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "documentation",
         "troubleshooting"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-035",
@@ -748,6 +749,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T07:42:17.990Z"
+    "updatedAt": "2026-02-05T07:50:58.809Z"
   }
 }
