@@ -3,10 +3,10 @@
   "sessionId": "830a6708-97ad-4154-a11e-ce4394b62c30",
   "status": "running",
   "startedAt": "2026-02-05T05:20:13.807Z",
-  "updatedAt": "2026-02-05T07:12:25.447Z",
-  "currentIteration": 26,
+  "updatedAt": "2026-02-05T07:16:06.393Z",
+  "currentIteration": 27,
   "maxIterations": 35,
-  "tasksCompleted": 26,
+  "tasksCompleted": 27,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -173,8 +173,8 @@
       {
         "id": "US-027",
         "title": "Document frame processing system",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-028",
@@ -486,6 +486,16 @@
       "durationMs": 255014,
       "startedAt": "2026-02-05T07:04:22.061Z",
       "endedAt": "2026-02-05T07:08:37.075Z"
+    },
+    {
+      "iteration": 27,
+      "status": "completed",
+      "taskId": "US-027",
+      "taskTitle": "Document frame processing system",
+      "taskCompleted": true,
+      "durationMs": 227303,
+      "startedAt": "2026-02-05T07:08:38.141Z",
+      "endedAt": "2026-02-05T07:12:25.444Z"
     }
   ],
   "skippedTaskIds": [],

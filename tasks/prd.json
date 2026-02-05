@@ -589,12 +589,13 @@
         "Include screenshots or diagrams for each platform"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "documentation",
         "system-proxy"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-029",
@@ -742,6 +743,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T07:12:25.445Z"
+    "updatedAt": "2026-02-05T07:16:06.390Z"
   }
 }
