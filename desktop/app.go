@@ -58,9 +58,21 @@ type ServerInfo struct {
 	Name      string `json:"name"`
 	Address   string `json:"address"`
 	Protocol  string `json:"protocol"`
+	Username  string `json:"username,omitempty"`
+	Password  string `json:"password,omitempty"`
 	IsDefault bool   `json:"is_default"`
 	Latency   int    `json:"latency_ms,omitempty"`
 	Status    string `json:"status"`
+}
+
+// ServerConfig represents server configuration for add/edit operations.
+type ServerConfig struct {
+	Name      string `json:"name"`
+	Address   string `json:"address"`
+	Protocol  string `json:"protocol"`
+	Username  string `json:"username,omitempty"`
+	Password  string `json:"password,omitempty"`
+	IsDefault bool   `json:"is_default,omitempty"`
 }
 
 // Preferences stores user preferences for the quick access GUI.
@@ -348,11 +360,36 @@ func (a *App) GetServers() ([]ServerInfo, error) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	// Currently we only support a single server from config
-	// In the future this could be extended to support multiple servers
 	servers := []ServerInfo{}
 
-	if a.clientCfg != nil && a.clientCfg.Server.Address != "" {
+	if a.clientCfg == nil {
+		return servers, nil
+	}
+
+	// Get the currently active server address
+	activeAddress := a.clientCfg.Server.Address
+
+	// Return servers from the Servers slice
+	if len(a.clientCfg.Servers) > 0 {
+		for _, s := range a.clientCfg.Servers {
+			status := "available"
+			// Check if this is the active server
+			if s.Address == activeAddress && a.client != nil && a.client.Running() {
+				status = "connected"
+			}
+
+			servers = append(servers, ServerInfo{
+				Name:      s.Name,
+				Address:   s.Address,
+				Protocol:  s.Protocol,
+				Username:  s.Username,
+				Password:  s.Password,
+				IsDefault: s.IsDefault,
+				Status:    status,
+			})
+		}
+	} else if a.clientCfg.Server.Address != "" {
+		// Backwards compatibility: if no named servers but Server is configured
 		status := "available"
 		if a.client != nil && a.client.Running() {
 			status = "connected"
@@ -362,6 +399,8 @@ func (a *App) GetServers() ([]ServerInfo, error) {
 			Name:      "Default Server",
 			Address:   a.clientCfg.Server.Address,
 			Protocol:  a.clientCfg.Server.Protocol,
+			Username:  a.clientCfg.Server.Username,
+			Password:  a.clientCfg.Server.Password,
 			IsDefault: true,
 			Status:    status,
 		})
@@ -373,11 +412,301 @@ func (a *App) GetServers() ([]ServerInfo, error) {
 // SelectServer selects a server to connect to.
 func (a *App) SelectServer(serverName string) error {
 	a.mu.Lock()
-	a.preferences.DefaultServer = serverName
-	a.mu.Unlock()
+	defer a.mu.Unlock()
 
-	a.savePreferences()
-	slog.Info("selected server", "server", serverName)
+	if a.clientCfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	// Find the server by name
+	var selectedServer *config.NamedServer
+	for i := range a.clientCfg.Servers {
+		if a.clientCfg.Servers[i].Name == serverName {
+			selectedServer = &a.clientCfg.Servers[i]
+			break
+		}
+	}
+
+	if selectedServer == nil {
+		// Check legacy Server field for backwards compatibility
+		if a.clientCfg.Server.Address != "" && serverName == "Default Server" {
+			// Already using the default server
+			a.preferences.DefaultServer = serverName
+			return nil
+		}
+		return fmt.Errorf("server not found: %s", serverName)
+	}
+
+	// Update the active Server connection with the selected server's settings
+	a.clientCfg.Server.Address = selectedServer.Address
+	a.clientCfg.Server.Protocol = selectedServer.Protocol
+	a.clientCfg.Server.Username = selectedServer.Username
+	a.clientCfg.Server.Password = selectedServer.Password
+
+	// Update preferences
+	a.preferences.DefaultServer = serverName
+
+	// Save config
+	if a.configPath != "" {
+		if err := config.Save(a.configPath, a.clientCfg); err != nil {
+			slog.Error("failed to save config after server selection", "error", err)
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	slog.Info("selected server", "server", serverName, "address", selectedServer.Address)
+	return nil
+}
+
+// AddServer adds a new server to the configuration.
+func (a *App) AddServer(server *ServerConfig) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.clientCfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	if server.Name == "" {
+		return fmt.Errorf("server name is required")
+	}
+
+	if server.Address == "" {
+		return fmt.Errorf("server address is required")
+	}
+
+	// Check for duplicate names
+	for _, s := range a.clientCfg.Servers {
+		if s.Name == server.Name {
+			return fmt.Errorf("server with name '%s' already exists", server.Name)
+		}
+	}
+
+	// Set default protocol if not specified
+	protocol := server.Protocol
+	if protocol == "" {
+		protocol = "http"
+	}
+
+	// If this is set as default, clear default flag from other servers
+	if server.IsDefault {
+		for i := range a.clientCfg.Servers {
+			a.clientCfg.Servers[i].IsDefault = false
+		}
+	}
+
+	// If this is the first server, make it the default
+	if len(a.clientCfg.Servers) == 0 {
+		server.IsDefault = true
+	}
+
+	newServer := config.NamedServer{
+		Name:      server.Name,
+		Address:   server.Address,
+		Protocol:  protocol,
+		Username:  server.Username,
+		Password:  server.Password,
+		IsDefault: server.IsDefault,
+	}
+
+	a.clientCfg.Servers = append(a.clientCfg.Servers, newServer)
+
+	// If this is the default server, also set it as the active server
+	if server.IsDefault {
+		a.clientCfg.Server.Address = newServer.Address
+		a.clientCfg.Server.Protocol = newServer.Protocol
+		a.clientCfg.Server.Username = newServer.Username
+		a.clientCfg.Server.Password = newServer.Password
+		a.preferences.DefaultServer = server.Name
+	}
+
+	// Save config
+	if a.configPath != "" {
+		if err := config.Save(a.configPath, a.clientCfg); err != nil {
+			slog.Error("failed to save config after adding server", "error", err)
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	slog.Info("added server", "name", server.Name, "address", server.Address)
+	return nil
+}
+
+// UpdateServer updates an existing server configuration.
+func (a *App) UpdateServer(originalName string, server *ServerConfig) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.clientCfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	if server.Name == "" {
+		return fmt.Errorf("server name is required")
+	}
+
+	if server.Address == "" {
+		return fmt.Errorf("server address is required")
+	}
+
+	// Find the server by original name
+	var serverIndex = -1
+	for i := range a.clientCfg.Servers {
+		if a.clientCfg.Servers[i].Name == originalName {
+			serverIndex = i
+			break
+		}
+	}
+
+	if serverIndex == -1 {
+		return fmt.Errorf("server not found: %s", originalName)
+	}
+
+	// If renaming, check for duplicate names
+	if server.Name != originalName {
+		for _, s := range a.clientCfg.Servers {
+			if s.Name == server.Name {
+				return fmt.Errorf("server with name '%s' already exists", server.Name)
+			}
+		}
+	}
+
+	// Set default protocol if not specified
+	protocol := server.Protocol
+	if protocol == "" {
+		protocol = "http"
+	}
+
+	// If this is set as default, clear default flag from other servers
+	if server.IsDefault {
+		for i := range a.clientCfg.Servers {
+			a.clientCfg.Servers[i].IsDefault = false
+		}
+	}
+
+	// Update the server
+	a.clientCfg.Servers[serverIndex] = config.NamedServer{
+		Name:      server.Name,
+		Address:   server.Address,
+		Protocol:  protocol,
+		Username:  server.Username,
+		Password:  server.Password,
+		IsDefault: server.IsDefault,
+	}
+
+	// If this is the default server or was the active server, update the active connection
+	if server.IsDefault || a.clientCfg.Server.Address == a.clientCfg.Servers[serverIndex].Address {
+		a.clientCfg.Server.Address = server.Address
+		a.clientCfg.Server.Protocol = protocol
+		a.clientCfg.Server.Username = server.Username
+		a.clientCfg.Server.Password = server.Password
+		a.preferences.DefaultServer = server.Name
+	}
+
+	// Save config
+	if a.configPath != "" {
+		if err := config.Save(a.configPath, a.clientCfg); err != nil {
+			slog.Error("failed to save config after updating server", "error", err)
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	slog.Info("updated server", "original_name", originalName, "new_name", server.Name)
+	return nil
+}
+
+// DeleteServer removes a server from the configuration.
+func (a *App) DeleteServer(serverName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.clientCfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	// Find the server by name
+	var serverIndex = -1
+	var wasDefault bool
+	var wasActive bool
+	for i := range a.clientCfg.Servers {
+		if a.clientCfg.Servers[i].Name == serverName {
+			serverIndex = i
+			wasDefault = a.clientCfg.Servers[i].IsDefault
+			wasActive = a.clientCfg.Servers[i].Address == a.clientCfg.Server.Address
+			break
+		}
+	}
+
+	if serverIndex == -1 {
+		return fmt.Errorf("server not found: %s", serverName)
+	}
+
+	// Remove the server
+	a.clientCfg.Servers = append(a.clientCfg.Servers[:serverIndex], a.clientCfg.Servers[serverIndex+1:]...)
+
+	// If the deleted server was the default or active, select a new default
+	if (wasDefault || wasActive) && len(a.clientCfg.Servers) > 0 {
+		// Set the first server as the new default
+		a.clientCfg.Servers[0].IsDefault = true
+		a.clientCfg.Server.Address = a.clientCfg.Servers[0].Address
+		a.clientCfg.Server.Protocol = a.clientCfg.Servers[0].Protocol
+		a.clientCfg.Server.Username = a.clientCfg.Servers[0].Username
+		a.clientCfg.Server.Password = a.clientCfg.Servers[0].Password
+		a.preferences.DefaultServer = a.clientCfg.Servers[0].Name
+	} else if len(a.clientCfg.Servers) == 0 {
+		// No servers left, clear the active connection
+		a.clientCfg.Server.Address = ""
+		a.clientCfg.Server.Protocol = "http"
+		a.clientCfg.Server.Username = ""
+		a.clientCfg.Server.Password = ""
+		a.preferences.DefaultServer = ""
+	}
+
+	// Save config
+	if a.configPath != "" {
+		if err := config.Save(a.configPath, a.clientCfg); err != nil {
+			slog.Error("failed to save config after deleting server", "error", err)
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	slog.Info("deleted server", "name", serverName)
+	return nil
+}
+
+// SetDefaultServer sets a server as the default.
+func (a *App) SetDefaultServer(serverName string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.clientCfg == nil {
+		return fmt.Errorf("config not loaded")
+	}
+
+	// Find the server by name
+	var found bool
+	for i := range a.clientCfg.Servers {
+		if a.clientCfg.Servers[i].Name == serverName {
+			a.clientCfg.Servers[i].IsDefault = true
+			found = true
+		} else {
+			a.clientCfg.Servers[i].IsDefault = false
+		}
+	}
+
+	if !found {
+		return fmt.Errorf("server not found: %s", serverName)
+	}
+
+	// Save config
+	if a.configPath != "" {
+		if err := config.Save(a.configPath, a.clientCfg); err != nil {
+			slog.Error("failed to save config after setting default server", "error", err)
+			return fmt.Errorf("failed to save config: %w", err)
+		}
+	}
+
+	slog.Info("set default server", "name", serverName)
 	return nil
 }
 

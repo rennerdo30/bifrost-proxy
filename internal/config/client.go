@@ -14,6 +14,7 @@ import (
 type ClientConfig struct {
 	Proxy       ClientProxySettings `yaml:"proxy" json:"proxy"`
 	Server      ServerConnection    `yaml:"server" json:"server"`
+	Servers     []NamedServer       `yaml:"servers,omitempty" json:"servers,omitempty"`
 	Routes      []ClientRouteConfig `yaml:"routes" json:"routes"`
 	Debug       DebugConfig         `yaml:"debug" json:"debug"`
 	Logging     logging.Config      `yaml:"logging" json:"logging"`
@@ -48,6 +49,16 @@ type ServerConnection struct {
 	RetryCount  int                `yaml:"retry_count" json:"retry_count"`
 	RetryDelay  Duration           `yaml:"retry_delay" json:"retry_delay"`
 	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty" json:"health_check,omitempty"`
+}
+
+// NamedServer represents a named server configuration for multi-server management.
+type NamedServer struct {
+	Name      string `yaml:"name" json:"name"`
+	Address   string `yaml:"address" json:"address"`
+	Protocol  string `yaml:"protocol" json:"protocol"` // http, socks5
+	Username  string `yaml:"username,omitempty" json:"username,omitempty"`
+	Password  string `yaml:"password,omitempty" json:"password,omitempty"`
+	IsDefault bool   `yaml:"is_default,omitempty" json:"is_default,omitempty"`
 }
 
 // ClientRouteConfig describes a client routing rule.
@@ -146,6 +157,27 @@ func (c *ClientConfig) Validate() error {
 	if c.Server.Address != "" {
 		if _, _, err := net.SplitHostPort(c.Server.Address); err != nil {
 			return fmt.Errorf("server address must be in host:port format (e.g., '192.168.1.1:8080'): %w", err)
+		}
+	}
+
+	// Validate named servers
+	serverNames := make(map[string]bool)
+	for _, s := range c.Servers {
+		if s.Name == "" {
+			return fmt.Errorf("server name is required")
+		}
+		if serverNames[s.Name] {
+			return fmt.Errorf("duplicate server name: %s", s.Name)
+		}
+		serverNames[s.Name] = true
+		if s.Address == "" {
+			return fmt.Errorf("server '%s' address is required", s.Name)
+		}
+		if _, _, err := net.SplitHostPort(s.Address); err != nil {
+			return fmt.Errorf("server '%s' address must be in host:port format: %w", s.Name, err)
+		}
+		if s.Protocol != "" && s.Protocol != "http" && s.Protocol != "socks5" {
+			return fmt.Errorf("server '%s' protocol must be 'http' or 'socks5', got: %s", s.Name, s.Protocol)
 		}
 	}
 
