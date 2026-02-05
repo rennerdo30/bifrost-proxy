@@ -876,6 +876,11 @@ func (s *Server) ReloadConfig() error {
 func (s *Server) serveHTTP(ctx context.Context) {
 	defer s.wg.Done()
 
+	// Acquire read lock to safely read bandwidthConfig
+	s.mu.RLock()
+	bandwidthCfg := s.bandwidthConfig
+	s.mu.RUnlock()
+
 	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
 		GetBackend:       s.getBackend,
 		DialTimeout:      s.config.Server.HTTP.ReadTimeout.Duration(),
@@ -884,7 +889,7 @@ func (s *Server) serveHTTP(ctx context.Context) {
 		AccessCheck:      s.accessCheck,
 		RateLimitUser:    s.allowUser,
 		AccessLogger:     s.accessLogger,
-		Bandwidth:        s.bandwidthConfig,
+		Bandwidth:        bandwidthCfg,
 		OnConnect:        s.onConnect,
 		OnError:          s.onError,
 		CacheInterceptor: s.cacheInterceptor,
@@ -972,6 +977,11 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 func (s *Server) serveSOCKS5(ctx context.Context) {
 	defer s.wg.Done()
 
+	// Acquire read lock to safely read bandwidthConfig
+	s.mu.RLock()
+	bandwidthCfg := s.bandwidthConfig
+	s.mu.RUnlock()
+
 	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
 		GetBackend:           s.getBackend,
 		AuthenticateWithInfo: s.authenticateUser,
@@ -980,7 +990,7 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 		AccessCheck:          s.accessCheck,
 		RateLimitUser:        s.allowUser,
 		AccessLogger:         s.accessLogger,
-		Bandwidth:            s.bandwidthConfig,
+		Bandwidth:            bandwidthCfg,
 		OnConnect:            s.onConnect,
 		OnError:              s.onError,
 	})
