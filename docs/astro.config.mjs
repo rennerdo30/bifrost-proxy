@@ -56,6 +56,12 @@ export default defineConfig({
         },
         { label: "API Reference", slug: "api" },
         {
+          label: "Internals",
+          items: [
+            { label: "Frame Processing", slug: "internals/frame-processing" },
+          ],
+        },
+        {
           label: "Development",
           items: [
             { label: "Contributing", slug: "contributing" },
