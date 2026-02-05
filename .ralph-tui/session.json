@@ -3,10 +3,10 @@
   "sessionId": "830a6708-97ad-4154-a11e-ce4394b62c30",
   "status": "running",
   "startedAt": "2026-02-05T05:20:13.807Z",
-  "updatedAt": "2026-02-05T07:04:21.008Z",
-  "currentIteration": 24,
+  "updatedAt": "2026-02-05T07:08:37.078Z",
+  "currentIteration": 25,
   "maxIterations": 35,
-  "tasksCompleted": 24,
+  "tasksCompleted": 25,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -161,8 +161,8 @@
       {
         "id": "US-025",
         "title": "Document P2P/Relay networking",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-026",
@@ -466,6 +466,16 @@
       "durationMs": 261203,
       "startedAt": "2026-02-05T06:56:25.045Z",
       "endedAt": "2026-02-05T07:00:46.248Z"
+    },
+    {
+      "iteration": 25,
+      "status": "completed",
+      "taskId": "US-025",
+      "taskTitle": "Document P2P/Relay networking",
+      "taskCompleted": true,
+      "durationMs": 213691,
+      "startedAt": "2026-02-05T07:00:47.314Z",
+      "endedAt": "2026-02-05T07:04:21.005Z"
     }
   ],
   "skippedTaskIds": [],
