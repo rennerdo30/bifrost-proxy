@@ -46,6 +46,12 @@ export default defineConfig({
         },
         { label: "Deployment", slug: "deployment" },
         {
+          label: "Usage",
+          items: [
+            { label: "Client CLI Reference", slug: "usage/cli-reference" },
+          ],
+        },
+        {
           label: "Operations",
           items: [
             { label: "CLI Reference", slug: "cli-reference" },
