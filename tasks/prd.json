@@ -527,12 +527,13 @@
         "Add interactive examples where applicable"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "documentation",
         "p2p"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-026",
@@ -739,6 +740,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T07:00:46.249Z"
+    "updatedAt": "2026-02-05T07:04:21.007Z"
   }
 }
