@@ -7,6 +7,49 @@ description: "Documentation for REST API Reference"
 
 Both server and client expose REST APIs for management and monitoring.
 
+## API Versioning & Conventions
+
+### Version Prefix
+
+All API endpoints are prefixed with `/api/v1/`. Future breaking changes will use a new version prefix (e.g., `/api/v2/`).
+
+### Naming Conventions
+
+The API follows these naming conventions for consistency:
+
+- **JSON field names**: Use `snake_case` (e.g., `git_commit`, `build_time`, `go_version`)
+- **URL paths**: Use `kebab-case` for multi-word resources (e.g., `/cache/entries`)
+- **Query parameters**: Use `snake_case` (e.g., `?limit=10&offset=0`)
+
+### Common Response Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `version` | string | Semantic version (e.g., `1.0.0`) |
+| `git_commit` | string | Short git commit hash |
+| `build_time` | string | ISO 8601 timestamp of build |
+| `go_version` | string | Go runtime version |
+| `platform` | string | OS/architecture (e.g., `linux/amd64`) |
+| `time` | string | ISO 8601 timestamp of response |
+| `status` | string | Current status (varies by endpoint) |
+
+### Error Responses
+
+All error responses follow this format:
+
+```json
+{
+  "error": "Error message describing what went wrong",
+  "code": "ERROR_CODE"
+}
+```
+
+HTTP status codes:
+- `400` - Bad request (invalid input)
+- `401` - Unauthorized (missing or invalid token)
+- `404` - Not found
+- `500` - Internal server error
+
 ## Authentication
 
 If API token is configured:

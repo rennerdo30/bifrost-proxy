@@ -44,9 +44,10 @@ export interface StatusResponse {
 
 export interface VersionInfo {
   version: string
-  commit: string
+  git_commit: string
   build_time: string
   go_version: string
+  platform: string
 }
 
 // Request Log
