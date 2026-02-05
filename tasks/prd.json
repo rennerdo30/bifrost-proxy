@@ -381,13 +381,14 @@
         "Respect user's notification preference setting"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "desktop",
         "wails",
         "ui"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-019",
@@ -731,6 +732,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T06:34:00.712Z"
+    "updatedAt": "2026-02-05T06:38:09.516Z"
   }
 }
