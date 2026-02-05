@@ -410,7 +410,7 @@ func TestAuthenticator_Type(t *testing.T) {
 	assert.Equal(t, "ldap", a.Type())
 }
 
-// TestAuthenticator_Authenticate_ContextCancelled tests authentication with a cancelled context.
+// TestAuthenticator_Authenticate_ContextCancelled tests authentication with a canceled context.
 func TestAuthenticator_Authenticate_ContextCancelled(t *testing.T) {
 	cfg := ldapConfig{
 		url:           "ldap://nonexistent.example.com:389",

@@ -1286,11 +1286,10 @@ func TestClient_SOCKS5ProxyServing(t *testing.T) {
 
 func TestClient_DirectRouteHTTP(t *testing.T) {
 	// Start a simple HTTP server to connect to directly
-	httpServer := &net.TCPListener{}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer listener.Close()
-	httpServer = listener.(*net.TCPListener)
+	httpServer := listener.(*net.TCPListener)
 
 	go func() {
 		for {

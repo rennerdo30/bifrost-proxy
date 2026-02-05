@@ -42,7 +42,7 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 net.Conn) (sent, receiv
 	return sent, received
 }
 
-// copyWithContext copies from src to dst until src returns EOF or ctx is cancelled.
+// copyWithContext copies from src to dst until src returns EOF or ctx is canceled.
 func copyWithContext(ctx context.Context, dst, src net.Conn) (int64, error) {
 	// Use a simple io.Copy - it will be interrupted when connections are closed
 	// by the caller or when EOF is reached
@@ -65,7 +65,7 @@ func copyWithContext(ctx context.Context, dst, src net.Conn) (int64, error) {
 		}
 		return r.n, r.err
 	case <-ctx.Done():
-		// Context cancelled - set deadline to force io.Copy to return
+		// Context canceled - set deadline to force io.Copy to return
 		// This ensures the goroutine doesn't leak
 		deadline := time.Now().Add(100 * time.Millisecond)
 		if err := src.SetReadDeadline(deadline); err != nil {

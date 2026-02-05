@@ -10,8 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 	"golang.org/x/sys/windows/svc"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 )
 
 // ShutdownTimeout is the maximum time allowed for graceful shutdown.

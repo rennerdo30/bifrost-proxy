@@ -709,7 +709,7 @@ sleep 30
 	assert.NoError(t, err)
 }
 
-// TestProcess_Stop_ContextCancellation tests force kill when context is cancelled
+// TestProcess_Stop_ContextCancellation tests force kill when context is canceled
 func TestProcess_Stop_ContextCancellation(t *testing.T) {
 	tmpDir := t.TempDir()
 

@@ -378,7 +378,7 @@ func (d *DiskStorage) List(ctx context.Context, domain string, offset, limit int
 		return nil, 0, ErrStorageClosed
 	}
 
-	var results []*Metadata
+	var results []*Metadata //nolint:prealloc // Size unknown due to filtering
 	var total int64
 
 	// Collect and filter entries

@@ -165,7 +165,7 @@ func (b *WireGuardBackend) Start(ctx context.Context) error {
 	}
 
 	// Parse DNS servers
-	var dnsAddrs []netip.Addr
+	dnsAddrs := make([]netip.Addr, 0, len(b.config.DNS))
 	for _, dns := range b.config.DNS {
 		addr, parseErr := netip.ParseAddr(dns)
 		if parseErr != nil {

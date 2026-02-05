@@ -1311,7 +1311,7 @@ func TestNewRangeReader_SeekError(t *testing.T) {
 func TestValidator_ShouldCache_AuthorizationWithPublic(t *testing.T) {
 	v := NewValidator()
 
-	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 	req.Header.Set("Authorization", "Bearer token")
 	resp := &http.Response{
 		StatusCode: 200,
@@ -1325,7 +1325,7 @@ func TestValidator_ShouldCache_AuthorizationWithPublic(t *testing.T) {
 func TestValidator_ShouldCache_RequestNoStore(t *testing.T) {
 	v := NewValidator()
 
-	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 	req.Header.Set("Cache-Control", "no-store")
 	resp := &http.Response{
 		StatusCode: 200,
@@ -1341,7 +1341,7 @@ func TestValidator_ShouldCache_RequestNoStore(t *testing.T) {
 
 func TestValidator_BuildConditionalRequest_NilEntry(t *testing.T) {
 	v := NewValidator()
-	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 	v.BuildConditionalRequest(req, nil)
 	assert.Empty(t, req.Header.Get("If-None-Match"))
 }
@@ -1351,7 +1351,7 @@ func TestValidator_BuildConditionalRequest_NoETagNoLastModified(t *testing.T) {
 	entry := &Entry{
 		Metadata: &Metadata{},
 	}
-	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 	v.BuildConditionalRequest(req, entry)
 	assert.Empty(t, req.Header.Get("If-None-Match"))
 	assert.Empty(t, req.Header.Get("If-Modified-Since"))

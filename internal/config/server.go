@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
-	"gopkg.in/yaml.v3"
 )
 
 // ServerConfig is the main configuration for the Bifrost server.

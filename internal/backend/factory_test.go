@@ -3,9 +3,10 @@ package backend
 import (
 	"testing"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
 
 func TestNewFactory(t *testing.T) {

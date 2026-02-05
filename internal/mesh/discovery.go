@@ -297,7 +297,7 @@ func (c *DiscoveryClient) wsReadLoop() {
 		err := websocket.JSON.Receive(conn, &event)
 		if err != nil {
 			if c.ctx.Err() != nil {
-				return // Context cancelled
+				return // Context canceled
 			}
 			slog.Warn("WebSocket read error, reconnecting", "error", err)
 			c.closeWebSocket()

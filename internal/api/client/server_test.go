@@ -2501,7 +2501,7 @@ func TestAPI_HandleLogStream_Setup(t *testing.T) {
 	api := New(Config{})
 	handler := api.Handler()
 
-	// Create a request with a context that will be cancelled
+	// Create a request with a context that will be canceled
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest("GET", "/api/v1/logs/stream", nil).WithContext(ctx)
 	w := httptest.NewRecorder()

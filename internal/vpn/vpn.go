@@ -329,7 +329,7 @@ func (m *Manager) processPackets() {
 		n, err := m.tun.Read(buf)
 		if err != nil {
 			if m.ctx.Err() != nil {
-				return // Context cancelled
+				return // Context canceled
 			}
 			slog.Error("failed to read from TUN", "error", err)
 			m.setError(err)

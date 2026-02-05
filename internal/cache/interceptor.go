@@ -247,7 +247,7 @@ func parseRangeHeader(header string, contentLength int64) ([]byteRange, error) {
 	rangeSpec := strings.TrimPrefix(header, "bytes=")
 	parts := strings.Split(rangeSpec, ",")
 
-	var ranges []byteRange
+	ranges := make([]byteRange, 0, len(parts))
 
 	for _, part := range parts {
 		part = strings.TrimSpace(part)

@@ -126,7 +126,7 @@ func (c *ServerCache) ServerCount() int {
 
 // FilterServers returns servers matching the given criteria.
 func FilterServers(servers []Server, criteria ServerCriteria) []Server {
-	var result []Server
+	var result []Server //nolint:prealloc // Size unknown due to filtering
 
 	for _, s := range servers {
 		// Filter by specific server ID

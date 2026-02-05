@@ -5,10 +5,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/auth"
-	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/none"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/none"
 )
 
 // TestPluginRegistration verifies that the plugin is registered via init().
@@ -230,7 +231,7 @@ func TestAuthenticatorAuthenticateVariousInputs(t *testing.T) {
 	}
 }
 
-// TestAuthenticatorAuthenticateWithCancelledContext verifies Authenticate() handles cancelled contexts.
+// TestAuthenticatorAuthenticateWithCancelledContext verifies Authenticate() handles canceled contexts.
 func TestAuthenticatorAuthenticateWithCancelledContext(t *testing.T) {
 	plugin, ok := auth.GetPlugin("none")
 	require.True(t, ok)
@@ -241,7 +242,7 @@ func TestAuthenticatorAuthenticateWithCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	// None authenticator should still succeed even with cancelled context
+	// None authenticator should still succeed even with canceled context
 	// since it doesn't use the context for anything
 	user, err := authenticator.Authenticate(ctx, "user", "pass")
 	require.NoError(t, err)
