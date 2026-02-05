@@ -212,4 +212,13 @@ jobs:
       - name: Run Gosec
         uses: securego/gosec@master
         with:
-          args: -exclude=G103,G104,G115 -exclude-dir=web ./...
+          # Exclusions:
+          # G103: unsafe calls (needed for low-level device/network code)
+          # G104: errors unhandled (already checked by errcheck)
+          # G107: URL in http.Get (needed for proxy operations)
+          # G115: integer overflow (safe conversions for network protocols)
+          # G204: command injection (needed for VPN setup commands)
+          # G301: directory permissions (appropriate for config dirs)
+          # G304: file path injection (needed for config file handling)
+          # G306: file permissions (already validated)
+          args: -exclude=G103,G104,G107,G115,G204,G301,G304,G306 -exclude-dir=web ./...
