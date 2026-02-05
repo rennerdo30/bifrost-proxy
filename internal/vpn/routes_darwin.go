@@ -334,8 +334,8 @@ func (r *darwinRouteManager) configureDNS(dnsAddr string) error {
 	}
 
 	// Flush DNS cache
-	_ = exec.Command("dscacheutil", "-flushcache").Run()               //nolint:errcheck,gosec // Best effort DNS cache flush
-	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run()         //nolint:errcheck,gosec // Best effort mDNSResponder restart
+	_ = exec.Command("dscacheutil", "-flushcache").Run()       //nolint:errcheck,gosec // Best effort DNS cache flush
+	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run() //nolint:errcheck,gosec // Best effort mDNSResponder restart
 
 	return nil
 }
@@ -359,8 +359,8 @@ func (r *darwinRouteManager) restoreDNS() error {
 	}
 
 	// Flush DNS cache
-	_ = exec.Command("dscacheutil", "-flushcache").Run()               //nolint:errcheck,gosec // Best effort DNS cache flush
-	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run()         //nolint:errcheck,gosec // Best effort mDNSResponder restart
+	_ = exec.Command("dscacheutil", "-flushcache").Run()       //nolint:errcheck,gosec // Best effort DNS cache flush
+	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run() //nolint:errcheck,gosec // Best effort mDNSResponder restart
 
 	r.originalDNS = nil
 	return nil

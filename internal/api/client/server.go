@@ -1594,7 +1594,7 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 
 	// Send initial connection message
 	data, _ := json.Marshal(map[string]string{"type": "connected"}) //nolint:errcheck // Static data always marshals
-	_, _ = w.Write([]byte("data: " + string(data) + "\n\n"))         //nolint:errcheck // Best effort SSE write
+	_, _ = w.Write([]byte("data: " + string(data) + "\n\n"))        //nolint:errcheck // Best effort SSE write
 	flusher.Flush()
 
 	// Stream logs

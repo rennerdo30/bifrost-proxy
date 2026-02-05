@@ -164,7 +164,7 @@ func (t *linuxTAP) setMTU(sock int, mtu int) error {
 	var ifr [40]byte
 	copy(ifr[:], t.name)
 
-	*(*int32)(unsafe.Pointer(&ifr[16])) = int32(mtu)
+	*(*int32)(unsafe.Pointer(&ifr[16])) = int32(mtu) //nolint:gosec // G115: MTU is always a small bounded value
 
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(sock), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
 	if errno != 0 {
@@ -239,7 +239,7 @@ func (t *linuxTAP) setUp(sock int) error {
 
 // joinBridge adds the TAP interface to a bridge.
 func (t *linuxTAP) joinBridge(bridge string) error {
-	cmd := exec.Command("ip", "link", "set", t.name, "master", bridge)
+	cmd := exec.Command("ip", "link", "set", t.name, "master", bridge) //nolint:gosec // G204: bridge name is validated interface name
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return &DeviceError{Op: "join bridge", Err: fmt.Errorf("%w: %s", err, string(output))}
 	}
@@ -414,8 +414,8 @@ func (t *linuxTAP) Statistics() (rx, tx uint64, err error) {
 		return 0, 0, &DeviceError{Op: "read tx stats", Err: err}
 	}
 
-	rx, _ = strconv.ParseUint(string(rxData[:len(rxData)-1]), 10, 64)
-	tx, _ = strconv.ParseUint(string(txData[:len(txData)-1]), 10, 64)
+	rx, _ = strconv.ParseUint(string(rxData[:len(rxData)-1]), 10, 64) //nolint:errcheck // Best effort parsing, 0 on error is acceptable
+	tx, _ = strconv.ParseUint(string(txData[:len(txData)-1]), 10, 64) //nolint:errcheck // Best effort parsing, 0 on error is acceptable
 
 	return rx, tx, nil
 }

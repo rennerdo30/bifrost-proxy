@@ -126,7 +126,7 @@ func (t *linuxTUN) setMTU(sock int, mtu int) error {
 	copy(ifr[:], t.name)
 
 	// Put MTU in the ifr structure
-	*(*int32)(unsafe.Pointer(&ifr[16])) = int32(mtu)
+	*(*int32)(unsafe.Pointer(&ifr[16])) = int32(mtu) //nolint:gosec // G115: MTU is always a small bounded value
 
 	_, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(sock), unix.SIOCSIFMTU, uintptr(unsafe.Pointer(&ifr[0])))
 	if errno != 0 {
@@ -232,7 +232,7 @@ func (t *linuxTUN) setIPv6Address(prefix netip.Prefix) error {
 // buildIPv6AddrMessage constructs a netlink RTM_NEWADDR message for IPv6.
 func (t *linuxTUN) buildIPv6AddrMessage(ifIndex int, prefix netip.Prefix) []byte {
 	addr := prefix.Addr().As16()
-	prefixLen := uint8(prefix.Bits())
+	prefixLen := uint8(prefix.Bits()) //nolint:gosec // G115: prefix length is always 0-128
 
 	// Netlink message header (16 bytes)
 	// struct nlmsghdr {
@@ -275,7 +275,7 @@ func (t *linuxTUN) buildIPv6AddrMessage(ifIndex int, prefix netip.Prefix) []byte
 	msg[17] = prefixLen                                    // ifa_prefixlen
 	msg[18] = 0                                            // ifa_flags
 	msg[19] = unix.RT_SCOPE_UNIVERSE                       // ifa_scope (global)
-	*(*uint32)(unsafe.Pointer(&msg[20])) = uint32(ifIndex) // ifa_index
+	*(*uint32)(unsafe.Pointer(&msg[20])) = uint32(ifIndex) //nolint:gosec // G115: interface index is small positive int
 
 	// rtattr for IFA_LOCAL (local address)
 	offset := 24
@@ -302,7 +302,7 @@ func (t *linuxTUN) parseNetlinkResponse(data []byte) error {
 	msgLen := *(*uint32)(unsafe.Pointer(&data[0]))
 	msgType := *(*uint16)(unsafe.Pointer(&data[4]))
 
-	if msgLen > uint32(len(data)) {
+	if msgLen > uint32(len(data)) { //nolint:gosec // G115: data length is small
 		return &DeviceError{Op: "parse netlink response", Err: errors.New("invalid message length")}
 	}
 

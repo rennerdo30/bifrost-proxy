@@ -185,9 +185,9 @@ func parseUsersList(users []map[string]any) ([]user, error) {
 			}
 		}
 
-		email, _ := u["email"].(string)       //nolint:errcheck // Type assertion - empty string is valid if missing
+		email, _ := u["email"].(string)        //nolint:errcheck // Type assertion - empty string is valid if missing
 		fullName, _ := u["full_name"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
-		disabled, _ := u["disabled"].(bool)   //nolint:errcheck // Type assertion - false is valid if missing
+		disabled, _ := u["disabled"].(bool)    //nolint:errcheck // Type assertion - false is valid if missing
 
 		result = append(result, user{
 			Username:     username,

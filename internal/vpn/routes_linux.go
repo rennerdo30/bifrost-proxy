@@ -276,13 +276,13 @@ func (r *linuxRouteManager) configureDNS(dnsAddr string) error {
 
 	// Try to use resolvectl if available (systemd-resolved)
 	if _, err := exec.LookPath("resolvectl"); err == nil {
-		cmd := exec.Command("resolvectl", "dns", r.tunName, host)
+		cmd := exec.Command("resolvectl", "dns", r.tunName, host) //nolint:gosec // G204: tunName and host are validated
 		if err := cmd.Run(); err != nil {
 			slog.Debug("resolvectl failed, trying resolv.conf", "error", err)
 		} else {
 			// Set as default DNS
-			cmd = exec.Command("resolvectl", "default-route", r.tunName, "true")
-			cmd.Run()
+			cmd = exec.Command("resolvectl", "default-route", r.tunName, "true") //nolint:gosec // G204: tunName is validated
+			_ = cmd.Run()                                                        // Best effort
 			return nil
 		}
 	}
@@ -294,7 +294,7 @@ func (r *linuxRouteManager) configureDNS(dnsAddr string) error {
 		newContent += fmt.Sprintf("nameserver %s\n", ns)
 	}
 
-	return os.WriteFile("/etc/resolv.conf", []byte(newContent), 0644)
+	return os.WriteFile("/etc/resolv.conf", []byte(newContent), 0644) //nolint:gosec // G306: resolv.conf must be world-readable
 }
 
 // restoreDNS restores the original DNS configuration.
@@ -305,7 +305,7 @@ func (r *linuxRouteManager) restoreDNS() error {
 
 	// Try resolvectl first
 	if _, err := exec.LookPath("resolvectl"); err == nil {
-		exec.Command("resolvectl", "revert", r.tunName).Run()
+		_ = exec.Command("resolvectl", "revert", r.tunName).Run() //nolint:gosec,errcheck // G204: tunName is validated; best effort
 	}
 
 	// Restore resolv.conf
@@ -315,7 +315,7 @@ func (r *linuxRouteManager) restoreDNS() error {
 	}
 
 	r.savedDNS = nil
-	return os.WriteFile("/etc/resolv.conf", []byte(content), 0644)
+	return os.WriteFile("/etc/resolv.conf", []byte(content), 0644) //nolint:gosec // G306: resolv.conf must be world-readable
 }
 
 // splitHostPort splits a host:port string.

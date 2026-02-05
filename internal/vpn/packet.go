@@ -312,13 +312,13 @@ func buildIPv4TCPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seqNum
 	packet := make([]byte, totalLen)
 
 	// IPv4 header
-	packet[0] = 0x45 // Version (4) + IHL (5)
-	packet[1] = 0    // DSCP + ECN
+	packet[0] = 0x45                                          // Version (4) + IHL (5)
+	packet[1] = 0                                             // DSCP + ECN
 	binary.BigEndian.PutUint16(packet[2:4], uint16(totalLen)) //nolint:gosec // G115: totalLen is bounded by MTU
-	binary.BigEndian.PutUint16(packet[4:6], 0)      // ID
-	binary.BigEndian.PutUint16(packet[6:8], 0x4000) // Flags (Don't Fragment) + Fragment offset
-	packet[8] = 64                                  // TTL
-	packet[9] = ProtocolTCP                         // Protocol
+	binary.BigEndian.PutUint16(packet[4:6], 0)                // ID
+	binary.BigEndian.PutUint16(packet[6:8], 0x4000)           // Flags (Don't Fragment) + Fragment offset
+	packet[8] = 64                                            // TTL
+	packet[9] = ProtocolTCP                                   // Protocol
 	// Checksum (10-11) will be calculated later
 	copy(packet[12:16], srcIP.AsSlice())
 	copy(packet[16:20], dstIP.AsSlice())
