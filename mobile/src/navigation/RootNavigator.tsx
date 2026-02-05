@@ -1,11 +1,27 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs'
+import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { View, Text, StyleSheet } from 'react-native'
 import { HomeScreen } from '../screens/HomeScreen'
 import { ServersScreen } from '../screens/ServersScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
 import { StatsScreen } from '../screens/StatsScreen'
+import { SplitTunnelingScreen } from '../screens/SplitTunnelingScreen'
 
-const Tab = createBottomTabNavigator()
+// Navigation types
+export type RootStackParamList = {
+  MainTabs: undefined
+  SplitTunneling: undefined
+}
+
+export type MainTabsParamList = {
+  Home: undefined
+  Servers: undefined
+  Stats: undefined
+  Settings: undefined
+}
+
+const Tab = createBottomTabNavigator<MainTabsParamList>()
+const Stack = createNativeStackNavigator<RootStackParamList>()
 
 // Icon component for tabs
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
@@ -33,7 +49,7 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   )
 }
 
-export function RootNavigator() {
+function MainTabs() {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -81,6 +97,34 @@ export function RootNavigator() {
         options={{ title: 'Settings' }}
       />
     </Tab.Navigator>
+  )
+}
+
+export function RootNavigator() {
+  return (
+    <Stack.Navigator
+      screenOptions={{
+        headerStyle: {
+          backgroundColor: '#111827',
+        },
+        headerTintColor: '#f9fafb',
+        headerTitleStyle: {
+          fontWeight: '600',
+        },
+        headerBackTitle: 'Back',
+      }}
+    >
+      <Stack.Screen
+        name="MainTabs"
+        component={MainTabs}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="SplitTunneling"
+        component={SplitTunnelingScreen}
+        options={{ title: 'Split Tunneling' }}
+      />
+    </Stack.Navigator>
   )
 }
 

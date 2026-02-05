@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, formatBytes, getCurrentServerAddress } from '../services/api'
+import { getStoredSplitTunnelConfig } from '../services/storage'
 import { StatusCard } from '../components/StatusCard'
 import { getConnectionStatusColor } from '../utils/status'
 import { useToast } from '../components/Toast'
@@ -39,8 +40,48 @@ export function HomeScreen() {
     refetchInterval: 30000,
   })
 
+  // Sync split tunnel rules to server before enabling VPN
+  const syncSplitTunnelRules = async () => {
+    try {
+      const config = await getStoredSplitTunnelConfig()
+
+      // Set mode
+      await api.setSplitTunnelMode(config.mode).catch(() => {
+        // Ignore errors if server doesn't support split tunneling mode endpoint
+      })
+
+      // Sync enabled apps
+      for (const app of config.apps.filter(a => a.enabled)) {
+        await api.addSplitTunnelApp({ name: app.name, path: app.packageId }).catch(() => {
+          // Ignore individual app sync errors
+        })
+      }
+
+      // Sync enabled domains
+      for (const domain of config.domains.filter(d => d.enabled)) {
+        await api.addSplitTunnelDomain(domain.domain).catch(() => {
+          // Ignore individual domain sync errors
+        })
+      }
+
+      // Sync enabled IPs
+      for (const ip of config.ips.filter(i => i.enabled)) {
+        await api.addSplitTunnelIP(ip.cidr).catch(() => {
+          // Ignore individual IP sync errors
+        })
+      }
+    } catch (error) {
+      // Continue with VPN connection even if split tunnel sync fails
+      console.warn('Failed to sync split tunnel rules:', error)
+    }
+  }
+
   const connectMutation = useMutation({
-    mutationFn: api.enableVPN,
+    mutationFn: async () => {
+      // Sync split tunnel rules before enabling VPN
+      await syncSplitTunnelRules()
+      return api.enableVPN()
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
       showToast('VPN connected successfully', 'success')

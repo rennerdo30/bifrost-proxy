@@ -224,6 +224,28 @@ export const api = {
     }),
   removeSplitTunnelApp: (name: string) =>
     fetchJSON<{ status: string }>(`/vpn/split/apps/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  setSplitTunnelMode: (mode: 'exclude' | 'include') =>
+    fetchJSON<{ status: string }>('/vpn/split/mode', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    }),
+  addSplitTunnelDomain: (domain: string) =>
+    fetchJSON<{ status: string }>('/vpn/split/domains', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    }),
+  removeSplitTunnelDomain: (domain: string) =>
+    fetchJSON<{ status: string }>(`/vpn/split/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' }),
+  addSplitTunnelIP: (cidr: string) =>
+    fetchJSON<{ status: string }>('/vpn/split/ips', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cidr }),
+    }),
+  removeSplitTunnelIP: (cidr: string) =>
+    fetchJSON<{ status: string }>(`/vpn/split/ips/${encodeURIComponent(cidr)}`, { method: 'DELETE' }),
 
   // Config
   getConfig: () => fetchJSON<ClientConfig>('/config'),

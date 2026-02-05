@@ -5,6 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 const STORAGE_KEYS = {
   SERVER_URL: '@bifrost/server_url',
   SERVER_NAME: '@bifrost/server_name',
+  SPLIT_TUNNEL_CONFIG: '@bifrost/split_tunnel_config',
 } as const
 
 export interface StoredServerConfig {
@@ -84,6 +85,78 @@ export async function clearStoredServerConfig(): Promise<void> {
     await AsyncStorage.multiRemove([STORAGE_KEYS.SERVER_URL, STORAGE_KEYS.SERVER_NAME])
   } catch (error) {
     console.error('Failed to clear stored server config:', error)
+    throw error
+  }
+}
+
+// Split Tunneling Configuration
+
+export interface SplitTunnelApp {
+  name: string
+  packageId: string
+  enabled: boolean
+}
+
+export interface SplitTunnelDomain {
+  domain: string
+  enabled: boolean
+}
+
+export interface SplitTunnelIP {
+  cidr: string
+  enabled: boolean
+}
+
+export interface StoredSplitTunnelConfig {
+  mode: 'exclude' | 'include'
+  apps: SplitTunnelApp[]
+  domains: SplitTunnelDomain[]
+  ips: SplitTunnelIP[]
+}
+
+const DEFAULT_SPLIT_TUNNEL_CONFIG: StoredSplitTunnelConfig = {
+  mode: 'exclude',
+  apps: [],
+  domains: [],
+  ips: [],
+}
+
+/**
+ * Get stored split tunnel configuration
+ */
+export async function getStoredSplitTunnelConfig(): Promise<StoredSplitTunnelConfig> {
+  try {
+    const stored = await AsyncStorage.getItem(STORAGE_KEYS.SPLIT_TUNNEL_CONFIG)
+    if (stored) {
+      return JSON.parse(stored) as StoredSplitTunnelConfig
+    }
+    return DEFAULT_SPLIT_TUNNEL_CONFIG
+  } catch (error) {
+    console.error('Failed to get stored split tunnel config:', error)
+    return DEFAULT_SPLIT_TUNNEL_CONFIG
+  }
+}
+
+/**
+ * Store split tunnel configuration
+ */
+export async function setStoredSplitTunnelConfig(config: StoredSplitTunnelConfig): Promise<void> {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEYS.SPLIT_TUNNEL_CONFIG, JSON.stringify(config))
+  } catch (error) {
+    console.error('Failed to store split tunnel config:', error)
+    throw error
+  }
+}
+
+/**
+ * Clear split tunnel configuration
+ */
+export async function clearStoredSplitTunnelConfig(): Promise<void> {
+  try {
+    await AsyncStorage.removeItem(STORAGE_KEYS.SPLIT_TUNNEL_CONFIG)
+  } catch (error) {
+    console.error('Failed to clear split tunnel config:', error)
     throw error
   }
 }

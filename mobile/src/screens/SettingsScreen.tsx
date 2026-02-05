@@ -10,9 +10,14 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native'
+import { useNavigation } from '@react-navigation/native'
+import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ClientConfig, getAPIConfig, setServerUrl, validateServerAddress, extractServerAddress } from '../services/api'
 import { useToast } from '../components/Toast'
+import { RootStackParamList } from '../navigation/RootNavigator'
+
+type SettingsNavigationProp = NativeStackNavigationProp<RootStackParamList>
 
 interface SettingItemProps {
   title: string
@@ -47,6 +52,7 @@ function SettingSection({ title, children }: { title: string; children: React.Re
 }
 
 export function SettingsScreen() {
+  const navigation = useNavigation<SettingsNavigationProp>()
   const queryClient = useQueryClient()
   const apiConfig = getAPIConfig()
   const { showToast } = useToast()
@@ -243,7 +249,7 @@ export function SettingsScreen() {
         >
           <TouchableOpacity
             style={styles.linkButton}
-            onPress={() => showToast('Configure split tunneling rules in the VPN settings.', 'info')}
+            onPress={() => navigation.navigate('SplitTunneling')}
             accessibilityLabel="Configure split tunneling"
             accessibilityRole="button"
           >
