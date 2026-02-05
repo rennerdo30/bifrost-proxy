@@ -2,15 +2,51 @@ import { StatusResponse, formatBytes } from '../hooks/useClient';
 
 interface StatusIndicatorProps {
   status: StatusResponse | null;
+  loading?: boolean;
 }
 
-export function StatusIndicator({ status }: StatusIndicatorProps) {
-  if (!status) {
-    return (
-      <div className="card text-center">
-        <p className="text-bifrost-text-muted">Loading status...</p>
+function StatusIndicatorSkeleton() {
+  return (
+    <div className="card space-y-3 animate-pulse">
+      {/* Server info skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="h-3 bg-bifrost-border rounded w-12" />
+        <div className="h-3 bg-bifrost-border rounded w-32" />
       </div>
-    );
+
+      {/* HTTP Proxy skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="h-3 bg-bifrost-border rounded w-20" />
+        <div className="h-3 bg-bifrost-border rounded w-28" />
+      </div>
+
+      {/* SOCKS5 Proxy skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="h-3 bg-bifrost-border rounded w-24" />
+        <div className="h-3 bg-bifrost-border rounded w-28" />
+      </div>
+
+      {/* VPN Status skeleton */}
+      <div className="flex items-center justify-between">
+        <div className="h-3 bg-bifrost-border rounded w-16" />
+        <div className="h-3 bg-bifrost-border rounded w-16" />
+      </div>
+
+      {/* Data transfer skeleton */}
+      <div className="pt-2 border-t border-bifrost-border">
+        <div className="flex items-center justify-between text-xs">
+          <div className="h-3 bg-bifrost-border rounded w-14" />
+          <div className="h-3 bg-bifrost-border rounded w-14" />
+          <div className="h-3 bg-bifrost-border rounded w-16" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function StatusIndicator({ status, loading }: StatusIndicatorProps) {
+  if (!status || loading) {
+    return <StatusIndicatorSkeleton />;
   }
 
   const isOnline = status.status !== 'offline';

@@ -15,6 +15,8 @@ function App() {
     error,
     loading,
     restarting,
+    vpnToggling,
+    serverSwitching,
     connect,
     disconnect,
     selectServer,
@@ -113,8 +115,9 @@ function App() {
           servers={servers}
           currentServer={settings?.current_server || ''}
           onSelect={selectServer}
-          disabled={connectionStatus === 'connecting' || loading}
+          disabled={connectionStatus === 'connecting' || loading || serverSwitching}
           onAddServer={() => {/* Handled by ServerManager below */}}
+          switching={serverSwitching}
         />
 
         {/* Status */}
@@ -142,6 +145,7 @@ function App() {
           vpnEnabled={status?.vpn_enabled || false}
           onToggleVPN={toggleVPN}
           restarting={restarting}
+          vpnToggling={vpnToggling}
         />
       </main>
 

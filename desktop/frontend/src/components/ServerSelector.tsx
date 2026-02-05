@@ -8,9 +8,35 @@ interface ServerSelectorProps {
   onSelect: (name: string) => void;
   disabled?: boolean;
   onAddServer?: () => void;
+  switching?: boolean;
 }
 
-export function ServerSelector({ servers, currentServer, onSelect, disabled, onAddServer }: ServerSelectorProps) {
+function SpinnerIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={`animate-spin ${className || 'w-4 h-4'}`}
+      fill="none"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+      />
+    </svg>
+  );
+}
+
+export function ServerSelector({ servers, currentServer, onSelect, disabled, onAddServer, switching }: ServerSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -72,12 +98,21 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled, onA
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {selectedServer?.latency_ms && (
-            <span className="text-xs text-bifrost-text-muted">{selectedServer.latency_ms}ms</span>
+          {switching ? (
+            <>
+              <SpinnerIcon className="w-4 h-4 text-bifrost-accent" />
+              <span className="text-xs text-bifrost-accent">Switching...</span>
+            </>
+          ) : (
+            <>
+              {selectedServer?.latency_ms && (
+                <span className="text-xs text-bifrost-text-muted">{selectedServer.latency_ms}ms</span>
+              )}
+              <svg className={`w-4 h-4 text-bifrost-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </>
           )}
-          <svg className={`w-4 h-4 text-bifrost-text-muted transition-transform ${isOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-          </svg>
         </div>
       </button>
 
