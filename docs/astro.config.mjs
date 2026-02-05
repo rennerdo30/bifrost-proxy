@@ -38,6 +38,12 @@ export default defineConfig({
             { label: "Mobile Client", slug: "mobile-client" },
           ],
         },
+        {
+          label: "Features",
+          items: [
+            { label: "Traffic Debugging", slug: "features/traffic-debugging" },
+          ],
+        },
         { label: "Deployment", slug: "deployment" },
         {
           label: "Operations",
