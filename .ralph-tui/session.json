@@ -3,10 +3,10 @@
   "sessionId": "830a6708-97ad-4154-a11e-ce4394b62c30",
   "status": "running",
   "startedAt": "2026-02-05T05:20:13.807Z",
-  "updatedAt": "2026-02-05T06:25:09.797Z",
-  "currentIteration": 13,
+  "updatedAt": "2026-02-05T06:26:40.274Z",
+  "currentIteration": 14,
   "maxIterations": 35,
-  "tasksCompleted": 13,
+  "tasksCompleted": 14,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -95,8 +95,8 @@
       {
         "id": "US-014",
         "title": "Implement split tunneling configuration",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-015",
@@ -356,6 +356,16 @@
       "durationMs": 280116,
       "startedAt": "2026-02-05T06:14:51.857Z",
       "endedAt": "2026-02-05T06:19:31.973Z"
+    },
+    {
+      "iteration": 14,
+      "status": "completed",
+      "taskId": "US-014",
+      "taskTitle": "Implement split tunneling configuration",
+      "taskCompleted": true,
+      "durationMs": 336674,
+      "startedAt": "2026-02-05T06:19:33.113Z",
+      "endedAt": "2026-02-05T06:25:09.787Z"
     }
   ],
   "skippedTaskIds": [],
