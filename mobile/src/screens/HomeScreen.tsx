@@ -9,7 +9,7 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, formatBytes } from '../services/api'
+import { api, formatBytes, getCurrentServerAddress } from '../services/api'
 import { StatusCard } from '../components/StatusCard'
 import { getConnectionStatusColor } from '../utils/status'
 import { useToast } from '../components/Toast'
@@ -31,6 +31,12 @@ export function HomeScreen() {
     queryKey: ['vpn-status'],
     queryFn: api.getVPNStatus,
     refetchInterval: 5000,
+  })
+
+  const { data: activeServer } = useQuery({
+    queryKey: ['active-server'],
+    queryFn: api.getActiveServer,
+    refetchInterval: 30000,
   })
 
   const connectMutation = useMutation({
@@ -169,8 +175,8 @@ export function HomeScreen() {
       {isConnected && (
         <View style={styles.serverCard}>
           <Text style={styles.serverLabel}>Connected to</Text>
-          <Text style={styles.serverName}>Primary Server</Text>
-          <Text style={styles.serverAddress}>vpn.bifrost.io:8080</Text>
+          <Text style={styles.serverName}>{activeServer?.name || 'Bifrost Server'}</Text>
+          <Text style={styles.serverAddress}>{activeServer?.address || getCurrentServerAddress()}</Text>
         </View>
       )}
     </ScrollView>
