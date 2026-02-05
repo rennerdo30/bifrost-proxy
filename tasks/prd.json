@@ -568,12 +568,13 @@
         "Document extension points for custom frame handlers"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "documentation",
         "internals"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-028",
@@ -741,6 +742,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T07:08:37.076Z"
+    "updatedAt": "2026-02-05T07:12:25.445Z"
   }
 }
