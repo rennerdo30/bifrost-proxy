@@ -258,6 +258,32 @@ export type AnyBackendConfig =
   | PIABackendConfig
   | ProtonVPNBackendConfig
 
+// Backend API responses
+export interface AddBackendResponse {
+  status: 'created'
+  backend: string
+  type: string
+}
+
+export interface RemoveBackendResponse {
+  status: 'removed'
+  backend: string
+}
+
+export interface TestBackendRequest {
+  target?: string
+  timeout?: string
+}
+
+export interface TestBackendResponse {
+  status: 'success' | 'failed'
+  backend: string
+  target: string
+  duration: string
+  error?: string
+  healthy?: boolean
+}
+
 // Route Configuration
 export interface RouteConfig {
   name?: string

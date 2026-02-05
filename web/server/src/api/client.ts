@@ -1,5 +1,6 @@
 import type {
   Backend,
+  BackendConfig,
   ServerStats,
   HealthResponse,
   StatusResponse,
@@ -12,6 +13,10 @@ import type {
   ConfigSaveResponse,
   ConnectionsResponse,
   ClientsResponse,
+  AddBackendResponse,
+  RemoveBackendResponse,
+  TestBackendRequest,
+  TestBackendResponse,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -74,6 +79,20 @@ export const api = {
   listBackends: () => fetchJSON<Backend[]>('/backends/'),
   getBackend: (name: string) => fetchJSON<Backend>(`/backends/${encodeURIComponent(name)}`),
   getBackendStats: (name: string) => fetchJSON<Backend['stats']>(`/backends/${encodeURIComponent(name)}/stats`),
+  addBackend: (config: BackendConfig) =>
+    fetchJSON<AddBackendResponse>('/backends/', {
+      method: 'POST',
+      body: JSON.stringify(config),
+    }),
+  removeBackend: (name: string) =>
+    fetchJSON<RemoveBackendResponse>(`/backends/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+  testBackend: (name: string, options?: TestBackendRequest) =>
+    fetchJSON<TestBackendResponse>(`/backends/${encodeURIComponent(name)}/test`, {
+      method: 'POST',
+      body: options ? JSON.stringify(options) : undefined,
+    }),
 
   // Request Log
   getRequests: (limit = 100, since?: number) => {
