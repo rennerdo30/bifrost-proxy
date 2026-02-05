@@ -1,0 +1,1205 @@
+---
+title: "Client API Reference"
+description: "Complete REST API documentation for Bifrost Proxy Client"
+---
+
+# Client API Reference
+
+The Bifrost client exposes a REST API for local management, VPN control, debugging, and desktop app integration.
+
+**Default Address:** `http://localhost:7383`
+
+## Health & Status
+
+### Health Check
+
+Check if the client is healthy and connected to the server.
+
+```http
+GET /api/v1/health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "time": "2024-01-15T10:00:00Z"
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | string | `healthy` or `degraded` (if server connection lost) |
+| `time` | string | ISO 8601 timestamp |
+
+---
+
+### Version
+
+Get client version information.
+
+```http
+GET /api/v1/version
+```
+
+**Response:**
+```json
+{
+  "version": "1.0.0",
+  "git_commit": "abc123",
+  "build_time": "2024-01-15T10:00:00Z",
+  "go_version": "go1.22.0",
+  "platform": "darwin/arm64"
+}
+```
+
+---
+
+### Status
+
+Get comprehensive client status.
+
+```http
+GET /api/v1/status
+```
+
+**Response:**
+```json
+{
+  "status": "running",
+  "version": "1.0.0",
+  "server_connected": true,
+  "server_address": "bifrost.example.com:7080",
+  "http_proxy": "127.0.0.1:7380",
+  "socks5_proxy": "127.0.0.1:7381",
+  "vpn_enabled": true,
+  "vpn_status": "connected",
+  "debug_entries": 150,
+  "uptime": "2h30m15s",
+  "bytes_sent": 104857600,
+  "bytes_received": 209715200,
+  "active_connections": 12,
+  "timestamp": "2024-01-15T10:00:00Z"
+}
+```
+
+---
+
+## Connection Management
+
+### Connect to Server
+
+Establish connection to the Bifrost server.
+
+```http
+POST /api/v1/connect
+```
+
+**Response:**
+```json
+{
+  "status": "connected"
+}
+```
+
+---
+
+### Disconnect from Server
+
+Disconnect from the Bifrost server.
+
+```http
+POST /api/v1/disconnect
+```
+
+**Response:**
+```json
+{
+  "status": "disconnected"
+}
+```
+
+---
+
+### List Servers
+
+Get all configured servers.
+
+```http
+GET /api/v1/servers
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "US West",
+    "address": "us-west.bifrost.example.com:7080",
+    "protocol": "HTTP",
+    "is_default": true,
+    "latency_ms": 45,
+    "status": "connected"
+  },
+  {
+    "name": "EU Central",
+    "address": "eu-central.bifrost.example.com:7080",
+    "protocol": "HTTP",
+    "is_default": false,
+    "latency_ms": 120,
+    "status": "online"
+  }
+]
+```
+
+---
+
+### Select Server
+
+Select a server to connect to.
+
+```http
+POST /api/v1/server/select
+```
+
+**Request Body:**
+```json
+{
+  "server": "EU Central"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "selected",
+  "server": "EU Central"
+}
+```
+
+---
+
+## Quick Settings
+
+### Get Settings
+
+Get quick settings for desktop app integration.
+
+```http
+GET /api/v1/settings
+```
+
+**Response:**
+```json
+{
+  "auto_connect": true,
+  "start_minimized": false,
+  "show_notifications": true,
+  "vpn_enabled": false,
+  "system_proxy_enabled": true,
+  "current_server": "US West"
+}
+```
+
+---
+
+### Update Settings
+
+Update quick settings.
+
+```http
+POST /api/v1/settings
+```
+
+**Request Body:**
+```json
+{
+  "auto_connect": true,
+  "start_minimized": true,
+  "show_notifications": true,
+  "vpn_enabled": true,
+  "system_proxy_enabled": true,
+  "current_server": "US West"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "updated"
+}
+```
+
+---
+
+## Configuration
+
+### Get Config
+
+Get current client configuration.
+
+```http
+GET /api/v1/config
+```
+
+**Response:** Full `ClientConfig` object.
+
+---
+
+### Update Config
+
+Update configuration with partial updates.
+
+```http
+PUT /api/v1/config
+```
+
+**Request Body:**
+```json
+{
+  "proxy": {
+    "http": {
+      "listen": ":7380"
+    }
+  },
+  "routing": {
+    "default_action": "server"
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "status": "updated",
+  "restart_required": true,
+  "restart_fields": ["proxy.http.listen"],
+  "warnings": []
+}
+```
+
+**Restart-Required Fields:**
+- `proxy.http.listen`
+- `proxy.socks5.listen`
+- `web_ui.listen`
+- `api.listen`
+- `vpn.enabled`
+- `vpn.tun`
+- `mesh.enabled`
+- `mesh.device`
+
+---
+
+### Reload Config
+
+Reload configuration from file.
+
+```http
+POST /api/v1/config/reload
+```
+
+**Response:**
+```json
+{
+  "status": "reloaded"
+}
+```
+
+---
+
+### Validate Config
+
+Validate configuration changes without applying.
+
+```http
+POST /api/v1/config/validate
+```
+
+**Request Body:** Partial config updates
+
+**Response:**
+```json
+{
+  "valid": true,
+  "errors": [],
+  "warnings": ["Changes to proxy.http.listen require client restart"]
+}
+```
+
+---
+
+### Get Default Config
+
+Get default configuration values.
+
+```http
+GET /api/v1/config/defaults
+```
+
+---
+
+### Export Config
+
+Export configuration to YAML or JSON.
+
+```http
+POST /api/v1/config/export?format=yaml
+POST /api/v1/config/export?format=json
+```
+
+**Response:** File download with `Content-Disposition: attachment`
+
+---
+
+### Import Config
+
+Import configuration from YAML or JSON.
+
+```http
+POST /api/v1/config/import?format=yaml
+POST /api/v1/config/import?format=json
+```
+
+**Request Body:** YAML or JSON configuration
+
+**Response:**
+```json
+{
+  "status": "imported",
+  "restart_required": false,
+  "restart_fields": [],
+  "warnings": []
+}
+```
+
+---
+
+## Routing
+
+### List Routes
+
+Get all configured routing rules.
+
+```http
+GET /api/v1/routes
+```
+
+**Response:**
+```json
+[
+  {
+    "name": "direct-local",
+    "patterns": ["*.local", "localhost", "127.0.0.1"],
+    "action": "direct",
+    "priority": 100
+  },
+  {
+    "name": "default",
+    "patterns": ["*"],
+    "action": "server",
+    "priority": 0
+  }
+]
+```
+
+---
+
+### Add Route
+
+Add a new routing rule.
+
+```http
+POST /api/v1/routes
+```
+
+**Request Body:**
+```json
+{
+  "name": "work-vpn",
+  "domains": ["*.company.com", "intranet.*"],
+  "action": "server",
+  "priority": 90
+}
+```
+
+**Response:**
+```json
+{
+  "status": "created",
+  "route": "work-vpn",
+  "domains": ["*.company.com", "intranet.*"],
+  "action": "server"
+}
+```
+
+---
+
+### Remove Route
+
+Remove a routing rule.
+
+```http
+DELETE /api/v1/routes/{name}
+```
+
+**Response:**
+```json
+{
+  "status": "removed",
+  "route": "work-vpn"
+}
+```
+
+---
+
+### Test Route
+
+Test which action a domain would receive.
+
+```http
+GET /api/v1/routes/test?domain=api.company.com
+```
+
+**Response:**
+```json
+{
+  "domain": "api.company.com",
+  "action": "server"
+}
+```
+
+---
+
+## VPN Management
+
+### Get VPN Status
+
+Get current VPN connection status.
+
+```http
+GET /api/v1/vpn/status
+```
+
+**Response:**
+```json
+{
+  "status": "connected",
+  "enabled": true,
+  "tunnel_type": "WireGuard",
+  "interface_name": "bifrost0",
+  "ip": "10.0.0.2",
+  "gateway": "10.0.0.1",
+  "dns": ["1.1.1.1", "8.8.8.8"],
+  "mtu": 1420,
+  "port": 51820,
+  "encryption": "ChaCha20-Poly1305",
+  "bytes_sent": 1048576,
+  "bytes_received": 2097152,
+  "connected_at": "2024-01-15T10:00:00Z"
+}
+```
+
+**Status Values:**
+- `disabled` - VPN is not configured
+- `connecting` - VPN is establishing connection
+- `connected` - VPN is active
+- `error` - VPN encountered an error
+
+---
+
+### Enable VPN
+
+Enable and start the VPN connection.
+
+```http
+POST /api/v1/vpn/enable
+```
+
+**Response:**
+```json
+{
+  "status": "enabled"
+}
+```
+
+---
+
+### Disable VPN
+
+Disable and stop the VPN connection.
+
+```http
+POST /api/v1/vpn/disable
+```
+
+**Response:**
+```json
+{
+  "status": "disabled"
+}
+```
+
+---
+
+### Get VPN Connections
+
+Get active VPN connections.
+
+```http
+GET /api/v1/vpn/connections
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "conn-123",
+    "remote_addr": "api.example.com:443",
+    "local_addr": "10.0.0.2:54321",
+    "protocol": "tcp",
+    "started_at": "2024-01-15T10:00:00Z",
+    "bytes_sent": 1024,
+    "bytes_received": 2048
+  }
+]
+```
+
+---
+
+## Split Tunneling
+
+### Get Split Tunnel Rules
+
+Get current split tunneling configuration.
+
+```http
+GET /api/v1/vpn/split/rules
+```
+
+**Response:**
+```json
+{
+  "mode": "exclude",
+  "apps": [
+    {"name": "Slack", "path": "/Applications/Slack.app"},
+    {"name": "Zoom", "path": "/Applications/zoom.us.app"}
+  ],
+  "domains": ["*.local", "localhost", "*.lan"],
+  "ips": ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"]
+}
+```
+
+**Mode Values:**
+- `exclude` - Traffic from listed apps/domains/IPs bypasses VPN
+- `include` - Only traffic from listed apps/domains/IPs uses VPN
+
+---
+
+### Set Split Tunnel Mode
+
+Change split tunneling mode.
+
+```http
+PUT /api/v1/vpn/split/mode
+```
+
+**Request Body:**
+```json
+{
+  "mode": "exclude"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "updated",
+  "mode": "exclude"
+}
+```
+
+---
+
+### Add Split Tunnel App
+
+Add an application to split tunnel rules.
+
+```http
+POST /api/v1/vpn/split/apps
+```
+
+**Request Body:**
+```json
+{
+  "name": "Discord",
+  "path": "/Applications/Discord.app"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "added"
+}
+```
+
+---
+
+### Remove Split Tunnel App
+
+Remove an application from split tunnel rules.
+
+```http
+DELETE /api/v1/vpn/split/apps/{name}
+```
+
+**Response:**
+```json
+{
+  "status": "removed"
+}
+```
+
+---
+
+### Add Split Tunnel Domain
+
+Add a domain pattern to split tunnel rules.
+
+```http
+POST /api/v1/vpn/split/domains
+```
+
+**Request Body:**
+```json
+{
+  "pattern": "*.internal.company.com"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "added"
+}
+```
+
+---
+
+### Remove Split Tunnel Domain
+
+```http
+DELETE /api/v1/vpn/split/domains/{pattern}
+```
+
+---
+
+### Add Split Tunnel IP/CIDR
+
+Add an IP range to split tunnel rules.
+
+```http
+POST /api/v1/vpn/split/ips
+```
+
+**Request Body:**
+```json
+{
+  "cidr": "172.16.0.0/12"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "added"
+}
+```
+
+---
+
+### Remove Split Tunnel IP/CIDR
+
+```http
+DELETE /api/v1/vpn/split/ips/{cidr}
+```
+
+---
+
+### Get DNS Cache
+
+Get VPN DNS cache entries.
+
+```http
+GET /api/v1/vpn/dns/cache
+```
+
+---
+
+## Debugging
+
+### Get Debug Entries
+
+Get all traffic debug entries.
+
+```http
+GET /api/v1/debug/entries
+```
+
+**Response:**
+```json
+[
+  {
+    "timestamp": "2024-01-15T10:00:00Z",
+    "method": "GET",
+    "host": "api.example.com",
+    "path": "/v1/users",
+    "status_code": 200,
+    "duration": "150ms",
+    "action": "server",
+    "backend": "wireguard-us",
+    "bytes_sent": 1024,
+    "bytes_recv": 2048,
+    "error": ""
+  }
+]
+```
+
+---
+
+### Get Last N Debug Entries
+
+Get the most recent debug entries.
+
+```http
+GET /api/v1/debug/entries/last/{count}
+```
+
+---
+
+### Clear Debug Entries
+
+Clear all debug entries.
+
+```http
+DELETE /api/v1/debug/entries
+```
+
+**Response:**
+```json
+{
+  "message": "cleared"
+}
+```
+
+---
+
+### Get Error Entries
+
+Get only entries with errors.
+
+```http
+GET /api/v1/debug/errors
+```
+
+---
+
+### Get Memory Stats
+
+Get memory usage statistics and runtime information.
+
+```http
+GET /api/v1/debug/memory
+```
+
+**Response:**
+```json
+{
+  "heap_alloc": 10485760,
+  "heap_sys": 20971520,
+  "heap_idle": 5242880,
+  "heap_inuse": 15728640,
+  "heap_released": 1048576,
+  "heap_objects": 50000,
+  "stack_inuse": 1048576,
+  "stack_sys": 2097152,
+  "num_gc": 25,
+  "last_gc_pause_ns": 500000,
+  "total_gc_pause_ns": 10000000,
+  "gc_cpu_fraction": 0.01,
+  "num_goroutines": 50,
+  "log_subscribers": 2
+}
+```
+
+---
+
+## Logging
+
+### Get Logs
+
+Get log entries with pagination.
+
+```http
+GET /api/v1/logs
+GET /api/v1/logs?limit=100&offset=0&level=error
+```
+
+**Query Parameters:**
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `limit` | int | 100 | Maximum entries |
+| `offset` | int | 0 | Skip entries |
+| `level` | string | - | Filter by level (`info`, `error`, `warn`, `debug`) |
+
+**Response:**
+```json
+{
+  "entries": [
+    {
+      "timestamp": "2024-01-15T10:00:00Z",
+      "level": "info",
+      "message": "GET https://api.example.com/v1/users",
+      "fields": {
+        "method": "GET",
+        "url": "api.example.com/v1/users",
+        "status_code": 200,
+        "duration_ms": 150,
+        "action": "server"
+      }
+    }
+  ],
+  "total": 1500,
+  "limit": 100,
+  "offset": 0
+}
+```
+
+---
+
+### Stream Logs
+
+Stream logs in real-time using Server-Sent Events.
+
+```http
+GET /api/v1/logs/stream
+```
+
+**Response:** `text/event-stream`
+
+```
+data: {"type": "connected"}
+
+data: {"timestamp": "2024-01-15T10:00:00Z", "level": "info", "message": "GET https://api.example.com/v1/users"}
+
+data: {"timestamp": "2024-01-15T10:00:01Z", "level": "error", "message": "Connection failed", "fields": {"error": "timeout"}}
+```
+
+**JavaScript Example:**
+```javascript
+const eventSource = new EventSource('/api/v1/logs/stream');
+
+eventSource.onmessage = (event) => {
+  const log = JSON.parse(event.data);
+  console.log(`[${log.level}] ${log.message}`);
+};
+
+eventSource.onerror = () => {
+  console.log('Connection lost, reconnecting...');
+};
+```
+
+---
+
+## Cache Management
+
+### Get Cache Stats
+
+Get cache statistics.
+
+```http
+GET /api/v1/cache/stats
+```
+
+**Response:**
+```json
+{
+  "enabled": true,
+  "storage_type": "memory",
+  "hit_rate": 0.75,
+  "total_requests": 5000,
+  "cache_hits": 3750,
+  "cache_misses": 1250,
+  "entries": 500,
+  "size_bytes": 52428800,
+  "max_size_bytes": 104857600
+}
+```
+
+---
+
+### List Cache Entries
+
+Get cached entries.
+
+```http
+GET /api/v1/cache/entries?limit=100&offset=0&domain=example.com
+```
+
+---
+
+### Delete Cache Entry
+
+Delete a specific cache entry.
+
+```http
+DELETE /api/v1/cache/entries/{key}
+```
+
+---
+
+### Clear Cache
+
+Clear all cache entries.
+
+```http
+POST /api/v1/cache/clear
+```
+
+**Response:**
+```json
+{
+  "status": "cleared"
+}
+```
+
+---
+
+## Mesh Networking
+
+### Get Mesh Status
+
+Get mesh network status.
+
+```http
+GET /api/v1/mesh/status
+```
+
+**Response:**
+```json
+{
+  "status": "running",
+  "enabled": true,
+  "peer_id": "peer-abc123",
+  "virtual_ip": "10.100.0.2",
+  "network_id": "net-xyz789",
+  "network_cidr": "10.100.0.0/24",
+  "peer_name": "laptop-work",
+  "peer_count": 5,
+  "connected_peers": 3,
+  "direct_connections": 2,
+  "relayed_connections": 1,
+  "bytes_sent": 10485760,
+  "bytes_received": 20971520,
+  "packets_sent": 10000,
+  "packets_received": 15000,
+  "uptime": "2h30m15s"
+}
+```
+
+---
+
+### Get Mesh Stats
+
+Get detailed mesh statistics.
+
+```http
+GET /api/v1/mesh/stats
+```
+
+---
+
+### Enable Mesh
+
+Enable mesh networking.
+
+```http
+POST /api/v1/mesh/enable
+```
+
+**Response:**
+```json
+{
+  "status": "enabled"
+}
+```
+
+---
+
+### Disable Mesh
+
+Disable mesh networking.
+
+```http
+POST /api/v1/mesh/disable
+```
+
+**Response:**
+```json
+{
+  "status": "disabled"
+}
+```
+
+---
+
+### List Peers
+
+Get all known peers in the mesh.
+
+```http
+GET /api/v1/mesh/peers
+```
+
+**Response:**
+```json
+[
+  {
+    "id": "peer-xyz789",
+    "name": "desktop-home",
+    "virtual_ip": "10.100.0.3",
+    "virtual_mac": "02:00:00:00:00:03",
+    "public_key": "base64...",
+    "status": "connected",
+    "connection_type": "direct",
+    "latency_ms": 5,
+    "last_seen": "2024-01-15T10:00:00Z",
+    "joined_at": "2024-01-01T00:00:00Z",
+    "bytes_sent": 1048576,
+    "bytes_received": 2097152,
+    "endpoints": [
+      {
+        "address": "192.168.1.50",
+        "port": 51820,
+        "type": "lan",
+        "priority": 100
+      }
+    ],
+    "metadata": {
+      "os": "linux",
+      "version": "1.0.0"
+    }
+  }
+]
+```
+
+---
+
+### Get Connected Peers
+
+Get only currently connected peers.
+
+```http
+GET /api/v1/mesh/peers/connected
+```
+
+---
+
+### Get Peer Details
+
+Get details of a specific peer.
+
+```http
+GET /api/v1/mesh/peers/{id}
+```
+
+---
+
+### Get Routing Table
+
+Get mesh routing table.
+
+```http
+GET /api/v1/mesh/routes
+```
+
+**Response:**
+```json
+[
+  {
+    "dest_peer_id": "peer-xyz789",
+    "dest_ip": "10.100.0.3",
+    "next_hop": "",
+    "type": "direct",
+    "metric": 1,
+    "latency_ms": 5,
+    "hop_count": 1,
+    "last_updated": "2024-01-15T10:00:00Z",
+    "active": true
+  },
+  {
+    "dest_peer_id": "peer-abc456",
+    "dest_ip": "10.100.0.4",
+    "next_hop": "peer-xyz789",
+    "type": "relayed",
+    "metric": 2,
+    "latency_ms": 25,
+    "hop_count": 2,
+    "last_updated": "2024-01-15T09:55:00Z",
+    "active": true
+  }
+]
+```
+
+---
+
+### Get Network Info
+
+Get mesh network information.
+
+```http
+GET /api/v1/mesh/network
+```
+
+**Response:**
+```json
+{
+  "network_id": "net-xyz789",
+  "network_cidr": "10.100.0.0/24",
+  "peer_name": "laptop-work",
+  "local_peer_id": "peer-abc123",
+  "virtual_ip": "10.100.0.2"
+}
+```
+
+---
+
+## Profiling (pprof)
+
+The client exposes Go's pprof endpoints for debugging and profiling.
+
+### Available Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /debug/pprof/` | Profiling index page |
+| `GET /debug/pprof/cmdline` | Command line arguments |
+| `GET /debug/pprof/profile` | CPU profile (30s default) |
+| `GET /debug/pprof/heap` | Heap memory profile |
+| `GET /debug/pprof/goroutine` | Goroutine stack traces |
+| `GET /debug/pprof/allocs` | Memory allocation profile |
+| `GET /debug/pprof/block` | Block contention profile |
+| `GET /debug/pprof/mutex` | Mutex contention profile |
+| `GET /debug/pprof/threadcreate` | Thread creation profile |
+
+### Usage Examples
+
+```bash
+# Get CPU profile (30 seconds)
+curl http://localhost:7383/debug/pprof/profile > cpu.prof
+
+# Get heap profile
+curl http://localhost:7383/debug/pprof/heap > heap.prof
+
+# Analyze with go tool
+go tool pprof cpu.prof
+```

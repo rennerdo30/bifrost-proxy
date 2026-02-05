@@ -1,0 +1,795 @@
+---
+title: "OpenAPI Specification"
+description: "OpenAPI/Swagger specification for Bifrost Proxy APIs"
+---
+
+# OpenAPI Specification
+
+Bifrost provides OpenAPI 3.0 specifications for both server and client APIs. These specifications can be used for:
+
+- **API Documentation** - Generate interactive API docs with Swagger UI or Redoc
+- **Client Generation** - Auto-generate API clients in any language
+- **Testing** - Validate API requests/responses
+- **Integration** - Import into API platforms like Postman
+
+## Downloading Specifications
+
+### Server API Specification
+
+Download the server OpenAPI spec:
+
+- [bifrost-server-openapi.yaml](/api/specs/bifrost-server-openapi.yaml)
+- [bifrost-server-openapi.json](/api/specs/bifrost-server-openapi.json)
+
+### Client API Specification
+
+Download the client OpenAPI spec:
+
+- [bifrost-client-openapi.yaml](/api/specs/bifrost-client-openapi.yaml)
+- [bifrost-client-openapi.json](/api/specs/bifrost-client-openapi.json)
+
+## Server API Specification
+
+```yaml
+openapi: 3.0.3
+info:
+  title: Bifrost Proxy Server API
+  description: REST API for managing Bifrost Proxy Server
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  contact:
+    name: Bifrost Proxy
+    url: https://github.com/rennerdo30/bifrost-proxy
+
+servers:
+  - url: http://localhost:7082
+    description: Default server API endpoint
+
+security:
+  - BearerAuth: []
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: API token authentication
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded]
+        time:
+          type: string
+          format: date-time
+
+    VersionInfo:
+      type: object
+      properties:
+        version:
+          type: string
+          example: "1.0.0"
+        git_commit:
+          type: string
+          example: "abc123"
+        build_time:
+          type: string
+          format: date-time
+        go_version:
+          type: string
+          example: "go1.22.0"
+        platform:
+          type: string
+          example: "linux/amd64"
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "running"
+        time:
+          type: string
+          format: date-time
+        version:
+          type: string
+        backends:
+          type: integer
+
+    StatsResponse:
+      type: object
+      properties:
+        total_connections:
+          type: integer
+        active_connections:
+          type: integer
+        bytes_sent:
+          type: integer
+        bytes_received:
+          type: integer
+        backends:
+          type: object
+          properties:
+            total:
+              type: integer
+            healthy:
+              type: integer
+        time:
+          type: string
+          format: date-time
+
+    Backend:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [direct, wireguard, openvpn, httpproxy, socks5]
+        healthy:
+          type: boolean
+        stats:
+          $ref: '#/components/schemas/BackendStats'
+
+    BackendStats:
+      type: object
+      properties:
+        active_connections:
+          type: integer
+        total_connections:
+          type: integer
+        bytes_sent:
+          type: integer
+        bytes_received:
+          type: integer
+
+    BackendConfig:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [direct, wireguard, openvpn, httpproxy, socks5]
+        enabled:
+          type: boolean
+          default: true
+
+    Route:
+      type: object
+      properties:
+        name:
+          type: string
+        domains:
+          type: array
+          items:
+            type: string
+        backend:
+          type: string
+        backends:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+        priority:
+          type: integer
+
+    RouteCreate:
+      type: object
+      required:
+        - name
+        - domains
+      properties:
+        name:
+          type: string
+        domains:
+          type: array
+          items:
+            type: string
+        backend:
+          type: string
+        backends:
+          type: array
+          items:
+            type: string
+        enabled:
+          type: boolean
+          default: true
+        priority:
+          type: integer
+          default: 0
+
+    RequestLogEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+        method:
+          type: string
+        host:
+          type: string
+        path:
+          type: string
+        url:
+          type: string
+        user_agent:
+          type: string
+        client_ip:
+          type: string
+        username:
+          type: string
+        backend:
+          type: string
+        status_code:
+          type: integer
+        bytes_sent:
+          type: integer
+        bytes_recv:
+          type: integer
+        duration_ms:
+          type: integer
+        error:
+          type: string
+        protocol:
+          type: string
+
+    Connection:
+      type: object
+      properties:
+        id:
+          type: string
+        client_ip:
+          type: string
+        client_port:
+          type: string
+        host:
+          type: string
+        backend:
+          type: string
+        protocol:
+          type: string
+        start_time:
+          type: string
+          format: date-time
+        bytes_sent:
+          type: integer
+        bytes_recv:
+          type: integer
+
+    CacheStats:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        hit_rate:
+          type: number
+        total_requests:
+          type: integer
+        cache_hits:
+          type: integer
+        cache_misses:
+          type: integer
+        storage_type:
+          type: string
+        rules_count:
+          type: integer
+        memory:
+          type: object
+          properties:
+            entries:
+              type: integer
+            size_bytes:
+              type: integer
+            max_size_bytes:
+              type: integer
+        disk:
+          type: object
+          properties:
+            entries:
+              type: integer
+            size_bytes:
+              type: integer
+            max_size_bytes:
+              type: integer
+
+    CacheEntry:
+      type: object
+      properties:
+        key:
+          type: string
+        url:
+          type: string
+        host:
+          type: string
+        size:
+          type: integer
+        content_type:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        code:
+          type: string
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      tags: [Health]
+      security: []
+      responses:
+        '200':
+          description: Server health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/version:
+    get:
+      summary: Get version info
+      tags: [Health]
+      responses:
+        '200':
+          description: Version information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VersionInfo'
+
+  /api/v1/status:
+    get:
+      summary: Get server status
+      tags: [Health]
+      responses:
+        '200':
+          description: Server status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+
+  /api/v1/stats:
+    get:
+      summary: Get server statistics
+      tags: [Health]
+      responses:
+        '200':
+          description: Server statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatsResponse'
+
+  /api/v1/backends:
+    get:
+      summary: List all backends
+      tags: [Backends]
+      responses:
+        '200':
+          description: List of backends
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Backend'
+    post:
+      summary: Add a backend
+      tags: [Backends]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackendConfig'
+      responses:
+        '201':
+          description: Backend created
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Backend already exists
+
+  /api/v1/backends/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get backend by name
+      tags: [Backends]
+      responses:
+        '200':
+          description: Backend details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Backend'
+        '404':
+          description: Backend not found
+    delete:
+      summary: Remove backend
+      tags: [Backends]
+      responses:
+        '200':
+          description: Backend removed
+        '404':
+          description: Backend not found
+
+  /api/v1/backends/{name}/stats:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get backend statistics
+      tags: [Backends]
+      responses:
+        '200':
+          description: Backend statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BackendStats'
+
+  /api/v1/backends/{name}/test:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Test backend connectivity
+      tags: [Backends]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target:
+                  type: string
+                  default: "google.com:443"
+                timeout:
+                  type: string
+                  default: "10s"
+      responses:
+        '200':
+          description: Test result
+
+  /api/v1/routes:
+    get:
+      summary: List routing rules
+      tags: [Routes]
+      responses:
+        '200':
+          description: List of routes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Route'
+    post:
+      summary: Add routing rule
+      tags: [Routes]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RouteCreate'
+      responses:
+        '201':
+          description: Route created
+        '400':
+          description: Invalid request
+        '409':
+          description: Route already exists
+
+  /api/v1/routes/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      summary: Remove routing rule
+      tags: [Routes]
+      responses:
+        '200':
+          description: Route removed
+        '404':
+          description: Route not found
+
+  /api/v1/requests:
+    get:
+      summary: Get request log
+      tags: [Request Log]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: since
+          in: query
+          schema:
+            type: integer
+        - name: offset
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Request log entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  requests:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/RequestLogEntry'
+    delete:
+      summary: Clear request log
+      tags: [Request Log]
+      responses:
+        '200':
+          description: Request log cleared
+
+  /api/v1/connections:
+    get:
+      summary: Get active connections
+      tags: [Connections]
+      responses:
+        '200':
+          description: Active connections
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connections:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Connection'
+                  count:
+                    type: integer
+                  time:
+                    type: string
+                    format: date-time
+
+  /api/v1/cache/stats:
+    get:
+      summary: Get cache statistics
+      tags: [Cache]
+      responses:
+        '200':
+          description: Cache statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CacheStats'
+
+  /api/v1/cache/entries:
+    get:
+      summary: List cache entries
+      tags: [Cache]
+      parameters:
+        - name: domain
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Cache entries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CacheEntry'
+                  total:
+                    type: integer
+                  offset:
+                    type: integer
+                  limit:
+                    type: integer
+    delete:
+      summary: Clear all cache
+      tags: [Cache]
+      parameters:
+        - name: confirm
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Cache cleared
+
+  /api/v1/config:
+    get:
+      summary: Get config (sanitized)
+      tags: [Configuration]
+      responses:
+        '200':
+          description: Sanitized configuration
+    put:
+      summary: Save configuration
+      tags: [Configuration]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                config:
+                  type: object
+                create_backup:
+                  type: boolean
+      responses:
+        '200':
+          description: Configuration saved
+
+  /api/v1/config/reload:
+    post:
+      summary: Reload configuration
+      tags: [Configuration]
+      responses:
+        '200':
+          description: Configuration reloaded
+
+  /proxy.pac:
+    get:
+      summary: Get PAC file
+      tags: [PAC]
+      security: []
+      responses:
+        '200':
+          description: Proxy auto-configuration file
+          content:
+            application/x-ns-proxy-autoconfig:
+              schema:
+                type: string
+```
+
+## Using the Specification
+
+### Swagger UI
+
+View interactive documentation with Swagger UI:
+
+```bash
+# Using Docker
+docker run -p 8080:8080 \
+  -e SWAGGER_JSON=/spec/openapi.yaml \
+  -v ./bifrost-server-openapi.yaml:/spec/openapi.yaml \
+  swaggerapi/swagger-ui
+
+# Open http://localhost:8080
+```
+
+### Redoc
+
+Generate beautiful documentation with Redoc:
+
+```bash
+# Using npx
+npx @redocly/cli build-docs bifrost-server-openapi.yaml -o docs.html
+```
+
+### Client Generation
+
+Generate API clients using OpenAPI Generator:
+
+```bash
+# TypeScript client
+npx @openapitools/openapi-generator-cli generate \
+  -i bifrost-server-openapi.yaml \
+  -g typescript-fetch \
+  -o ./generated/typescript
+
+# Go client
+npx @openapitools/openapi-generator-cli generate \
+  -i bifrost-server-openapi.yaml \
+  -g go \
+  -o ./generated/go
+
+# Python client
+npx @openapitools/openapi-generator-cli generate \
+  -i bifrost-server-openapi.yaml \
+  -g python \
+  -o ./generated/python
+```
+
+### Postman Import
+
+1. Open Postman
+2. Click "Import" button
+3. Select the OpenAPI YAML/JSON file
+4. Postman will create a collection with all endpoints
+
+### Validation
+
+Validate API implementations against the spec:
+
+```bash
+# Install spectral
+npm install -g @stoplight/spectral-cli
+
+# Validate the spec
+spectral lint bifrost-server-openapi.yaml
+```
+
+## Generating Specs from Code
+
+The OpenAPI specifications are generated from the Go source code using annotations. To regenerate:
+
+```bash
+# Install swag
+go install github.com/swaggo/swag/cmd/swag@latest
+
+# Generate specs
+swag init -g internal/api/server/server.go -o docs/api/specs
+```
+
+## WebSocket Documentation
+
+Note: OpenAPI 3.0 doesn't natively support WebSocket APIs. For WebSocket documentation, see the [WebSocket API](/api/websocket/) page.
+
+For AsyncAPI specification of WebSocket events, see the AsyncAPI spec files:
+- `bifrost-server-asyncapi.yaml` - Server WebSocket events
+- `bifrost-client-asyncapi.yaml` - Client SSE log streaming

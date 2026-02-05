@@ -60,7 +60,18 @@ export default defineConfig({
             { label: "Troubleshooting", slug: "troubleshooting" },
           ],
         },
-        { label: "API Reference", slug: "api" },
+        {
+          label: "API Reference",
+          items: [
+            { label: "Overview", slug: "api/index" },
+            { label: "Server API", slug: "api/server" },
+            { label: "Client API", slug: "api/client" },
+            { label: "WebSocket API", slug: "api/websocket" },
+            { label: "Authentication", slug: "api/authentication" },
+            { label: "Rate Limiting", slug: "api/rate-limiting" },
+            { label: "OpenAPI Specification", slug: "api/openapi" },
+          ],
+        },
         {
           label: "Internals",
           items: [
