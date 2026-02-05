@@ -220,7 +220,19 @@ func (p *Process) handleManagement(ctx context.Context, conn net.Conn) {
 		default:
 		}
 
-		conn.SetReadDeadline(time.Now().Add(time.Second))
+		if err := conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			if p.logger != nil {
+				configFile := ""
+				if p.config != nil {
+					configFile = p.config.ConfigFile
+				}
+				p.logger.Debug("failed to set read deadline on management connection",
+					"remote_addr", conn.RemoteAddr(),
+					"config_file", configFile,
+					"error", err,
+				)
+			}
+		}
 		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {

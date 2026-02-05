@@ -245,7 +245,12 @@ func (r *UDPRelay) readLoop() {
 		}
 
 		// Set read deadline to allow checking context
-		r.conn.SetReadDeadline(time.Now().Add(time.Second))
+		if err := r.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			slog.Debug("failed to set read deadline on UDP relay",
+				"local_addr", r.conn.LocalAddr(),
+				"error", err,
+			)
+		}
 
 		n, remoteAddr, err := r.conn.ReadFromUDP(buf)
 		if err != nil {
