@@ -21,6 +21,14 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build web UIs for embed
+        run: make web-sync
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v4
         with:
@@ -192,6 +200,14 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build web UIs for embed
+        run: make web-sync
 
       - name: Run Gosec
         uses: securego/gosec@master

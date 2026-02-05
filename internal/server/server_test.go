@@ -87,7 +87,7 @@ func TestNew_WithRateLimit(t *testing.T) {
 	s, err := New(cfg)
 	require.NoError(t, err)
 	require.NotNil(t, s)
-	assert.NotNil(t, s.rateLimiter)
+	assert.NotNil(t, s.rateLimiterIP)
 }
 
 func TestNew_WithAuth(t *testing.T) {
@@ -789,7 +789,8 @@ func TestServer_authenticate_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// NoneAuthenticator accepts any credentials
-	assert.True(t, s.authenticate("any", "any"))
+	_, authErr := s.authenticator.Authenticate(context.Background(), "any", "any")
+	assert.NoError(t, authErr)
 }
 
 func TestServer_authenticate_Failure(t *testing.T) {
@@ -818,7 +819,8 @@ func TestServer_authenticate_Failure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Wrong password should fail
-	assert.False(t, s.authenticate("testuser", "wrongpassword"))
+	_, authErr := s.authenticator.Authenticate(context.Background(), "testuser", "wrongpassword")
+	assert.Error(t, authErr)
 }
 
 func TestServer_ReloadConfig_WithPath(t *testing.T) {
