@@ -26,7 +26,7 @@ func TestBuildIPv6AddrMessage(t *testing.T) {
 		// Verify nlmsghdr
 		assert.Equal(t, uint32(64), *(*uint32)(unsafe.Pointer(&msg[0])))   // nlmsg_len
 		assert.Equal(t, uint16(20), *(*uint16)(unsafe.Pointer(&msg[4])))   // nlmsg_type (RTM_NEWADDR)
-		assert.Equal(t, uint16(0x305), *(*uint16)(unsafe.Pointer(&msg[6]))) // nlmsg_flags (NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK)
+		assert.Equal(t, uint16(0x605), *(*uint16)(unsafe.Pointer(&msg[6]))) // nlmsg_flags (NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK)
 
 		// Verify ifaddrmsg
 		assert.Equal(t, byte(10), msg[16])                                  // ifa_family (AF_INET6)
