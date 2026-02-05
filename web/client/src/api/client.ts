@@ -1,6 +1,21 @@
 import type { VersionInfo, StatusResponse, DebugEntry, Route, RouteTestResult } from './types'
 
 const API_BASE = '/api/v1'
+
+// Helper function to convert routes to YAML format
+function routesToYaml(routes: Route[]): string {
+  let yaml = 'routes:\n'
+  for (const route of routes) {
+    yaml += `  - name: "${route.name}"\n`
+    yaml += `    patterns:\n`
+    for (const pattern of route.patterns) {
+      yaml += `      - "${pattern}"\n`
+    }
+    yaml += `    action: "${route.action}"\n`
+    yaml += `    priority: ${route.priority}\n`
+  }
+  return yaml
+}
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
 
 class APIError extends Error {
@@ -323,6 +338,40 @@ export const api = {
   // Routes
   getRoutes: () => fetchJSON<Route[]>('/routes'),
   testRoute: (domain: string) => fetchJSON<RouteTestResult>(`/routes/test?domain=${encodeURIComponent(domain)}`),
+  addRoute: (route: { name: string; domains: string[]; action: string; priority: number }) =>
+    fetchJSON<{ status: string; route: string }>('/routes', {
+      method: 'POST',
+      body: JSON.stringify(route),
+    }),
+  removeRoute: (name: string) =>
+    fetchJSON<{ status: string; route: string }>(`/routes/${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+  exportRoutes: async (format: 'json' | 'yaml' = 'json') => {
+    const routes = await fetchJSON<Route[]>('/routes')
+    const content = format === 'json' ? JSON.stringify(routes, null, 2) : routesToYaml(routes)
+    return new Blob([content], { type: format === 'json' ? 'application/json' : 'application/x-yaml' })
+  },
+  importRoutes: async (routes: Route[]) => {
+    const results = []
+    for (const route of routes) {
+      try {
+        await fetchJSON<{ status: string }>('/routes', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: route.name,
+            domains: route.patterns,
+            action: route.action,
+            priority: route.priority,
+          }),
+        })
+        results.push({ name: route.name, success: true })
+      } catch (err) {
+        results.push({ name: route.name, success: false, error: err instanceof Error ? err.message : 'Unknown error' })
+      }
+    }
+    return results
+  },
 
   // Config
   getConfig: () => fetchJSON<ClientConfig>('/config'),
