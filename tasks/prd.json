@@ -461,13 +461,14 @@
         "Add 'Report Issue' link in error UI"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "desktop",
         "wails",
         "error-handling"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-023",
@@ -732,6 +733,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T06:38:09.516Z"
+    "updatedAt": "2026-02-05T06:41:12.481Z"
   }
 }
