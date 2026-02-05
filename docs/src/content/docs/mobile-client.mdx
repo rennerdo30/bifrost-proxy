@@ -326,6 +326,111 @@ function MyScreen() {
 }
 ```
 
+## Accessibility
+
+The Bifrost Mobile Client is designed with accessibility in mind, supporting both VoiceOver (iOS) and TalkBack (Android) screen readers.
+
+### Supported Accessibility Features
+
+| Feature | Support |
+|---------|---------|
+| Screen Reader | Full support |
+| Accessibility Labels | All interactive elements |
+| Accessibility Roles | Semantic roles for buttons, tabs, switches |
+| Accessibility States | Disabled, selected, checked states |
+| Accessibility Hints | Context-aware action hints |
+
+### VoiceOver Testing (iOS)
+
+#### How to Test
+
+1. Enable VoiceOver: Settings > Accessibility > VoiceOver
+2. Navigate using swipe gestures
+3. Double-tap to activate
+4. Use two-finger scroll for lists
+
+#### Expected Behavior
+
+**Home Screen:**
+- Connect/Disconnect button announces: "Connect to VPN, button" or "Disconnect from VPN, button"
+- Status text announces: "Connection status: Protected" or similar
+- Error alerts are announced immediately with role "alert"
+- Upload/Download cards announce: "Upload: 1.2 GB" and "Download: 3.4 GB"
+
+**Servers Screen:**
+- Server items announce full context: "Server Name, address, protocol, status, selected/not selected"
+- Offline servers announce disabled state
+- Pull-to-refresh announces "Pull to refresh server list"
+
+**Stats Screen:**
+- All stat rows announce label and value pairs: "Duration: 2h 34m"
+- StatusCard components announce: "Total Sent: 1.2 GB", "Total Received: 3.4 GB"
+
+**Settings Screen:**
+- Switch controls announce their label and current state
+- Configure button announces: "Configure split tunneling, button"
+- Text input announces: "Server address, Enter the server address in host:port format"
+
+**Tab Navigation:**
+- Tab icons announce: "Home tab, selected" or "Settings tab"
+- Uses proper tab role with selected state
+
+### TalkBack Testing (Android)
+
+#### How to Test
+
+1. Enable TalkBack: Settings > Accessibility > TalkBack
+2. Navigate by swiping left/right
+3. Double-tap to activate
+4. Use two-finger scroll for content
+
+#### Expected Behavior
+
+All behaviors match VoiceOver testing above with Android-specific variations:
+
+- `importantForAccessibility="no"` hides decorative elements
+- `importantForAccessibility="no-hide-descendants"` groups child elements
+- Swipe gestures map to Android TalkBack conventions
+- Focus indicators appear on currently selected element
+
+### Accessibility Implementation Details
+
+The following accessibility props are used throughout the app:
+
+```typescript
+// Button example
+<TouchableOpacity
+  accessibilityRole="button"
+  accessibilityLabel="Connect to VPN"
+  accessibilityHint="Double tap to establish VPN connection"
+  accessibilityState={{ disabled: isLoading }}
+>
+
+// Switch example
+<Switch
+  accessibilityLabel="Auto-connect toggle"
+  accessibilityHint="When enabled, the app will connect automatically on launch"
+  accessibilityState={{ checked: isEnabled }}
+/>
+
+// Grouped content example
+<View
+  accessible={true}
+  accessibilityRole="summary"
+  accessibilityLabel={`${title}: ${value}`}
+>
+  <Text importantForAccessibility="no">{title}</Text>
+  <Text importantForAccessibility="no">{value}</Text>
+</View>
+```
+
+### Known Accessibility Considerations
+
+1. **Emoji Icons**: Tab bar uses emoji icons which are hidden from screen readers; proper labels are provided instead
+2. **Pull-to-Refresh**: Custom accessibility labels describe the refresh action
+3. **Dynamic Content**: Status updates may not be immediately announced; users should navigate to the status area to hear updates
+4. **Error States**: Error messages use the `alert` role for immediate screen reader announcement
+
 ## Troubleshooting
 
 ### Cannot Connect to Client

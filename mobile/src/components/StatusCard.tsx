@@ -9,12 +9,26 @@ interface StatusCardProps {
 
 export function StatusCard({ title, value, icon, color }: StatusCardProps) {
   return (
-    <View style={styles.card}>
-      <View style={[styles.iconContainer, { backgroundColor: `${color}20` }]}>
-        <Text style={[styles.icon, { color }]}>{icon}</Text>
+    <View
+      style={styles.card}
+      accessible={true}
+      accessibilityRole="summary"
+      accessibilityLabel={`${title}: ${value}`}
+    >
+      <View
+        style={[styles.iconContainer, { backgroundColor: `${color}20` }]}
+        importantForAccessibility="no-hide-descendants"
+      >
+        <Text style={[styles.icon, { color }]} importantForAccessibility="no">
+          {icon}
+        </Text>
       </View>
-      <Text style={styles.title}>{title}</Text>
-      <Text style={styles.value}>{value}</Text>
+      <Text style={styles.title} importantForAccessibility="no">
+        {title}
+      </Text>
+      <Text style={styles.value} importantForAccessibility="no">
+        {value}
+      </Text>
     </View>
   )
 }

@@ -203,7 +203,12 @@ export function HomeScreen() {
       style={styles.container}
       contentContainerStyle={styles.content}
       refreshControl={
-        <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#3b82f6" />
+        <RefreshControl
+          refreshing={isRefreshing}
+          onRefresh={onRefresh}
+          tintColor="#3b82f6"
+          accessibilityLabel="Pull to refresh connection status"
+        />
       }
     >
       {/* Connection Status */}
@@ -246,8 +251,15 @@ export function HomeScreen() {
 
       {/* Error Message */}
       {vpnStatus?.last_error && (
-        <View style={styles.errorCard}>
-          <Text style={styles.errorText}>{vpnStatus.last_error}</Text>
+        <View
+          style={styles.errorCard}
+          accessible={true}
+          accessibilityRole="alert"
+          accessibilityLabel={`Connection error: ${vpnStatus.last_error}`}
+        >
+          <Text style={styles.errorText} importantForAccessibility="no">
+            {vpnStatus.last_error}
+          </Text>
         </View>
       )}
 
@@ -269,10 +281,21 @@ export function HomeScreen() {
 
       {/* Server Info */}
       {isConnected && (
-        <View style={styles.serverCard}>
-          <Text style={styles.serverLabel}>Connected to</Text>
-          <Text style={styles.serverName}>{activeServer?.name || 'Bifrost Server'}</Text>
-          <Text style={styles.serverAddress}>{activeServer?.address || getCurrentServerAddress()}</Text>
+        <View
+          style={styles.serverCard}
+          accessible={true}
+          accessibilityRole="text"
+          accessibilityLabel={`Connected to ${activeServer?.name || 'Bifrost Server'} at ${activeServer?.address || getCurrentServerAddress()}`}
+        >
+          <Text style={styles.serverLabel} importantForAccessibility="no">
+            Connected to
+          </Text>
+          <Text style={styles.serverName} importantForAccessibility="no">
+            {activeServer?.name || 'Bifrost Server'}
+          </Text>
+          <Text style={styles.serverAddress} importantForAccessibility="no">
+            {activeServer?.address || getCurrentServerAddress()}
+          </Text>
         </View>
       )}
     </ScrollView>

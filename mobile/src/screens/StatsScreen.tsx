@@ -12,9 +12,18 @@ interface StatRowProps {
 
 function StatRow({ label, value, color = '#f9fafb' }: StatRowProps) {
   return (
-    <View style={styles.statRow}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, { color }]}>{value}</Text>
+    <View
+      style={styles.statRow}
+      accessible={true}
+      accessibilityRole="text"
+      accessibilityLabel={`${label}: ${value}`}
+    >
+      <Text style={styles.statLabel} importantForAccessibility="no">
+        {label}
+      </Text>
+      <Text style={[styles.statValue, { color }]} importantForAccessibility="no">
+        {value}
+      </Text>
     </View>
   )
 }

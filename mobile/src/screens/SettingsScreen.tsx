@@ -225,6 +225,9 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
+            accessibilityLabel="Auto-connect toggle"
+            accessibilityHint="When enabled, the app will connect automatically on launch"
+            accessibilityState={{ checked: config?.tray?.auto_connect ?? false }}
           />
         </SettingItem>
 
@@ -239,6 +242,9 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
+            accessibilityLabel="VPN mode toggle"
+            accessibilityHint="When enabled, all traffic will be routed through VPN tunnel"
+            accessibilityState={{ checked: config?.vpn?.enabled ?? false }}
           />
         </SettingItem>
 
@@ -270,6 +276,8 @@ export function SettingsScreen() {
             autoCapitalize="none"
             autoCorrect={false}
             editable={!isMutating && !isSavingServer}
+            accessibilityLabel="Server address"
+            accessibilityHint="Enter the server address in host:port format"
           />
           <TouchableOpacity
             style={[styles.saveButton, (isMutating || isSavingServer) && styles.saveButtonDisabled]}
@@ -301,6 +309,9 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
+            accessibilityLabel="Connection alerts toggle"
+            accessibilityHint="When enabled, you will receive notifications on connect and disconnect"
+            accessibilityState={{ checked: config?.tray?.show_notifications ?? true }}
           />
         </SettingItem>
       </SettingSection>
