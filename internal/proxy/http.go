@@ -255,7 +255,7 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 		}
 		if handled {
 			// Request was served from cache
-			return
+			return nil
 		}
 	}
 
