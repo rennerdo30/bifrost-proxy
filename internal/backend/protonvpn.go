@@ -15,19 +15,19 @@ import (
 
 // ProtonVPNBackend provides connections through ProtonVPN.
 type ProtonVPNBackend struct {
-	name            string
-	config          ProtonVPNConfig
-	client          *protonvpn.Client
-	delegate        Backend // OpenVPN backend (WireGuard requires API auth)
-	selectedServer  *vpnprovider.Server
-	startTime       time.Time
-	healthy         atomic.Bool
-	stats           protonvpnStats
-	mu              sync.RWMutex
-	running         bool
-	stopChan        chan struct{}
-	refreshTicker   *time.Ticker
-	logger          *slog.Logger
+	name           string
+	config         ProtonVPNConfig
+	client         *protonvpn.Client
+	delegate       Backend // OpenVPN backend (WireGuard requires API auth)
+	selectedServer *vpnprovider.Server
+	startTime      time.Time
+	healthy        atomic.Bool
+	stats          protonvpnStats
+	mu             sync.RWMutex
+	running        bool
+	stopChan       chan struct{}
+	refreshTicker  *time.Ticker
+	logger         *slog.Logger
 }
 
 type protonvpnStats struct {
@@ -44,17 +44,17 @@ type protonvpnStats struct {
 // ProtonVPNConfig holds configuration for a ProtonVPN backend.
 type ProtonVPNConfig struct {
 	Name            string        `yaml:"name"`
-	Username        string        `yaml:"username"`                    // Required: ProtonVPN OpenVPN username
-	Password        string        `yaml:"password"`                    // Required: ProtonVPN OpenVPN password
-	Country         string        `yaml:"country,omitempty"`           // ISO country code (e.g., "US", "DE")
-	City            string        `yaml:"city,omitempty"`              // City name
-	Tier            int           `yaml:"tier,omitempty"`              // Subscription tier: 0=free, 1=basic, 2=plus (default: 2)
-	Protocol        string        `yaml:"protocol,omitempty"`          // Currently only "openvpn" is supported
-	AutoSelect      bool          `yaml:"auto_select,omitempty"`       // Automatically select best server
-	MaxLoad         int           `yaml:"max_load,omitempty"`          // Max server load percentage (0-100)
-	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"`  // How often to check for better servers
-	Features        []string      `yaml:"features,omitempty"`          // Required features (e.g., "p2p", "streaming", "secure_core")
-	SecureCore      bool          `yaml:"secure_core,omitempty"`       // Use Secure Core servers (multi-hop)
+	Username        string        `yaml:"username"`                   // Required: ProtonVPN OpenVPN username
+	Password        string        `yaml:"password"`                   // Required: ProtonVPN OpenVPN password
+	Country         string        `yaml:"country,omitempty"`          // ISO country code (e.g., "US", "DE")
+	City            string        `yaml:"city,omitempty"`             // City name
+	Tier            int           `yaml:"tier,omitempty"`             // Subscription tier: 0=free, 1=basic, 2=plus (default: 2)
+	Protocol        string        `yaml:"protocol,omitempty"`         // Currently only "openvpn" is supported
+	AutoSelect      bool          `yaml:"auto_select,omitempty"`      // Automatically select best server
+	MaxLoad         int           `yaml:"max_load,omitempty"`         // Max server load percentage (0-100)
+	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"` // How often to check for better servers
+	Features        []string      `yaml:"features,omitempty"`         // Required features (e.g., "p2p", "streaming", "secure_core")
+	SecureCore      bool          `yaml:"secure_core,omitempty"`      // Use Secure Core servers (multi-hop)
 }
 
 // NewProtonVPNBackend creates a new ProtonVPN backend.

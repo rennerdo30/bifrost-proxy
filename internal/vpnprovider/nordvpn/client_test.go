@@ -369,7 +369,7 @@ func TestSelectServer(t *testing.T) {
 
 	t.Run("no servers matching criteria", func(t *testing.T) {
 		selected, err := client.SelectServer(ctx, vpnprovider.ServerCriteria{
-			Country:  "XX", // Non-existent country
+			Country: "XX", // Non-existent country
 		})
 
 		assert.ErrorIs(t, err, vpnprovider.ErrNoServersAvailable)

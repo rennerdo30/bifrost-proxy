@@ -2,6 +2,7 @@
 package client
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -155,7 +156,7 @@ Example:
 	routesAddCmd.Flags().StringVarP(&routeDomain, "domain", "d", "", "Domain pattern(s), comma-separated for multiple (required)")
 	routesAddCmd.Flags().StringVarP(&routeAction, "action", "a", "server", "Action: 'server' (use proxy) or 'direct' (bypass proxy)")
 	routesAddCmd.Flags().IntVarP(&routePriority, "priority", "p", 0, "Rule priority (higher = matched first)")
-	routesAddCmd.MarkFlagRequired("domain")
+	_ = routesAddCmd.MarkFlagRequired("domain") //nolint:errcheck // Flag registration only fails on invalid flag name
 
 	routesRemoveCmd := &cobra.Command{
 		Use:   "remove [name]",
@@ -297,7 +298,10 @@ Example:
 }
 
 func (c *APIClient) doRequest(method, path string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest(method, c.BaseURL+path, body)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +322,7 @@ func (c *APIClient) getJSON(path string, v interface{}) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort error message
 		return fmt.Errorf("API error: %s - %s", resp.Status, string(body))
 	}
 
@@ -380,7 +384,7 @@ func (c *APIClient) ClearDebug() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort error message
 		return fmt.Errorf("clear failed: %s - %s", resp.Status, string(body))
 	}
 
@@ -447,7 +451,7 @@ func (c *APIClient) ExportDebug(outputPath, format string) error {
 		}
 	}
 
-	if err := os.WriteFile(outputPath, output, 0644); err != nil {
+	if err := os.WriteFile(outputPath, output, 0600); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -460,13 +464,14 @@ func convertToHAR(entries []map[string]interface{}) map[string]interface{} {
 	harEntries := make([]map[string]interface{}, 0, len(entries))
 
 	for _, e := range entries {
-		method, _ := e["method"].(string)
-		host, _ := e["host"].(string)
-		status, _ := e["status"].(float64)
-		duration, _ := e["duration"].(float64)
-		timestamp, _ := e["timestamp"].(string)
-		requestSize, _ := e["request_size"].(float64)
-		responseSize, _ := e["response_size"].(float64)
+		// Type assertions with ok pattern - safely defaulting to zero values
+		method, _ := e["method"].(string)           //nolint:errcheck
+		host, _ := e["host"].(string)               //nolint:errcheck
+		status, _ := e["status"].(float64)          //nolint:errcheck
+		duration, _ := e["duration"].(float64)      //nolint:errcheck
+		timestamp, _ := e["timestamp"].(string)     //nolint:errcheck
+		requestSize, _ := e["request_size"].(float64)  //nolint:errcheck
+		responseSize, _ := e["response_size"].(float64) //nolint:errcheck
 
 		// Build URL
 		scheme := "https"
@@ -498,9 +503,9 @@ func convertToHAR(entries []map[string]interface{}) map[string]interface{} {
 					"size":     int(responseSize),
 					"mimeType": "",
 				},
-				"redirectURL":  "",
-				"headersSize":  -1,
-				"bodySize":     int(responseSize),
+				"redirectURL": "",
+				"headersSize": -1,
+				"bodySize":    int(responseSize),
 			},
 			"cache": map[string]interface{}{},
 			"timings": map[string]interface{}{
@@ -621,7 +626,7 @@ func (c *APIClient) AddRoute(name, domain, action string, priority int) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 
 	if resp.StatusCode != http.StatusCreated {
 		return fmt.Errorf("failed to add route: %s - %s", resp.Status, string(respBody))
@@ -645,7 +650,7 @@ func (c *APIClient) RemoveRoute(name string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("failed to remove route: %s - %s", resp.Status, string(body))
 	}
 
@@ -701,7 +706,7 @@ func (c *APIClient) EnableVPN() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("enable failed: %s - %s", resp.Status, string(body))
 	}
 
@@ -718,7 +723,7 @@ func (c *APIClient) DisableVPN() error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("disable failed: %s - %s", resp.Status, string(body))
 	}
 
@@ -781,7 +786,7 @@ func (c *APIClient) AddSplitTunnelApp(name string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("add failed: %s - %s", resp.Status, string(respBody))
 	}
 
@@ -798,7 +803,7 @@ func (c *APIClient) RemoveSplitTunnelApp(name string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("remove failed: %s - %s", resp.Status, string(body))
 	}
 
@@ -816,7 +821,7 @@ func (c *APIClient) AddSplitTunnelDomain(pattern string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("add failed: %s - %s", resp.Status, string(respBody))
 	}
 
@@ -834,7 +839,7 @@ func (c *APIClient) AddSplitTunnelIP(cidr string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
+		respBody, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("add failed: %s - %s", resp.Status, string(respBody))
 	}
 

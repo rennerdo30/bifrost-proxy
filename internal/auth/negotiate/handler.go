@@ -140,7 +140,7 @@ func (h *Handler) Authenticate(ctx context.Context, r *http.Request) (*auth.User
 }
 
 // createChallenge creates an authentication challenge response.
-func (h *Handler) createChallenge(r *http.Request) *Response {
+func (h *Handler) createChallenge(_ *http.Request) *Response {
 	schemes := []string{"Negotiate"}
 	if h.config.AllowNTLM {
 		schemes = append(schemes, "NTLM")
@@ -226,7 +226,7 @@ func (h *Handler) handleNTLM(ctx context.Context, r *http.Request, token []byte)
 }
 
 // handleNTLMType1 handles NTLM Type 1 (Negotiate) messages.
-func (h *Handler) handleNTLMType1(ctx context.Context, r *http.Request, token []byte) (*auth.UserInfo, *Response, error) {
+func (h *Handler) handleNTLMType1(_ context.Context, r *http.Request, token []byte) (*auth.UserInfo, *Response, error) {
 	// Generate session ID for tracking the handshake
 	sessionID := getClientSessionID(r)
 
@@ -421,13 +421,13 @@ func (h *Handler) ProxyMiddleware(next http.Handler) http.Handler {
 type contextKey string
 
 const (
-	kerberosTokenKey  contextKey = "kerberos_token"
-	ntlmTokenKey      contextKey = "ntlm_token"
+	kerberosTokenKey   contextKey = "kerberos_token"
+	ntlmTokenKey       contextKey = "ntlm_token"
 	userInfoContextKey contextKey = "user_info"
 )
 
 // GetUserInfoFromContext retrieves user info from context.
 func GetUserInfoFromContext(ctx context.Context) *auth.UserInfo {
-	userInfo, _ := ctx.Value(userInfoContextKey).(*auth.UserInfo)
+	userInfo, _ := ctx.Value(userInfoContextKey).(*auth.UserInfo) //nolint:errcheck // Type assertion - nil is valid if missing
 	return userInfo
 }

@@ -17,7 +17,7 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 net.Conn) (sent, receiv
 	// Copy conn1 -> conn2
 	go func() {
 		defer wg.Done()
-		sent, _ = copyWithContext(ctx, conn2, conn1)
+		sent, _ = copyWithContext(ctx, conn2, conn1) //nolint:errcheck // Error is not returned, bytes count suffices
 		// Close write side of conn2 to signal EOF
 		if c, ok := conn2.(interface{ CloseWrite() error }); ok {
 			if err := c.CloseWrite(); err != nil {
@@ -29,7 +29,7 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 net.Conn) (sent, receiv
 	// Copy conn2 -> conn1
 	go func() {
 		defer wg.Done()
-		received, _ = copyWithContext(ctx, conn1, conn2)
+		received, _ = copyWithContext(ctx, conn1, conn2) //nolint:errcheck // Error is not returned, bytes count suffices
 		// Close write side of conn1 to signal EOF
 		if c, ok := conn1.(interface{ CloseWrite() error }); ok {
 			if err := c.CloseWrite(); err != nil {

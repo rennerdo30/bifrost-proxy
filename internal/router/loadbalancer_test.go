@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"math"
 	"sync"
 	"testing"
@@ -16,8 +17,8 @@ import (
 func TestRoundRobinBalancer_CounterOverflow(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	lb := &RoundRobinBalancer{}
 	backends := []backend.Backend{b1, b2}
@@ -40,8 +41,8 @@ func TestRoundRobinBalancer_CounterOverflow(t *testing.T) {
 func TestWeightedBalancer_ZeroWeights(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	// Zero weight means backend won't be in weighted list
 	weights := map[string]int{"b1": 0, "b2": 3}
@@ -63,8 +64,8 @@ func TestWeightedBalancer_ZeroWeights(t *testing.T) {
 func TestWeightedBalancer_AllZeroWeights(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	// All zero weights - no backends in weighted list
 	weights := map[string]int{"b1": 0, "b2": 0}
@@ -81,8 +82,8 @@ func TestWeightedBalancer_AllZeroWeights(t *testing.T) {
 func TestWeightedBalancer_NegativeWeights(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	// Negative weights - should be treated as 0 or less iterations
 	weights := map[string]int{"b1": -5, "b2": 3}
@@ -105,8 +106,8 @@ func TestWeightedBalancer_NegativeWeights(t *testing.T) {
 func TestIPHashBalancer_IPv6(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	lb := &IPHashBalancer{}
 	backends := []backend.Backend{b1, b2}
@@ -133,7 +134,7 @@ func TestIPHashBalancer_IPv6(t *testing.T) {
 // TestIPHashBalancer_EmptyIP tests empty IP address handling.
 func TestIPHashBalancer_EmptyIP(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
-	require.NoError(t, b1.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
 
 	lb := &IPHashBalancer{}
 	backends := []backend.Backend{b1}
@@ -150,8 +151,8 @@ func TestRoundRobinBalancer_DynamicHealthChange(t *testing.T) {
 	b3 := backend.NewDirectBackend(backend.DirectConfig{Name: "b3"})
 
 	// Start only b1 and b2 initially
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 	// b3 not started - unhealthy
 
 	lb := &RoundRobinBalancer{}
@@ -163,7 +164,7 @@ func TestRoundRobinBalancer_DynamicHealthChange(t *testing.T) {
 	assert.NotEqual(t, "b3", selected.Name())
 
 	// Now start b3
-	require.NoError(t, b3.Start(nil))
+	require.NoError(t, b3.Start(context.Background()))
 
 	// Should now potentially select b3
 	foundB3 := false
@@ -177,7 +178,7 @@ func TestRoundRobinBalancer_DynamicHealthChange(t *testing.T) {
 	assert.True(t, foundB3, "b3 should be selected after becoming healthy")
 
 	// Stop b1 - should no longer be selected
-	b1.Stop(nil)
+	b1.Stop(context.Background())
 
 	// Should not select b1 anymore
 	for i := 0; i < 10; i++ {
@@ -190,7 +191,7 @@ func TestRoundRobinBalancer_DynamicHealthChange(t *testing.T) {
 func TestLeastConnBalancer_DynamicHealthChange(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
 	// b2 not started - unhealthy
 
 	lb := &LeastConnBalancer{}
@@ -201,7 +202,7 @@ func TestLeastConnBalancer_DynamicHealthChange(t *testing.T) {
 	assert.Equal(t, "b1", selected.Name())
 
 	// Start b2
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b2.Start(context.Background()))
 
 	// Now both should be selectable
 	selected1 := lb.Select(backends, "")
@@ -212,8 +213,8 @@ func TestLeastConnBalancer_DynamicHealthChange(t *testing.T) {
 func TestWeightedBalancer_CounterOverflow(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	weights := map[string]int{"b1": 2, "b2": 1}
 	lb := NewWeightedBalancer(weights)
@@ -234,8 +235,8 @@ func TestWeightedBalancer_CounterOverflow(t *testing.T) {
 func TestConcurrentBalancerAccess(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	backends := []backend.Backend{b1, b2}
 
@@ -306,9 +307,9 @@ func TestIPHashBalancer_DifferentIPsDistribution(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
 	b3 := backend.NewDirectBackend(backend.DirectConfig{Name: "b3"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
-	require.NoError(t, b3.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
+	require.NoError(t, b3.Start(context.Background()))
 
 	lb := &IPHashBalancer{}
 	backends := []backend.Backend{b1, b2, b3}
@@ -333,7 +334,7 @@ func TestIPHashBalancer_DifferentIPsDistribution(t *testing.T) {
 // TestRoundRobinBalancer_SingleBackend tests with single backend.
 func TestRoundRobinBalancer_SingleBackend(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
-	require.NoError(t, b1.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
 
 	lb := &RoundRobinBalancer{}
 	backends := []backend.Backend{b1}
@@ -349,8 +350,8 @@ func TestRoundRobinBalancer_SingleBackend(t *testing.T) {
 func TestWeightedBalancer_VeryHighWeight(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	require.NoError(t, b1.Start(nil))
-	require.NoError(t, b2.Start(nil))
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
 
 	// Very high weight for b1
 	weights := map[string]int{"b1": 1000, "b2": 1}

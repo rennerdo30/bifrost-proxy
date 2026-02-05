@@ -66,10 +66,10 @@ func (b *HealthWrappedBackend) Stats() Stats {
 	stats.Healthy = b.healthy.Load()
 
 	if v := b.lastError.Load(); v != nil {
-		stats.LastError = v.(string)
+		stats.LastError = v.(string) //nolint:errcheck // Type is always string
 	}
 	if v := b.lastErrorTime.Load(); v != nil {
-		stats.LastErrorTime = v.(time.Time)
+		stats.LastErrorTime = v.(time.Time) //nolint:errcheck // Type is always time.Time
 	}
 	if n := b.latency.Load(); n > 0 {
 		stats.Latency = time.Duration(n)

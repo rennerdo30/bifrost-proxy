@@ -69,8 +69,8 @@ func TestCalculatePriority_Ordering(t *testing.T) {
 
 func TestCalculatePairPriority(t *testing.T) {
 	tests := []struct {
-		name          string
-		localPriority uint32
+		name           string
+		localPriority  uint32
 		remotePriority uint32
 	}{
 		{"Equal priorities", 1000, 1000},

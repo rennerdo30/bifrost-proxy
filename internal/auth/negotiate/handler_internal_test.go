@@ -12,20 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// mockInternalAuthenticator implements auth.Authenticator for internal testing
-type mockInternalAuthenticator struct {
-	authFunc func(ctx context.Context, username, password string) (*auth.UserInfo, error)
-}
-
-func (m *mockInternalAuthenticator) Name() string { return "mock-internal" }
-func (m *mockInternalAuthenticator) Type() string { return "mock" }
-func (m *mockInternalAuthenticator) Authenticate(ctx context.Context, username, password string) (*auth.UserInfo, error) {
-	if m.authFunc != nil {
-		return m.authFunc(ctx, username, password)
-	}
-	return nil, auth.NewAuthError("mock", "auth", auth.ErrInvalidCredentials)
-}
-
 // ntlmMockWithChallenge implements challenge generation for testing
 type ntlmMockWithChallenge struct {
 	authFunc func(ctx context.Context, username, password string) (*auth.UserInfo, error)
@@ -245,9 +231,9 @@ func TestDetectMethod_AllCases(t *testing.T) {
 
 func TestCreateChallenge_AllowNTLMVariants(t *testing.T) {
 	tests := []struct {
-		name       string
-		allowNTLM  bool
-		wantNTLM   bool
+		name      string
+		allowNTLM bool
+		wantNTLM  bool
 	}{
 		{"NTLM allowed", true, true},
 		{"NTLM not allowed", false, false},

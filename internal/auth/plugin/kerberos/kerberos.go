@@ -24,7 +24,7 @@ type ContextKey string
 
 const (
 	// SPNEGOTokenContextKey is the context key for the SPNEGO token.
-	SPNEGOTokenContextKey ContextKey = "kerberos_spnego_token"
+	SPNEGOTokenContextKey ContextKey = "kerberos_spnego_token" //nolint:gosec // G101: This is a context key name, not a credential
 )
 
 func init() {
@@ -265,7 +265,7 @@ func (a *Authenticator) validateSPNEGOToken(token []byte) (*auth.UserInfo, error
 }
 
 // authenticateWithPassword performs Kerberos authentication with username and password.
-func (a *Authenticator) authenticateWithPassword(ctx context.Context, username, password string) (*auth.UserInfo, error) {
+func (a *Authenticator) authenticateWithPassword(_ context.Context, username, password string) (*auth.UserInfo, error) {
 	a.mu.RLock()
 	krbConfig := a.krbConfig
 	a.mu.RUnlock()

@@ -1191,16 +1191,16 @@ func TestMemoryStore_DeleteByUser_NoSessions(t *testing.T) {
 // mockStore is a test helper that implements the Store interface
 // with configurable error injection for testing error paths
 type mockStore struct {
-	sessions       map[string]*session.Session
-	userIndex      map[string][]string
-	getErr         error
-	createErr      error
-	updateErr      error
-	deleteErr      error
+	sessions        map[string]*session.Session
+	userIndex       map[string][]string
+	getErr          error
+	createErr       error
+	updateErr       error
+	deleteErr       error
 	deleteByUserErr error
 	listByUserErr   error
-	cleanupErr     error
-	closeErr       error
+	cleanupErr      error
+	closeErr        error
 }
 
 func newMockStore() *mockStore {

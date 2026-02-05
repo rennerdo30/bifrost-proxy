@@ -68,9 +68,9 @@ func TestValidateAccountID(t *testing.T) {
 		{"1234567890123456", true},
 		{"0000000000000000", true},
 		{"9999999999999999", true},
-		{"123456789012345", false},  // 15 digits
-		{"12345678901234567", false}, // 17 digits
-		{"123456789012345a", false}, // contains letter
+		{"123456789012345", false},     // 15 digits
+		{"12345678901234567", false},   // 17 digits
+		{"123456789012345a", false},    // contains letter
 		{"1234-5678-9012-3456", false}, // contains dashes
 		{"", false},
 	}
@@ -246,20 +246,20 @@ func TestGenerateKeyPair(t *testing.T) {
 
 func TestMullvadRelayToServer(t *testing.T) {
 	relay := MullvadRelay{
-		Hostname:    "se-sto-wg-001",
-		CountryCode: "se",
-		CountryName: "Sweden",
-		CityCode:    "sto",
-		CityName:    "Stockholm",
-		Active:      true,
-		Owned:       true,
-		Provider:    "mullvad",
-		IPv4AddrIn:  "185.65.134.1",
-		IPv6AddrIn:  "2001:db8::1",
-		Pubkey:      "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
+		Hostname:     "se-sto-wg-001",
+		CountryCode:  "se",
+		CountryName:  "Sweden",
+		CityCode:     "sto",
+		CityName:     "Stockholm",
+		Active:       true,
+		Owned:        true,
+		Provider:     "mullvad",
+		IPv4AddrIn:   "185.65.134.1",
+		IPv6AddrIn:   "2001:db8::1",
+		Pubkey:       "BLNHNoGO88LjV/wDBa7CUUwUzPq/fO2UwcGLy56hKy4=",
 		MultihopPort: 443,
-		Daita:       true,
-		Type:        "wireguard",
+		Daita:        true,
+		Type:         "wireguard",
 	}
 
 	server := mullvadRelayToServer(relay)

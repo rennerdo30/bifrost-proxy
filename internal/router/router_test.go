@@ -1,6 +1,7 @@
 package router
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -163,7 +164,7 @@ func TestRouter_Match_NoMatch(t *testing.T) {
 func TestRouter_SelectBackend_Single(t *testing.T) {
 	mgr := backend.NewManager()
 	b := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
-	b.Start(nil)
+	b.Start(context.Background())
 	mgr.Add(b)
 
 	r := New(mgr)
@@ -181,8 +182,8 @@ func TestRouter_SelectBackend_Multiple(t *testing.T) {
 	mgr := backend.NewManager()
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 	mgr.Add(b1)
 	mgr.Add(b2)
 
@@ -256,8 +257,8 @@ func TestNewLoadBalancer_Unknown(t *testing.T) {
 func TestRoundRobinBalancer_Select(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 
 	lb := &RoundRobinBalancer{}
 	backends := []backend.Backend{b1, b2}
@@ -289,8 +290,8 @@ func TestRoundRobinBalancer_Select_NoHealthy(t *testing.T) {
 func TestLeastConnBalancer_Select(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 
 	lb := &LeastConnBalancer{}
 	backends := []backend.Backend{b1, b2}
@@ -308,8 +309,8 @@ func TestLeastConnBalancer_Select_Empty(t *testing.T) {
 func TestIPHashBalancer_Select(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 
 	lb := &IPHashBalancer{}
 	backends := []backend.Backend{b1, b2}
@@ -340,8 +341,8 @@ func TestWeightedBalancer_New(t *testing.T) {
 func TestWeightedBalancer_Select(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 
 	weights := map[string]int{"b1": 3, "b2": 1}
 	lb := NewWeightedBalancer(weights)
@@ -390,7 +391,7 @@ func TestClientRouter_Routes(t *testing.T) {
 func TestServerRouter_GetBackendForDomain(t *testing.T) {
 	mgr := backend.NewManager()
 	b := backend.NewDirectBackend(backend.DirectConfig{Name: "direct"})
-	b.Start(nil)
+	b.Start(context.Background())
 	mgr.Add(b)
 
 	r := NewServerRouter(mgr)
@@ -524,7 +525,7 @@ func TestLeastConnBalancer_Select_NoHealthy(t *testing.T) {
 
 func TestLeastConnBalancer_Select_SingleBackend(t *testing.T) {
 	b := backend.NewDirectBackend(backend.DirectConfig{Name: "single"})
-	b.Start(nil)
+	b.Start(context.Background())
 
 	lb := &LeastConnBalancer{}
 	selected := lb.Select([]backend.Backend{b}, "")
@@ -545,8 +546,8 @@ func TestRouter_Match_WithMultipleBackends(t *testing.T) {
 	mgr := backend.NewManager()
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 	mgr.Add(b1)
 	mgr.Add(b2)
 
@@ -582,7 +583,7 @@ func TestRouter_Match_MultipleBackendsPartiallyHealthy(t *testing.T) {
 	mgr := backend.NewManager()
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil) // Only start b1
+	b1.Start(context.Background()) // Only start b1
 	// b2 not started (unhealthy)
 	mgr.Add(b1)
 	mgr.Add(b2)
@@ -621,8 +622,8 @@ func TestRouter_SelectBackend_MultipleNoLoadBalancer(t *testing.T) {
 	mgr := backend.NewManager()
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 	mgr.Add(b1)
 	mgr.Add(b2)
 
@@ -883,8 +884,8 @@ func TestRouter_RemoveRoute_WithLoadBalancer(t *testing.T) {
 func TestWeightedBalancer_Select_DefaultWeight(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 
 	// Weight only for b1, b2 should get default weight of 1
 	weights := map[string]int{"b1": 2}
@@ -930,8 +931,8 @@ func TestServerRouter_GetBackendForDomain_WithMultipleBackends(t *testing.T) {
 	mgr := backend.NewManager()
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 	mgr.Add(b1)
 	mgr.Add(b2)
 
@@ -953,7 +954,7 @@ func TestServerRouter_GetBackendForDomain_WithMultipleBackends(t *testing.T) {
 func TestRouter_Concurrency(t *testing.T) {
 	mgr := backend.NewManager()
 	b := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
-	b.Start(nil)
+	b.Start(context.Background())
 	mgr.Add(b)
 
 	r := New(mgr)
@@ -983,8 +984,8 @@ func TestRouter_Concurrency(t *testing.T) {
 func TestLeastConnBalancer_SelectsLowestConnections(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
-	b1.Start(nil)
-	b2.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
 
 	lb := &LeastConnBalancer{}
 	backends := []backend.Backend{b1, b2}
@@ -998,9 +999,9 @@ func TestIPHashBalancer_Consistency(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
 	b3 := backend.NewDirectBackend(backend.DirectConfig{Name: "b3"})
-	b1.Start(nil)
-	b2.Start(nil)
-	b3.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
+	b3.Start(context.Background())
 
 	lb := &IPHashBalancer{}
 	backends := []backend.Backend{b1, b2, b3}
@@ -1019,9 +1020,9 @@ func TestRoundRobinBalancer_Cycling(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
 	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
 	b3 := backend.NewDirectBackend(backend.DirectConfig{Name: "b3"})
-	b1.Start(nil)
-	b2.Start(nil)
-	b3.Start(nil)
+	b1.Start(context.Background())
+	b2.Start(context.Background())
+	b3.Start(context.Background())
 
 	lb := &RoundRobinBalancer{}
 	backends := []backend.Backend{b1, b2, b3}

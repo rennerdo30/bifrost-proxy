@@ -19,17 +19,17 @@ import (
 
 // Windows LogonUser constants
 const (
-	LOGON32_LOGON_NETWORK      = 3
-	LOGON32_PROVIDER_DEFAULT   = 0
-	LOGON32_LOGON_INTERACTIVE  = 2
-	LOGON32_LOGON_BATCH        = 4
-	LOGON32_LOGON_SERVICE      = 5
+	LOGON32_LOGON_NETWORK           = 3
+	LOGON32_PROVIDER_DEFAULT        = 0
+	LOGON32_LOGON_INTERACTIVE       = 2
+	LOGON32_LOGON_BATCH             = 4
+	LOGON32_LOGON_SERVICE           = 5
 	LOGON32_LOGON_NETWORK_CLEARTEXT = 8
 )
 
 var (
-	advapi32          = windows.NewLazySystemDLL("advapi32.dll")
-	procLogonUserW    = advapi32.NewProc("LogonUserW")
+	advapi32                = windows.NewLazySystemDLL("advapi32.dll")
+	procLogonUserW          = advapi32.NewProc("LogonUserW")
 	procGetTokenInformation = advapi32.NewProc("GetTokenInformation")
 )
 
@@ -247,8 +247,8 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 		FullName: username, // Windows doesn't easily provide full name from LogonUser
 		Groups:   groups,
 		Metadata: map[string]string{
-			"domain":     a.domain,
-			"auth_type":  "windows_logon",
+			"domain":    a.domain,
+			"auth_type": "windows_logon",
 		},
 	}, nil
 }

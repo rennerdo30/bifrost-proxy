@@ -30,8 +30,8 @@ func LoadState(path string) (*State, error) {
 		if os.IsNotExist(err) {
 			// Create directory if needed
 			dir := filepath.Dir(path)
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return nil, err
+			if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+				return nil, mkdirErr
 			}
 			return s, nil
 		}
@@ -62,7 +62,7 @@ func (s *State) Save() error {
 		return err
 	}
 
-	return os.WriteFile(s.path, data, 0644)
+	return os.WriteFile(s.path, data, 0600)
 }
 
 // ShouldCheck returns true if enough time has passed since last check.
@@ -124,12 +124,12 @@ func DefaultStatePath() string {
 			configDir = filepath.Join(os.Getenv("USERPROFILE"), "AppData", "Roaming")
 		}
 	case "darwin":
-		home, _ := os.UserHomeDir()
+		home, _ := os.UserHomeDir() //nolint:errcheck // Fallback to empty string if home dir unavailable
 		configDir = filepath.Join(home, "Library", "Application Support")
 	default: // Linux and others
 		configDir = os.Getenv("XDG_CONFIG_HOME")
 		if configDir == "" {
-			home, _ := os.UserHomeDir()
+			home, _ := os.UserHomeDir() //nolint:errcheck // Fallback to empty string if home dir unavailable
 			configDir = filepath.Join(home, ".config")
 		}
 	}

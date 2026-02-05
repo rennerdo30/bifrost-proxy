@@ -16,13 +16,13 @@ import (
 
 // linuxRouteManager implements RouteManager for Linux.
 type linuxRouteManager struct {
-	tunName       string
-	tunAddr       netip.Prefix
-	savedRoutes   []SavedRoute
-	savedDNS      []string
-	bypassRoutes  []string
+	tunName         string
+	tunAddr         netip.Prefix
+	savedRoutes     []SavedRoute
+	savedDNS        []string
+	bypassRoutes    []string
 	originalGateway string
-	mu            sync.Mutex
+	mu              sync.Mutex
 }
 
 func newPlatformRouteManager() RouteManager {

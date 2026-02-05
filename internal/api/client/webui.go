@@ -58,6 +58,6 @@ func StaticHandler() http.Handler {
 		}
 
 		w.Header().Set("Content-Type", contentType)
-		w.Write(content)
+		_, _ = w.Write(content) //nolint:errcheck // Best effort static file write
 	})
 }

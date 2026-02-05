@@ -965,4 +965,3 @@ func TestKerberosPlugin_Create_KDCServers_AddsToExistingRealm(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, authenticator)
 }
-

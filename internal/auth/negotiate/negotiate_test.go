@@ -116,6 +116,8 @@ func createNTLMType2() []byte {
 }
 
 // createNTLMType3 creates a minimal NTLM Type 3 (Authenticate) message
+//
+//nolint:unparam // domain is always "DOMAIN" in tests but kept for test readability
 func createNTLMType3(domain, username string) []byte {
 	domainBytes := encodeUTF16LE(domain)
 	usernameBytes := encodeUTF16LE(username)

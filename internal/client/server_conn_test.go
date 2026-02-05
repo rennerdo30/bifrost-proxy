@@ -35,7 +35,7 @@ func TestNewServerConnection_Defaults(t *testing.T) {
 
 	conn := NewServerConnection(cfg)
 	require.NotNil(t, conn)
-	assert.Equal(t, "http", conn.config.Protocol)       // Default
+	assert.Equal(t, "http", conn.config.Protocol)        // Default
 	assert.Equal(t, 30*time.Second, conn.config.Timeout) // Default
 	assert.Equal(t, 3, conn.config.RetryCount)           // Default
 	assert.Equal(t, time.Second, conn.config.RetryDelay) // Default
@@ -96,7 +96,7 @@ func TestServerConnection_Connect_UnsupportedProtocol(t *testing.T) {
 		Address:    "localhost:7080",
 		Protocol:   "invalid",
 		Timeout:    100 * time.Millisecond,
-		RetryCount: 1,                    // Set to 1 so it doesn't default to 3
+		RetryCount: 1,                     // Set to 1 so it doesn't default to 3
 		RetryDelay: 10 * time.Millisecond, // Fast retries
 	})
 
@@ -139,8 +139,8 @@ func TestServerConnection_Connect_RetryLogic(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			attempts++
@@ -174,8 +174,8 @@ func TestServerConnection_connectHTTP_Success(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockHTTPProxy(c)
@@ -205,8 +205,8 @@ func TestServerConnection_connectHTTP_WithAuth(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockHTTPProxyWithAuth(c)
@@ -238,8 +238,8 @@ func TestServerConnection_connectHTTP_ServerError(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockHTTPProxyError(c)
@@ -268,8 +268,8 @@ func TestServerConnection_connectSOCKS5_Success(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockSOCKS5(c, false)
@@ -299,8 +299,8 @@ func TestServerConnection_connectSOCKS5_WithAuth(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockSOCKS5(c, true)
@@ -332,8 +332,8 @@ func TestServerConnection_connectSOCKS5_InvalidVersion(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read greeting
@@ -367,8 +367,8 @@ func TestServerConnection_connectSOCKS5_UnsupportedAuth(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read greeting
@@ -402,8 +402,8 @@ func TestServerConnection_socks5Connect_IPv4(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockSOCKS5IPv4(c)
@@ -624,8 +624,8 @@ func handleMockSOCKS5(c net.Conn, requireAuth bool) {
 	// Response format: VER REP RSV ATYP BND.ADDR BND.PORT
 	response := []byte{
 		0x05, 0x00, 0x00, // Version, Success, Reserved
-		0x03,       // Address type: Domain
-		0x09,       // Domain length
+		0x03,                                        // Address type: Domain
+		0x09,                                        // Domain length
 		'l', 'o', 'c', 'a', 'l', 'h', 'o', 's', 't', // Domain
 		0x00, 0x50, // Port 80
 	}
@@ -654,8 +654,8 @@ func handleMockSOCKS5IPv4(c net.Conn) {
 	// Send success response with IPv4 address type
 	response := []byte{
 		0x05, 0x00, 0x00, // Version, Success, Reserved
-		0x01,             // Address type: IPv4
-		127, 0, 0, 1,     // IP address
+		0x01,         // Address type: IPv4
+		127, 0, 0, 1, // IP address
 		0x00, 0x50, // Port 80
 	}
 	c.Write(response)
@@ -669,8 +669,8 @@ func TestServerConnection_socks5Connect_ConnectFailed(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read greeting
@@ -709,8 +709,8 @@ func TestServerConnection_socks5Connect_IPv6(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read greeting
@@ -756,8 +756,8 @@ func TestServerConnection_Connect_HTTP(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockHTTPProxy(c)
@@ -788,8 +788,8 @@ func TestServerConnection_Connect_SOCKS5(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			go handleMockSOCKS5(c, false)
@@ -867,8 +867,8 @@ func TestServerConnection_connectSOCKS5_GreetingWriteError(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Close immediately without reading
@@ -897,8 +897,8 @@ func TestServerConnection_connectSOCKS5_GreetingReadError(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read greeting but don't respond
@@ -1015,8 +1015,8 @@ func TestServerConnection_connectHTTP_WriteError(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Close immediately to cause write error
@@ -1045,8 +1045,8 @@ func TestServerConnection_connectHTTP_ReadError(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read request but don't respond
@@ -1079,8 +1079,8 @@ func TestServerConnection_connectSOCKS5_AuthRequired_AuthFailed(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read greeting
@@ -1121,8 +1121,8 @@ func TestServerConnection_connectSOCKS5_ConnectRequestError(t *testing.T) {
 
 	go func() {
 		for {
-			c, err := listener.Accept()
-			if err != nil {
+			c, acceptErr := listener.Accept()
+			if acceptErr != nil {
 				return
 			}
 			// Read greeting

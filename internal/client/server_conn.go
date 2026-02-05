@@ -113,9 +113,9 @@ func (s *ServerConnection) connectHTTP(ctx context.Context, target string) (net.
 		req.Header.Set("Proxy-Authorization", "Basic "+auth)
 	}
 
-	if err := req.Write(conn); err != nil {
+	if writeErr := req.Write(conn); writeErr != nil {
 		conn.Close()
-		return nil, fmt.Errorf("write CONNECT: %w", err)
+		return nil, fmt.Errorf("write CONNECT: %w", writeErr)
 	}
 
 	// Read response
@@ -265,15 +265,15 @@ func (s *ServerConnection) socks5Connect(conn net.Conn, target string) error {
 	switch response[3] {
 	case 0x01: // IPv4
 		buf := make([]byte, 6)
-		conn.Read(buf)
+		_, _ = conn.Read(buf) //nolint:errcheck // Discarding bound address
 	case 0x03: // Domain
 		lenBuf := make([]byte, 1)
-		conn.Read(lenBuf)
+		_, _ = conn.Read(lenBuf) //nolint:errcheck // Discarding bound address
 		buf := make([]byte, int(lenBuf[0])+2)
-		conn.Read(buf)
+		_, _ = conn.Read(buf) //nolint:errcheck // Discarding bound address
 	case 0x04: // IPv6
 		buf := make([]byte, 18)
-		conn.Read(buf)
+		_, _ = conn.Read(buf) //nolint:errcheck // Discarding bound address
 	}
 
 	return nil

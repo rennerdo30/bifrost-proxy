@@ -174,7 +174,7 @@ func (c *GitHubClient) checkResponse(resp *http.Response) error {
 		}
 		return fmt.Errorf("%w: forbidden", ErrNetworkError)
 	default:
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(resp.Body) //nolint:errcheck // Best effort read for error message
 		return fmt.Errorf("%w: status %d: %s", ErrNetworkError, resp.StatusCode, string(body))
 	}
 }

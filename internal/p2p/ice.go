@@ -100,9 +100,8 @@ const (
 type ICEAgent struct {
 	stunClient *STUNClient
 	turnClient *TURNClient
-	natDetector *NATDetector
 
-	localCandidates  []*Candidate
+	localCandidates []*Candidate
 	remoteCandidates []*Candidate
 	candidatePairs   []*CandidatePair
 	selectedPair     *CandidatePair
@@ -111,12 +110,12 @@ type ICEAgent struct {
 	localAddr      netip.AddrPort
 	gatherComplete bool
 
-	onCandidate   func(*Candidate)
-	onConnected   func(*CandidatePair)
+	onCandidate func(*Candidate)
+	onConnected func(*CandidatePair)
 
-	ctx       context.Context
-	cancel    context.CancelFunc
-	mu        sync.RWMutex
+	ctx    context.Context
+	cancel context.CancelFunc
+	mu     sync.RWMutex
 }
 
 // ICEConfig contains ICE agent configuration.
@@ -156,10 +155,10 @@ func (a *ICEAgent) GatherCandidates(ctx context.Context) error {
 	}
 	a.conn = conn
 
-	localUDPAddr := conn.LocalAddr().(*net.UDPAddr)
+	localUDPAddr := conn.LocalAddr().(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 	a.localAddr = netip.AddrPortFrom(
 		netip.MustParseAddr(localUDPAddr.IP.String()),
-		uint16(localUDPAddr.Port),
+		uint16(localUDPAddr.Port), //nolint:gosec // G115: UDP port is always 0-65535
 	)
 
 	// Gather host candidates
@@ -429,7 +428,7 @@ func (a *ICEAgent) checkConnectivity(ctx context.Context, pair *CandidatePair) (
 	// Verify response
 	if n >= len(probe) && string(buf[:len(probe)]) == "BIFROST_ICE_PROBE" {
 		// Verify it came from the expected address
-		fromAddr := from.(*net.UDPAddr)
+		fromAddr := from.(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 		if fromAddr.IP.Equal(pair.Remote.Address.Addr().AsSlice()) {
 			return true, rtt
 		}
@@ -540,7 +539,7 @@ func (a *ICEAgent) Close() error {
 }
 
 // calculatePriority calculates candidate priority per ICE spec.
-func calculatePriority(candidateType CandidateType, component int) uint32 {
+func calculatePriority(candidateType CandidateType, _ int) uint32 {
 	var typePref uint32
 	switch candidateType {
 	case CandidateTypeHost:
@@ -571,5 +570,5 @@ func calculatePairPriority(localPriority, remotePriority uint32) uint64 {
 		min = localPriority
 	}
 
-	return (1 << 32) * uint64(min) + 2*uint64(max)
+	return (1<<32)*uint64(min) + 2*uint64(max)
 }

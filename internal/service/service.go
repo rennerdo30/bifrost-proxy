@@ -184,17 +184,17 @@ func (m *Manager) installSystemd() error {
 
 	// Write unit file
 	unitPath := m.systemdPath()
-	if err := os.WriteFile(unitPath, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(unitPath, buf.Bytes(), 0600); err != nil {
 		return fmt.Errorf("write unit file: %w (try running with sudo)", err)
 	}
 
 	// Reload systemd
-	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
+	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil { //nolint:gosec // G204: no user input
 		return fmt.Errorf("reload systemd: %w", err)
 	}
 
 	// Enable service
-	if err := exec.Command("systemctl", "enable", m.config.Name).Run(); err != nil {
+	if err := exec.Command("systemctl", "enable", m.config.Name).Run(); err != nil { //nolint:gosec // G204: service name is from validated config
 		return fmt.Errorf("enable service: %w", err)
 	}
 
@@ -205,10 +205,10 @@ func (m *Manager) installSystemd() error {
 
 func (m *Manager) uninstallSystemd() error {
 	// Stop service (ignore errors if not running)
-	_ = exec.Command("systemctl", "stop", m.config.Name).Run()
+	_ = exec.Command("systemctl", "stop", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name is from validated config; ignoring error as service may not be running
 
 	// Disable service
-	_ = exec.Command("systemctl", "disable", m.config.Name).Run()
+	_ = exec.Command("systemctl", "disable", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name is from validated config; ignoring error as service may not be enabled
 
 	// Remove unit file
 	unitPath := m.systemdPath()
@@ -217,7 +217,7 @@ func (m *Manager) uninstallSystemd() error {
 	}
 
 	// Reload systemd
-	_ = exec.Command("systemctl", "daemon-reload").Run()
+	_ = exec.Command("systemctl", "daemon-reload").Run() //nolint:errcheck,gosec // G204: no user input; best effort reload
 
 	fmt.Printf("Service uninstalled: %s\n", m.config.Name)
 	return nil
@@ -229,7 +229,7 @@ func (m *Manager) statusSystemd() (string, error) {
 		return "not installed", nil
 	}
 
-	out, err := exec.Command("systemctl", "is-active", m.config.Name).Output()
+	out, err := exec.Command("systemctl", "is-active", m.config.Name).Output() //nolint:gosec // G204: service name is from validated config
 	if err != nil {
 		return "installed (inactive)", nil
 	}
@@ -275,7 +275,7 @@ const launchdTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 func (m *Manager) launchdPath() string {
 	// Use LaunchDaemons for system-wide (requires sudo)
 	// Use LaunchAgents for user-level
-	home, _ := os.UserHomeDir()
+	home, _ := os.UserHomeDir() //nolint:errcheck // Fall back to empty string if home dir unavailable
 	userAgentPath := filepath.Join(home, "Library", "LaunchAgents", m.config.Name+".plist")
 
 	// Check if we can write to LaunchDaemons
@@ -308,12 +308,12 @@ func (m *Manager) installLaunchd() error {
 	}
 
 	// Write plist file
-	if err := os.WriteFile(plistPath, buf.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(plistPath, buf.Bytes(), 0600); err != nil {
 		return fmt.Errorf("write plist: %w", err)
 	}
 
 	// Load service
-	if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil {
+	if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil { //nolint:gosec // G204: plist path is generated from validated config
 		return fmt.Errorf("load service: %w", err)
 	}
 
@@ -326,7 +326,7 @@ func (m *Manager) uninstallLaunchd() error {
 	plistPath := m.launchdPath()
 
 	// Unload service (ignore errors if not loaded)
-	_ = exec.Command("launchctl", "unload", plistPath).Run()
+	_ = exec.Command("launchctl", "unload", plistPath).Run() //nolint:errcheck,gosec // G204: plist path from config; ignoring error as service may not be loaded
 
 	// Remove plist file
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
@@ -343,7 +343,7 @@ func (m *Manager) statusLaunchd() (string, error) {
 		return "not installed", nil
 	}
 
-	out, err := exec.Command("launchctl", "list", m.config.Name).Output()
+	out, err := exec.Command("launchctl", "list", m.config.Name).Output() //nolint:gosec // G204: service name is from validated config
 	if err != nil {
 		return "installed (not running)", nil
 	}
@@ -361,7 +361,7 @@ func (m *Manager) installWindows() error {
 	// Create service using sc.exe
 	binPath := fmt.Sprintf(`"%s" -c "%s"`, m.config.BinaryPath, m.config.ConfigPath)
 
-	cmd := exec.Command("sc", "create", m.config.Name,
+	cmd := exec.Command("sc", "create", m.config.Name, //nolint:gosec // G204: service name and paths are from validated config
 		"binPath=", binPath,
 		"DisplayName=", m.config.Description,
 		"start=", "auto")
@@ -371,7 +371,7 @@ func (m *Manager) installWindows() error {
 	}
 
 	// Set description
-	_ = exec.Command("sc", "description", m.config.Name, m.config.Description).Run()
+	_ = exec.Command("sc", "description", m.config.Name, m.config.Description).Run() //nolint:errcheck,gosec // G204: service name from config; best effort description set
 
 	fmt.Printf("Service installed: %s\n", m.config.Name)
 	fmt.Printf("Start with: sc start %s\n", m.config.Name)
@@ -380,10 +380,10 @@ func (m *Manager) installWindows() error {
 
 func (m *Manager) uninstallWindows() error {
 	// Stop service (ignore errors)
-	_ = exec.Command("sc", "stop", m.config.Name).Run()
+	_ = exec.Command("sc", "stop", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name from config; ignoring error as service may not be running
 
 	// Delete service
-	cmd := exec.Command("sc", "delete", m.config.Name)
+	cmd := exec.Command("sc", "delete", m.config.Name) //nolint:gosec // G204: service name is from validated config
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("delete service: %w\n%s", err, string(out))
 	}
@@ -393,7 +393,7 @@ func (m *Manager) uninstallWindows() error {
 }
 
 func (m *Manager) statusWindows() (string, error) {
-	cmd := exec.Command("sc", "query", m.config.Name)
+	cmd := exec.Command("sc", "query", m.config.Name) //nolint:gosec // G204: service name is from validated config
 	out, err := cmd.Output()
 	if err != nil {
 		return "not installed", nil

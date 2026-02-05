@@ -104,7 +104,7 @@ func (p *Process) Start(ctx context.Context) error {
 
 	// Wait for process in background
 	go func() {
-		p.cmd.Wait()
+		_ = p.cmd.Wait() //nolint:errcheck // Process exit status is signaled via channel
 		close(p.waitDone)
 		p.mu.Lock()
 		p.setState(StateDisconnected)
@@ -127,7 +127,7 @@ func (p *Process) Stop(ctx context.Context) error {
 
 	// Try graceful shutdown via management interface
 	if p.mgmtConn != nil {
-		p.mgmtConn.Write([]byte("signal SIGTERM\n"))
+		_, _ = p.mgmtConn.Write([]byte("signal SIGTERM\n")) //nolint:errcheck // Best effort signal
 		p.mgmtConn.Close()
 		p.mgmtConn = nil
 	}
@@ -138,9 +138,9 @@ func (p *Process) Stop(ctx context.Context) error {
 		// Exited gracefully
 	case <-time.After(5 * time.Second):
 		// Force kill
-		p.cmd.Process.Kill()
+		_ = p.cmd.Process.Kill() //nolint:errcheck // Best effort kill
 	case <-ctx.Done():
-		p.cmd.Process.Kill()
+		_ = p.cmd.Process.Kill() //nolint:errcheck // Best effort kill
 	}
 
 	p.setState(StateDisconnected)
@@ -210,7 +210,7 @@ func (p *Process) handleManagement(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
 	// Request state notifications
-	conn.Write([]byte("state on\n"))
+	_, _ = conn.Write([]byte("state on\n")) //nolint:errcheck // Best effort management command
 
 	reader := bufio.NewReader(conn)
 	for {

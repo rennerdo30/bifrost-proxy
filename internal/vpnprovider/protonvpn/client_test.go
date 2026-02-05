@@ -76,36 +76,36 @@ func TestFetchServers(t *testing.T) {
 		Code: 1000,
 		LogicalServers: []LogicalServer{
 			{
-				ID:          "server-1",
-				Name:        "US#42",
-				Domain:      "us-42.protonvpn.net",
+				ID:           "server-1",
+				Name:         "US#42",
+				Domain:       "us-42.protonvpn.net",
 				EntryCountry: "US",
 				ExitCountry:  "US",
-				Tier:        2,
-				Features:    FeatureP2P | FeatureStreaming,
-				Load:        25,
-				Status:      1,
-				Location:    Location{Lat: 40.7128, Long: -74.0060},
+				Tier:         2,
+				Features:     FeatureP2P | FeatureStreaming,
+				Load:         25,
+				Status:       1,
+				Location:     Location{Lat: 40.7128, Long: -74.0060},
 				Servers: []Server{
 					{
-						ID:      "phys-1",
-						EntryIP: "192.168.1.1",
-						ExitIP:  "192.168.1.2",
-						Status:  1,
+						ID:              "phys-1",
+						EntryIP:         "192.168.1.1",
+						ExitIP:          "192.168.1.2",
+						Status:          1,
 						X25519PublicKey: "abcd1234publickey",
 					},
 				},
 			},
 			{
-				ID:          "server-2",
-				Name:        "DE#10",
-				Domain:      "de-10.protonvpn.net",
+				ID:           "server-2",
+				Name:         "DE#10",
+				Domain:       "de-10.protonvpn.net",
 				EntryCountry: "DE",
 				ExitCountry:  "DE",
-				Tier:        0, // Free tier
-				Features:    0,
-				Load:        75,
-				Status:      1,
+				Tier:         0, // Free tier
+				Features:     0,
+				Load:         75,
+				Status:       1,
 				Servers: []Server{
 					{
 						ID:      "phys-2",
@@ -115,13 +115,13 @@ func TestFetchServers(t *testing.T) {
 				},
 			},
 			{
-				ID:          "server-3",
-				Name:        "FR#5",
-				Domain:      "fr-5.protonvpn.net",
+				ID:           "server-3",
+				Name:         "FR#5",
+				Domain:       "fr-5.protonvpn.net",
 				EntryCountry: "FR",
 				ExitCountry:  "FR",
-				Tier:        1,
-				Status:      0, // Offline
+				Tier:         1,
+				Status:       0, // Offline
 				Servers: []Server{
 					{
 						ID:      "phys-3",
@@ -174,11 +174,11 @@ func TestFetchServersCache(t *testing.T) {
 			Code: 1000,
 			LogicalServers: []LogicalServer{
 				{
-					ID:     "test-1",
-					Name:   "US#1",
-					Domain: "test.protonvpn.net",
-					Tier:   0,
-					Status: 1,
+					ID:      "test-1",
+					Name:    "US#1",
+					Domain:  "test.protonvpn.net",
+					Tier:    0,
+					Status:  1,
 					Servers: []Server{{ID: "s1", EntryIP: "1.2.3.4", Status: 1}},
 				},
 			},
@@ -355,9 +355,9 @@ auth-user-pass
 
 func TestAPIErrors(t *testing.T) {
 	tests := []struct {
-		name           string
-		statusCode     int
-		expectedError  error
+		name          string
+		statusCode    int
+		expectedError error
 	}{
 		{
 			name:          "unauthorized",

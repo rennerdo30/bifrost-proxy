@@ -76,11 +76,11 @@ func TestParseBandwidth_Gbps(t *testing.T) {
 }
 
 func TestParseBandwidth_Bps(t *testing.T) {
-	// bps has a special case where 1/8 = 0 in integer math
+	// bps (bits per second) should convert to bytes per second (value / 8)
 	bw, err := ParseBandwidth("8000bps")
 	require.NoError(t, err)
-	// 8000 * (1/8) = 0 due to integer math, but we use float64
-	assert.Equal(t, int64(0), bw) // This is expected behavior
+	// 8000 bits / 8 = 1000 bytes per second
+	assert.Equal(t, int64(1000), bw)
 }
 
 func TestParseBandwidth_BytePerSecond(t *testing.T) {

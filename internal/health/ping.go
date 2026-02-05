@@ -41,13 +41,14 @@ func (c *PingChecker) Check(ctx context.Context) Result {
 	var cmd *exec.Cmd
 
 	// Platform-specific ping command
+	// G204: target is validated hostname/IP from health check config, not user input
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", "5000", c.target)
+		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", "5000", c.target) //nolint:gosec // G204: target is validated hostname from config
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "5000", c.target)
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "5000", c.target) //nolint:gosec // G204: target is validated hostname from config
 	default: // Linux and others
-		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "5", c.target)
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "5", c.target) //nolint:gosec // G204: target is validated hostname from config
 	}
 
 	output, err := cmd.CombinedOutput()

@@ -325,23 +325,23 @@ func buildIPv4UDPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, payloa
 	packet := make([]byte, totalLen)
 
 	// IPv4 header
-	packet[0] = 0x45                              // Version (4) + IHL (5)
-	packet[1] = 0                                 // DSCP + ECN
-	packet[2] = byte(totalLen >> 8)               // Total length
+	packet[0] = 0x45                // Version (4) + IHL (5)
+	packet[1] = 0                   // DSCP + ECN
+	packet[2] = byte(totalLen >> 8) // Total length
 	packet[3] = byte(totalLen)
-	packet[4] = 0                                 // Identification
+	packet[4] = 0 // Identification
 	packet[5] = 0
-	packet[6] = 0x40                              // Flags (Don't Fragment) + Fragment offset
+	packet[6] = 0x40 // Flags (Don't Fragment) + Fragment offset
 	packet[7] = 0
-	packet[8] = 64                                // TTL
-	packet[9] = ProtocolUDP                       // Protocol
-	packet[10] = 0                                // Header checksum (calculated below)
+	packet[8] = 64          // TTL
+	packet[9] = ProtocolUDP // Protocol
+	packet[10] = 0          // Header checksum (calculated below)
 	packet[11] = 0
 
 	src4 := srcIP.As4()
 	dst4 := dstIP.As4()
-	copy(packet[12:16], src4[:])                  // Source IP
-	copy(packet[16:20], dst4[:])                  // Destination IP
+	copy(packet[12:16], src4[:]) // Source IP
+	copy(packet[16:20], dst4[:]) // Destination IP
 
 	// Calculate IP header checksum
 	checksum := ipChecksum(packet[:20])
@@ -350,14 +350,14 @@ func buildIPv4UDPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, payloa
 
 	// UDP header
 	udpOffset := 20
-	packet[udpOffset] = byte(srcPort >> 8)        // Source port
+	packet[udpOffset] = byte(srcPort >> 8) // Source port
 	packet[udpOffset+1] = byte(srcPort)
-	packet[udpOffset+2] = byte(dstPort >> 8)      // Destination port
+	packet[udpOffset+2] = byte(dstPort >> 8) // Destination port
 	packet[udpOffset+3] = byte(dstPort)
 	udpLen := 8 + len(payload)
-	packet[udpOffset+4] = byte(udpLen >> 8)       // UDP length
+	packet[udpOffset+4] = byte(udpLen >> 8) // UDP length
 	packet[udpOffset+5] = byte(udpLen)
-	packet[udpOffset+6] = 0                       // Checksum (optional for IPv4)
+	packet[udpOffset+6] = 0 // Checksum (optional for IPv4)
 	packet[udpOffset+7] = 0
 
 	// Payload
@@ -373,29 +373,29 @@ func buildIPv6UDPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, payloa
 	packet := make([]byte, totalLen)
 
 	// IPv6 header
-	packet[0] = 0x60                              // Version (6) + Traffic class
+	packet[0] = 0x60 // Version (6) + Traffic class
 	packet[1] = 0
 	packet[2] = 0
-	packet[3] = 0                                 // Flow label
+	packet[3] = 0 // Flow label
 	payloadLen := 8 + len(payload)
-	packet[4] = byte(payloadLen >> 8)             // Payload length
+	packet[4] = byte(payloadLen >> 8) // Payload length
 	packet[5] = byte(payloadLen)
-	packet[6] = ProtocolUDP                       // Next header (UDP)
-	packet[7] = 64                                // Hop limit
+	packet[6] = ProtocolUDP // Next header (UDP)
+	packet[7] = 64          // Hop limit
 
 	src6 := srcIP.As16()
 	dst6 := dstIP.As16()
-	copy(packet[8:24], src6[:])                   // Source IP
-	copy(packet[24:40], dst6[:])                  // Destination IP
+	copy(packet[8:24], src6[:])  // Source IP
+	copy(packet[24:40], dst6[:]) // Destination IP
 
 	// UDP header
 	udpOffset := 40
-	packet[udpOffset] = byte(srcPort >> 8)        // Source port
+	packet[udpOffset] = byte(srcPort >> 8) // Source port
 	packet[udpOffset+1] = byte(srcPort)
-	packet[udpOffset+2] = byte(dstPort >> 8)      // Destination port
+	packet[udpOffset+2] = byte(dstPort >> 8) // Destination port
 	packet[udpOffset+3] = byte(dstPort)
 	udpLen := 8 + len(payload)
-	packet[udpOffset+4] = byte(udpLen >> 8)       // UDP length
+	packet[udpOffset+4] = byte(udpLen >> 8) // UDP length
 	packet[udpOffset+5] = byte(udpLen)
 
 	// Calculate UDP checksum (required for IPv6)
@@ -439,7 +439,7 @@ func udpIPv6Checksum(srcIP, dstIP, udpHeader, payload []byte) uint16 {
 
 	// UDP length
 	udpLen := len(udpHeader) + len(payload)
-	sum += uint32(udpLen)
+	sum += uint32(udpLen) //nolint:gosec // G115: UDP len is bounded by MTU
 
 	// Next header (UDP = 17)
 	sum += uint32(ProtocolUDP)

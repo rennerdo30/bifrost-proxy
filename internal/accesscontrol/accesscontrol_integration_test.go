@@ -18,8 +18,8 @@ func TestController_Integration(t *testing.T) {
 			"192.168.0.0/16",
 		},
 		Blacklist: []string{
-			"10.0.0.1",           // Specific IP in whitelist range
-			"192.168.1.0/24",     // Subnet in whitelist range
+			"10.0.0.1",       // Specific IP in whitelist range
+			"192.168.1.0/24", // Subnet in whitelist range
 		},
 	})
 	require.NoError(t, err)

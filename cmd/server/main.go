@@ -114,7 +114,7 @@ func newUpdateCommand() *cobra.Command {
 	return updateCmd
 }
 
-func getUpdaterConfig(cmd *cobra.Command) (updater.Config, error) {
+func getUpdaterConfig(cmd *cobra.Command) updater.Config {
 	// Start with defaults
 	serverCfg := config.DefaultServerConfig()
 
@@ -141,14 +141,11 @@ func getUpdaterConfig(cmd *cobra.Command) (updater.Config, error) {
 		Channel:     updater.Channel(channel),
 		GitHubOwner: "rennerdo30",
 		GitHubRepo:  "bifrost-proxy",
-	}, nil
+	}
 }
 
 func runUpdateCheck(cmd *cobra.Command, args []string) error {
-	cfg, err := getUpdaterConfig(cmd)
-	if err != nil {
-		return err
-	}
+	cfg := getUpdaterConfig(cmd)
 
 	u, err := updater.New(cfg, updater.BinaryTypeServer, nil)
 	if err != nil {
@@ -179,10 +176,7 @@ func runUpdateCheck(cmd *cobra.Command, args []string) error {
 }
 
 func runUpdateInstall(cmd *cobra.Command, args []string) error {
-	cfg, err := getUpdaterConfig(cmd)
-	if err != nil {
-		return err
-	}
+	cfg := getUpdaterConfig(cmd)
 
 	u, err := updater.New(cfg, updater.BinaryTypeServer, nil)
 	if err != nil {
@@ -230,10 +224,7 @@ func runUpdateInstall(cmd *cobra.Command, args []string) error {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	cfg, err := getUpdaterConfig(cmd)
-	if err != nil {
-		return err
-	}
+	cfg := getUpdaterConfig(cmd)
 
 	u, err := updater.New(cfg, updater.BinaryTypeServer, nil)
 	if err != nil {
@@ -260,7 +251,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nWould you like to install this update? [y/N]: ")
 
 	reader := bufio.NewReader(os.Stdin)
-	response, _ := reader.ReadString('\n')
+	response, _ := reader.ReadString('\n') //nolint:errcheck // Interactive prompt - EOF is acceptable
 	response = strings.TrimSpace(strings.ToLower(response))
 
 	if response == "y" || response == "yes" {
@@ -317,7 +308,7 @@ On Windows: Registers a Windows Service`,
 	}
 	installCmd.Flags().StringVarP(&serviceConfigPath, "config", "c", "", "Path to config file (required)")
 	installCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-server)")
-	installCmd.MarkFlagRequired("config")
+	_ = installCmd.MarkFlagRequired("config") //nolint:errcheck // Flag registration only fails on invalid flag name
 
 	// Uninstall command
 	uninstallCmd := &cobra.Command{

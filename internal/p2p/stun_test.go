@@ -366,8 +366,8 @@ func TestSTUNClientBind(t *testing.T) {
 		// Start mock server
 		go func() {
 			buf := make([]byte, 1024)
-			n, clientAddr, err := serverConn.ReadFrom(buf)
-			if err != nil {
+			n, clientAddr, readErr := serverConn.ReadFrom(buf)
+			if readErr != nil {
 				return
 			}
 
@@ -478,8 +478,8 @@ func TestSTUNBindWithDeadline(t *testing.T) {
 	// Start mock server that delays
 	go func() {
 		buf := make([]byte, 1024)
-		n, clientAddr, err := serverConn.ReadFrom(buf)
-		if err != nil {
+		n, clientAddr, readErr := serverConn.ReadFrom(buf)
+		if readErr != nil {
 			return
 		}
 

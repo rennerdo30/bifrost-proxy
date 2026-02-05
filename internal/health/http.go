@@ -10,10 +10,10 @@ import (
 
 // HTTPChecker performs HTTP health checks.
 type HTTPChecker struct {
-	target   string
-	path     string
-	timeout  time.Duration
-	client   *http.Client
+	target  string
+	path    string
+	timeout time.Duration
+	client  *http.Client
 }
 
 // NewHTTPChecker creates a new HTTP health checker.
@@ -30,7 +30,7 @@ func NewHTTPChecker(cfg Config) *HTTPChecker {
 
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, // For health checks, we often accept self-signed certs
+			InsecureSkipVerify: true, //nolint:gosec // G402: Health checks need to accept self-signed certs for internal services
 		},
 	}
 

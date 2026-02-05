@@ -18,9 +18,9 @@ import (
 
 // MeshNode errors.
 var (
-	ErrNodeNotStarted  = errors.New("mesh: node not started")
-	ErrNodeAlreadyRunning = errors.New("mesh: node already running")
-	ErrNoPeerConnection = errors.New("mesh: no connection to peer")
+	ErrNodeNotStarted      = errors.New("mesh: node not started")
+	ErrNodeAlreadyRunning  = errors.New("mesh: node already running")
+	ErrNoPeerConnection    = errors.New("mesh: no connection to peer")
 	ErrDeviceNotConfigured = errors.New("mesh: device not configured")
 )
 
@@ -28,25 +28,25 @@ var (
 type NodeStatus string
 
 const (
-	NodeStatusStopped    NodeStatus = "stopped"
-	NodeStatusStarting   NodeStatus = "starting"
-	NodeStatusRunning    NodeStatus = "running"
-	NodeStatusStopping   NodeStatus = "stopping"
-	NodeStatusError      NodeStatus = "error"
+	NodeStatusStopped  NodeStatus = "stopped"
+	NodeStatusStarting NodeStatus = "starting"
+	NodeStatusRunning  NodeStatus = "running"
+	NodeStatusStopping NodeStatus = "stopping"
+	NodeStatusError    NodeStatus = "error"
 )
 
 // NodeStats contains mesh node statistics.
 type NodeStats struct {
-	Status            NodeStatus    `json:"status"`
-	PeerCount         int           `json:"peer_count"`
-	ConnectedPeers    int           `json:"connected_peers"`
-	DirectConnections int           `json:"direct_connections"`
-	RelayedConnections int          `json:"relayed_connections"`
-	BytesSent         int64         `json:"bytes_sent"`
-	BytesReceived     int64         `json:"bytes_received"`
-	PacketsSent       int64         `json:"packets_sent"`
-	PacketsReceived   int64         `json:"packets_received"`
-	Uptime            time.Duration `json:"uptime"`
+	Status             NodeStatus    `json:"status"`
+	PeerCount          int           `json:"peer_count"`
+	ConnectedPeers     int           `json:"connected_peers"`
+	DirectConnections  int           `json:"direct_connections"`
+	RelayedConnections int           `json:"relayed_connections"`
+	BytesSent          int64         `json:"bytes_sent"`
+	BytesReceived      int64         `json:"bytes_received"`
+	PacketsSent        int64         `json:"packets_sent"`
+	PacketsReceived    int64         `json:"packets_received"`
+	Uptime             time.Duration `json:"uptime"`
 }
 
 // MeshNode is the central orchestrator that ties all mesh networking components together.
@@ -136,23 +136,9 @@ func (n *MeshNode) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to initialize P2P manager: %w", err)
 	}
 
-	if err := n.initializeRouter(); err != nil {
-		n.cleanup()
-		n.setStatus(NodeStatusError)
-		return fmt.Errorf("failed to initialize router: %w", err)
-	}
-
-	if err := n.initializeBroadcast(); err != nil {
-		n.cleanup()
-		n.setStatus(NodeStatusError)
-		return fmt.Errorf("failed to initialize broadcast: %w", err)
-	}
-
-	if err := n.initializeDiscovery(); err != nil {
-		n.cleanup()
-		n.setStatus(NodeStatusError)
-		return fmt.Errorf("failed to initialize discovery: %w", err)
-	}
+	n.initializeRouter()
+	n.initializeBroadcast()
+	n.initializeDiscovery()
 
 	// Wire up callbacks between components
 	n.wireCallbacks()
@@ -399,7 +385,7 @@ func (n *MeshNode) initializeP2PManager() error {
 }
 
 // initializeRouter creates and configures the mesh router.
-func (n *MeshNode) initializeRouter() error {
+func (n *MeshNode) initializeRouter() {
 	routerConfig := RouterConfig{
 		LocalPeerID:  n.localPeerID,
 		LocalIP:      n.localIP,
@@ -412,19 +398,16 @@ func (n *MeshNode) initializeRouter() error {
 	// Initialize routing protocol
 	protocolConfig := DefaultProtocolConfig()
 	n.protocol = NewRoutingProtocol(n.localPeerID, n.localIP, n.router, protocolConfig)
-
-	return nil
 }
 
 // initializeBroadcast creates and configures the broadcast manager.
-func (n *MeshNode) initializeBroadcast() error {
+func (n *MeshNode) initializeBroadcast() {
 	broadcastConfig := DefaultBroadcastConfig()
 	n.broadcast = NewBroadcastManager(n.localPeerID, n.router, broadcastConfig)
-	return nil
 }
 
 // initializeDiscovery creates and configures the discovery client.
-func (n *MeshNode) initializeDiscovery() error {
+func (n *MeshNode) initializeDiscovery() {
 	// Create local peer representation
 	localPeer := NewPeer(n.localPeerID, n.config.PeerName)
 	localPeer.SetVirtualIP(n.localIP)
@@ -456,8 +439,6 @@ func (n *MeshNode) initializeDiscovery() error {
 		localPeer,
 		n.peerRegistry,
 	)
-
-	return nil
 }
 
 // wireCallbacks connects all component callbacks.
@@ -513,22 +494,22 @@ func (n *MeshNode) startComponents() error {
 func (n *MeshNode) cleanup() {
 	// Stop discovery
 	if n.discovery != nil {
-		n.discovery.Stop()
+		_ = n.discovery.Stop() //nolint:errcheck // Best effort cleanup
 	}
 
 	// Stop broadcast
 	if n.broadcast != nil {
-		n.broadcast.Stop()
+		_ = n.broadcast.Stop() //nolint:errcheck // Best effort cleanup
 	}
 
 	// Stop routing protocol
 	if n.protocol != nil {
-		n.protocol.Stop()
+		_ = n.protocol.Stop() //nolint:errcheck // Best effort cleanup
 	}
 
 	// Stop P2P manager
 	if n.p2pManager != nil {
-		n.p2pManager.Stop()
+		_ = n.p2pManager.Stop() //nolint:errcheck // Best effort cleanup
 	}
 
 	// Close device
@@ -811,7 +792,7 @@ func (n *MeshNode) onPeerLeft(peerID string) {
 	slog.Info("peer left", "peer_id", peerID)
 
 	// Disconnect if connected
-	n.p2pManager.Disconnect(peerID)
+	_ = n.p2pManager.Disconnect(peerID) //nolint:errcheck // Best effort disconnect
 
 	// Remove routes
 	n.protocol.NotifyPeerDisconnected(peerID)
@@ -902,7 +883,7 @@ func (n *MeshNode) onP2PData(peerID string, data []byte) {
 
 	// Check if this is a broadcast message
 	if len(data) > 0 && isBroadcastMessage(data) {
-		n.broadcast.HandleMessage(peerID, data)
+		_ = n.broadcast.HandleMessage(peerID, data) //nolint:errcheck // Best effort broadcast
 		return
 	}
 
@@ -1002,7 +983,7 @@ func (n *MeshNode) performMaintenance() {
 				Priority: 50,
 			})
 		}
-		n.discovery.UpdateEndpoints(meshEndpoints)
+		_ = n.discovery.UpdateEndpoints(meshEndpoints) //nolint:errcheck // Best effort endpoint update
 	}
 }
 
@@ -1045,10 +1026,3 @@ func isBroadcastMessage(data []byte) bool {
 	// Broadcast messages start with 0x02 marker
 	return data[0] == 0x02
 }
-
-// Message type markers
-const (
-	msgMarkerProtocol  byte = 0x01
-	msgMarkerBroadcast byte = 0x02
-	msgMarkerData      byte = 0x00
-)

@@ -22,10 +22,10 @@ const (
 
 // Split tunnel errors
 var (
-	ErrAppRulesAtLimit    = errors.New("split tunnel: app rules at maximum limit")
-	ErrIPRulesAtLimit     = errors.New("split tunnel: IP rules at maximum limit")
+	ErrAppRulesAtLimit       = errors.New("split tunnel: app rules at maximum limit")
+	ErrIPRulesAtLimit        = errors.New("split tunnel: IP rules at maximum limit")
 	ErrDomainPatternsAtLimit = errors.New("split tunnel: domain patterns at maximum limit")
-	ErrDuplicateRule      = errors.New("split tunnel: duplicate rule")
+	ErrDuplicateRule         = errors.New("split tunnel: duplicate rule")
 )
 
 // Action represents the split tunnel decision.
@@ -88,9 +88,9 @@ type SplitTunnelEngine struct {
 	mode string // "exclude" or "include"
 
 	// Matchers
-	appMatcher       *AppMatcher
-	domainMatcher    *matcher.Matcher
-	ipMatcher        *IPMatcher
+	appMatcher          *AppMatcher
+	domainMatcher       *matcher.Matcher
+	ipMatcher           *IPMatcher
 	alwaysBypassMatcher *IPMatcher
 
 	// DNS cache for reverse lookups
@@ -113,7 +113,7 @@ func NewSplitTunnelEngine(cfg SplitTunnelConfig, dnsCache *DNSCache) (*SplitTunn
 	// Initialize app matcher
 	engine.appMatcher = NewAppMatcher()
 	for _, app := range cfg.Apps {
-		engine.appMatcher.AddRule(app)
+		_ = engine.appMatcher.AddRule(app) //nolint:errcheck // Skip invalid app rules during init
 	}
 
 	// Initialize domain matcher
@@ -122,7 +122,7 @@ func NewSplitTunnelEngine(cfg SplitTunnelConfig, dnsCache *DNSCache) (*SplitTunn
 	// Initialize IP matcher
 	engine.ipMatcher = NewIPMatcher()
 	for _, ip := range cfg.IPs {
-		engine.ipMatcher.Add(ip)
+		_ = engine.ipMatcher.Add(ip) //nolint:errcheck // Skip invalid IP rules during init
 	}
 
 	// Initialize always-bypass matcher with common defaults
@@ -130,18 +130,18 @@ func NewSplitTunnelEngine(cfg SplitTunnelConfig, dnsCache *DNSCache) (*SplitTunn
 
 	// Add default bypass rules (localhost, link-local)
 	defaultBypass := []string{
-		"127.0.0.0/8",      // IPv4 loopback
-		"::1/128",          // IPv6 loopback
-		"169.254.0.0/16",   // IPv4 link-local
-		"fe80::/10",        // IPv6 link-local
+		"127.0.0.0/8",    // IPv4 loopback
+		"::1/128",        // IPv6 loopback
+		"169.254.0.0/16", // IPv4 link-local
+		"fe80::/10",      // IPv6 link-local
 	}
 	for _, cidr := range defaultBypass {
-		engine.alwaysBypassMatcher.Add(cidr)
+		_ = engine.alwaysBypassMatcher.Add(cidr) //nolint:errcheck // Default bypass rules are always valid
 	}
 
 	// Add user-configured always-bypass
 	for _, cidr := range cfg.AlwaysBypass {
-		engine.alwaysBypassMatcher.Add(cidr)
+		_ = engine.alwaysBypassMatcher.Add(cidr) //nolint:errcheck // Skip invalid bypass rules during init
 	}
 
 	return engine, nil
@@ -239,7 +239,7 @@ func (e *SplitTunnelEngine) Decide(packet *IPPacket, procInfo *ProcessInfo) Deci
 func (e *SplitTunnelEngine) AddApp(app AppRule) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.appMatcher.AddRule(app)
+	_ = e.appMatcher.AddRule(app) //nolint:errcheck // Silently ignore invalid app rules
 }
 
 // RemoveApp removes an app rule from the split tunnel.
@@ -253,7 +253,7 @@ func (e *SplitTunnelEngine) RemoveApp(name string) {
 func (e *SplitTunnelEngine) AddDomain(pattern string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.domainMatcher.AddPattern(pattern)
+	_ = e.domainMatcher.AddPattern(pattern) //nolint:errcheck // Silently ignore invalid domain patterns
 }
 
 // RemoveDomain removes a domain pattern from the split tunnel.
@@ -267,7 +267,7 @@ func (e *SplitTunnelEngine) RemoveDomain(pattern string) {
 func (e *SplitTunnelEngine) AddIP(cidr string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.ipMatcher.Add(cidr)
+	_ = e.ipMatcher.Add(cidr) //nolint:errcheck // Silently ignore invalid IP patterns
 }
 
 // RemoveIP removes an IP or CIDR from the split tunnel.

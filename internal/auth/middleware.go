@@ -340,13 +340,13 @@ func (m *Middleware) setUserContext(ctx context.Context, userInfo *UserInfo, cer
 
 // GetUserInfo retrieves user information from the context.
 func GetUserInfo(ctx context.Context) *UserInfo {
-	userInfo, _ := ctx.Value(UserInfoContextKey).(*UserInfo)
+	userInfo, _ := ctx.Value(UserInfoContextKey).(*UserInfo) //nolint:errcheck // Type assertion - nil is valid if missing
 	return userInfo
 }
 
 // GetClientCert retrieves the client certificate from the context.
 func GetClientCert(ctx context.Context) *x509.Certificate {
-	cert, _ := ctx.Value(ClientCertContextKey).(*x509.Certificate)
+	cert, _ := ctx.Value(ClientCertContextKey).(*x509.Certificate) //nolint:errcheck // Type assertion - nil is valid if missing
 	return cert
 }
 

@@ -360,7 +360,7 @@ func TestNATTableAllocate(t *testing.T) {
 	require.NotNil(t, entry)
 	assert.Equal(t, src, entry.OriginalSrc)
 	assert.Equal(t, dst, entry.Destination)
-	assert.Equal(t, uint8(ProtocolTCP), entry.Protocol)
+	assert.Equal(t, ProtocolTCP, entry.Protocol)
 	assert.Equal(t, uint16(10000), entry.MappedSrc.Port())
 
 	// Allocate same source/dst should return existing

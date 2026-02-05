@@ -590,7 +590,7 @@ func (a *API) handleTestBackend(w http.ResponseWriter, r *http.Request) {
 		Timeout string `json:"timeout"`
 	}
 	// Ignore decode errors - use defaults
-	_ = json.NewDecoder(r.Body).Decode(&testReq)
+	_ = json.NewDecoder(r.Body).Decode(&testReq) //nolint:errcheck // Default values used on error
 
 	target := testReq.Target
 	if target == "" {
@@ -599,7 +599,7 @@ func (a *API) handleTestBackend(w http.ResponseWriter, r *http.Request) {
 
 	timeout := 10 * time.Second
 	if testReq.Timeout != "" {
-		if d, err := time.ParseDuration(testReq.Timeout); err == nil {
+		if d, parseErr := time.ParseDuration(testReq.Timeout); parseErr == nil {
 			timeout = d
 		}
 	}
@@ -748,10 +748,10 @@ func (a *API) handleAddRoute(w http.ResponseWriter, r *http.Request) {
 		if err := a.reloadConfig(); err != nil {
 			slog.Warn("failed to reload config after adding route", "route", newRoute.Name, "error", err)
 			a.writeJSON(w, http.StatusCreated, map[string]interface{}{
-				"status":          "created",
-				"route":           newRoute.Name,
-				"warning":         "Config saved but reload failed",
-				"reload_error":    err.Error(),
+				"status":           "created",
+				"route":            newRoute.Name,
+				"warning":          "Config saved but reload failed",
+				"reload_error":     err.Error(),
 				"restart_required": true,
 			})
 			return
@@ -822,10 +822,10 @@ func (a *API) handleRemoveRoute(w http.ResponseWriter, r *http.Request) {
 		if err := a.reloadConfig(); err != nil {
 			slog.Warn("failed to reload config after removing route", "route", name, "error", err)
 			a.writeJSON(w, http.StatusOK, map[string]interface{}{
-				"status":          "removed",
-				"route":           name,
-				"warning":         "Config saved but reload failed",
-				"reload_error":    err.Error(),
+				"status":           "removed",
+				"route":            name,
+				"warning":          "Config saved but reload failed",
+				"reload_error":     err.Error(),
 				"restart_required": true,
 			})
 			return
@@ -876,7 +876,7 @@ func (a *API) handleReloadConfig(w http.ResponseWriter, r *http.Request) {
 func (a *API) writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data) //nolint:errcheck // Best effort HTTP response
 }
 
 // handleGetRequests returns recent request log entries.

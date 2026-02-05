@@ -163,7 +163,7 @@ func parseConfig(config map[string]any) (*oauthConfig, error) {
 		provider: "generic",
 	}
 
-	clientID, _ := config["client_id"].(string)
+	clientID, _ := config["client_id"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if clientID == "" {
 		return nil, fmt.Errorf("OAuth client_id is required")
 	}
@@ -443,8 +443,16 @@ func (a *Authenticator) Type() string {
 func discoverOIDCEndpoints(issuerURL string) (introspect, userinfo string, err error) {
 	wellKnownURL := strings.TrimSuffix(issuerURL, "/") + "/.well-known/openid-configuration"
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wellKnownURL, nil)
+	if err != nil {
+		return "", "", fmt.Errorf("create OIDC discovery request: %w", err)
+	}
+
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(wellKnownURL)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", "", fmt.Errorf("fetch OIDC discovery: %w", err)
 	}

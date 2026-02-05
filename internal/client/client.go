@@ -174,8 +174,9 @@ func (c *Client) Start(ctx context.Context) error {
 		})
 
 		c.apiServer = &http.Server{
-			Addr:    c.config.API.Listen,
-			Handler: api.HandlerWithUI(),
+			Addr:              c.config.API.Listen,
+			Handler:           api.HandlerWithUI(),
+			ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
 		}
 
 		c.wg.Add(1)
@@ -253,7 +254,7 @@ func (c *Client) Stop(ctx context.Context) error {
 
 	// Stop API server
 	if c.apiServer != nil {
-		c.apiServer.Shutdown(ctx)
+		_ = c.apiServer.Shutdown(ctx) //nolint:errcheck // Best effort shutdown
 	}
 
 	// Stop VPN
@@ -635,7 +636,7 @@ func (c *Client) startTray(ctx context.Context) {
 		},
 		OnQuit: func() {
 			go func() {
-				_ = c.Stop(context.Background())
+				_ = c.Stop(context.Background()) //nolint:errcheck // Exiting anyway
 				os.Exit(0)
 			}()
 		},

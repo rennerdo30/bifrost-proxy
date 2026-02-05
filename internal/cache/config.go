@@ -122,7 +122,7 @@ type RuleConfig struct {
 func DefaultConfig() Config {
 	return Config{
 		Enabled:     false,
-		DefaultTTL:  Duration(30 * 24 * time.Hour), // 30 days
+		DefaultTTL:  Duration(30 * 24 * time.Hour),     // 30 days
 		MaxFileSize: ByteSize(50 * 1024 * 1024 * 1024), // 50GB
 		Storage: StorageConfig{
 			Type: "tiered",
@@ -252,7 +252,7 @@ func parseDuration(s string) (time.Duration, error) {
 	// Handle extended format with days (e.g., "30d", "7d12h")
 	re := regexp.MustCompile(`^(\d+)d(.*)$`)
 	if matches := re.FindStringSubmatch(s); len(matches) == 3 {
-		days, _ := strconv.Atoi(matches[1])
+		days, _ := strconv.Atoi(matches[1]) //nolint:errcheck // Regex guarantees digits
 		remainder := matches[2]
 		daysDur := time.Duration(days) * 24 * time.Hour
 		if remainder == "" {

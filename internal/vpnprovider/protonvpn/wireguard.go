@@ -46,21 +46,21 @@ type CertificateResponse struct {
 
 // VPNCertificateResponse wraps the certificate response.
 type VPNCertificateResponse struct {
-	Code  int                       `json:"Code"`
-	VPN   *VPNCertificateInfo       `json:"VPN,omitempty"`
-	Error *VPNCertificateErrorInfo  `json:"Error,omitempty"`
+	Code  int                      `json:"Code"`
+	VPN   *VPNCertificateInfo      `json:"VPN,omitempty"`
+	Error *VPNCertificateErrorInfo `json:"Error,omitempty"`
 }
 
 // VPNCertificateInfo contains the VPN certificate details.
 type VPNCertificateInfo struct {
-	ExpirationTime  int64  `json:"ExpirationTime"`
-	RefreshTime     int64  `json:"RefreshTime"`
-	Certificate     string `json:"Certificate,omitempty"`
-	ClientKeyFP     string `json:"ClientKeyFP"`
-	ClientIP        string `json:"ClientIP,omitempty"`        // Assigned client IP
-	ClientIPv6      string `json:"ClientIPv6,omitempty"`      // Assigned client IPv6
-	DeviceName      string `json:"DeviceName,omitempty"`
-	Features        int    `json:"Features"`
+	ExpirationTime int64  `json:"ExpirationTime"`
+	RefreshTime    int64  `json:"RefreshTime"`
+	Certificate    string `json:"Certificate,omitempty"`
+	ClientKeyFP    string `json:"ClientKeyFP"`
+	ClientIP       string `json:"ClientIP,omitempty"`   // Assigned client IP
+	ClientIPv6     string `json:"ClientIPv6,omitempty"` // Assigned client IPv6
+	DeviceName     string `json:"DeviceName,omitempty"`
+	Features       int    `json:"Features"`
 }
 
 // VPNCertificateErrorInfo contains error details.

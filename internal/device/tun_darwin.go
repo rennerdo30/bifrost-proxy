@@ -52,9 +52,9 @@ func createPlatformTUN(cfg Config) (NetworkDevice, error) {
 	ctlInfo := &unix.CtlInfo{}
 	copy(ctlInfo.Name[:], utunControlName)
 
-	if err := unix.IoctlCtlInfo(fd, ctlInfo); err != nil {
+	if ioctlErr := unix.IoctlCtlInfo(fd, ctlInfo); ioctlErr != nil {
 		unix.Close(fd)
-		return nil, &DeviceError{Op: "ioctl CTLIOCGINFO", Err: err}
+		return nil, &DeviceError{Op: "ioctl CTLIOCGINFO", Err: ioctlErr}
 	}
 
 	// Determine utun unit number
@@ -63,8 +63,8 @@ func createPlatformTUN(cfg Config) (NetworkDevice, error) {
 		// Parse unit number from name
 		numStr := strings.TrimPrefix(cfg.Name, "utun")
 		if numStr != "" {
-			num, err := strconv.ParseUint(numStr, 10, 32)
-			if err == nil {
+			num, parseErr := strconv.ParseUint(numStr, 10, 32)
+			if parseErr == nil {
 				unit = uint32(num)
 			}
 		}
@@ -76,12 +76,12 @@ func createPlatformTUN(cfg Config) (NetworkDevice, error) {
 		Unit: unit,
 	}
 
-	if err := unix.Connect(fd, sa); err != nil {
+	if connectErr := unix.Connect(fd, sa); connectErr != nil {
 		unix.Close(fd)
-		if err == syscall.EBUSY {
+		if connectErr == syscall.EBUSY {
 			return nil, ErrDeviceAlreadyExists
 		}
-		return nil, &DeviceError{Op: "connect", Err: err}
+		return nil, &DeviceError{Op: "connect", Err: connectErr}
 	}
 
 	// Get the actual interface name
@@ -162,26 +162,26 @@ func (t *darwinTUN) configure(cfg Config) error {
 		mask := net.CIDRMask(bits, 32)
 		maskStr := net.IP(mask).String()
 
-		cmd := exec.Command("ifconfig", t.name, "inet", addr.String(), dstAddr, "netmask", maskStr)
+		cmd := exec.Command("ifconfig", t.name, "inet", addr.String(), dstAddr, "netmask", maskStr) //nolint:gosec // G204: interface name and addresses are validated
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return &DeviceError{Op: "ifconfig address", Err: fmt.Errorf("%w: %s", err, string(output))}
 		}
 	} else {
 		// IPv6
-		cmd := exec.Command("ifconfig", t.name, "inet6", fmt.Sprintf("%s/%d", addr, bits))
+		cmd := exec.Command("ifconfig", t.name, "inet6", fmt.Sprintf("%s/%d", addr, bits)) //nolint:gosec // G204: interface name and addresses are validated
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return &DeviceError{Op: "ifconfig address6", Err: fmt.Errorf("%w: %s", err, string(output))}
 		}
 	}
 
 	// Set MTU
-	cmd := exec.Command("ifconfig", t.name, "mtu", strconv.Itoa(cfg.MTU))
+	cmd := exec.Command("ifconfig", t.name, "mtu", strconv.Itoa(cfg.MTU)) //nolint:gosec // G204: interface name and MTU are from validated config
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return &DeviceError{Op: "ifconfig mtu", Err: fmt.Errorf("%w: %s", err, string(output))}
 	}
 
 	// Bring interface up
-	cmd = exec.Command("ifconfig", t.name, "up")
+	cmd = exec.Command("ifconfig", t.name, "up") //nolint:gosec // G204: interface name is from validated config
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return &DeviceError{Op: "ifconfig up", Err: fmt.Errorf("%w: %s", err, string(output))}
 	}
@@ -214,20 +214,20 @@ func (t *darwinTUN) Read(buf []byte) (int, error) {
 	tempBuf := make([]byte, len(buf)+4)
 
 	for {
-		n, err := unix.Read(fd, tempBuf)
-		if err != nil {
-			if err == syscall.EAGAIN || err == syscall.EWOULDBLOCK {
+		n, readErr := unix.Read(fd, tempBuf)
+		if readErr != nil {
+			if readErr == syscall.EAGAIN || readErr == syscall.EWOULDBLOCK {
 				// Use select to wait for data
 				var readFds unix.FdSet
 				readFds.Set(fd)
 
-				_, err := unix.Select(fd+1, &readFds, nil, nil, nil)
-				if err != nil {
-					return 0, &DeviceError{Op: "select", Err: err}
+				_, selectErr := unix.Select(fd+1, &readFds, nil, nil, nil)
+				if selectErr != nil {
+					return 0, &DeviceError{Op: "select", Err: selectErr}
 				}
 				continue
 			}
-			return 0, &DeviceError{Op: "read", Err: err}
+			return 0, &DeviceError{Op: "read", Err: readErr}
 		}
 
 		if n <= 4 {
@@ -295,7 +295,7 @@ func (t *darwinTUN) Close() error {
 	t.closed = true
 
 	// Bring interface down
-	exec.Command("ifconfig", t.name, "down").Run()
+	_ = exec.Command("ifconfig", t.name, "down").Run() //nolint:errcheck,gosec // Best effort interface cleanup
 
 	return unix.Close(t.fd)
 }

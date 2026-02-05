@@ -93,7 +93,7 @@ func (m *MemoryStorage) Get(ctx context.Context, key string) (*Entry, error) {
 		return nil, ErrNotFound
 	}
 
-	me := elem.Value.(*memoryEntry)
+	me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 
 	// Check if expired
 	if me.metadata.IsExpired() {
@@ -222,7 +222,7 @@ func (m *MemoryStorage) Exists(ctx context.Context, key string) bool {
 		return false
 	}
 
-	me := elem.Value.(*memoryEntry)
+	me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 	return !me.metadata.IsExpired()
 }
 
@@ -240,7 +240,7 @@ func (m *MemoryStorage) GetMetadata(ctx context.Context, key string) (*Metadata,
 		return nil, ErrNotFound
 	}
 
-	me := elem.Value.(*memoryEntry)
+	me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 	if me.metadata.IsExpired() {
 		return nil, ErrNotFound
 	}
@@ -262,7 +262,7 @@ func (m *MemoryStorage) GetRange(ctx context.Context, key string, start, end int
 		return nil, ErrNotFound
 	}
 
-	me := elem.Value.(*memoryEntry)
+	me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 	if me.metadata.IsExpired() {
 		return nil, ErrNotFound
 	}
@@ -297,7 +297,7 @@ func (m *MemoryStorage) List(ctx context.Context, domain string, offset, limit i
 	var total int64
 
 	for elem := m.lruList.Front(); elem != nil; elem = elem.Next() {
-		me := elem.Value.(*memoryEntry)
+		me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 		if me.metadata.IsExpired() {
 			continue
 		}
@@ -392,7 +392,7 @@ func (m *MemoryStorage) Stop(ctx context.Context) error {
 // removeElement removes an element from both the map and list.
 // Must be called with lock held.
 func (m *MemoryStorage) removeElement(elem *list.Element) {
-	me := elem.Value.(*memoryEntry)
+	me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 	delete(m.entries, me.key)
 	m.lruList.Remove(elem)
 	m.currentSize -= int64(len(me.data))
@@ -418,7 +418,7 @@ func (m *MemoryStorage) evictOne() bool {
 		// Find least frequently used
 		var minCount int64 = -1
 		for elem := m.lruList.Back(); elem != nil; elem = elem.Prev() {
-			me := elem.Value.(*memoryEntry)
+			me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 			if minCount < 0 || me.metadata.AccessCount < minCount {
 				minCount = me.metadata.AccessCount
 				victim = elem
@@ -430,7 +430,7 @@ func (m *MemoryStorage) evictOne() bool {
 		return false
 	}
 
-	me := victim.Value.(*memoryEntry)
+	me := victim.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 	slog.Debug("evicting cache entry",
 		"key", truncateKey(me.key),
 		"size", len(me.data),
@@ -476,7 +476,7 @@ func (m *MemoryStorage) CleanupExpired() int {
 	now := time.Now()
 
 	for elem := m.lruList.Front(); elem != nil; elem = elem.Next() {
-		me := elem.Value.(*memoryEntry)
+		me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 		if now.After(me.metadata.ExpiresAt) {
 			expired = append(expired, elem)
 		}
@@ -505,7 +505,7 @@ func (m *MemoryStorage) DataForKey(key string) ([]byte, bool) {
 		return nil, false
 	}
 
-	me := elem.Value.(*memoryEntry)
+	me := elem.Value.(*memoryEntry) //nolint:errcheck // Type is always *memoryEntry
 	data := make([]byte, len(me.data))
 	copy(data, me.data)
 	return data, true

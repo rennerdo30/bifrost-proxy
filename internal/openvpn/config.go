@@ -79,7 +79,7 @@ func ParseConfigFile(path string) (*Config, error) {
 			if len(args) >= 1 {
 				remote := RemoteServer{Host: args[0], Port: 1194, Protocol: config.Protocol}
 				if len(args) >= 2 {
-					fmt.Sscanf(args[1], "%d", &remote.Port)
+					_, _ = fmt.Sscanf(args[1], "%d", &remote.Port) //nolint:errcheck // Default used if parse fails
 				}
 				if len(args) >= 3 {
 					remote.Protocol = args[2]
@@ -92,7 +92,7 @@ func ParseConfigFile(path string) (*Config, error) {
 			}
 		case "port":
 			if len(args) >= 1 {
-				fmt.Sscanf(args[0], "%d", &config.Port)
+				_, _ = fmt.Sscanf(args[0], "%d", &config.Port) //nolint:errcheck // Default used if parse fails
 			}
 		case "dev":
 			if len(args) >= 1 {
@@ -132,12 +132,12 @@ func ParseConfigFile(path string) (*Config, error) {
 			config.Compress = "lzo"
 		case "verb":
 			if len(args) >= 1 {
-				fmt.Sscanf(args[0], "%d", &config.Verb)
+				_, _ = fmt.Sscanf(args[0], "%d", &config.Verb) //nolint:errcheck // Default used if parse fails
 			}
 		case "management":
 			if len(args) >= 2 {
 				config.Management.Address = args[0]
-				fmt.Sscanf(args[1], "%d", &config.Management.Port)
+				_, _ = fmt.Sscanf(args[1], "%d", &config.Management.Port) //nolint:errcheck // Default used if parse fails
 				if len(args) >= 3 {
 					config.Management.Password = args[2]
 				}

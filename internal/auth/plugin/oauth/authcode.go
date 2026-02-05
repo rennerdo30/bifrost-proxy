@@ -299,6 +299,7 @@ func (f *AuthCodeFlow) CallbackHandler() http.Handler {
 
 		// Respond with success page
 		w.Header().Set("Content-Type", "text/html")
+		//nolint:errcheck // Best effort success page write
 		_, _ = w.Write([]byte(`
 <!DOCTYPE html>
 <html>
@@ -382,7 +383,7 @@ func (f *AuthCodeFlow) StartCallbackServer(ctx context.Context, state string) (*
 	// Wait for result, error, or context cancellation
 	select {
 	case result := <-resultCh:
-		server.Shutdown(context.Background())
+		_ = server.Shutdown(context.Background()) //nolint:errcheck // Best effort shutdown
 		if result.err != nil {
 			return nil, result.err
 		}
@@ -390,7 +391,7 @@ func (f *AuthCodeFlow) StartCallbackServer(ctx context.Context, state string) (*
 	case err := <-errCh:
 		return nil, fmt.Errorf("callback server error: %w", err)
 	case <-ctx.Done():
-		server.Shutdown(context.Background())
+		_ = server.Shutdown(context.Background()) //nolint:errcheck // Best effort shutdown
 		return nil, ctx.Err()
 	}
 }
@@ -437,8 +438,6 @@ func generateCodeChallenge(verifier string) string {
 // AuthCodeAuthenticator wraps an OAuth authenticator with authorization code flow support.
 type AuthCodeAuthenticator struct {
 	*Authenticator
-	authCodeFlow *AuthCodeFlow
-	tokenStore   TokenStore
 }
 
 // TokenStore interface for storing and retrieving tokens.

@@ -91,13 +91,13 @@ func (s ConnectionState) String() string {
 
 // Connection errors.
 var (
-	ErrConnectionClosed   = errors.New("p2p: connection closed")
-	ErrConnectionFailed   = errors.New("p2p: connection failed")
-	ErrConnectionTimeout  = errors.New("p2p: connection timeout")
-	ErrNotConnected       = errors.New("p2p: not connected")
-	ErrHandshakeFailed    = errors.New("p2p: handshake failed")
-	ErrEncryptionFailed   = errors.New("p2p: encryption failed")
-	ErrDecryptionFailed   = errors.New("p2p: decryption failed")
+	ErrConnectionClosed  = errors.New("p2p: connection closed")
+	ErrConnectionFailed  = errors.New("p2p: connection failed")
+	ErrConnectionTimeout = errors.New("p2p: connection timeout")
+	ErrNotConnected      = errors.New("p2p: not connected")
+	ErrHandshakeFailed   = errors.New("p2p: handshake failed")
+	ErrEncryptionFailed  = errors.New("p2p: encryption failed")
+	ErrDecryptionFailed  = errors.New("p2p: decryption failed")
 )
 
 // P2PConnection represents a peer-to-peer connection.
@@ -175,9 +175,9 @@ type DirectConnection struct {
 	remoteAddr netip.AddrPort
 	localAddr  netip.AddrPort
 
-	crypto     *CryptoSession
-	state      atomic.Int32
-	latency    atomic.Int64 // nanoseconds
+	crypto  *CryptoSession
+	state   atomic.Int32
+	latency atomic.Int64 // nanoseconds
 
 	sendQueue chan []byte
 	recvQueue chan []byte
@@ -185,17 +185,16 @@ type DirectConnection struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
-	mu     sync.RWMutex
 }
 
 // NewDirectConnection creates a new direct P2P connection.
 func NewDirectConnection(config ConnectionConfig, conn net.PacketConn, remoteAddr netip.AddrPort) (*DirectConnection, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	localUDPAddr := conn.LocalAddr().(*net.UDPAddr)
+	localUDPAddr := conn.LocalAddr().(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 	localAddr := netip.AddrPortFrom(
 		netip.MustParseAddr(localUDPAddr.IP.String()),
-		uint16(localUDPAddr.Port),
+		uint16(localUDPAddr.Port), //nolint:gosec // G115: UDP port is always 0-65535
 	)
 
 	dc := &DirectConnection{
@@ -265,8 +264,8 @@ func (c *DirectConnection) performHandshake(ctx context.Context) error {
 	}
 
 	remoteUDPAddr := net.UDPAddrFromAddrPort(c.remoteAddr)
-	if _, err := c.conn.WriteTo(initMsg, remoteUDPAddr); err != nil {
-		return err
+	if _, writeErr := c.conn.WriteTo(initMsg, remoteUDPAddr); writeErr != nil {
+		return writeErr
 	}
 
 	// Wait for handshake response
@@ -277,21 +276,21 @@ func (c *DirectConnection) performHandshake(ctx context.Context) error {
 	}
 
 	// Verify it's from the expected peer
-	fromUDP := from.(*net.UDPAddr)
+	fromUDP := from.(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 	if !fromUDP.IP.Equal(c.remoteAddr.Addr().AsSlice()) {
 		return ErrHandshakeFailed
 	}
 
 	// Process handshake response
-	if err := c.crypto.ProcessHandshakeResponse(buf[:n]); err != nil {
-		return err
+	if processErr := c.crypto.ProcessHandshakeResponse(buf[:n]); processErr != nil {
+		return processErr
 	}
 
 	// Measure initial latency
 	start := time.Now()
 	pingMsg := c.crypto.Encrypt([]byte("PING"))
-	if _, err := c.conn.WriteTo(pingMsg, remoteUDPAddr); err != nil {
-		return err
+	if _, pingWriteErr := c.conn.WriteTo(pingMsg, remoteUDPAddr); pingWriteErr != nil {
+		return pingWriteErr
 	}
 
 	n, _, err = c.conn.ReadFrom(buf)
@@ -299,8 +298,8 @@ func (c *DirectConnection) performHandshake(ctx context.Context) error {
 		return err
 	}
 
-	if _, err := c.crypto.Decrypt(buf[:n]); err != nil {
-		return err
+	if _, decryptErr := c.crypto.Decrypt(buf[:n]); decryptErr != nil {
+		return decryptErr
 	}
 
 	c.latency.Store(time.Since(start).Nanoseconds())
@@ -365,7 +364,7 @@ func (c *DirectConnection) recvWorker() {
 		}
 
 		// Verify source
-		fromUDP := from.(*net.UDPAddr)
+		fromUDP := from.(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 		if !fromUDP.IP.Equal(c.remoteAddr.Addr().AsSlice()) {
 			continue
 		}
@@ -560,10 +559,8 @@ func (c *RelayedConnection) Connect(ctx context.Context, peerAddr netip.AddrPort
 		return err
 	}
 
-	// Bind channel for efficient data transfer
-	if _, err := c.turnClient.BindChannel(ctx, peerAddr); err != nil {
-		// Channel binding is optional, continue without it
-	}
+	// Bind channel for efficient data transfer (optional, continue if it fails)
+	_, _ = c.turnClient.BindChannel(ctx, peerAddr) //nolint:errcheck // Optional optimization
 
 	c.state.Store(int32(ConnectionStateConnected))
 
@@ -589,7 +586,7 @@ func (c *RelayedConnection) sendWorker(peerAddr netip.AddrPort) {
 			}
 
 			encrypted := c.crypto.Encrypt(data)
-			c.turnClient.Send(peerAddr, encrypted)
+			_ = c.turnClient.Send(peerAddr, encrypted) //nolint:errcheck // Best effort send through TURN relay
 		}
 	}
 }
@@ -681,7 +678,7 @@ func (c *RelayedConnection) State() ConnectionState {
 
 // LocalAddr returns the local address.
 func (c *RelayedConnection) LocalAddr() netip.AddrPort {
-	addr, _ := c.turnClient.RelayAddress()
+	addr, _ := c.turnClient.RelayAddress() //nolint:errcheck // Return zero value if relay not allocated
 	return addr
 }
 

@@ -107,10 +107,10 @@ func (b *HTTPProxyBackend) Dial(ctx context.Context, network, address string) (n
 		connectReq.Header.Set("Proxy-Authorization", "Basic "+auth)
 	}
 
-	if err := connectReq.Write(proxyConn); err != nil {
+	if writeErr := connectReq.Write(proxyConn); writeErr != nil {
 		proxyConn.Close()
-		b.recordError(err)
-		return nil, NewBackendError(b.name, "write CONNECT", err)
+		b.recordError(writeErr)
+		return nil, NewBackendError(b.name, "write CONNECT", writeErr)
 	}
 
 	// Read response

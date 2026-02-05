@@ -54,11 +54,11 @@ type Config struct {
 
 // Wrapper wraps a primary authenticator with MFA.
 type Wrapper struct {
-	config        *Config
-	primary       auth.Authenticator
-	mfa           auth.Authenticator
-	mfaUsers      map[string]bool // Users with MFA enabled (for per_user mode)
-	mfaUsersMu    sync.RWMutex
+	config     *Config
+	primary    auth.Authenticator
+	mfa        auth.Authenticator
+	mfaUsers   map[string]bool // Users with MFA enabled (for per_user mode)
+	mfaUsersMu sync.RWMutex
 }
 
 // NewWrapper creates a new MFA wrapper.

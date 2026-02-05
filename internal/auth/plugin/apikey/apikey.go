@@ -183,13 +183,13 @@ func parseConfig(config map[string]any) (*apiKeyConfig, error) {
 
 // parseAPIKey parses a single API key configuration.
 func parseAPIKey(m map[string]any) (*APIKey, error) {
-	name, _ := m["name"].(string)
+	name, _ := m["name"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if name == "" {
 		return nil, fmt.Errorf("'name' is required")
 	}
 
-	keyHash, _ := m["key_hash"].(string)
-	keyPlain, _ := m["key_plain"].(string)
+	keyHash, _ := m["key_hash"].(string)   //nolint:errcheck // Type assertion - empty string is valid if missing
+	keyPlain, _ := m["key_plain"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 
 	if keyHash == "" && keyPlain == "" {
 		return nil, fmt.Errorf("key %q: either 'key_hash' or 'key_plain' is required", name)

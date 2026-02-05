@@ -19,21 +19,12 @@ import (
 type mockTUNDevice struct {
 	name      string
 	mtu       int
-	readData  []byte
 	readErr   error
 	writeData []byte
 	writeErr  error
 	closed    bool
 	mu        sync.Mutex
 	readChan  chan []byte
-}
-
-func newMockTUNDevice(name string, mtu int) *mockTUNDevice {
-	return &mockTUNDevice{
-		name:     name,
-		mtu:      mtu,
-		readChan: make(chan []byte, 10),
-	}
 }
 
 func (m *mockTUNDevice) Name() string {
@@ -488,15 +479,15 @@ func TestVPNStats(t *testing.T) {
 // TestConnectionInfo tests ConnectionInfo struct
 func TestConnectionInfo(t *testing.T) {
 	info := ConnectionInfo{
-		ID:           "test-id",
-		Protocol:     "tcp",
-		LocalAddr:    netip.MustParseAddrPort("192.168.1.100:12345"),
-		RemoteAddr:   netip.MustParseAddrPort("93.184.216.34:443"),
-		RemoteHost:   "example.com",
-		Action:       ActionTunnel,
-		MatchedBy:    "default",
-		StartTime:    time.Now(),
-		BytesSent:    100,
+		ID:            "test-id",
+		Protocol:      "tcp",
+		LocalAddr:     netip.MustParseAddrPort("192.168.1.100:12345"),
+		RemoteAddr:    netip.MustParseAddrPort("93.184.216.34:443"),
+		RemoteHost:    "example.com",
+		Action:        ActionTunnel,
+		MatchedBy:     "default",
+		StartTime:     time.Now(),
+		BytesSent:     100,
 		BytesReceived: 200,
 	}
 

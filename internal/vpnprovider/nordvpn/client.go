@@ -160,8 +160,8 @@ func (c *Client) fetchAPIServers(ctx context.Context, limit int) ([]APIServer, e
 	}
 	defer resp.Body.Close()
 
-	if err := c.checkResponse(resp); err != nil {
-		return nil, err
+	if checkErr := c.checkResponse(resp); checkErr != nil {
+		return nil, checkErr
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -170,8 +170,8 @@ func (c *Client) fetchAPIServers(ctx context.Context, limit int) ([]APIServer, e
 	}
 
 	var servers []APIServer
-	if err := json.Unmarshal(body, &servers); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if unmarshalErr := json.Unmarshal(body, &servers); unmarshalErr != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", unmarshalErr)
 	}
 
 	return servers, nil
@@ -211,8 +211,8 @@ func (c *Client) FetchRecommended(ctx context.Context, countryID int) ([]vpnprov
 	}
 	defer resp.Body.Close()
 
-	if err := c.checkResponse(resp); err != nil {
-		return nil, err
+	if checkErr := c.checkResponse(resp); checkErr != nil {
+		return nil, checkErr
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -221,8 +221,8 @@ func (c *Client) FetchRecommended(ctx context.Context, countryID int) ([]vpnprov
 	}
 
 	var apiServers []APIServer
-	if err := json.Unmarshal(body, &apiServers); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if unmarshalErr := json.Unmarshal(body, &apiServers); unmarshalErr != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", unmarshalErr)
 	}
 
 	servers := make([]vpnprovider.Server, 0, len(apiServers))
@@ -266,8 +266,8 @@ func (c *Client) GetCountries(ctx context.Context) ([]vpnprovider.Country, error
 	}
 	defer resp.Body.Close()
 
-	if err := c.checkResponse(resp); err != nil {
-		return nil, err
+	if checkErr := c.checkResponse(resp); checkErr != nil {
+		return nil, checkErr
 	}
 
 	body, err := io.ReadAll(resp.Body)
@@ -276,8 +276,8 @@ func (c *Client) GetCountries(ctx context.Context) ([]vpnprovider.Country, error
 	}
 
 	var apiCountries []APICountryInfo
-	if err := json.Unmarshal(body, &apiCountries); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w", err)
+	if unmarshalErr := json.Unmarshal(body, &apiCountries); unmarshalErr != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", unmarshalErr)
 	}
 
 	countries := make([]vpnprovider.Country, 0, len(apiCountries))
@@ -346,7 +346,7 @@ func (c *Client) GenerateWireGuardConfig(ctx context.Context, server *vpnprovide
 	// Users can obtain this from the NordVPN app or API after authentication
 	config := &vpnprovider.WireGuardConfig{
 		PrivateKey: creds.AccessToken,
-		Address:    "10.5.0.2/32", // NordVPN's default client address
+		Address:    "10.5.0.2/32",                              // NordVPN's default client address
 		DNS:        []string{"103.86.96.100", "103.86.99.100"}, // NordVPN DNS servers
 		Peer: vpnprovider.WireGuardPeer{
 			PublicKey:           server.WireGuard.PublicKey,

@@ -162,12 +162,12 @@ func parseUsersList(users []map[string]any) ([]user, error) {
 	result := make([]user, 0, len(users))
 
 	for i, u := range users {
-		username, _ := u["username"].(string)
+		username, _ := u["username"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 		if username == "" {
 			return nil, fmt.Errorf("native auth config: user at index %d: 'username' is required", i)
 		}
 
-		passwordHash, _ := u["password_hash"].(string)
+		passwordHash, _ := u["password_hash"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 		if passwordHash == "" {
 			return nil, fmt.Errorf("native auth config: user %q: 'password_hash' is required", username)
 		}
@@ -185,9 +185,9 @@ func parseUsersList(users []map[string]any) ([]user, error) {
 			}
 		}
 
-		email, _ := u["email"].(string)
-		fullName, _ := u["full_name"].(string)
-		disabled, _ := u["disabled"].(bool)
+		email, _ := u["email"].(string)       //nolint:errcheck // Type assertion - empty string is valid if missing
+		fullName, _ := u["full_name"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
+		disabled, _ := u["disabled"].(bool)   //nolint:errcheck // Type assertion - false is valid if missing
 
 		result = append(result, user{
 			Username:     username,

@@ -10,14 +10,14 @@ func TestParseIPv4Packet(t *testing.T) {
 	// IPv4 header (20 bytes) + TCP header (20 bytes minimum)
 	packet := []byte{
 		// IPv4 header
-		0x45,             // Version (4) + IHL (5)
-		0x00,             // DSCP + ECN
-		0x00, 0x28,       // Total length (40 bytes)
-		0x00, 0x00,       // Identification
-		0x40, 0x00,       // Flags (Don't Fragment) + Fragment Offset
-		0x40,             // TTL (64)
-		0x06,             // Protocol (TCP = 6)
-		0x00, 0x00,       // Header checksum (not validated in this test)
+		0x45,       // Version (4) + IHL (5)
+		0x00,       // DSCP + ECN
+		0x00, 0x28, // Total length (40 bytes)
+		0x00, 0x00, // Identification
+		0x40, 0x00, // Flags (Don't Fragment) + Fragment Offset
+		0x40,       // TTL (64)
+		0x06,       // Protocol (TCP = 6)
+		0x00, 0x00, // Header checksum (not validated in this test)
 		192, 168, 1, 100, // Source IP: 192.168.1.100
 		93, 184, 216, 34, // Destination IP: 93.184.216.34
 
@@ -26,8 +26,8 @@ func TestParseIPv4Packet(t *testing.T) {
 		0x01, 0xBB, // Destination port: 443
 		0x00, 0x00, 0x00, 0x01, // Sequence number
 		0x00, 0x00, 0x00, 0x00, // Acknowledgment number
-		0x50, // Data offset (5 = 20 bytes) + reserved
-		0x02, // Flags (SYN)
+		0x50,       // Data offset (5 = 20 bytes) + reserved
+		0x02,       // Flags (SYN)
 		0x00, 0x00, // Window
 		0x00, 0x00, // Checksum
 		0x00, 0x00, // Urgent pointer
@@ -75,16 +75,16 @@ func TestParseUDPPacket(t *testing.T) {
 	// Build a simple UDP packet
 	packet := []byte{
 		// IPv4 header
-		0x45,             // Version (4) + IHL (5)
-		0x00,             // DSCP + ECN
-		0x00, 0x1C,       // Total length (28 bytes)
-		0x00, 0x00,       // Identification
-		0x00, 0x00,       // Flags + Fragment Offset
-		0x40,             // TTL (64)
-		0x11,             // Protocol (UDP = 17)
-		0x00, 0x00,       // Header checksum
-		10, 0, 0, 1,      // Source IP: 10.0.0.1
-		8, 8, 8, 8,       // Destination IP: 8.8.8.8
+		0x45,       // Version (4) + IHL (5)
+		0x00,       // DSCP + ECN
+		0x00, 0x1C, // Total length (28 bytes)
+		0x00, 0x00, // Identification
+		0x00, 0x00, // Flags + Fragment Offset
+		0x40,       // TTL (64)
+		0x11,       // Protocol (UDP = 17)
+		0x00, 0x00, // Header checksum
+		10, 0, 0, 1, // Source IP: 10.0.0.1
+		8, 8, 8, 8, // Destination IP: 8.8.8.8
 
 		// UDP header
 		0x30, 0x39, // Source port: 12345
@@ -161,14 +161,14 @@ func TestParseIPv6Packet(t *testing.T) {
 	packet := make([]byte, 60)
 
 	// IPv6 header
-	packet[0] = 0x60                           // Version (6) + Traffic class
-	packet[1] = 0x00                           // Traffic class + Flow label
-	packet[2] = 0x00                           // Flow label
-	packet[3] = 0x00                           // Flow label
-	packet[4] = 0x00                           // Payload length (high byte)
-	packet[5] = 0x14                           // Payload length (20 bytes for TCP header)
-	packet[6] = ProtocolTCP                    // Next header (TCP)
-	packet[7] = 0x40                           // Hop limit (64)
+	packet[0] = 0x60        // Version (6) + Traffic class
+	packet[1] = 0x00        // Traffic class + Flow label
+	packet[2] = 0x00        // Flow label
+	packet[3] = 0x00        // Flow label
+	packet[4] = 0x00        // Payload length (high byte)
+	packet[5] = 0x14        // Payload length (20 bytes for TCP header)
+	packet[6] = ProtocolTCP // Next header (TCP)
+	packet[7] = 0x40        // Hop limit (64)
 
 	// Source IPv6 address: 2001:db8::1
 	packet[8] = 0x20
@@ -241,11 +241,11 @@ func TestParseIPv6PacketWithExtensionHeaders(t *testing.T) {
 	packet := make([]byte, 68)
 
 	// IPv6 header
-	packet[0] = 0x60                // Version (6)
-	packet[4] = 0x00                // Payload length (high)
-	packet[5] = 0x1C                // Payload length (28 bytes = 8 + 20)
-	packet[6] = 0x00                // Next header: Hop-by-Hop Options
-	packet[7] = 0x40                // Hop limit
+	packet[0] = 0x60 // Version (6)
+	packet[4] = 0x00 // Payload length (high)
+	packet[5] = 0x1C // Payload length (28 bytes = 8 + 20)
+	packet[6] = 0x00 // Next header: Hop-by-Hop Options
+	packet[7] = 0x40 // Hop limit
 
 	// Source IPv6: ::1
 	packet[23] = 0x01
@@ -330,8 +330,8 @@ func TestParseIPv6ExtensionHeaders(t *testing.T) {
 		{
 			name: "hop-by-hop header",
 			data: []byte{
-				ProtocolTCP, // Next header
-				0x00,        // Length (0 = 8 bytes)
+				ProtocolTCP,      // Next header
+				0x00,             // Length (0 = 8 bytes)
 				0, 0, 0, 0, 0, 0, // Options
 			},
 			nextHeader:     0, // Hop-by-Hop
@@ -365,7 +365,7 @@ func TestParseIPv6ExtensionHeaders(t *testing.T) {
 			data: []byte{
 				ProtocolTCP, // Next header
 				0x00,        // Reserved
-				0, 0, // Fragment offset + flags
+				0, 0,        // Fragment offset + flags
 				0, 0, 0, 0, // Identification
 			},
 			nextHeader:     44, // Fragment
@@ -763,14 +763,14 @@ func TestParseTCPHeaderShort(t *testing.T) {
 	// Create an IPv4 packet with truncated TCP header
 	packet := []byte{
 		// IPv4 header
-		0x45,             // Version (4) + IHL (5)
-		0x00,             // DSCP + ECN
-		0x00, 0x18,       // Total length (24 bytes = 20 IP + 4 TCP)
-		0x00, 0x00,       // Identification
-		0x00, 0x00,       // Flags + Fragment Offset
-		0x40,             // TTL
-		0x06,             // Protocol (TCP)
-		0x00, 0x00,       // Header checksum
+		0x45,       // Version (4) + IHL (5)
+		0x00,       // DSCP + ECN
+		0x00, 0x18, // Total length (24 bytes = 20 IP + 4 TCP)
+		0x00, 0x00, // Identification
+		0x00, 0x00, // Flags + Fragment Offset
+		0x40,       // TTL
+		0x06,       // Protocol (TCP)
+		0x00, 0x00, // Header checksum
 		192, 168, 1, 100, // Source IP
 		192, 168, 1, 200, // Destination IP
 		// Truncated TCP header (only 4 bytes)
@@ -793,16 +793,16 @@ func TestParseUDPHeaderShort(t *testing.T) {
 	// Create an IPv4 packet with truncated UDP header
 	packet := []byte{
 		// IPv4 header
-		0x45,             // Version (4) + IHL (5)
-		0x00,             // DSCP + ECN
-		0x00, 0x18,       // Total length (24 bytes = 20 IP + 4 UDP)
-		0x00, 0x00,       // Identification
-		0x00, 0x00,       // Flags + Fragment Offset
-		0x40,             // TTL
-		0x11,             // Protocol (UDP)
-		0x00, 0x00,       // Header checksum
-		10, 0, 0, 1,      // Source IP
-		8, 8, 8, 8,       // Destination IP
+		0x45,       // Version (4) + IHL (5)
+		0x00,       // DSCP + ECN
+		0x00, 0x18, // Total length (24 bytes = 20 IP + 4 UDP)
+		0x00, 0x00, // Identification
+		0x00, 0x00, // Flags + Fragment Offset
+		0x40,       // TTL
+		0x11,       // Protocol (UDP)
+		0x00, 0x00, // Header checksum
+		10, 0, 0, 1, // Source IP
+		8, 8, 8, 8, // Destination IP
 		// Truncated UDP header (only 4 bytes)
 		0x30, 0x39, // Source port
 		0x00, 0x35, // Dest port
@@ -823,16 +823,16 @@ func TestParseICMPPacket(t *testing.T) {
 	// Build an ICMP echo request packet
 	packet := []byte{
 		// IPv4 header
-		0x45,             // Version (4) + IHL (5)
-		0x00,             // DSCP + ECN
-		0x00, 0x1C,       // Total length (28 bytes)
-		0x00, 0x00,       // Identification
-		0x00, 0x00,       // Flags + Fragment Offset
-		0x40,             // TTL (64)
-		0x01,             // Protocol (ICMP = 1)
-		0x00, 0x00,       // Header checksum
-		192, 168, 1, 1,   // Source IP
-		8, 8, 8, 8,       // Destination IP
+		0x45,       // Version (4) + IHL (5)
+		0x00,       // DSCP + ECN
+		0x00, 0x1C, // Total length (28 bytes)
+		0x00, 0x00, // Identification
+		0x00, 0x00, // Flags + Fragment Offset
+		0x40,       // TTL (64)
+		0x01,       // Protocol (ICMP = 1)
+		0x00, 0x00, // Header checksum
+		192, 168, 1, 1, // Source IP
+		8, 8, 8, 8, // Destination IP
 
 		// ICMP header
 		0x08,       // Type: Echo Request

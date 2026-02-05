@@ -309,13 +309,13 @@ func (r *darwinRouteManager) configureDNS(dnsAddr string) error {
 	}
 
 	// Extract IP from address
-	host, _, _ := splitHostPort(dnsAddr)
+	host, _, _ := splitHostPort(dnsAddr) //nolint:errcheck // Fallback to raw address if split fails
 	if host == "" {
 		host = dnsAddr
 	}
 
 	// Save current DNS
-	cmd := exec.Command("networksetup", "-getdnsservers", r.networkService)
+	cmd := exec.Command("networksetup", "-getdnsservers", r.networkService) //nolint:gosec // G204: network service is from system network config
 	output, err := cmd.Output()
 	if err == nil {
 		lines := strings.Split(string(output), "\n")
@@ -328,14 +328,14 @@ func (r *darwinRouteManager) configureDNS(dnsAddr string) error {
 	}
 
 	// Set new DNS
-	cmd = exec.Command("networksetup", "-setdnsservers", r.networkService, host)
+	cmd = exec.Command("networksetup", "-setdnsservers", r.networkService, host) //nolint:gosec // G204: network service and host are validated
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to set DNS: %w: %s", err, string(output))
 	}
 
 	// Flush DNS cache
-	exec.Command("dscacheutil", "-flushcache").Run()
-	exec.Command("killall", "-HUP", "mDNSResponder").Run()
+	_ = exec.Command("dscacheutil", "-flushcache").Run()               //nolint:errcheck,gosec // Best effort DNS cache flush
+	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run()         //nolint:errcheck,gosec // Best effort mDNSResponder restart
 
 	return nil
 }
@@ -353,19 +353,20 @@ func (r *darwinRouteManager) restoreDNS() error {
 		args = append([]string{"-setdnsservers", r.networkService}, r.originalDNS...)
 	}
 
-	cmd := exec.Command("networksetup", args...)
+	cmd := exec.Command("networksetup", args...) //nolint:gosec // G204: args are from validated config and original DNS settings
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to restore DNS: %w: %s", err, string(output))
 	}
 
 	// Flush DNS cache
-	exec.Command("dscacheutil", "-flushcache").Run()
-	exec.Command("killall", "-HUP", "mDNSResponder").Run()
+	_ = exec.Command("dscacheutil", "-flushcache").Run()               //nolint:errcheck,gosec // Best effort DNS cache flush
+	_ = exec.Command("killall", "-HUP", "mDNSResponder").Run()         //nolint:errcheck,gosec // Best effort mDNSResponder restart
 
 	r.originalDNS = nil
 	return nil
 }
 
+//nolint:unparam // b is always 8 in usage but kept for min function semantics
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -373,6 +374,7 @@ func min(a, b int) int {
 	return b
 }
 
+//nolint:unparam // a is always 0 in usage but kept for max function semantics
 func max(a, b int) int {
 	if a > b {
 		return a

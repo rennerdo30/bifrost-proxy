@@ -150,7 +150,8 @@ func TestCreatePlatformTUNErrors(t *testing.T) {
 			if errors.As(err, &devErr) {
 				assert.NotEmpty(t, devErr.Op)
 			} else if errors.Is(err, ErrPermissionDenied) {
-				// Also acceptable
+				// Permission denied is also an expected error without root
+				t.Logf("Permission denied as expected: %v", err)
 			}
 		} else {
 			// If we somehow succeeded (running as root), clean up
@@ -447,7 +448,8 @@ func TestDarwinTAPReadWriteWithMockedFile(t *testing.T) {
 		// This will panic due to nil fd, so we recover
 		defer func() {
 			if r := recover(); r != nil {
-				// Expected panic
+				// Expected panic due to nil fd - this is the intended behavior
+				t.Logf("Expected panic due to nil fd: %v", r)
 			}
 		}()
 		tap.Read(buf)
@@ -463,7 +465,8 @@ func TestDarwinTAPReadWriteWithMockedFile(t *testing.T) {
 
 		defer func() {
 			if r := recover(); r != nil {
-				// Expected panic
+				// Expected panic due to nil fd - this is the intended behavior
+				t.Logf("Expected panic due to nil fd: %v", r)
 			}
 		}()
 		tap.Write([]byte("test"))

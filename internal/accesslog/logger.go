@@ -19,21 +19,21 @@ type Logger interface {
 
 // Entry represents a single access log entry.
 type Entry struct {
-	Timestamp     time.Time `json:"timestamp"`
-	ClientIP      string    `json:"client_ip"`
-	Username      string    `json:"username,omitempty"`
-	Method        string    `json:"method"`
-	Host          string    `json:"host"`
-	Path          string    `json:"path,omitempty"`
-	Protocol      string    `json:"protocol"`
-	StatusCode    int       `json:"status_code"`
-	BytesSent     int64     `json:"bytes_sent"`
-	BytesReceived int64     `json:"bytes_received"`
+	Timestamp     time.Time     `json:"timestamp"`
+	ClientIP      string        `json:"client_ip"`
+	Username      string        `json:"username,omitempty"`
+	Method        string        `json:"method"`
+	Host          string        `json:"host"`
+	Path          string        `json:"path,omitempty"`
+	Protocol      string        `json:"protocol"`
+	StatusCode    int           `json:"status_code"`
+	BytesSent     int64         `json:"bytes_sent"`
+	BytesReceived int64         `json:"bytes_received"`
 	Duration      time.Duration `json:"duration_ms"`
-	Backend       string    `json:"backend,omitempty"`
-	Error         string    `json:"error,omitempty"`
-	RequestID     string    `json:"request_id,omitempty"`
-	UserAgent     string    `json:"user_agent,omitempty"`
+	Backend       string        `json:"backend,omitempty"`
+	Error         string        `json:"error,omitempty"`
+	RequestID     string        `json:"request_id,omitempty"`
+	UserAgent     string        `json:"user_agent,omitempty"`
 }
 
 // Config holds access log configuration.
@@ -107,8 +107,8 @@ func (l *NoopLogger) Close() error {
 
 // JSONLogger logs entries in JSON format.
 type JSONLogger struct {
-	writer   io.WriteCloser
-	mu       sync.Mutex
+	writer io.WriteCloser
+	mu     sync.Mutex
 	// marshaler is the JSON marshal function used for encoding entries.
 	// Defaults to json.Marshal. Can be overridden in tests to simulate errors.
 	marshaler func(v any) ([]byte, error)

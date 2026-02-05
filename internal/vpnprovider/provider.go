@@ -32,18 +32,18 @@ type Provider interface {
 
 // Server represents a VPN server from a provider.
 type Server struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Hostname  string            `json:"hostname"`
-	Country   string            `json:"country"`
-	CountryCode string          `json:"country_code"`
-	City      string            `json:"city,omitempty"`
-	Load      int               `json:"load"`               // 0-100 percentage
-	Latency   time.Duration     `json:"latency,omitempty"`  // Measured latency
-	Features  []string          `json:"features,omitempty"` // e.g., "p2p", "streaming", "double_vpn"
-	IPs       []string          `json:"ips"`
-	WireGuard *WireGuardServer  `json:"wireguard,omitempty"`
-	OpenVPN   *OpenVPNServer    `json:"openvpn,omitempty"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Hostname    string           `json:"hostname"`
+	Country     string           `json:"country"`
+	CountryCode string           `json:"country_code"`
+	City        string           `json:"city,omitempty"`
+	Load        int              `json:"load"`               // 0-100 percentage
+	Latency     time.Duration    `json:"latency,omitempty"`  // Measured latency
+	Features    []string         `json:"features,omitempty"` // e.g., "p2p", "streaming", "double_vpn"
+	IPs         []string         `json:"ips"`
+	WireGuard   *WireGuardServer `json:"wireguard,omitempty"`
+	OpenVPN     *OpenVPNServer   `json:"openvpn,omitempty"`
 }
 
 // WireGuardServer contains WireGuard-specific server info.
@@ -61,13 +61,13 @@ type OpenVPNServer struct {
 
 // ServerCriteria specifies server selection criteria.
 type ServerCriteria struct {
-	Country     string   `json:"country,omitempty"`      // ISO country code (e.g., "US", "DE")
-	City        string   `json:"city,omitempty"`         // City name
-	Protocol    string   `json:"protocol,omitempty"`     // "wireguard" or "openvpn"
-	Features    []string `json:"features,omitempty"`     // Required features (e.g., "p2p")
-	MaxLoad     int      `json:"max_load,omitempty"`     // Max acceptable load percentage (0-100)
-	ServerID    string   `json:"server_id,omitempty"`    // Specific server ID
-	Fastest     bool     `json:"fastest,omitempty"`      // Select server with lowest load
+	Country  string   `json:"country,omitempty"`   // ISO country code (e.g., "US", "DE")
+	City     string   `json:"city,omitempty"`      // City name
+	Protocol string   `json:"protocol,omitempty"`  // "wireguard" or "openvpn"
+	Features []string `json:"features,omitempty"`  // Required features (e.g., "p2p")
+	MaxLoad  int      `json:"max_load,omitempty"`  // Max acceptable load percentage (0-100)
+	ServerID string   `json:"server_id,omitempty"` // Specific server ID
+	Fastest  bool     `json:"fastest,omitempty"`   // Select server with lowest load
 }
 
 // Credentials holds provider-specific credentials.

@@ -86,9 +86,9 @@ func parseSingleRange(spec string, size int64) (ByteRange, error) {
 
 	if startStr == "" {
 		// Suffix range: "-500" means last 500 bytes
-		suffixLen, err := strconv.ParseInt(endStr, 10, 64)
-		if err != nil {
-			return ByteRange{}, fmt.Errorf("invalid suffix length: %w", err)
+		suffixLen, parseErr := strconv.ParseInt(endStr, 10, 64)
+		if parseErr != nil {
+			return ByteRange{}, fmt.Errorf("invalid suffix length: %w", parseErr)
 		}
 		if suffixLen <= 0 {
 			return ByteRange{}, errors.New("suffix length must be positive")
@@ -279,7 +279,7 @@ func CoalesceRanges(ranges []ByteRange) []ByteRange {
 
 	// Merge overlapping/adjacent ranges
 	result := make([]ByteRange, 0, len(ranges))
-	current := ranges[0]
+	current := ranges[0] //nolint:gosec // G602: False positive - len(ranges) > 1 is checked at line 267
 
 	for i := 1; i < len(ranges); i++ {
 		if ranges[i].Start <= current.End+1 {

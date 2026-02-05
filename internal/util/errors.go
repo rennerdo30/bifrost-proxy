@@ -8,17 +8,17 @@ import (
 
 // Common error types for Bifrost.
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrAlreadyExists  = errors.New("already exists")
-	ErrInvalidConfig  = errors.New("invalid configuration")
-	ErrNotConnected   = errors.New("not connected")
-	ErrTimeout        = errors.New("timeout")
-	ErrAuthRequired   = errors.New("authentication required")
-	ErrAuthFailed     = errors.New("authentication failed")
-	ErrAccessDenied   = errors.New("access denied")
-	ErrBackendDown    = errors.New("backend unavailable")
-	ErrRateLimited    = errors.New("rate limited")
-	ErrShuttingDown   = errors.New("server shutting down")
+	ErrNotFound      = errors.New("not found")
+	ErrAlreadyExists = errors.New("already exists")
+	ErrInvalidConfig = errors.New("invalid configuration")
+	ErrNotConnected  = errors.New("not connected")
+	ErrTimeout       = errors.New("timeout")
+	ErrAuthRequired  = errors.New("authentication required")
+	ErrAuthFailed    = errors.New("authentication failed")
+	ErrAccessDenied  = errors.New("access denied")
+	ErrBackendDown   = errors.New("backend unavailable")
+	ErrRateLimited   = errors.New("rate limited")
+	ErrShuttingDown  = errors.New("server shutting down")
 )
 
 // WrapError wraps an error with additional context.

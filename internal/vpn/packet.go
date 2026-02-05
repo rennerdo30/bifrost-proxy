@@ -314,7 +314,7 @@ func buildIPv4TCPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seqNum
 	// IPv4 header
 	packet[0] = 0x45 // Version (4) + IHL (5)
 	packet[1] = 0    // DSCP + ECN
-	binary.BigEndian.PutUint16(packet[2:4], uint16(totalLen))
+	binary.BigEndian.PutUint16(packet[2:4], uint16(totalLen)) //nolint:gosec // G115: totalLen is bounded by MTU
 	binary.BigEndian.PutUint16(packet[4:6], 0)      // ID
 	binary.BigEndian.PutUint16(packet[6:8], 0x4000) // Flags (Don't Fragment) + Fragment offset
 	packet[8] = 64                                  // TTL
@@ -357,7 +357,7 @@ func buildIPv6TCPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seqNum
 	// IPv6 header
 	packet[0] = 0x60 // Version (6) + Traffic class
 	// Flow label (1-3) = 0
-	binary.BigEndian.PutUint16(packet[4:6], uint16(20+len(payload))) // Payload length (TCP header + payload)
+	binary.BigEndian.PutUint16(packet[4:6], uint16(20+len(payload))) //nolint:gosec // G115: payload len is bounded by MTU
 	packet[6] = ProtocolTCP
 	packet[7] = 64 // Hop limit
 	copy(packet[8:24], srcIP.AsSlice())
@@ -489,7 +489,7 @@ func calculateTCPChecksum(srcIP, dstIP netip.Addr, tcpData []byte) uint16 {
 	copy(pseudoHeader[4:8], dstIP.AsSlice())
 	pseudoHeader[8] = 0
 	pseudoHeader[9] = ProtocolTCP
-	binary.BigEndian.PutUint16(pseudoHeader[10:12], uint16(len(tcpData)))
+	binary.BigEndian.PutUint16(pseudoHeader[10:12], uint16(len(tcpData))) //nolint:gosec // G115: tcpData len is bounded by MTU
 
 	var sum uint32
 
@@ -519,7 +519,7 @@ func calculateTCPv6Checksum(srcIP, dstIP netip.Addr, tcpData []byte) uint16 {
 	pseudoHeader := make([]byte, 40)
 	copy(pseudoHeader[0:16], srcIP.AsSlice())
 	copy(pseudoHeader[16:32], dstIP.AsSlice())
-	binary.BigEndian.PutUint32(pseudoHeader[32:36], uint32(len(tcpData)))
+	binary.BigEndian.PutUint32(pseudoHeader[32:36], uint32(len(tcpData))) //nolint:gosec // G115: tcpData len is bounded by MTU
 	pseudoHeader[39] = ProtocolTCP
 
 	var sum uint32

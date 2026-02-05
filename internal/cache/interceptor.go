@@ -71,7 +71,7 @@ func (i *Interceptor) HandleRequest(ctx context.Context, conn net.Conn, req *htt
 }
 
 // serveFromCache writes a cached response to the connection.
-func (i *Interceptor) serveFromCache(ctx context.Context, conn net.Conn, req *http.Request, entry *Entry) (bool, error) {
+func (i *Interceptor) serveFromCache(_ context.Context, conn net.Conn, req *http.Request, entry *Entry) (bool, error) {
 	meta := entry.Metadata
 
 	// Build response
@@ -406,7 +406,7 @@ func (rw *ResponseWriter) writeToConn() error {
 	fmt.Fprintf(w, "\r\n")
 
 	// Write body
-	w.Write(rw.body.Bytes())
+	_, _ = w.Write(rw.body.Bytes()) //nolint:errcheck // Error will be returned by Flush
 
 	return w.Flush()
 }

@@ -13,9 +13,9 @@ import (
 type Route struct {
 	Name        string
 	Matcher     *matcher.Matcher
-	Backend     string              // Single backend name
-	Backends    []string            // Multiple backend names for load balancing
-	LoadBalance string              // round_robin, least_conn, ip_hash, weighted
+	Backend     string   // Single backend name
+	Backends    []string // Multiple backend names for load balancing
+	LoadBalance string   // round_robin, least_conn, ip_hash, weighted
 	Priority    int
 }
 

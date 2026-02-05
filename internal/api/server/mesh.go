@@ -22,10 +22,10 @@ type MeshAPI struct {
 
 // MeshNetwork represents a single mesh network.
 type MeshNetwork struct {
-	ID          string                `json:"id"`
-	Name        string                `json:"name"`
-	CIDR        string                `json:"cidr"`
-	Created     time.Time             `json:"created"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	CIDR        string    `json:"cidr"`
+	Created     time.Time `json:"created"`
 	peers       *mesh.PeerRegistry
 	ipAllocator *mesh.PoolAllocator
 	wsClients   map[string]*websocket.Conn
@@ -85,8 +85,8 @@ type networkResponse struct {
 // Peer request/response types
 
 type registerPeerRequest struct {
-	NetworkID string         `json:"network_id"`
-	Peer      mesh.PeerInfo  `json:"peer"`
+	NetworkID string        `json:"network_id"`
+	Peer      mesh.PeerInfo `json:"peer"`
 }
 
 type registerPeerResponse struct {
@@ -441,7 +441,7 @@ func (m *MeshAPI) handleDeregisterPeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Release IP allocation
-	network.ipAllocator.Release(peerID)
+	_ = network.ipAllocator.Release(peerID) //nolint:errcheck // Best effort IP release
 
 	// Remove from registry
 	network.peers.Remove(peerID)
@@ -484,7 +484,7 @@ func (m *MeshAPI) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 	peer.UpdateLastSeen()
 
 	// Renew IP lease
-	network.ipAllocator.Renew(peerID)
+	_ = network.ipAllocator.Renew(peerID) //nolint:errcheck // Best effort IP lease renewal
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -502,7 +502,7 @@ func (m *MeshAPI) handleEvents(ws *websocket.Conn) {
 	m.mu.RUnlock()
 
 	if !exists {
-		websocket.JSON.Send(ws, map[string]string{"error": "network not found"})
+		_ = websocket.JSON.Send(ws, map[string]string{"error": "network not found"}) //nolint:errcheck // Best effort error response
 		return
 	}
 
@@ -591,5 +591,5 @@ var (
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	_ = json.NewEncoder(w).Encode(data) //nolint:errcheck // Best effort HTTP response
 }

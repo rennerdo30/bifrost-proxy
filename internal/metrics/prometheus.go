@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -22,10 +23,10 @@ type Metrics struct {
 	ResponseSize    *prometheus.HistogramVec
 
 	// Backend metrics
-	BackendHealth       *prometheus.GaugeVec
-	BackendConnections  *prometheus.GaugeVec
-	BackendLatency      *prometheus.HistogramVec
-	BackendErrors       *prometheus.CounterVec
+	BackendHealth      *prometheus.GaugeVec
+	BackendConnections *prometheus.GaugeVec
+	BackendLatency     *prometheus.HistogramVec
+	BackendErrors      *prometheus.CounterVec
 
 	// Traffic metrics
 	BytesSent     *prometheus.CounterVec
@@ -228,8 +229,8 @@ func New() *Metrics {
 	)
 
 	// Register default Go metrics
-	m.registry.MustRegister(prometheus.NewGoCollector())
-	m.registry.MustRegister(prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}))
+	m.registry.MustRegister(collectors.NewGoCollector())
+	m.registry.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	return m
 }

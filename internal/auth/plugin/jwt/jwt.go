@@ -343,8 +343,8 @@ func (a *Authenticator) validateToken(tokenString string) (map[string]any, error
 		Kid string `json:"kid"`
 		Typ string `json:"typ"`
 	}
-	if err := json.Unmarshal(headerJSON, &header); err != nil {
-		return nil, fmt.Errorf("invalid header JSON: %w", err)
+	if unmarshalErr := json.Unmarshal(headerJSON, &header); unmarshalErr != nil {
+		return nil, fmt.Errorf("invalid header JSON: %w", unmarshalErr)
 	}
 
 	// Check algorithm
@@ -366,8 +366,8 @@ func (a *Authenticator) validateToken(tokenString string) (map[string]any, error
 	}
 
 	var claims map[string]any
-	if err := json.Unmarshal(payloadJSON, &claims); err != nil {
-		return nil, fmt.Errorf("invalid payload JSON: %w", err)
+	if claimsErr := json.Unmarshal(payloadJSON, &claims); claimsErr != nil {
+		return nil, fmt.Errorf("invalid payload JSON: %w", claimsErr)
 	}
 
 	// Get the signing key
@@ -569,7 +569,15 @@ func (a *Authenticator) refreshJWKS() error {
 		return nil
 	}
 
-	resp, err := a.httpClient.Get(a.config.JWKSURL)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.config.JWKSURL, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create JWKS request: %w", err)
+	}
+
+	resp, err := a.httpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to fetch JWKS: %w", err)
 	}

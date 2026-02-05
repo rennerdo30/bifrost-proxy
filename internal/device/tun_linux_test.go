@@ -24,22 +24,22 @@ func TestBuildIPv6AddrMessage(t *testing.T) {
 		assert.Equal(t, 64, len(msg))
 
 		// Verify nlmsghdr
-		assert.Equal(t, uint32(64), *(*uint32)(unsafe.Pointer(&msg[0])))   // nlmsg_len
-		assert.Equal(t, uint16(20), *(*uint16)(unsafe.Pointer(&msg[4])))   // nlmsg_type (RTM_NEWADDR)
+		assert.Equal(t, uint32(64), *(*uint32)(unsafe.Pointer(&msg[0])))    // nlmsg_len
+		assert.Equal(t, uint16(20), *(*uint16)(unsafe.Pointer(&msg[4])))    // nlmsg_type (RTM_NEWADDR)
 		assert.Equal(t, uint16(0x605), *(*uint16)(unsafe.Pointer(&msg[6]))) // nlmsg_flags (NLM_F_REQUEST | NLM_F_CREATE | NLM_F_EXCL | NLM_F_ACK)
 
 		// Verify ifaddrmsg
-		assert.Equal(t, byte(10), msg[16])                                  // ifa_family (AF_INET6)
-		assert.Equal(t, byte(64), msg[17])                                  // ifa_prefixlen
-		assert.Equal(t, uint32(5), *(*uint32)(unsafe.Pointer(&msg[20])))   // ifa_index
+		assert.Equal(t, byte(10), msg[16])                               // ifa_family (AF_INET6)
+		assert.Equal(t, byte(64), msg[17])                               // ifa_prefixlen
+		assert.Equal(t, uint32(5), *(*uint32)(unsafe.Pointer(&msg[20]))) // ifa_index
 
 		// Verify IFA_LOCAL attribute
-		assert.Equal(t, uint16(20), *(*uint16)(unsafe.Pointer(&msg[24])))  // rta_len
-		assert.Equal(t, uint16(2), *(*uint16)(unsafe.Pointer(&msg[26])))   // rta_type (IFA_LOCAL)
+		assert.Equal(t, uint16(20), *(*uint16)(unsafe.Pointer(&msg[24]))) // rta_len
+		assert.Equal(t, uint16(2), *(*uint16)(unsafe.Pointer(&msg[26])))  // rta_type (IFA_LOCAL)
 
 		// Verify IFA_ADDRESS attribute
-		assert.Equal(t, uint16(20), *(*uint16)(unsafe.Pointer(&msg[44])))  // rta_len
-		assert.Equal(t, uint16(1), *(*uint16)(unsafe.Pointer(&msg[46])))   // rta_type (IFA_ADDRESS)
+		assert.Equal(t, uint16(20), *(*uint16)(unsafe.Pointer(&msg[44]))) // rta_len
+		assert.Equal(t, uint16(1), *(*uint16)(unsafe.Pointer(&msg[46])))  // rta_type (IFA_ADDRESS)
 	})
 
 	t.Run("builds valid message for /128 prefix", func(t *testing.T) {
@@ -49,8 +49,8 @@ func TestBuildIPv6AddrMessage(t *testing.T) {
 		msg := tun.buildIPv6AddrMessage(10, prefix)
 
 		// Verify prefix length
-		assert.Equal(t, byte(128), msg[17])                                 // ifa_prefixlen
-		assert.Equal(t, uint32(10), *(*uint32)(unsafe.Pointer(&msg[20])))  // ifa_index
+		assert.Equal(t, byte(128), msg[17])                               // ifa_prefixlen
+		assert.Equal(t, uint32(10), *(*uint32)(unsafe.Pointer(&msg[20]))) // ifa_index
 	})
 
 	t.Run("builds valid message for link-local address", func(t *testing.T) {
@@ -70,12 +70,12 @@ func TestParseNetlinkResponse(t *testing.T) {
 	t.Run("parses success ACK", func(t *testing.T) {
 		// Successful ACK: NLMSG_ERROR with errno = 0
 		response := make([]byte, 36)
-		*(*uint32)(unsafe.Pointer(&response[0])) = 36      // nlmsg_len
-		*(*uint16)(unsafe.Pointer(&response[4])) = 2       // nlmsg_type (NLMSG_ERROR)
-		*(*uint16)(unsafe.Pointer(&response[6])) = 0       // nlmsg_flags
-		*(*uint32)(unsafe.Pointer(&response[8])) = 1       // nlmsg_seq
-		*(*uint32)(unsafe.Pointer(&response[12])) = 0      // nlmsg_pid
-		*(*int32)(unsafe.Pointer(&response[16])) = 0       // error code (0 = success)
+		*(*uint32)(unsafe.Pointer(&response[0])) = 36 // nlmsg_len
+		*(*uint16)(unsafe.Pointer(&response[4])) = 2  // nlmsg_type (NLMSG_ERROR)
+		*(*uint16)(unsafe.Pointer(&response[6])) = 0  // nlmsg_flags
+		*(*uint32)(unsafe.Pointer(&response[8])) = 1  // nlmsg_seq
+		*(*uint32)(unsafe.Pointer(&response[12])) = 0 // nlmsg_pid
+		*(*int32)(unsafe.Pointer(&response[16])) = 0  // error code (0 = success)
 
 		err := tun.parseNetlinkResponse(response)
 		assert.NoError(t, err)
@@ -84,12 +84,12 @@ func TestParseNetlinkResponse(t *testing.T) {
 	t.Run("parses error response", func(t *testing.T) {
 		// Error response: NLMSG_ERROR with errno != 0
 		response := make([]byte, 36)
-		*(*uint32)(unsafe.Pointer(&response[0])) = 36      // nlmsg_len
-		*(*uint16)(unsafe.Pointer(&response[4])) = 2       // nlmsg_type (NLMSG_ERROR)
-		*(*uint16)(unsafe.Pointer(&response[6])) = 0       // nlmsg_flags
-		*(*uint32)(unsafe.Pointer(&response[8])) = 1       // nlmsg_seq
-		*(*uint32)(unsafe.Pointer(&response[12])) = 0      // nlmsg_pid
-		*(*int32)(unsafe.Pointer(&response[16])) = -17     // EEXIST
+		*(*uint32)(unsafe.Pointer(&response[0])) = 36  // nlmsg_len
+		*(*uint16)(unsafe.Pointer(&response[4])) = 2   // nlmsg_type (NLMSG_ERROR)
+		*(*uint16)(unsafe.Pointer(&response[6])) = 0   // nlmsg_flags
+		*(*uint32)(unsafe.Pointer(&response[8])) = 1   // nlmsg_seq
+		*(*uint32)(unsafe.Pointer(&response[12])) = 0  // nlmsg_pid
+		*(*int32)(unsafe.Pointer(&response[16])) = -17 // EEXIST
 
 		err := tun.parseNetlinkResponse(response)
 		assert.Error(t, err)
@@ -115,8 +115,8 @@ func TestParseNetlinkResponse(t *testing.T) {
 
 	t.Run("handles error response too short", func(t *testing.T) {
 		response := make([]byte, 18)
-		*(*uint32)(unsafe.Pointer(&response[0])) = 18  // nlmsg_len
-		*(*uint16)(unsafe.Pointer(&response[4])) = 2   // nlmsg_type (NLMSG_ERROR)
+		*(*uint32)(unsafe.Pointer(&response[0])) = 18 // nlmsg_len
+		*(*uint16)(unsafe.Pointer(&response[4])) = 2  // nlmsg_type (NLMSG_ERROR)
 
 		err := tun.parseNetlinkResponse(response)
 		assert.Error(t, err)
@@ -126,8 +126,8 @@ func TestParseNetlinkResponse(t *testing.T) {
 	t.Run("ignores non-error message types", func(t *testing.T) {
 		// Non-error message type (e.g., RTM_NEWADDR = 20)
 		response := make([]byte, 20)
-		*(*uint32)(unsafe.Pointer(&response[0])) = 20  // nlmsg_len
-		*(*uint16)(unsafe.Pointer(&response[4])) = 20  // nlmsg_type (RTM_NEWADDR)
+		*(*uint32)(unsafe.Pointer(&response[0])) = 20 // nlmsg_len
+		*(*uint16)(unsafe.Pointer(&response[4])) = 20 // nlmsg_type (RTM_NEWADDR)
 
 		err := tun.parseNetlinkResponse(response)
 		assert.NoError(t, err)

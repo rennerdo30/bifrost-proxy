@@ -144,33 +144,33 @@ func TestAppMatcher(t *testing.T) {
 	matcher.AddRule(AppRule{Name: "Chrome", Path: "/Applications/Google Chrome.app"})
 
 	tests := []struct {
-		name    string
-		proc    *ProcessInfo
+		name      string
+		proc      *ProcessInfo
 		wantMatch bool
 	}{
 		{
-			name:    "exact name match",
-			proc:    &ProcessInfo{Name: "firefox"},
+			name:      "exact name match",
+			proc:      &ProcessInfo{Name: "firefox"},
 			wantMatch: true,
 		},
 		{
-			name:    "case insensitive match",
-			proc:    &ProcessInfo{Name: "FIREFOX"},
+			name:      "case insensitive match",
+			proc:      &ProcessInfo{Name: "FIREFOX"},
 			wantMatch: true,
 		},
 		{
-			name:    "path match",
-			proc:    &ProcessInfo{Name: "chrome", Path: "/Applications/Google Chrome.app"},
+			name:      "path match",
+			proc:      &ProcessInfo{Name: "chrome", Path: "/Applications/Google Chrome.app"},
 			wantMatch: true,
 		},
 		{
-			name:    "no match",
-			proc:    &ProcessInfo{Name: "curl"},
+			name:      "no match",
+			proc:      &ProcessInfo{Name: "curl"},
 			wantMatch: false,
 		},
 		{
-			name:    "nil process",
-			proc:    nil,
+			name:      "nil process",
+			proc:      nil,
 			wantMatch: false,
 		},
 	}
@@ -192,33 +192,33 @@ func TestIPMatcher(t *testing.T) {
 	matcher.Add("2001:db8::/32")
 
 	tests := []struct {
-		name    string
-		ip      string
+		name      string
+		ip        string
 		wantMatch bool
 	}{
 		{
-			name:    "CIDR match",
-			ip:      "192.168.1.100",
+			name:      "CIDR match",
+			ip:        "192.168.1.100",
 			wantMatch: true,
 		},
 		{
-			name:    "exact IP match",
-			ip:      "10.0.0.1",
+			name:      "exact IP match",
+			ip:        "10.0.0.1",
 			wantMatch: true,
 		},
 		{
-			name:    "IPv6 CIDR match",
-			ip:      "2001:db8::1",
+			name:      "IPv6 CIDR match",
+			ip:        "2001:db8::1",
 			wantMatch: true,
 		},
 		{
-			name:    "no match",
-			ip:      "8.8.8.8",
+			name:      "no match",
+			ip:        "8.8.8.8",
 			wantMatch: false,
 		},
 		{
-			name:    "outside CIDR",
-			ip:      "192.168.2.1",
+			name:      "outside CIDR",
+			ip:        "192.168.2.1",
 			wantMatch: false,
 		},
 	}

@@ -10,10 +10,10 @@ import (
 
 // PACGenerator generates PAC (Proxy Auto-Configuration) files.
 type PACGenerator struct {
-	getConfig   func() *config.ServerConfig
-	proxyHost   string
-	proxyPort   string
-	socks5Port  string
+	getConfig  func() *config.ServerConfig
+	proxyHost  string
+	proxyPort  string
+	socks5Port string
 }
 
 // NewPACGenerator creates a new PAC generator.
@@ -32,7 +32,7 @@ func (p *PACGenerator) HandlePAC(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "inline; filename=\"proxy.pac\"")
 
 	pac := p.Generate(r.Host)
-	w.Write([]byte(pac))
+	_, _ = w.Write([]byte(pac)) //nolint:errcheck // Best effort PAC file write
 }
 
 // Generate creates a PAC file based on the current routes configuration.

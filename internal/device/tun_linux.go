@@ -264,24 +264,24 @@ func (t *linuxTUN) buildIPv6AddrMessage(ifIndex int, prefix netip.Prefix) []byte
 	msg := make([]byte, msgLen)
 
 	// nlmsghdr
-	*(*uint32)(unsafe.Pointer(&msg[0])) = uint32(msgLen)          // nlmsg_len
-	*(*uint16)(unsafe.Pointer(&msg[4])) = unix.RTM_NEWADDR        // nlmsg_type
+	*(*uint32)(unsafe.Pointer(&msg[0])) = uint32(msgLen)                                                            // nlmsg_len
+	*(*uint16)(unsafe.Pointer(&msg[4])) = unix.RTM_NEWADDR                                                          // nlmsg_type
 	*(*uint16)(unsafe.Pointer(&msg[6])) = unix.NLM_F_REQUEST | unix.NLM_F_CREATE | unix.NLM_F_EXCL | unix.NLM_F_ACK // nlmsg_flags
-	*(*uint32)(unsafe.Pointer(&msg[8])) = 1                       // nlmsg_seq
-	*(*uint32)(unsafe.Pointer(&msg[12])) = 0                      // nlmsg_pid (0 = kernel)
+	*(*uint32)(unsafe.Pointer(&msg[8])) = 1                                                                         // nlmsg_seq
+	*(*uint32)(unsafe.Pointer(&msg[12])) = 0                                                                        // nlmsg_pid (0 = kernel)
 
 	// ifaddrmsg
-	msg[16] = unix.AF_INET6                                       // ifa_family
-	msg[17] = prefixLen                                           // ifa_prefixlen
-	msg[18] = 0                                                   // ifa_flags
-	msg[19] = unix.RT_SCOPE_UNIVERSE                              // ifa_scope (global)
-	*(*uint32)(unsafe.Pointer(&msg[20])) = uint32(ifIndex)        // ifa_index
+	msg[16] = unix.AF_INET6                                // ifa_family
+	msg[17] = prefixLen                                    // ifa_prefixlen
+	msg[18] = 0                                            // ifa_flags
+	msg[19] = unix.RT_SCOPE_UNIVERSE                       // ifa_scope (global)
+	*(*uint32)(unsafe.Pointer(&msg[20])) = uint32(ifIndex) // ifa_index
 
 	// rtattr for IFA_LOCAL (local address)
 	offset := 24
-	*(*uint16)(unsafe.Pointer(&msg[offset])) = 20                 // rta_len (4 + 16)
-	*(*uint16)(unsafe.Pointer(&msg[offset+2])) = unix.IFA_LOCAL   // rta_type
-	copy(msg[offset+4:offset+20], addr[:])                        // IPv6 address
+	*(*uint16)(unsafe.Pointer(&msg[offset])) = 20               // rta_len (4 + 16)
+	*(*uint16)(unsafe.Pointer(&msg[offset+2])) = unix.IFA_LOCAL // rta_type
+	copy(msg[offset+4:offset+20], addr[:])                      // IPv6 address
 
 	// rtattr for IFA_ADDRESS (peer/broadcast address, same as local for point-to-point)
 	offset = 44

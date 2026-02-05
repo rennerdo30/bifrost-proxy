@@ -27,9 +27,3 @@ func NewProcessLookup() ProcessLookup {
 	return newPlatformProcessLookup()
 }
 
-// noopProcessLookup is a no-op implementation for unsupported platforms.
-type noopProcessLookup struct{}
-
-func (n *noopProcessLookup) LookupBySocket(local, remote netip.AddrPort, proto string) (*ProcessInfo, error) {
-	return nil, nil
-}

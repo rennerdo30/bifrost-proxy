@@ -20,10 +20,10 @@ type Authenticator interface {
 
 // UserInfo contains information about an authenticated user.
 type UserInfo struct {
-	Username string   `json:"username"`
-	Groups   []string `json:"groups,omitempty"`
-	Email    string   `json:"email,omitempty"`
-	FullName string   `json:"full_name,omitempty"`
+	Username string            `json:"username"`
+	Groups   []string          `json:"groups,omitempty"`
+	Email    string            `json:"email,omitempty"`
+	FullName string            `json:"full_name,omitempty"`
 	Metadata map[string]string `json:"metadata,omitempty"`
 }
 

@@ -521,8 +521,8 @@ func TestOpenVPNBackend_Stop_WithManagementConn(t *testing.T) {
 			// Read any data
 			buf := make([]byte, 1024)
 			for {
-				_, err := conn.Read(buf)
-				if err != nil {
+				_, readErr := conn.Read(buf)
+				if readErr != nil {
 					break
 				}
 			}

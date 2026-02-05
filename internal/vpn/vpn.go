@@ -141,7 +141,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.status.Load().(Status) == StatusConnected {
+	if m.status.Load().(Status) == StatusConnected { //nolint:errcheck // Type is always Status
 		return errors.New("VPN already running")
 	}
 
@@ -237,7 +237,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.status.Load().(Status) != StatusConnected {
+	if m.status.Load().(Status) != StatusConnected { //nolint:errcheck // Type is always Status
 		return nil
 	}
 
@@ -360,7 +360,7 @@ func (m *Manager) handlePacket(packet *IPPacket) {
 		if packet.Protocol == ProtocolUDP {
 			proto = "udp"
 		}
-		procInfo, _ = m.processLookup.LookupBySocket(local, remote, proto)
+		procInfo, _ = m.processLookup.LookupBySocket(local, remote, proto) //nolint:errcheck // Ignore process lookup errors
 	}
 
 	// Make split tunnel decision
@@ -393,7 +393,7 @@ func (m *Manager) handleBypassPacket(packet *IPPacket, decision Decision) {
 }
 
 // handleTunnelPacket handles packets that should go through the VPN tunnel.
-func (m *Manager) handleTunnelPacket(packet *IPPacket, decision Decision) {
+func (m *Manager) handleTunnelPacket(packet *IPPacket, _ Decision) {
 	if m.serverConn == nil {
 		slog.Debug("no server connector configured, dropping packet")
 		return
@@ -529,7 +529,7 @@ func (m *Manager) handleConnectionData(conn *TrackedConnection) {
 
 	// Set connection timeout to prevent indefinite blocking
 	if conn.ProxyConn != nil {
-		conn.ProxyConn.SetDeadline(time.Now().Add(5 * time.Minute))
+		_ = conn.ProxyConn.SetDeadline(time.Now().Add(5 * time.Minute)) //nolint:errcheck // Best effort deadline
 	}
 
 	// Monitor context for shutdown
@@ -555,7 +555,7 @@ func (m *Manager) handleConnectionData(conn *TrackedConnection) {
 			}
 
 			// Set read deadline for each read to allow checking context
-			conn.ProxyConn.SetReadDeadline(time.Now().Add(30 * time.Second))
+			_ = conn.ProxyConn.SetReadDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck // Best effort deadline
 
 			n, err := conn.ProxyConn.Read(buf)
 			if n > 0 {
@@ -769,7 +769,7 @@ func (m *Manager) sendTCPData(conn *TrackedConnection, payload []byte) error {
 		state.mu.Lock()
 		seq := state.ServerNext
 		ack := state.ClientNext
-		state.ServerNext += uint32(len(chunk))
+		state.ServerNext += uint32(len(chunk)) //nolint:gosec // G115: chunk len is bounded by MTU
 		state.mu.Unlock()
 
 		flags := uint8(TCPFlagACK | TCPFlagPSH)
@@ -823,7 +823,7 @@ func (m *Manager) writeTCPPacket(conn *TrackedConnection, seq, ack uint32, flags
 }
 
 func advanceTCPSeq(seq uint32, payloadLen int, flags uint8) uint32 {
-	next := seq + uint32(payloadLen)
+	next := seq + uint32(payloadLen) //nolint:gosec // G115: payloadLen is bounded by MTU
 	if flags&TCPFlagSYN != 0 {
 		next++
 	}
@@ -834,7 +834,7 @@ func advanceTCPSeq(seq uint32, payloadLen int, flags uint8) uint32 {
 }
 
 func tcpSeqAfter(a, b uint32) bool {
-	return int32(a-b) > 0
+	return int32(a-b) > 0 //nolint:gosec // G115: Intentional wraparound for TCP sequence comparison
 }
 
 func randomISN() uint32 {
@@ -842,7 +842,7 @@ func randomISN() uint32 {
 	if _, err := rand.Read(buf[:]); err == nil {
 		return binary.BigEndian.Uint32(buf[:])
 	}
-	return uint32(time.Now().UnixNano())
+	return uint32(time.Now().UnixNano()) //nolint:gosec // G115: Intentional truncation for random ISN
 }
 
 // Status returns the current VPN status and statistics.
@@ -850,7 +850,7 @@ func (m *Manager) Status() VPNStats {
 	if m == nil {
 		return VPNStats{Status: StatusDisabled}
 	}
-	status := m.status.Load().(Status)
+	status := m.status.Load().(Status) //nolint:errcheck // Type is always Status
 
 	var uptime time.Duration
 	if status == StatusConnected {
@@ -859,12 +859,12 @@ func (m *Manager) Status() VPNStats {
 
 	var lastErr string
 	if e := m.lastError.Load(); e != nil {
-		lastErr = e.(string)
+		lastErr = e.(string) //nolint:errcheck // Type is always string
 	}
 
 	var lastErrTime time.Time
 	if t := m.lastErrorTime.Load(); t != nil {
-		lastErrTime = t.(time.Time)
+		lastErrTime = t.(time.Time) //nolint:errcheck // Type is always time.Time
 	}
 
 	var activeConns int64

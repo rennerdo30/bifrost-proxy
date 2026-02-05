@@ -13,10 +13,10 @@ import (
 
 // Manager errors.
 var (
-	ErrManagerClosed      = errors.New("p2p: manager closed")
-	ErrPeerNotFound       = errors.New("p2p: peer not found")
-	ErrConnectionExists   = errors.New("p2p: connection already exists")
-	ErrNoEndpoints        = errors.New("p2p: no endpoints available")
+	ErrManagerClosed    = errors.New("p2p: manager closed")
+	ErrPeerNotFound     = errors.New("p2p: peer not found")
+	ErrConnectionExists = errors.New("p2p: connection already exists")
+	ErrNoEndpoints      = errors.New("p2p: no endpoints available")
 )
 
 // P2PManager manages all P2P connections.
@@ -25,7 +25,6 @@ type P2PManager struct {
 	localPeerID  string
 	localKeyPair *KeyPair
 
-	iceAgent     *ICEAgent
 	natDetector  *NATDetector
 	relayManager *RelayManager
 
@@ -112,10 +111,10 @@ func NewP2PManager(config ManagerConfig) (*P2PManager, error) {
 	if len(config.LocalPrivateKey) > 0 {
 		keyPair = &KeyPair{}
 		copy(keyPair.PrivateKey[:], config.LocalPrivateKey)
-		pubKey, err := PublicKeyFromPrivate(config.LocalPrivateKey)
-		if err != nil {
+		pubKey, pubKeyErr := PublicKeyFromPrivate(config.LocalPrivateKey)
+		if pubKeyErr != nil {
 			cancel()
-			return nil, err
+			return nil, pubKeyErr
 		}
 		copy(keyPair.PublicKey[:], pubKey)
 	} else {
@@ -198,7 +197,7 @@ func (pm *P2PManager) Stop() error {
 	pm.mu.Unlock()
 
 	// Stop relay manager
-	pm.relayManager.Stop()
+	_ = pm.relayManager.Stop() //nolint:errcheck // Best effort cleanup
 
 	// Close NAT detector
 	pm.natDetector.Close()
@@ -376,10 +375,10 @@ func (pm *P2PManager) LocalEndpoints() []netip.AddrPort {
 
 	// Add local address
 	if pm.conn != nil {
-		localAddr := pm.conn.LocalAddr().(*net.UDPAddr)
+		localAddr := pm.conn.LocalAddr().(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 		endpoints = append(endpoints, netip.AddrPortFrom(
 			netip.MustParseAddr(localAddr.IP.String()),
-			uint16(localAddr.Port),
+			uint16(localAddr.Port), //nolint:gosec // G115: UDP port is always 0-65535
 		))
 	}
 
@@ -439,10 +438,10 @@ func (pm *P2PManager) receiveWorker() {
 		}
 
 		// Find connection for this source
-		fromUDP := from.(*net.UDPAddr)
+		fromUDP := from.(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 		fromAddr := netip.AddrPortFrom(
 			netip.MustParseAddr(fromUDP.IP.String()),
-			uint16(fromUDP.Port),
+			uint16(fromUDP.Port), //nolint:gosec // G115: UDP port is always 0-65535
 		)
 
 		pm.mu.RLock()
@@ -539,11 +538,7 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 	}
 
 	// Create incoming connection
-	conn, err := newIncomingConnection(config, pm.conn, from, crypto)
-	if err != nil {
-		slog.Debug("failed to create incoming connection", "error", err)
-		return
-	}
+	conn := newIncomingConnection(config, pm.conn, from, crypto)
 
 	// Store connection
 	pm.mu.Lock()
@@ -560,7 +555,7 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 }
 
 // lookupPeerByKey looks up a peer ID by their public key.
-func (pm *P2PManager) lookupPeerByKey(publicKey []byte) string {
+func (pm *P2PManager) lookupPeerByKey(_ []byte) string {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
 
@@ -571,13 +566,13 @@ func (pm *P2PManager) lookupPeerByKey(publicKey []byte) string {
 }
 
 // newIncomingConnection creates a connection for an incoming request.
-func newIncomingConnection(config ConnectionConfig, conn net.PacketConn, remoteAddr netip.AddrPort, crypto *CryptoSession) (*DirectConnection, error) {
+func newIncomingConnection(config ConnectionConfig, conn net.PacketConn, remoteAddr netip.AddrPort, crypto *CryptoSession) *DirectConnection {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	localUDPAddr := conn.LocalAddr().(*net.UDPAddr)
+	localUDPAddr := conn.LocalAddr().(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
 	localAddr := netip.AddrPortFrom(
 		netip.MustParseAddr(localUDPAddr.IP.String()),
-		uint16(localUDPAddr.Port),
+		uint16(localUDPAddr.Port), //nolint:gosec // G115: UDP port is always 0-65535
 	)
 
 	dc := &DirectConnection{
@@ -600,7 +595,7 @@ func newIncomingConnection(config ConnectionConfig, conn net.PacketConn, remoteA
 	go dc.recvWorker()
 	go dc.keepAliveWorker()
 
-	return dc, nil
+	return dc
 }
 
 // handleData handles incoming data for a peer.
@@ -648,7 +643,7 @@ func (pm *P2PManager) checkConnections() {
 		// Check connection state
 		if conn.State() == ConnectionStateFailed || conn.State() == ConnectionStateDisconnected {
 			slog.Warn("connection unhealthy, disconnecting", "peer_id", peerID, "state", conn.State().String())
-			pm.Disconnect(peerID)
+			_ = pm.Disconnect(peerID) //nolint:errcheck // Best effort disconnect
 		}
 	}
 }

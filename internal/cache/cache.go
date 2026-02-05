@@ -190,7 +190,7 @@ func (m *Manager) Get(ctx context.Context, req *http.Request) (*Entry, error) {
 
 	// Check if still fresh
 	if entry.Metadata.IsExpired() {
-		m.storage.Delete(ctx, key)
+		_ = m.storage.Delete(ctx, key) //nolint:errcheck // Best effort cleanup of expired entry
 		return nil, ErrNotFound
 	}
 
@@ -355,19 +355,19 @@ func (m *Manager) Stats() CacheStats {
 	storageStats := m.storage.Stats()
 
 	return CacheStats{
-		Enabled:           m.IsEnabled(),
-		StorageType:       m.config.Storage.Type,
-		Entries:           storageStats.Entries,
-		TotalSize:         storageStats.TotalSize,
-		MaxSize:           storageStats.MaxSize,
-		UsedPercent:       storageStats.UsedPercent,
-		HitCount:          storageStats.HitCount,
-		MissCount:         storageStats.MissCount,
-		HitRate:           storageStats.HitRate(),
-		EvictionCount:     storageStats.EvictionCount,
-		RulesCount:        len(m.rules.All()),
-		PresetsCount:      len(m.config.Presets),
-		CustomRulesCount:  len(m.config.Rules),
+		Enabled:          m.IsEnabled(),
+		StorageType:      m.config.Storage.Type,
+		Entries:          storageStats.Entries,
+		TotalSize:        storageStats.TotalSize,
+		MaxSize:          storageStats.MaxSize,
+		UsedPercent:      storageStats.UsedPercent,
+		HitCount:         storageStats.HitCount,
+		MissCount:        storageStats.MissCount,
+		HitRate:          storageStats.HitRate(),
+		EvictionCount:    storageStats.EvictionCount,
+		RulesCount:       len(m.rules.All()),
+		PresetsCount:     len(m.config.Presets),
+		CustomRulesCount: len(m.config.Rules),
 	}
 }
 
@@ -423,19 +423,19 @@ func (m *Manager) Reload(cfg *Config) error {
 
 // CacheStats holds overall cache statistics.
 type CacheStats struct {
-	Enabled           bool    `json:"enabled"`
-	StorageType       string  `json:"storage_type"`
-	Entries           int64   `json:"entries"`
-	TotalSize         int64   `json:"total_size_bytes"`
-	MaxSize           int64   `json:"max_size_bytes"`
-	UsedPercent       float64 `json:"used_percent"`
-	HitCount          int64   `json:"hit_count"`
-	MissCount         int64   `json:"miss_count"`
-	HitRate           float64 `json:"hit_rate"`
-	EvictionCount     int64   `json:"eviction_count"`
-	RulesCount        int     `json:"rules_count"`
-	PresetsCount      int     `json:"presets_count"`
-	CustomRulesCount  int     `json:"custom_rules_count"`
+	Enabled          bool    `json:"enabled"`
+	StorageType      string  `json:"storage_type"`
+	Entries          int64   `json:"entries"`
+	TotalSize        int64   `json:"total_size_bytes"`
+	MaxSize          int64   `json:"max_size_bytes"`
+	UsedPercent      float64 `json:"used_percent"`
+	HitCount         int64   `json:"hit_count"`
+	MissCount        int64   `json:"miss_count"`
+	HitRate          float64 `json:"hit_rate"`
+	EvictionCount    int64   `json:"eviction_count"`
+	RulesCount       int     `json:"rules_count"`
+	PresetsCount     int     `json:"presets_count"`
+	CustomRulesCount int     `json:"custom_rules_count"`
 }
 
 // isSensitiveHeader checks if a header should not be cached.

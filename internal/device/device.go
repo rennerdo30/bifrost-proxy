@@ -206,12 +206,12 @@ func (e *DeviceError) Unwrap() error {
 
 // Common device errors.
 var (
-	ErrDeviceNotSupported   = errors.New("device type not supported on this platform")
-	ErrPermissionDenied     = errors.New("permission denied: device creation requires root/admin privileges")
-	ErrDeviceAlreadyExists  = errors.New("device already exists")
-	ErrDeviceClosed         = errors.New("device is closed")
-	ErrTAPNotSupported      = errors.New("TAP device not supported on this platform")
-	ErrInvalidMACAddress    = errors.New("invalid MAC address")
+	ErrDeviceNotSupported  = errors.New("device type not supported on this platform")
+	ErrPermissionDenied    = errors.New("permission denied: device creation requires root/admin privileges")
+	ErrDeviceAlreadyExists = errors.New("device already exists")
+	ErrDeviceClosed        = errors.New("device is closed")
+	ErrTAPNotSupported     = errors.New("TAP device not supported on this platform")
+	ErrInvalidMACAddress   = errors.New("invalid MAC address")
 )
 
 // GenerateMAC generates a random locally-administered MAC address.

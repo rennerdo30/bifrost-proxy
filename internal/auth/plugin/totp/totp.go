@@ -6,7 +6,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha1"
+	"crypto/sha1" //nolint:gosec // G505: SHA1 is required by RFC 6238 (TOTP) for compatibility with authenticator apps
 	"crypto/sha256"
 	"crypto/sha512"
 	"crypto/subtle"
@@ -269,12 +269,12 @@ func parseSecrets(v any) ([]*userSecret, error) {
 
 // parseSecret parses a single secret configuration.
 func parseSecret(m map[string]any) (*userSecret, error) {
-	username, _ := m["username"].(string)
+	username, _ := m["username"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if username == "" {
 		return nil, fmt.Errorf("username is required")
 	}
 
-	secret, _ := m["secret"].(string)
+	secret, _ := m["secret"].(string) //nolint:errcheck // Type assertion - empty string is valid if missing
 	if secret == "" {
 		return nil, fmt.Errorf("secret is required for user %s", username)
 	}
@@ -291,7 +291,7 @@ func parseSecret(m map[string]any) (*userSecret, error) {
 		groups = toStringSlice(groupsAny)
 	}
 
-	disabled, _ := m["disabled"].(bool)
+	disabled, _ := m["disabled"].(bool) //nolint:errcheck // Type assertion - false is valid if missing
 
 	return &userSecret{
 		Username: username,
@@ -398,7 +398,7 @@ func (a *Authenticator) validateCode(secretStr, code string) bool {
 func (a *Authenticator) generateCode(secret []byte, counter int64) string {
 	// Convert counter to big-endian bytes
 	counterBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(counterBytes, uint64(counter))
+	binary.BigEndian.PutUint64(counterBytes, uint64(counter)) //nolint:gosec // G115: counter is always non-negative (Unix timestamp / period)
 
 	// Create HMAC
 	var h func() hash.Hash
