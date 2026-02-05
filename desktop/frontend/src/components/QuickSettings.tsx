@@ -11,6 +11,7 @@ interface QuickSettingsProps {
   vpnEnabled: boolean;
   onToggleVPN: (enabled: boolean) => void;
   restarting: boolean;
+  vpnToggling?: boolean;
 }
 
 interface ToggleSwitchProps {
@@ -18,23 +19,53 @@ interface ToggleSwitchProps {
   onChange: (enabled: boolean) => void;
   label: string;
   description?: string;
+  loading?: boolean;
+  disabled?: boolean;
 }
 
-function ToggleSwitch({ enabled, onChange, label, description }: ToggleSwitchProps) {
+function ToggleSwitch({ enabled, onChange, label, description, loading, disabled }: ToggleSwitchProps) {
+  const isDisabled = loading || disabled;
+
   return (
     <div className="flex items-center justify-between py-2">
-      <div>
-        <p className="text-sm font-medium text-bifrost-text">{label}</p>
-        {description && (
-          <p className="text-xs text-bifrost-text-muted">{description}</p>
+      <div className="flex items-center gap-2">
+        <div>
+          <p className="text-sm font-medium text-bifrost-text">{label}</p>
+          {description && (
+            <p className="text-xs text-bifrost-text-muted">{description}</p>
+          )}
+        </div>
+        {loading && (
+          <svg
+            className="animate-spin w-3.5 h-3.5 text-bifrost-accent"
+            fill="none"
+            viewBox="0 0 24 24"
+            aria-label="Loading"
+          >
+            <circle
+              className="opacity-25"
+              cx="12"
+              cy="12"
+              r="10"
+              stroke="currentColor"
+              strokeWidth="4"
+            />
+            <path
+              className="opacity-75"
+              fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+            />
+          </svg>
         )}
       </div>
       <button
-        onClick={() => onChange(!enabled)}
-        className={`toggle ${enabled ? 'bg-bifrost-accent' : 'bg-bifrost-border'}`}
+        onClick={() => !isDisabled && onChange(!enabled)}
+        disabled={isDisabled}
+        className={`toggle ${enabled ? 'bg-bifrost-accent' : 'bg-bifrost-border'} ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         role="switch"
         aria-checked={enabled}
         aria-label={`Toggle ${label}`}
+        aria-busy={loading}
       >
         <span
           className={`toggle-dot ${enabled ? 'translate-x-5' : 'translate-x-1'}`}
@@ -97,6 +128,7 @@ export function QuickSettings({
   vpnEnabled,
   onToggleVPN,
   restarting,
+  vpnToggling,
 }: QuickSettingsProps) {
   const [pendingProxyChanges, setPendingProxyChanges] = useState(false);
   const [localProxy, setLocalProxy] = useState<Partial<ProxySettings>>({});
@@ -157,6 +189,7 @@ export function QuickSettings({
         onChange={onToggleVPN}
         label="VPN Mode"
         description="Route all traffic through VPN"
+        loading={vpnToggling}
       />
 
       <ToggleSwitch

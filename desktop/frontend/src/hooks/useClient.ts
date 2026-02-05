@@ -156,6 +156,8 @@ export function useClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [restarting, setRestarting] = useState(false);
+  const [vpnToggling, setVpnToggling] = useState(false);
+  const [serverSwitching, setServerSwitching] = useState(false);
 
   const api = getAPI();
 
@@ -257,12 +259,15 @@ export function useClient() {
   // Select server
   const selectServer = useCallback(async (name: string) => {
     setError(null); // Clear previous error on new operation
+    setServerSwitching(true);
     try {
       await api.SelectServer(name);
       await refreshServers();
       await refreshSettings();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Server selection failed');
+    } finally {
+      setServerSwitching(false);
     }
   }, [api, refreshServers, refreshSettings]);
 
@@ -361,6 +366,7 @@ export function useClient() {
   // Toggle VPN
   const toggleVPN = useCallback(async (enabled: boolean) => {
     setError(null); // Clear previous error on new operation
+    setVpnToggling(true);
     try {
       if (enabled) {
         await api.EnableVPN();
@@ -370,6 +376,8 @@ export function useClient() {
       await refreshStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'VPN toggle failed');
+    } finally {
+      setVpnToggling(false);
     }
   }, [api, refreshStatus]);
 
@@ -414,6 +422,8 @@ export function useClient() {
     error,
     loading,
     restarting,
+    vpnToggling,
+    serverSwitching,
     connect,
     disconnect,
     selectServer,
