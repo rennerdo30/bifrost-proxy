@@ -359,12 +359,13 @@
         "Show connection status per server"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "desktop",
         "wails"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-018",
@@ -730,6 +731,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T06:26:40.272Z"
+    "updatedAt": "2026-02-05T06:34:00.712Z"
   }
 }
