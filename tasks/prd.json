@@ -72,13 +72,14 @@
         "Add connection context (remote address, tunnel name) to log messages"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "backend",
         "error-handling",
         "vpn"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-005",
@@ -718,6 +719,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T05:27:15.255Z"
+    "updatedAt": "2026-02-05T05:30:24.159Z"
   }
 }
