@@ -97,12 +97,13 @@
         "Show route match statistics (hit count, last matched)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "frontend",
         "web-client"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-006",
@@ -720,6 +721,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T05:31:57.762Z"
+    "updatedAt": "2026-02-05T05:36:03.025Z"
   }
 }
