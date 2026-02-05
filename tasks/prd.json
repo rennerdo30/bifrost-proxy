@@ -294,13 +294,14 @@
         "Apply split tunneling rules when VPN connects"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "mobile",
         "react-native",
         "vpn"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-015",
@@ -728,6 +729,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T06:19:31.977Z"
+    "updatedAt": "2026-02-05T06:25:09.792Z"
   }
 }
