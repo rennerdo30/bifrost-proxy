@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, ClientConfig, getAPIConfig, setAPIConfig } from '../services/api'
+import { api, ClientConfig, getAPIConfig, setAPIConfig, validateServerAddress } from '../services/api'
 import { useToast } from '../components/Toast'
 
 interface SettingItemProps {
@@ -70,6 +70,7 @@ export function SettingsScreen() {
     mutationFn: (updates: Partial<ClientConfig>) => api.updateConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['config'] })
+      showToast('Settings saved', 'success')
     },
     onError: (err) => {
       showToast(err instanceof Error ? err.message : 'Failed to update settings', 'error')
@@ -106,6 +107,13 @@ export function SettingsScreen() {
   }
 
   const handleSaveServer = (address: string) => {
+    // Validate server address format
+    const validationError = validateServerAddress(address)
+    if (validationError) {
+      showToast(validationError, 'error')
+      return
+    }
+
     // Update the API base URL
     const newBaseUrl = `http://${address}/api/v1`
     setAPIConfig({ baseUrl: newBaseUrl })
@@ -186,8 +194,8 @@ export function SettingsScreen() {
         </SettingItem>
 
         <SettingItem
-          title="Kill Switch"
-          description="Block traffic if VPN disconnects"
+          title="VPN Mode"
+          description="Route all traffic through VPN tunnel"
           disabled={isMutating}
         >
           <Switch
@@ -207,6 +215,8 @@ export function SettingsScreen() {
           <TouchableOpacity
             style={styles.linkButton}
             onPress={() => showToast('Configure split tunneling rules in the VPN settings.', 'info')}
+            accessibilityLabel="Configure split tunneling"
+            accessibilityRole="button"
           >
             <Text style={styles.linkButtonText}>Configure</Text>
           </TouchableOpacity>
@@ -230,6 +240,9 @@ export function SettingsScreen() {
             style={[styles.saveButton, isMutating && styles.saveButtonDisabled]}
             onPress={() => handleSaveServer(serverAddress)}
             disabled={isMutating}
+            accessibilityLabel="Save server address"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isMutating }}
           >
             {isMutating ? (
               <ActivityIndicator size="small" color="#ffffff" />
@@ -263,6 +276,9 @@ export function SettingsScreen() {
           style={[styles.dangerButton, clearCacheMutation.isPending && styles.dangerButtonDisabled]}
           onPress={handleClearData}
           disabled={clearCacheMutation.isPending}
+          accessibilityLabel="Clear cached data"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: clearCacheMutation.isPending }}
         >
           {clearCacheMutation.isPending ? (
             <ActivityIndicator size="small" color="#ef4444" />

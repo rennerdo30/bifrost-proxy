@@ -37,6 +37,10 @@ auth:
 rate_limit:
   enabled: false  # Disable to save CPU
 
+access_control:
+  whitelist: []   # Allowed IPs/CIDRs (empty = allow all)
+  blacklist: []   # Denied IPs/CIDRs (always blocked)
+
 access_log:
   enabled: false  # Disable to save I/O and memory
 

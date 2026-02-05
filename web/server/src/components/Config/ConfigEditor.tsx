@@ -119,7 +119,8 @@ export function ConfigEditor({ config, isLoading, onSave, onReload }: ConfigEdit
     if (config && !editedConfig) {
       setEditedConfig({ ...defaultConfig, ...config })
     }
-  }, [config, editedConfig])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config])
 
   const currentConfig = editedConfig || config || defaultConfig
   const hasChanges = !!editedConfig

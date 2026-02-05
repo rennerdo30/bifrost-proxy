@@ -26,7 +26,7 @@ export function ArrayInput({ values, onChange, placeholder = 'Enter value...', l
     <div className="space-y-2">
       {label && <label className="block text-sm font-medium text-gray-300">{label}</label>}
       {values.map((value, index) => (
-        <div key={`item-${value || 'empty'}-${index}`} className="flex gap-2">
+        <div key={index} className="flex gap-2">
           <input
             type="text"
             value={value}

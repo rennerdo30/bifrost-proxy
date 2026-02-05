@@ -3,11 +3,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { StatsCards } from '../components/Traffic/StatsCards'
 import { TrafficTable } from '../components/Traffic/TrafficTable'
+import { useDebouncedValue } from '../hooks/useDebounce'
 
 const PAGE_SIZE = 100
 
 export function Traffic() {
   const [filter, setFilter] = useState('')
+  const debouncedFilter = useDebouncedValue(filter, 300) // Debounce filter input
   const [limit, setLimit] = useState(PAGE_SIZE)
   const [showErrorsOnly, setShowErrorsOnly] = useState(false)
   const queryClient = useQueryClient()
@@ -44,10 +46,10 @@ export function Traffic() {
     queryClient.invalidateQueries({ queryKey: ['errors'] })
   }
 
-  const filteredEntries = filter
+  const filteredEntries = debouncedFilter
     ? displayEntries.filter(e =>
-        e.host.toLowerCase().includes(filter.toLowerCase()) ||
-        (e.path || '').toLowerCase().includes(filter.toLowerCase())
+        e.host.toLowerCase().includes(debouncedFilter.toLowerCase()) ||
+        (e.path || '').toLowerCase().includes(debouncedFilter.toLowerCase())
       )
     : displayEntries
 

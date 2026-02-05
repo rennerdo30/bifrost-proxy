@@ -12,19 +12,20 @@ import (
 
 // ServerConfig is the main configuration for the Bifrost server.
 type ServerConfig struct {
-	Server      ServerSettings    `yaml:"server" json:"server"`
-	Backends    []BackendConfig   `yaml:"backends" json:"backends"`
-	Routes      []RouteConfig     `yaml:"routes" json:"routes"`
-	Auth        AuthConfig        `yaml:"auth" json:"auth"`
-	RateLimit   RateLimitConfig   `yaml:"rate_limit" json:"rate_limit"`
-	AccessLog   AccessLogConfig   `yaml:"access_log" json:"access_log"`
-	Metrics     MetricsConfig     `yaml:"metrics" json:"metrics"`
-	Logging     logging.Config    `yaml:"logging" json:"logging"`
-	WebUI       WebUIConfig       `yaml:"web_ui" json:"web_ui"`
-	API         APIConfig         `yaml:"api" json:"api"`
-	HealthCheck HealthCheckConfig `yaml:"health_check" json:"health_check"`
-	AutoUpdate  AutoUpdateConfig  `yaml:"auto_update" json:"auto_update"`
-	Cache       cache.Config      `yaml:"cache" json:"cache"`
+	Server        ServerSettings      `yaml:"server" json:"server"`
+	Backends      []BackendConfig     `yaml:"backends" json:"backends"`
+	Routes        []RouteConfig       `yaml:"routes" json:"routes"`
+	Auth          AuthConfig          `yaml:"auth" json:"auth"`
+	RateLimit     RateLimitConfig     `yaml:"rate_limit" json:"rate_limit"`
+	AccessControl AccessControlConfig `yaml:"access_control" json:"access_control"`
+	AccessLog     AccessLogConfig     `yaml:"access_log" json:"access_log"`
+	Metrics       MetricsConfig       `yaml:"metrics" json:"metrics"`
+	Logging       logging.Config      `yaml:"logging" json:"logging"`
+	WebUI         WebUIConfig         `yaml:"web_ui" json:"web_ui"`
+	API           APIConfig           `yaml:"api" json:"api"`
+	HealthCheck   HealthCheckConfig   `yaml:"health_check" json:"health_check"`
+	AutoUpdate    AutoUpdateConfig    `yaml:"auto_update" json:"auto_update"`
+	Cache         cache.Config        `yaml:"cache" json:"cache"`
 }
 
 // ServerSettings contains server-specific settings.
@@ -154,6 +155,12 @@ type RateLimitConfig struct {
 	Bandwidth         *BandwidthConfig `yaml:"bandwidth,omitempty" json:"bandwidth,omitempty"`
 }
 
+// AccessControlConfig contains IP whitelist/blacklist settings.
+type AccessControlConfig struct {
+	Whitelist []string `yaml:"whitelist" json:"whitelist"`
+	Blacklist []string `yaml:"blacklist" json:"blacklist"`
+}
+
 // BandwidthConfig contains bandwidth throttling settings.
 type BandwidthConfig struct {
 	Enabled  bool   `yaml:"enabled" json:"enabled"`
@@ -275,6 +282,7 @@ func DefaultServerConfig() ServerConfig {
 		RateLimit: RateLimitConfig{
 			Enabled: false,
 		},
+		AccessControl: AccessControlConfig{},
 		AccessLog: AccessLogConfig{
 			Enabled: true,
 			Format:  "json",

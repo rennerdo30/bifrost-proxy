@@ -28,12 +28,23 @@ type ConnKey struct {
 // TrackedConnection represents a connection being tracked through the VPN.
 type TrackedConnection struct {
 	Key           ConnKey
-	ProxyConn     net.Conn       // Connection through the proxy
+	ProxyConn     net.Conn // Connection through the proxy
 	Created       time.Time
 	LastActivity  time.Time
 	BytesSent     atomic.Int64
 	BytesReceived atomic.Int64
 	State         ConnState
+	TCP           *TCPState
+}
+
+// TCPState tracks minimal TCP sequencing state for a connection.
+type TCPState struct {
+	mu          sync.Mutex
+	ClientISN   uint32
+	ServerISN   uint32
+	ClientNext  uint32
+	ServerNext  uint32
+	Established bool
 }
 
 // ConnState represents the state of a tracked connection.

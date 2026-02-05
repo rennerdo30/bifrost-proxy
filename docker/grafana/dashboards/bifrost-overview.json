@@ -1,0 +1,159 @@
+{
+  "uid": "bifrost-overview",
+  "title": "Bifrost Overview",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "timezone": "browser",
+  "tags": ["bifrost"],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Uptime (seconds)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "bifrost_uptime_seconds",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Go Routines",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "bifrost_goroutines",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Active Connections (by protocol)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (protocol) (bifrost_connections_active)",
+          "legendFormat": "{{protocol}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 8, "y": 0, "w": 8, "h": 4 }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Connection Rate (per second)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (protocol) (rate(bifrost_connections_total[1m]))",
+          "legendFormat": "{{protocol}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 4 }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Bandwidth (MB/s)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum(rate(bifrost_bytes_sent_total[1m])) / 1024 / 1024",
+          "legendFormat": "sent",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(bifrost_bytes_received_total[1m])) / 1024 / 1024",
+          "legendFormat": "received",
+          "refId": "B"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 6 }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Backend Health",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "bifrost_backend_health",
+          "refId": "A",
+          "format": "table",
+          "instant": true
+        }
+      ],
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 6 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Backend Latency (p95)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(bifrost_backend_latency_seconds_bucket[5m])) by (le, backend))",
+          "legendFormat": "{{backend}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 6 }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Backend Errors (per second)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (backend, error_type) (rate(bifrost_backend_errors_total[5m]))",
+          "legendFormat": "{{backend}} / {{error_type}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 6 }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Auth Failures (per second)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (method, reason) (rate(bifrost_auth_failures_total[5m]))",
+          "legendFormat": "{{method}} / {{reason}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Rate Limit Hits (per second)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (type) (rate(bifrost_rate_limit_hits_total[5m]))",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 }
+    }
+  ]
+}

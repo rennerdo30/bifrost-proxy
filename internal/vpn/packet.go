@@ -33,6 +33,9 @@ type IPPacket struct {
 	DstIP     netip.Addr // Destination IP address
 	SrcPort   uint16     // Source port (for TCP/UDP)
 	DstPort   uint16     // Destination port (for TCP/UDP)
+	SeqNum    uint32     // TCP sequence number
+	AckNum    uint32     // TCP acknowledgment number
+	Window    uint16     // TCP window size
 	TCPFlags  uint8      // TCP flags (for TCP)
 	Payload   []byte     // Payload after transport header
 	Raw       []byte     // Original raw packet
@@ -209,6 +212,8 @@ func (p *IPPacket) parseTCPHeader(data []byte) error {
 
 	p.SrcPort = binary.BigEndian.Uint16(data[0:2])
 	p.DstPort = binary.BigEndian.Uint16(data[2:4])
+	p.SeqNum = binary.BigEndian.Uint32(data[4:8])
+	p.AckNum = binary.BigEndian.Uint32(data[8:12])
 
 	// Data offset (header length) is in 32-bit words
 	dataOffset := int((data[12] >> 4)) * 4
@@ -217,6 +222,7 @@ func (p *IPPacket) parseTCPHeader(data []byte) error {
 	}
 
 	p.TCPFlags = data[13]
+	p.Window = binary.BigEndian.Uint16(data[14:16])
 
 	if dataOffset <= len(data) {
 		p.Payload = data[dataOffset:]
@@ -291,6 +297,93 @@ func (p *IPPacket) String() string {
 		p.Version, protoName, p.SrcIP, p.DstIP)
 }
 
+// BuildTCPPacket creates a TCP packet with optional payload.
+func BuildTCPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, window uint16, payload []byte) []byte {
+	if srcIP.Is4() {
+		return buildIPv4TCPPacket(srcIP, dstIP, srcPort, dstPort, seqNum, ackNum, flags, window, payload)
+	}
+	return buildIPv6TCPPacket(srcIP, dstIP, srcPort, dstPort, seqNum, ackNum, flags, window, payload)
+}
+
+// buildIPv4TCPPacket builds an IPv4 TCP packet with payload.
+func buildIPv4TCPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, window uint16, payload []byte) []byte {
+	// IPv4 header (20 bytes) + TCP header (20 bytes) + payload
+	totalLen := 20 + 20 + len(payload)
+	packet := make([]byte, totalLen)
+
+	// IPv4 header
+	packet[0] = 0x45 // Version (4) + IHL (5)
+	packet[1] = 0    // DSCP + ECN
+	binary.BigEndian.PutUint16(packet[2:4], uint16(totalLen))
+	binary.BigEndian.PutUint16(packet[4:6], 0)      // ID
+	binary.BigEndian.PutUint16(packet[6:8], 0x4000) // Flags (Don't Fragment) + Fragment offset
+	packet[8] = 64                                  // TTL
+	packet[9] = ProtocolTCP                         // Protocol
+	// Checksum (10-11) will be calculated later
+	copy(packet[12:16], srcIP.AsSlice())
+	copy(packet[16:20], dstIP.AsSlice())
+
+	// TCP header
+	binary.BigEndian.PutUint16(packet[20:22], srcPort)
+	binary.BigEndian.PutUint16(packet[22:24], dstPort)
+	binary.BigEndian.PutUint32(packet[24:28], seqNum)
+	binary.BigEndian.PutUint32(packet[28:32], ackNum)
+	packet[32] = 0x50 // Data offset (5) + reserved
+	packet[33] = flags
+	binary.BigEndian.PutUint16(packet[34:36], window)
+	// Checksum (36-37) will be calculated later
+	binary.BigEndian.PutUint16(packet[38:40], 0) // Urgent pointer
+
+	// Payload
+	copy(packet[40:], payload)
+
+	// Calculate IP checksum
+	ipChecksum := calculateChecksum(packet[:20])
+	binary.BigEndian.PutUint16(packet[10:12], ipChecksum)
+
+	// Calculate TCP checksum (with pseudo header + payload)
+	tcpChecksum := calculateTCPChecksum(srcIP, dstIP, packet[20:])
+	binary.BigEndian.PutUint16(packet[36:38], tcpChecksum)
+
+	return packet
+}
+
+// buildIPv6TCPPacket builds an IPv6 TCP packet with payload.
+func buildIPv6TCPPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seqNum, ackNum uint32, flags uint8, window uint16, payload []byte) []byte {
+	// IPv6 header (40 bytes) + TCP header (20 bytes) + payload
+	totalLen := 40 + 20 + len(payload)
+	packet := make([]byte, totalLen)
+
+	// IPv6 header
+	packet[0] = 0x60 // Version (6) + Traffic class
+	// Flow label (1-3) = 0
+	binary.BigEndian.PutUint16(packet[4:6], uint16(20+len(payload))) // Payload length (TCP header + payload)
+	packet[6] = ProtocolTCP
+	packet[7] = 64 // Hop limit
+	copy(packet[8:24], srcIP.AsSlice())
+	copy(packet[24:40], dstIP.AsSlice())
+
+	// TCP header
+	binary.BigEndian.PutUint16(packet[40:42], srcPort)
+	binary.BigEndian.PutUint16(packet[42:44], dstPort)
+	binary.BigEndian.PutUint32(packet[44:48], seqNum)
+	binary.BigEndian.PutUint32(packet[48:52], ackNum)
+	packet[52] = 0x50 // Data offset (5) + reserved
+	packet[53] = flags
+	binary.BigEndian.PutUint16(packet[54:56], window)
+	// Checksum (56-57) will be calculated later
+	binary.BigEndian.PutUint16(packet[58:60], 0) // Urgent pointer
+
+	// Payload
+	copy(packet[60:], payload)
+
+	// Calculate TCP checksum (with pseudo header + payload)
+	tcpChecksum := calculateTCPv6Checksum(srcIP, dstIP, packet[40:])
+	binary.BigEndian.PutUint16(packet[56:58], tcpChecksum)
+
+	return packet
+}
+
 // BuildTCPRSTPacket creates a TCP RST packet to terminate a connection.
 func BuildTCPRSTPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seqNum uint32) []byte {
 	if srcIP.Is4() {
@@ -305,27 +398,27 @@ func buildIPv4TCPRSTPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seq
 	packet := make([]byte, 40)
 
 	// IPv4 header
-	packet[0] = 0x45           // Version (4) + IHL (5)
-	packet[1] = 0              // DSCP + ECN
-	binary.BigEndian.PutUint16(packet[2:4], 40)  // Total length
-	binary.BigEndian.PutUint16(packet[4:6], 0)   // ID
-	binary.BigEndian.PutUint16(packet[6:8], 0)   // Flags + Fragment offset
-	packet[8] = 64             // TTL
-	packet[9] = ProtocolTCP    // Protocol
+	packet[0] = 0x45                            // Version (4) + IHL (5)
+	packet[1] = 0                               // DSCP + ECN
+	binary.BigEndian.PutUint16(packet[2:4], 40) // Total length
+	binary.BigEndian.PutUint16(packet[4:6], 0)  // ID
+	binary.BigEndian.PutUint16(packet[6:8], 0)  // Flags + Fragment offset
+	packet[8] = 64                              // TTL
+	packet[9] = ProtocolTCP                     // Protocol
 	// Checksum (10-11) will be calculated later
 	copy(packet[12:16], srcIP.AsSlice())
 	copy(packet[16:20], dstIP.AsSlice())
 
 	// TCP header
-	binary.BigEndian.PutUint16(packet[20:22], srcPort)  // Source port
-	binary.BigEndian.PutUint16(packet[22:24], dstPort)  // Dest port
-	binary.BigEndian.PutUint32(packet[24:28], seqNum)   // Sequence number
-	binary.BigEndian.PutUint32(packet[28:32], 0)        // ACK number
-	packet[32] = 0x50          // Data offset (5) + reserved
-	packet[33] = TCPFlagRST    // Flags (RST)
-	binary.BigEndian.PutUint16(packet[34:36], 0)        // Window
+	binary.BigEndian.PutUint16(packet[20:22], srcPort) // Source port
+	binary.BigEndian.PutUint16(packet[22:24], dstPort) // Dest port
+	binary.BigEndian.PutUint32(packet[24:28], seqNum)  // Sequence number
+	binary.BigEndian.PutUint32(packet[28:32], 0)       // ACK number
+	packet[32] = 0x50                                  // Data offset (5) + reserved
+	packet[33] = TCPFlagRST                            // Flags (RST)
+	binary.BigEndian.PutUint16(packet[34:36], 0)       // Window
 	// Checksum (36-37) will be calculated later
-	binary.BigEndian.PutUint16(packet[38:40], 0)        // Urgent pointer
+	binary.BigEndian.PutUint16(packet[38:40], 0) // Urgent pointer
 
 	// Calculate IP checksum
 	ipChecksum := calculateChecksum(packet[:20])
@@ -344,24 +437,24 @@ func buildIPv6TCPRSTPacket(srcIP, dstIP netip.Addr, srcPort, dstPort uint16, seq
 	packet := make([]byte, 60)
 
 	// IPv6 header
-	packet[0] = 0x60           // Version (6) + Traffic class
+	packet[0] = 0x60 // Version (6) + Traffic class
 	// Flow label (1-3) = 0
-	binary.BigEndian.PutUint16(packet[4:6], 20)  // Payload length (TCP header)
-	packet[6] = ProtocolTCP    // Next header
-	packet[7] = 64             // Hop limit
+	binary.BigEndian.PutUint16(packet[4:6], 20) // Payload length (TCP header)
+	packet[6] = ProtocolTCP                     // Next header
+	packet[7] = 64                              // Hop limit
 	copy(packet[8:24], srcIP.AsSlice())
 	copy(packet[24:40], dstIP.AsSlice())
 
 	// TCP header
-	binary.BigEndian.PutUint16(packet[40:42], srcPort)  // Source port
-	binary.BigEndian.PutUint16(packet[42:44], dstPort)  // Dest port
-	binary.BigEndian.PutUint32(packet[44:48], seqNum)   // Sequence number
-	binary.BigEndian.PutUint32(packet[48:52], 0)        // ACK number
-	packet[52] = 0x50          // Data offset (5) + reserved
-	packet[53] = TCPFlagRST    // Flags (RST)
-	binary.BigEndian.PutUint16(packet[54:56], 0)        // Window
+	binary.BigEndian.PutUint16(packet[40:42], srcPort) // Source port
+	binary.BigEndian.PutUint16(packet[42:44], dstPort) // Dest port
+	binary.BigEndian.PutUint32(packet[44:48], seqNum)  // Sequence number
+	binary.BigEndian.PutUint32(packet[48:52], 0)       // ACK number
+	packet[52] = 0x50                                  // Data offset (5) + reserved
+	packet[53] = TCPFlagRST                            // Flags (RST)
+	binary.BigEndian.PutUint16(packet[54:56], 0)       // Window
 	// Checksum (56-57) will be calculated later
-	binary.BigEndian.PutUint16(packet[58:60], 0)        // Urgent pointer
+	binary.BigEndian.PutUint16(packet[58:60], 0) // Urgent pointer
 
 	// Calculate TCP checksum (with pseudo header)
 	tcpChecksum := calculateTCPv6Checksum(srcIP, dstIP, packet[40:])

@@ -3,9 +3,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, VPNConnection } from '../api/client'
 import { formatBytes } from '../utils/formatting'
 import { validateDomain, validateCIDR } from '../utils/validation'
+import { useToast } from '../components/Toast'
 
 export function VPN() {
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [newDomain, setNewDomain] = useState('')
   const [newIP, setNewIP] = useState('')
   const [newAppName, setNewAppName] = useState('')
@@ -59,6 +61,10 @@ export function VPN() {
       queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
       setNewDomain('')
       setDomainError(null)
+      showToast('Domain added to split tunnel rules', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to add domain', 'error')
     },
   })
 
@@ -68,6 +74,10 @@ export function VPN() {
       queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
       setNewIP('')
       setIpError(null)
+      showToast('IP range added to split tunnel rules', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to add IP range', 'error')
     },
   })
 
@@ -76,27 +86,55 @@ export function VPN() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
       setNewAppName('')
+      showToast('Application added to split tunnel rules', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to add application', 'error')
     },
   })
 
   const removeAppMutation = useMutation({
     mutationFn: api.removeSplitTunnelApp,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
+      showToast('Application removed', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to remove application', 'error')
+    },
   })
 
   const removeDomainMutation = useMutation({
     mutationFn: api.removeSplitTunnelDomain,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
+      showToast('Domain removed', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to remove domain', 'error')
+    },
   })
 
   const removeIPMutation = useMutation({
     mutationFn: api.removeSplitTunnelIP,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
+      showToast('IP range removed', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to remove IP range', 'error')
+    },
   })
 
   const setModeMutation = useMutation({
     mutationFn: (mode: 'exclude' | 'include') => api.setSplitTunnelMode(mode),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vpn-split-rules'] })
+      showToast('Split tunnel mode updated', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to change mode', 'error')
+    },
   })
 
   const isEnabled = vpnStatus?.status === 'connected' || vpnStatus?.status === 'running'
@@ -288,9 +326,10 @@ export function VPN() {
 
           {/* Apps */}
           <div>
-            <p className="text-sm font-medium text-bifrost-text mb-2">Applications</p>
+            <label htmlFor="split-tunnel-app" className="block text-sm font-medium text-bifrost-text mb-2">Applications</label>
             <div className="flex gap-2 mb-2">
               <input
+                id="split-tunnel-app"
                 type="text"
                 value={newAppName}
                 onChange={(e) => setNewAppName(e.target.value)}
@@ -328,9 +367,10 @@ export function VPN() {
 
           {/* Domains */}
           <div>
-            <p className="text-sm font-medium text-bifrost-text mb-2">Domains</p>
+            <label htmlFor="split-tunnel-domain" className="block text-sm font-medium text-bifrost-text mb-2">Domains</label>
             <div className="flex gap-2 mb-2">
               <input
+                id="split-tunnel-domain"
                 type="text"
                 value={newDomain}
                 onChange={(e) => {
@@ -382,9 +422,10 @@ export function VPN() {
 
           {/* IP Ranges */}
           <div>
-            <p className="text-sm font-medium text-bifrost-text mb-2">IP Ranges</p>
+            <label htmlFor="split-tunnel-ip" className="block text-sm font-medium text-bifrost-text mb-2">IP Ranges</label>
             <div className="flex gap-2 mb-2">
               <input
+                id="split-tunnel-ip"
                 type="text"
                 value={newIP}
                 onChange={(e) => {
