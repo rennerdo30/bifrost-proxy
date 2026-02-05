@@ -610,12 +610,13 @@
         "Document self-update process for each platform"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "documentation",
         "updater"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-030",
@@ -743,6 +744,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T07:16:06.390Z"
+    "updatedAt": "2026-02-05T07:20:04.536Z"
   }
 }
