@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import {
   View,
   Text,
@@ -17,10 +17,17 @@ import { useToast } from '../components/Toast'
 
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
+// Constants for exponential backoff
+const BASE_RETRY_DELAY = 1000 // 1 second
+const MAX_RETRY_DELAY = 30000 // 30 seconds
+const MAX_RETRY_COUNT = 5
+
 export function HomeScreen() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const retryCountRef = useRef(0)
+  const lastRetryTimeRef = useRef(0)
 
   const { data: status, isLoading: statusLoading } = useQuery({
     queryKey: ['status'],
@@ -104,9 +111,57 @@ export function HomeScreen() {
 
   const onRefresh = useCallback(async () => {
     setIsRefreshing(true)
-    await queryClient.invalidateQueries()
-    setIsRefreshing(false)
-  }, [queryClient])
+
+    try {
+      // Use refetchQueries instead of invalidateQueries for immediate data refresh
+      await queryClient.refetchQueries({
+        queryKey: ['status'],
+        type: 'active',
+      })
+      await queryClient.refetchQueries({
+        queryKey: ['vpn-status'],
+        type: 'active',
+      })
+      await queryClient.refetchQueries({
+        queryKey: ['active-server'],
+        type: 'active',
+      })
+
+      // Reset retry count on successful refresh
+      retryCountRef.current = 0
+      lastRetryTimeRef.current = 0
+    } catch (error) {
+      // Calculate exponential backoff delay
+      const now = Date.now()
+      const timeSinceLastRetry = now - lastRetryTimeRef.current
+
+      // Reset retry count if enough time has passed (2x max delay)
+      if (timeSinceLastRetry > MAX_RETRY_DELAY * 2) {
+        retryCountRef.current = 0
+      }
+
+      retryCountRef.current = Math.min(retryCountRef.current + 1, MAX_RETRY_COUNT)
+      lastRetryTimeRef.current = now
+
+      const backoffDelay = Math.min(
+        BASE_RETRY_DELAY * Math.pow(2, retryCountRef.current - 1),
+        MAX_RETRY_DELAY
+      )
+
+      // Show error toast with backoff information
+      if (retryCountRef.current >= MAX_RETRY_COUNT) {
+        showToast('Refresh failed. Please check your connection.', 'error')
+      } else {
+        const nextRetrySeconds = Math.round(backoffDelay / 1000)
+        showToast(
+          `Refresh failed. Retry in ${nextRetrySeconds}s (attempt ${retryCountRef.current}/${MAX_RETRY_COUNT})`,
+          'error'
+        )
+      }
+    } finally {
+      setIsRefreshing(false)
+    }
+  }, [queryClient, showToast])
 
   const isConnected = vpnStatus?.status === 'connected' || vpnStatus?.status === 'running'
   const isToggling = connectMutation.isPending || disconnectMutation.isPending
