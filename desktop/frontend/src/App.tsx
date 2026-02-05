@@ -109,6 +109,7 @@ function App() {
           currentServer={settings?.current_server || ''}
           onSelect={selectServer}
           disabled={connectionStatus === 'connecting' || loading}
+          onAddServer={openDashboard}
         />
 
         {/* Status */}
