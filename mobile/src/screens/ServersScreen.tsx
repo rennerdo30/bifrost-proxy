@@ -58,6 +58,14 @@ export function ServersScreen() {
     const isDisabled = item.status === 'offline'
     const isConnecting = selectMutation.isPending && selectMutation.variables === item.id
 
+    // Build accessibility label with all relevant server info
+    const statusText = isDisabled ? 'offline' : item.status
+    const selectedText = isSelected ? ', currently selected' : ''
+    const defaultText = item.is_default ? ', default server' : ''
+    const latencyText = item.latency_ms != null && item.latency_ms > 0 ? `, latency ${item.latency_ms} milliseconds` : ''
+    const connectingText = isConnecting ? ', connecting' : ''
+    const accessibilityLabel = `${item.name}, ${item.address}, ${item.protocol}, ${statusText}${defaultText}${selectedText}${latencyText}${connectingText}`
+
     return (
       <TouchableOpacity
         style={[
@@ -68,6 +76,14 @@ export function ServersScreen() {
         onPress={() => handleSelectServer(item.id)}
         disabled={isDisabled || selectMutation.isPending}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityState={{
+          disabled: isDisabled,
+          selected: isSelected,
+          busy: isConnecting,
+        }}
+        accessibilityHint={isDisabled ? 'Server is offline and cannot be selected' : 'Double tap to connect to this server'}
       >
         <View style={styles.serverHeader}>
           <View style={styles.serverInfo}>
@@ -126,7 +142,13 @@ export function ServersScreen() {
         <Text style={styles.errorDetail}>
           {error instanceof Error ? error.message : 'Unknown error'}
         </Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => refetch()}>
+        <TouchableOpacity
+          style={styles.retryButton}
+          onPress={() => refetch()}
+          accessibilityRole="button"
+          accessibilityLabel="Retry loading servers"
+          accessibilityHint="Double tap to retry loading the server list"
+        >
           <Text style={styles.retryButtonText}>Retry</Text>
         </TouchableOpacity>
       </View>
@@ -155,6 +177,7 @@ export function ServersScreen() {
             onRefresh={() => refetch()}
             tintColor="#3b82f6"
             colors={['#3b82f6']}
+            accessibilityLabel="Pull to refresh server list"
           />
         }
         ListEmptyComponent={

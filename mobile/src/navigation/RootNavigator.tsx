@@ -23,27 +23,38 @@ export type MainTabsParamList = {
 const Tab = createBottomTabNavigator<MainTabsParamList>()
 const Stack = createNativeStackNavigator<RootStackParamList>()
 
-// Icon component for tabs
+// Icon component for tabs with accessibility support
 function TabIcon({ name, focused }: { name: string; focused: boolean }) {
-  const getIcon = () => {
+  const getIconAndLabel = () => {
     switch (name) {
       case 'Home':
-        return '⚡'
+        return { icon: '⚡', label: 'Home tab' }
       case 'Servers':
-        return '🌐'
+        return { icon: '🌐', label: 'Servers tab' }
       case 'Stats':
-        return '📊'
+        return { icon: '📊', label: 'Statistics tab' }
       case 'Settings':
-        return '⚙️'
+        return { icon: '⚙️', label: 'Settings tab' }
       default:
-        return '•'
+        return { icon: '•', label: name }
     }
   }
 
+  const { icon, label } = getIconAndLabel()
+
   return (
-    <View style={styles.iconContainer}>
-      <Text style={[styles.icon, focused && styles.iconFocused]}>
-        {getIcon()}
+    <View
+      style={styles.iconContainer}
+      accessible={true}
+      accessibilityLabel={label}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: focused }}
+    >
+      <Text
+        style={[styles.icon, focused && styles.iconFocused]}
+        importantForAccessibility="no"
+      >
+        {icon}
       </Text>
     </View>
   )
