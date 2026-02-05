@@ -1,0 +1,289 @@
+import { useState, useEffect } from 'react'
+import { Modal } from '../Config/Modal'
+import { HealthCheckForm } from '../Config/forms/HealthCheckForm'
+import { DirectBackendForm } from '../Config/backend-forms/DirectBackendForm'
+import { HTTPProxyBackendForm } from '../Config/backend-forms/HTTPProxyBackendForm'
+import { SOCKS5ProxyBackendForm } from '../Config/backend-forms/SOCKS5ProxyBackendForm'
+import { WireGuardBackendForm } from '../Config/backend-forms/WireGuardBackendForm'
+import { OpenVPNBackendForm } from '../Config/backend-forms/OpenVPNBackendForm'
+import { NordVPNBackendForm } from '../Config/backend-forms/NordVPNBackendForm'
+import { MullvadBackendForm } from '../Config/backend-forms/MullvadBackendForm'
+import { PIABackendForm } from '../Config/backend-forms/PIABackendForm'
+import { ProtonVPNBackendForm } from '../Config/backend-forms/ProtonVPNBackendForm'
+import type {
+  BackendConfig,
+  DirectBackendConfig,
+  HTTPProxyBackendConfig,
+  SOCKS5ProxyBackendConfig,
+  WireGuardBackendConfig,
+  OpenVPNBackendConfig,
+  NordVPNBackendConfig,
+  MullvadBackendConfig,
+  PIABackendConfig,
+  ProtonVPNBackendConfig,
+} from '../../api/types'
+
+interface AddBackendDialogProps {
+  isOpen: boolean
+  onClose: () => void
+  onSave: (backend: BackendConfig) => Promise<void>
+  existingNames: string[]
+  backend?: BackendConfig
+}
+
+const backendTypes = [
+  { value: 'direct', label: 'Direct', description: 'Direct internet connection' },
+  { value: 'http_proxy', label: 'HTTP Proxy', description: 'Route through HTTP proxy' },
+  { value: 'socks5_proxy', label: 'SOCKS5 Proxy', description: 'Route through SOCKS5 proxy' },
+  { value: 'wireguard', label: 'WireGuard', description: 'Route through WireGuard VPN' },
+  { value: 'openvpn', label: 'OpenVPN', description: 'Route through OpenVPN tunnel' },
+  { value: 'nordvpn', label: 'NordVPN', description: 'Route through NordVPN servers' },
+  { value: 'mullvad', label: 'Mullvad', description: 'Route through Mullvad VPN servers' },
+  { value: 'pia', label: 'PIA', description: 'Route through Private Internet Access' },
+  { value: 'protonvpn', label: 'ProtonVPN', description: 'Route through ProtonVPN servers' },
+]
+
+export function AddBackendDialog({
+  isOpen,
+  onClose,
+  onSave,
+  existingNames,
+  backend,
+}: AddBackendDialogProps) {
+  const isEdit = !!backend
+  const [form, setForm] = useState<BackendConfig>({
+    name: '',
+    type: 'direct',
+    enabled: true,
+    priority: 10,
+    weight: 1,
+    config: {},
+  })
+  const [error, setError] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (backend) {
+      setForm(backend)
+    } else {
+      setForm({
+        name: '',
+        type: 'direct',
+        enabled: true,
+        priority: 10,
+        weight: 1,
+        config: {},
+      })
+    }
+    setError(null)
+  }, [backend, isOpen])
+
+  const handleSave = async () => {
+    // Validation
+    if (!form.name.trim()) {
+      setError('Backend name is required')
+      return
+    }
+    if (!isEdit && existingNames.includes(form.name)) {
+      setError('A backend with this name already exists')
+      return
+    }
+    if (!form.type) {
+      setError('Backend type is required')
+      return
+    }
+
+    setError(null)
+    setIsSaving(true)
+
+    try {
+      await onSave(form)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save backend')
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const updateForm = (field: string, value: unknown) => {
+    setForm((prev) => ({ ...prev, [field]: value }))
+    setError(null)
+  }
+
+  const renderTypeForm = () => {
+    const config = form.config || {}
+
+    switch (form.type) {
+      case 'direct':
+        return (
+          <DirectBackendForm
+            config={config as DirectBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'http_proxy':
+        return (
+          <HTTPProxyBackendForm
+            config={config as HTTPProxyBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'socks5_proxy':
+        return (
+          <SOCKS5ProxyBackendForm
+            config={config as SOCKS5ProxyBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'wireguard':
+        return (
+          <WireGuardBackendForm
+            config={config as WireGuardBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'openvpn':
+        return (
+          <OpenVPNBackendForm
+            config={config as OpenVPNBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'nordvpn':
+        return (
+          <NordVPNBackendForm
+            config={config as NordVPNBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'mullvad':
+        return (
+          <MullvadBackendForm
+            config={config as MullvadBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'pia':
+        return (
+          <PIABackendForm
+            config={config as PIABackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      case 'protonvpn':
+        return (
+          <ProtonVPNBackendForm
+            config={config as ProtonVPNBackendConfig}
+            onChange={(c) => updateForm('config', c)}
+          />
+        )
+      default:
+        return null
+    }
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={isEdit ? `Edit Backend: ${backend.name}` : 'Add Backend'}
+      onSave={handleSave}
+      saveLabel={isEdit ? 'Save Changes' : 'Add Backend'}
+      isSaving={isSaving}
+      size="xl"
+    >
+      <div className="space-y-6">
+        {error && (
+          <div className="p-3 bg-bifrost-error/10 border border-bifrost-error/30 rounded-lg text-bifrost-error text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Common Fields */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(e) => updateForm('name', e.target.value)}
+              placeholder="my-backend"
+              className="input"
+              disabled={isEdit}
+            />
+            {isEdit && <p className="text-xs text-bifrost-muted mt-1">Name cannot be changed</p>}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
+            <select
+              value={form.type}
+              onChange={(e) => {
+                updateForm('type', e.target.value)
+                updateForm('config', {}) // Reset config when type changes
+              }}
+              className="input"
+              disabled={isEdit}
+            >
+              {backendTypes.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+            {isEdit && <p className="text-xs text-bifrost-muted mt-1">Type cannot be changed</p>}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Priority</label>
+            <input
+              type="number"
+              value={form.priority}
+              onChange={(e) => updateForm('priority', parseInt(e.target.value) || 0)}
+              className="input"
+            />
+            <p className="text-xs text-bifrost-muted mt-1">Higher = more preferred</p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-1">Weight</label>
+            <input
+              type="number"
+              value={form.weight}
+              onChange={(e) => updateForm('weight', parseInt(e.target.value) || 1)}
+              className="input"
+            />
+            <p className="text-xs text-bifrost-muted mt-1">For load balancing</p>
+          </div>
+          <div className="md:col-span-2">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.enabled}
+                onChange={(e) => updateForm('enabled', e.target.checked)}
+                className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
+              />
+              <span className="text-sm font-medium text-gray-300">Enabled</span>
+            </label>
+          </div>
+        </div>
+
+        {/* Type-specific config */}
+        <div className="pt-4 border-t border-bifrost-border">
+          <h4 className="text-sm font-semibold text-white mb-3">
+            {backendTypes.find((t) => t.value === form.type)?.label} Configuration
+          </h4>
+          {renderTypeForm()}
+        </div>
+
+        {/* Health Check */}
+        <div className="pt-4 border-t border-bifrost-border">
+          <h4 className="text-sm font-semibold text-white mb-3">Health Check</h4>
+          <HealthCheckForm
+            config={form.health_check}
+            onChange={(health_check) => updateForm('health_check', health_check)}
+            optional={true}
+          />
+        </div>
+      </div>
+    </Modal>
+  )
+}
