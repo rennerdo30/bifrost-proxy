@@ -654,3 +654,122 @@ export interface CacheMessageResponse {
   time?: string
   enabled?: boolean
 }
+
+// ============================================
+// Mesh API Types
+// ============================================
+
+// Mesh endpoint
+export interface MeshEndpoint {
+  address: string
+  port: number
+  type: 'local' | 'reflexive' | 'relay'
+  priority: number
+}
+
+// Mesh peer status
+export type MeshPeerStatus = 'discovered' | 'connecting' | 'connected' | 'relayed' | 'unreachable' | 'offline'
+
+// Mesh connection type
+export type MeshConnectionType = 'direct' | 'relayed' | 'multi_hop'
+
+// Mesh peer info (from API)
+export interface MeshPeerInfo {
+  id: string
+  name: string
+  public_key: string
+  virtual_ip: string
+  endpoints: MeshEndpoint[]
+  metadata: Record<string, string>
+}
+
+// Extended mesh peer with stats (for UI display)
+export interface MeshPeer extends MeshPeerInfo {
+  status?: MeshPeerStatus
+  connection_type?: MeshConnectionType
+  latency?: number
+  last_seen?: string
+  joined_at?: string
+  bytes_sent?: number
+  bytes_received?: number
+}
+
+// Mesh network
+export interface MeshNetwork {
+  id: string
+  name: string
+  cidr: string
+  peer_count: number
+  created: string
+}
+
+// Mesh network list response
+export interface MeshNetworksResponse {
+  networks: MeshNetwork[]
+}
+
+// Create network request
+export interface CreateMeshNetworkRequest {
+  id: string
+  name: string
+  cidr?: string
+}
+
+// Register peer request
+export interface RegisterMeshPeerRequest {
+  network_id: string
+  peer: MeshPeerInfo
+}
+
+// Register peer response
+export interface RegisterMeshPeerResponse {
+  success: boolean
+  virtual_ip: string
+  message?: string
+  peers?: MeshPeerInfo[]
+}
+
+// Update peer request
+export interface UpdateMeshPeerRequest {
+  endpoints?: MeshEndpoint[]
+  metadata?: Record<string, string>
+}
+
+// Mesh peers response
+export interface MeshPeersResponse {
+  peers: MeshPeerInfo[]
+}
+
+// Mesh peer event
+export interface MeshPeerEvent {
+  type: 'join' | 'leave' | 'update'
+  peer: MeshPeerInfo
+  timestamp: string
+}
+
+// Mesh route
+export interface MeshRoute {
+  dest_peer_id: string
+  dest_ip: string
+  next_hop?: string
+  type: 'direct' | 'next_hop' | 'relay'
+  metric: number
+  latency?: number
+  hop_count: number
+  last_updated: string
+  active: boolean
+}
+
+// Mesh node stats (for overview)
+export interface MeshNodeStats {
+  status: 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
+  peer_count: number
+  connected_peers: number
+  direct_connections: number
+  relayed_connections: number
+  bytes_sent: number
+  bytes_received: number
+  packets_sent: number
+  packets_received: number
+  uptime: number
+}
