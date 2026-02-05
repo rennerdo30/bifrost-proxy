@@ -21,8 +21,8 @@ func TestValidateLinuxOnLinux(t *testing.T) {
 	assert.False(t, result)
 }
 
-// TestValidateLinuxWithCancelledContext tests validateLinux with cancelled context.
-func TestValidateLinuxWithCancelledContext(t *testing.T) {
+// TestValidateLinuxWithCanceledContext tests validateLinux with canceled context.
+func TestValidateLinuxWithCanceledContext(t *testing.T) {
 	a := &Authenticator{}
 
 	ctx, cancel := context.WithCancel(context.Background())

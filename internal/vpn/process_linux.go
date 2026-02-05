@@ -164,7 +164,7 @@ func (l *linuxProcessLookup) findProcessByInode(inode uint64) (*ProcessInfo, err
 }
 
 // getProcessInfo reads process information from /proc.
-func (l *linuxProcessLookup) getProcessInfo(pid int) (*ProcessInfo, error) {
+func (l *linuxProcessLookup) getProcessInfo(pid int) (*ProcessInfo, error) { //nolint:unparam // error return kept for interface consistency
 	info := &ProcessInfo{PID: pid}
 
 	// Read process name from /proc/PID/comm

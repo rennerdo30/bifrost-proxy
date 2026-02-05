@@ -198,20 +198,20 @@ func (t *linuxTUN) setIPv6Address(prefix netip.Prefix) error {
 	defer unix.Close(sock)
 
 	// Bind the socket
-	addr := &unix.SockaddrNetlink{
+	sockAddr := &unix.SockaddrNetlink{
 		Family: unix.AF_NETLINK,
 		Pid:    0, // Let kernel assign
 	}
-	if err := unix.Bind(sock, addr); err != nil {
-		return &DeviceError{Op: "bind netlink socket", Err: err}
+	if bindErr := unix.Bind(sock, sockAddr); bindErr != nil {
+		return &DeviceError{Op: "bind netlink socket", Err: bindErr}
 	}
 
 	// Build the netlink message to add IPv6 address
 	msg := t.buildIPv6AddrMessage(iface.Index, prefix)
 
 	// Send the message
-	if err := unix.Sendto(sock, msg, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); err != nil {
-		return &DeviceError{Op: "send netlink message", Err: err}
+	if sendErr := unix.Sendto(sock, msg, 0, &unix.SockaddrNetlink{Family: unix.AF_NETLINK}); sendErr != nil {
+		return &DeviceError{Op: "send netlink message", Err: sendErr}
 	}
 
 	// Receive acknowledgment
