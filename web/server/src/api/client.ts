@@ -24,6 +24,14 @@ import type {
   CachePresetsResponse,
   CacheMessageResponse,
   AddCacheRuleRequest,
+  MeshNetworksResponse,
+  MeshNetwork,
+  CreateMeshNetworkRequest,
+  MeshPeersResponse,
+  MeshPeerInfo,
+  RegisterMeshPeerRequest,
+  RegisterMeshPeerResponse,
+  UpdateMeshPeerRequest,
 } from './types'
 
 const API_BASE = '/api/v1'
@@ -182,6 +190,58 @@ export const api = {
     fetchJSON<CacheMessageResponse>(`/cache/presets/${encodeURIComponent(name)}/disable`, {
       method: 'POST',
     }),
+
+  // Mesh Networks
+  listMeshNetworks: () => fetchJSON<MeshNetworksResponse>('/mesh/networks'),
+  getMeshNetwork: (networkId: string) =>
+    fetchJSON<MeshNetwork>(`/mesh/networks/${encodeURIComponent(networkId)}`),
+  createMeshNetwork: (request: CreateMeshNetworkRequest) =>
+    fetchJSON<MeshNetwork>('/mesh/networks', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }),
+  deleteMeshNetwork: (networkId: string) =>
+    fetchJSON<void>(`/mesh/networks/${encodeURIComponent(networkId)}`, {
+      method: 'DELETE',
+    }),
+
+  // Mesh Peers
+  listMeshPeers: (networkId: string) =>
+    fetchJSON<MeshPeersResponse>(`/mesh/networks/${encodeURIComponent(networkId)}/peers`),
+  getMeshPeer: (networkId: string, peerId: string) =>
+    fetchJSON<MeshPeerInfo>(
+      `/mesh/networks/${encodeURIComponent(networkId)}/peers/${encodeURIComponent(peerId)}`
+    ),
+  registerMeshPeer: (networkId: string, request: RegisterMeshPeerRequest) =>
+    fetchJSON<RegisterMeshPeerResponse>(
+      `/mesh/networks/${encodeURIComponent(networkId)}/peers`,
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+      }
+    ),
+  updateMeshPeer: (networkId: string, peerId: string, request: UpdateMeshPeerRequest) =>
+    fetchJSON<void>(
+      `/mesh/networks/${encodeURIComponent(networkId)}/peers/${encodeURIComponent(peerId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(request),
+      }
+    ),
+  deregisterMeshPeer: (networkId: string, peerId: string) =>
+    fetchJSON<void>(
+      `/mesh/networks/${encodeURIComponent(networkId)}/peers/${encodeURIComponent(peerId)}`,
+      {
+        method: 'DELETE',
+      }
+    ),
+  sendMeshHeartbeat: (networkId: string, peerId: string) =>
+    fetchJSON<void>(
+      `/mesh/networks/${encodeURIComponent(networkId)}/peers/${encodeURIComponent(peerId)}/heartbeat`,
+      {
+        method: 'POST',
+      }
+    ),
 }
 
 // Token management
