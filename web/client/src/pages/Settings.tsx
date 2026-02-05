@@ -189,6 +189,13 @@ export function Settings() {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
 
+      // Validate file size (max 1MB)
+      const MAX_FILE_SIZE = 1024 * 1024 // 1MB
+      if (file.size > MAX_FILE_SIZE) {
+        showToast('Configuration file is too large. Maximum size is 1MB.', 'error')
+        return
+      }
+
       let content: string
       try {
         content = await file.text()

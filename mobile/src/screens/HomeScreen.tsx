@@ -12,11 +12,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, formatBytes } from '../services/api'
 import { StatusCard } from '../components/StatusCard'
 import { getConnectionStatusColor } from '../utils/status'
+import { useToast } from '../components/Toast'
 
 type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
 export function HomeScreen() {
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   const { data: status, isLoading: statusLoading } = useQuery({
@@ -33,12 +35,24 @@ export function HomeScreen() {
 
   const connectMutation = useMutation({
     mutationFn: api.enableVPN,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-status'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
+      showToast('VPN connected successfully', 'success')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to connect VPN', 'error')
+    },
   })
 
   const disconnectMutation = useMutation({
     mutationFn: api.disableVPN,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['vpn-status'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
+      showToast('VPN disconnected', 'info')
+    },
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to disconnect VPN', 'error')
+    },
   })
 
   const onRefresh = useCallback(async () => {
@@ -98,6 +112,10 @@ export function HomeScreen() {
             onPress={handleToggle}
             disabled={isToggling}
             activeOpacity={0.8}
+            accessibilityLabel={isConnected ? 'Disconnect from VPN' : 'Connect to VPN'}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: isToggling }}
+            accessibilityHint={isToggling ? 'Connection in progress' : undefined}
           >
             {isToggling ? (
               <ActivityIndicator size="large" color="#ffffff" />
@@ -106,7 +124,19 @@ export function HomeScreen() {
             )}
           </TouchableOpacity>
         </View>
-        <Text style={[styles.statusText, { color: statusColor }]}>{getStatusText()}</Text>
+        <Text
+          style={[styles.statusText, { color: statusColor }]}
+          accessibilityRole="text"
+          accessibilityLabel={`Connection status: ${getStatusText()}`}
+        >
+          {getStatusText()}
+        </Text>
+        <Text style={styles.statusDescriptionText}>
+          {connectionStatus === 'connected' && 'Your connection is secure'}
+          {connectionStatus === 'connecting' && 'Establishing secure connection...'}
+          {connectionStatus === 'error' && 'Connection failed - tap to retry'}
+          {connectionStatus === 'disconnected' && 'Tap the button to connect'}
+        </Text>
         {status?.version && (
           <Text style={styles.versionText}>v{status.version}</Text>
         )}
@@ -188,6 +218,12 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '600',
     marginBottom: 4,
+  },
+  statusDescriptionText: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 8,
+    textAlign: 'center',
   },
   versionText: {
     fontSize: 14,

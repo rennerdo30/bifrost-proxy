@@ -11,7 +11,10 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/accesslog"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/ratelimit"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
@@ -59,22 +62,32 @@ const (
 
 // SOCKS5Handler handles SOCKS5 proxy requests.
 type SOCKS5Handler struct {
-	getBackend   func(domain, clientIP string) backend.Backend
-	authenticate func(username, password string) bool
-	authRequired bool
-	dialTimeout  time.Duration
-	onConnect    func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
-	onError      func(ctx context.Context, conn net.Conn, host string, err error)
+	getBackend           func(domain, clientIP string) backend.Backend
+	authenticate         func(username, password string) bool
+	authenticateWithInfo func(ctx context.Context, username, password string) (*auth.UserInfo, error)
+	authRequired         bool
+	accessCheck          func(clientIP string) (bool, string)
+	rateLimitUser        func(username, clientIP string) bool
+	accessLogger         accesslog.Logger
+	bandwidth            *ratelimit.BandwidthConfig
+	dialTimeout          time.Duration
+	onConnect            func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
+	onError              func(ctx context.Context, conn net.Conn, host string, err error)
 }
 
 // SOCKS5HandlerConfig configures the SOCKS5 handler.
 type SOCKS5HandlerConfig struct {
-	GetBackend   func(domain, clientIP string) backend.Backend
-	Authenticate func(username, password string) bool
-	AuthRequired bool
-	DialTimeout  time.Duration
-	OnConnect    func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
-	OnError      func(ctx context.Context, conn net.Conn, host string, err error)
+	GetBackend           func(domain, clientIP string) backend.Backend
+	Authenticate         func(username, password string) bool
+	AuthenticateWithInfo func(ctx context.Context, username, password string) (*auth.UserInfo, error)
+	AuthRequired         bool
+	AccessCheck          func(clientIP string) (bool, string)
+	RateLimitUser        func(username, clientIP string) bool
+	AccessLogger         accesslog.Logger
+	Bandwidth            *ratelimit.BandwidthConfig
+	DialTimeout          time.Duration
+	OnConnect            func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
+	OnError              func(ctx context.Context, conn net.Conn, host string, err error)
 }
 
 // NewSOCKS5Handler creates a new SOCKS5 proxy handler.
@@ -83,12 +96,17 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 		cfg.DialTimeout = 30 * time.Second
 	}
 	return &SOCKS5Handler{
-		getBackend:   cfg.GetBackend,
-		authenticate: cfg.Authenticate,
-		authRequired: cfg.AuthRequired,
-		dialTimeout:  cfg.DialTimeout,
-		onConnect:    cfg.OnConnect,
-		onError:      cfg.OnError,
+		getBackend:           cfg.GetBackend,
+		authenticate:         cfg.Authenticate,
+		authenticateWithInfo: cfg.AuthenticateWithInfo,
+		authRequired:         cfg.AuthRequired,
+		accessCheck:          cfg.AccessCheck,
+		rateLimitUser:        cfg.RateLimitUser,
+		accessLogger:         cfg.AccessLogger,
+		bandwidth:            cfg.Bandwidth,
+		dialTimeout:          cfg.DialTimeout,
+		onConnect:            cfg.OnConnect,
+		onError:              cfg.OnError,
 	}
 }
 
@@ -96,43 +114,80 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
+	counting := newCountingConn(conn)
+
 	// Add client info to context
 	clientIP := ""
 	if addr, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
 		clientIP = addr.IP.String()
 	}
 	ctx = util.WithClientIP(ctx, clientIP)
-	ctx = util.WithStartTime(ctx, time.Now())
+	startTime := time.Now()
+	ctx = util.WithStartTime(ctx, startTime)
+
+	entry := &accesslog.Entry{
+		Timestamp: startTime,
+		ClientIP:  clientIP,
+		Protocol:  "SOCKS5",
+	}
+	defer func() {
+		entry.Username = util.GetUsername(ctx)
+		entry.Backend = util.GetBackend(ctx)
+		entry.RequestID = util.GetRequestID(ctx)
+		entry.Duration = time.Since(startTime)
+		if entry.BytesReceived == 0 {
+			entry.BytesReceived = counting.BytesRead()
+		}
+		if entry.BytesSent == 0 {
+			entry.BytesSent = counting.BytesWritten()
+		}
+		if entry.StatusCode == 0 {
+			entry.StatusCode = int(socks5ReplyGeneralFailure)
+		}
+		if h.accessLogger != nil {
+			_ = h.accessLogger.Log(*entry)
+		}
+	}()
 
 	// Handle authentication
-	if err := h.handleAuth(conn); err != nil {
-		h.handleError(ctx, conn, "", err)
+	userInfo, err := h.handleAuth(ctx, counting)
+	if err != nil {
+		entry.StatusCode = int(socks5ReplyGeneralFailure)
+		entry.Error = err.Error()
+		h.handleError(ctx, counting, "", err)
 		return
+	}
+	if userInfo != nil {
+		ctx = util.WithUsername(ctx, userInfo.Username)
 	}
 
 	// Handle request
-	target, err := h.handleRequest(ctx, conn, clientIP)
+	target, err := h.handleRequest(ctx, counting, clientIP, entry)
 	if err != nil {
-		h.handleError(ctx, conn, target, err)
+		if entry.StatusCode == 0 {
+			entry.StatusCode = int(socks5ReplyGeneralFailure)
+		}
+		entry.Error = err.Error()
+		h.handleError(ctx, counting, target, err)
 	}
 }
 
 // handleAuth performs SOCKS5 authentication handshake.
-func (h *SOCKS5Handler) handleAuth(conn net.Conn) error {
+func (h *SOCKS5Handler) handleAuth(ctx context.Context, conn net.Conn) (*auth.UserInfo, error) {
 	// Read version and auth methods count
 	header := make([]byte, 2)
 	if _, err := io.ReadFull(conn, header); err != nil {
-		return fmt.Errorf("read auth header: %w", err)
+		return nil, fmt.Errorf("read auth header: %w", err)
 	}
 
 	if header[0] != socks5Version {
-		return errors.New("invalid SOCKS version")
+		return nil, errors.New("invalid SOCKS version")
 	}
 
 	// Read auth methods
 	methods := make([]byte, header[1])
 	if _, err := io.ReadFull(conn, methods); err != nil {
-		return fmt.Errorf("read auth methods: %w", err)
+		return nil, fmt.Errorf("read auth methods: %w", err)
 	}
 
 	// Select auth method
@@ -156,73 +211,86 @@ func (h *SOCKS5Handler) handleAuth(conn net.Conn) error {
 	} else {
 		if hasNone {
 			selectedMethod = socks5AuthNone
-		} else if hasPassword && h.authenticate != nil {
+		} else if hasPassword && (h.authenticate != nil || h.authenticateWithInfo != nil) {
 			selectedMethod = socks5AuthPassword
 		}
 	}
 
 	// Send selected method
 	if _, err := conn.Write([]byte{socks5Version, selectedMethod}); err != nil {
-		return fmt.Errorf("write auth response: %w", err)
+		return nil, fmt.Errorf("write auth response: %w", err)
 	}
 
 	if selectedMethod == socks5AuthNoAccept {
-		return errors.New("no acceptable auth method")
+		return nil, errors.New("no acceptable auth method")
 	}
 
 	// Handle password authentication
 	if selectedMethod == socks5AuthPassword {
-		if err := h.handlePasswordAuth(conn); err != nil {
-			return err
-		}
+		return h.handlePasswordAuth(ctx, conn)
 	}
 
-	return nil
+	return nil, nil
 }
 
 // handlePasswordAuth handles username/password authentication.
-func (h *SOCKS5Handler) handlePasswordAuth(conn net.Conn) error {
+func (h *SOCKS5Handler) handlePasswordAuth(ctx context.Context, conn net.Conn) (*auth.UserInfo, error) {
 	// Read version
 	version := make([]byte, 1)
 	if _, err := io.ReadFull(conn, version); err != nil {
-		return fmt.Errorf("read auth version: %w", err)
+		return nil, fmt.Errorf("read auth version: %w", err)
 	}
 
 	if version[0] != 0x01 {
-		return errors.New("invalid auth version")
+		return nil, errors.New("invalid auth version")
 	}
 
 	// Read username
 	usernameLen := make([]byte, 1)
 	if _, err := io.ReadFull(conn, usernameLen); err != nil {
-		return fmt.Errorf("read username length: %w", err)
+		return nil, fmt.Errorf("read username length: %w", err)
 	}
 
 	username := make([]byte, usernameLen[0])
 	if _, err := io.ReadFull(conn, username); err != nil {
-		return fmt.Errorf("read username: %w", err)
+		return nil, fmt.Errorf("read username: %w", err)
 	}
 
 	// Read password
 	passwordLen := make([]byte, 1)
 	if _, err := io.ReadFull(conn, passwordLen); err != nil {
-		return fmt.Errorf("read password length: %w", err)
+		return nil, fmt.Errorf("read password length: %w", err)
 	}
 
 	password := make([]byte, passwordLen[0])
 	if _, err := io.ReadFull(conn, password); err != nil {
-		return fmt.Errorf("read password: %w", err)
+		return nil, fmt.Errorf("read password: %w", err)
 	}
 
 	// Authenticate
-	if h.authenticate == nil || !h.authenticate(string(username), string(password)) {
-		if _, err := conn.Write([]byte{0x01, 0x01}); err != nil { // Auth failed
+	var userInfo *auth.UserInfo
+	var err error
+
+	if h.authenticateWithInfo != nil {
+		userInfo, err = h.authenticateWithInfo(ctx, string(username), string(password))
+	} else if h.authenticate != nil {
+		if h.authenticate(string(username), string(password)) {
+			userInfo = &auth.UserInfo{Username: string(username)}
+		} else {
+			err = errors.New("authentication failed")
+		}
+	} else if h.authRequired {
+		err = errors.New("authentication required")
+	}
+
+	if err != nil {
+		if _, writeErr := conn.Write([]byte{0x01, 0x01}); writeErr != nil { // Auth failed
 			slog.Debug("failed to send SOCKS5 auth failure response",
-				"error", err,
+				"error", writeErr,
 				"remote_addr", conn.RemoteAddr(),
 			)
 		}
-		return errors.New("authentication failed")
+		return nil, err
 	}
 
 	// Auth success
@@ -231,13 +299,13 @@ func (h *SOCKS5Handler) handlePasswordAuth(conn net.Conn) error {
 			"error", err,
 			"remote_addr", conn.RemoteAddr(),
 		)
-		return fmt.Errorf("write auth success: %w", err)
+		return nil, fmt.Errorf("write auth success: %w", err)
 	}
-	return nil
+	return userInfo, nil
 }
 
 // handleRequest handles the SOCKS5 connection request.
-func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, clientIP string) (string, error) {
+func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, clientIP string, entry *accesslog.Entry) (string, error) {
 	// Read request header
 	header := make([]byte, 4)
 	if _, err := io.ReadFull(conn, header); err != nil {
@@ -281,6 +349,9 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 		// Validate domain format to prevent malformed requests
 		if !isValidDomain(domainStr) {
 			h.sendReply(conn, socks5ReplyGeneralFailure, nil)
+			if entry != nil {
+				entry.StatusCode = int(socks5ReplyGeneralFailure)
+			}
 			return "", fmt.Errorf("invalid domain format: %s", domainStr)
 		}
 		host = domainStr
@@ -307,29 +378,79 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 	}
 	ctx = util.WithDomain(ctx, util.GetHostFromRequest(host))
 
+	if entry != nil {
+		entry.Host = host
+	}
+
 	// Handle command
 	switch cmd {
 	case socks5CmdConnect:
-		return target, h.handleConnect(ctx, conn, target, clientIP)
+		if entry != nil {
+			entry.Method = "CONNECT"
+			entry.Path = target
+		}
+		return target, h.handleConnect(ctx, conn, target, clientIP, entry)
 	case socks5CmdBind:
 		h.sendReply(conn, socks5ReplyCmdNotSupported, nil)
+		if entry != nil {
+			entry.Method = "BIND"
+			entry.StatusCode = int(socks5ReplyCmdNotSupported)
+		}
 		return target, errors.New("BIND not supported")
 	case socks5CmdUDPAssociate:
 		h.sendReply(conn, socks5ReplyCmdNotSupported, nil)
+		if entry != nil {
+			entry.Method = "UDP_ASSOCIATE"
+			entry.StatusCode = int(socks5ReplyCmdNotSupported)
+		}
 		return target, errors.New("UDP ASSOCIATE not supported")
 	default:
 		h.sendReply(conn, socks5ReplyCmdNotSupported, nil)
+		if entry != nil {
+			entry.Method = fmt.Sprintf("CMD_%d", cmd)
+			entry.StatusCode = int(socks5ReplyCmdNotSupported)
+		}
 		return target, fmt.Errorf("unsupported command: %d", cmd)
 	}
 }
 
 // handleConnect handles the CONNECT command.
-func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target string, clientIP string) error {
+func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target string, clientIP string, entry *accesslog.Entry) error {
 	// Get backend for this domain
 	domain := util.GetHostFromRequest(target)
+
+	// Access control
+	if h.accessCheck != nil {
+		allowed, reason := h.accessCheck(clientIP)
+		if !allowed {
+			h.sendReply(conn, socks5ReplyConnNotAllowed, nil)
+			if entry != nil {
+				entry.StatusCode = int(socks5ReplyConnNotAllowed)
+				entry.Error = reason
+			}
+			return fmt.Errorf("access denied: %s", reason)
+		}
+	}
+
+	// Per-user rate limiting
+	if h.rateLimitUser != nil {
+		username := util.GetUsername(ctx)
+		if !h.rateLimitUser(username, clientIP) {
+			h.sendReply(conn, socks5ReplyGeneralFailure, nil)
+			if entry != nil {
+				entry.StatusCode = int(socks5ReplyGeneralFailure)
+				entry.Error = "rate limit exceeded"
+			}
+			return errors.New("rate limit exceeded")
+		}
+	}
+
 	be := h.getBackend(domain, clientIP)
 	if be == nil {
 		h.sendReply(conn, socks5ReplyGeneralFailure, nil)
+		if entry != nil {
+			entry.StatusCode = int(socks5ReplyGeneralFailure)
+		}
 		return fmt.Errorf("no backend for domain: %s", domain)
 	}
 
@@ -338,16 +459,28 @@ func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target
 	// Dial the target through the backend
 	targetConn, err := be.DialTimeout(ctx, "tcp", target, h.dialTimeout)
 	if err != nil {
-		h.sendReply(conn, h.errToReply(err), nil)
+		reply := h.errToReply(err)
+		h.sendReply(conn, reply, nil)
+		if entry != nil {
+			entry.StatusCode = int(reply)
+		}
 		return err
 	}
 	defer targetConn.Close()
+
+	// Apply bandwidth throttling if configured
+	if h.bandwidth != nil {
+		targetConn = ratelimit.NewThrottledConn(targetConn, h.bandwidth.Download, h.bandwidth.Upload)
+	}
 
 	// Get local address for reply
 	localAddr := targetConn.LocalAddr()
 
 	// Send success reply
 	h.sendReply(conn, socks5ReplySuccess, localAddr)
+	if entry != nil {
+		entry.StatusCode = int(socks5ReplySuccess)
+	}
 
 	// Notify connect callback
 	if h.onConnect != nil {

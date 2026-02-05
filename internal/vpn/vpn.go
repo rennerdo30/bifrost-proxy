@@ -3,8 +3,11 @@ package vpn
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -428,13 +431,19 @@ func (m *Manager) handleTCPPacket(packet *IPPacket) {
 
 	conn := m.connTracker.Get(connKey)
 	if conn != nil {
+		// If this is a retransmitted SYN, re-send SYN-ACK
+		if packet.IsSYN() {
+			m.sendTCPSynAck(conn, packet)
+			return
+		}
+
 		// Forward packet on existing connection
 		m.forwardOnConnection(conn, packet)
 		return
 	}
 
 	// Check if this is a SYN packet (new connection)
-	if packet.TCPFlags&TCPFlagSYN == 0 || packet.TCPFlags&TCPFlagACK != 0 {
+	if !packet.IsSYN() {
 		// Not a SYN packet, ignore
 		return
 	}
@@ -465,6 +474,15 @@ func (m *Manager) establishProxyConnection(packet *IPPacket) {
 	}
 
 	// Create tracked connection
+	serverISN := randomISN()
+	clientNext := advanceTCPSeq(packet.SeqNum, len(packet.Payload), packet.TCPFlags)
+	tcpState := &TCPState{
+		ClientISN:  packet.SeqNum,
+		ServerISN:  serverISN,
+		ClientNext: clientNext,
+		ServerNext: serverISN + 1,
+	}
+
 	trackedConn := &TrackedConnection{
 		Key: ConnKey{
 			SrcIP:    packet.SrcIP,
@@ -475,6 +493,7 @@ func (m *Manager) establishProxyConnection(packet *IPPacket) {
 		},
 		ProxyConn: proxyConn,
 		Created:   time.Now(),
+		TCP:       tcpState,
 	}
 
 	m.connTracker.Add(trackedConn)
@@ -483,6 +502,9 @@ func (m *Manager) establishProxyConnection(packet *IPPacket) {
 		"target", target,
 		"local", fmt.Sprintf("%s:%d", packet.SrcIP, packet.SrcPort),
 	)
+
+	// Send SYN-ACK back to the client to complete handshake
+	m.sendTCPSynAck(trackedConn, packet)
 
 	// Handle bidirectional data flow
 	m.handleConnectionData(trackedConn)
@@ -536,6 +558,21 @@ func (m *Manager) handleConnectionData(conn *TrackedConnection) {
 			conn.ProxyConn.SetReadDeadline(time.Now().Add(30 * time.Second))
 
 			n, err := conn.ProxyConn.Read(buf)
+			if n > 0 {
+				// Update activity and bytes received
+				conn.LastActivity = time.Now()
+				conn.BytesReceived.Add(int64(n))
+
+				if writeErr := m.sendTCPData(conn, buf[:n]); writeErr != nil {
+					slog.Debug("failed to write TCP response to TUN",
+						"key", conn.Key,
+						"error", writeErr,
+					)
+					cleanup()
+					return
+				}
+			}
+
 			if err != nil {
 				// Connection closed or error - clean up
 				if m.ctx.Err() == nil {
@@ -545,15 +582,15 @@ func (m *Manager) handleConnectionData(conn *TrackedConnection) {
 						"error", err,
 					)
 				}
+
+				if errors.Is(err, io.EOF) {
+					m.sendTCPFin(conn)
+				} else {
+					m.sendTCPRst(conn)
+				}
 				cleanup()
 				return
 			}
-
-			// Update activity and bytes received
-			conn.LastActivity = time.Now()
-			conn.BytesReceived.Add(int64(n))
-
-			// TODO: In a full implementation, create response packet and write to TUN
 		}
 	}()
 }
@@ -581,16 +618,231 @@ func (m *Manager) handleUDPPacket(packet *IPPacket) {
 
 // forwardOnConnection forwards a packet on an existing connection.
 func (m *Manager) forwardOnConnection(conn *TrackedConnection, packet *IPPacket) {
+	if conn == nil || conn.ProxyConn == nil {
+		return
+	}
+
+	if packet.IsRST() {
+		m.connTracker.Remove(conn.Key)
+		conn.ProxyConn.Close()
+		return
+	}
+
+	m.updateTCPClientState(conn, packet)
+
+	if packet.IsFIN() {
+		m.sendTCPFin(conn)
+		m.connTracker.Remove(conn.Key)
+		conn.ProxyConn.Close()
+		return
+	}
+
 	if len(packet.Payload) == 0 {
 		return
 	}
 
-	_, err := conn.ProxyConn.Write(packet.Payload)
+	n, err := conn.ProxyConn.Write(packet.Payload)
 	if err != nil {
 		slog.Error("failed to forward on connection", "error", err)
 		m.connTracker.Remove(conn.Key)
 		conn.ProxyConn.Close()
+		m.sendTCPRst(conn)
+		return
 	}
+
+	conn.BytesSent.Add(int64(n))
+	conn.LastActivity = time.Now()
+	m.sendTCPAck(conn)
+}
+
+func (m *Manager) updateTCPClientState(conn *TrackedConnection, packet *IPPacket) {
+	if conn == nil || conn.TCP == nil {
+		return
+	}
+
+	state := conn.TCP
+	state.mu.Lock()
+	defer state.mu.Unlock()
+
+	next := advanceTCPSeq(packet.SeqNum, len(packet.Payload), packet.TCPFlags)
+	if state.ClientNext == 0 || tcpSeqAfter(next, state.ClientNext) {
+		state.ClientNext = next
+	}
+
+	if !state.Established && (packet.TCPFlags&TCPFlagACK != 0) {
+		if packet.AckNum == state.ServerISN+1 || packet.AckNum == state.ServerNext {
+			state.Established = true
+			conn.State = ConnStateEstablished
+		}
+	}
+}
+
+func (m *Manager) sendTCPSynAck(conn *TrackedConnection, packet *IPPacket) {
+	if conn == nil || conn.TCP == nil {
+		return
+	}
+
+	state := conn.TCP
+	state.mu.Lock()
+	next := advanceTCPSeq(packet.SeqNum, len(packet.Payload), packet.TCPFlags)
+	if state.ClientNext == 0 || tcpSeqAfter(next, state.ClientNext) {
+		state.ClientNext = next
+	}
+	seq := state.ServerISN
+	ack := state.ClientNext
+	state.mu.Unlock()
+
+	if err := m.writeTCPPacket(conn, seq, ack, TCPFlagSYN|TCPFlagACK, nil); err != nil {
+		slog.Debug("failed to send SYN-ACK", "error", err)
+	}
+}
+
+func (m *Manager) sendTCPAck(conn *TrackedConnection) {
+	if conn == nil || conn.TCP == nil {
+		return
+	}
+
+	state := conn.TCP
+	state.mu.Lock()
+	seq := state.ServerNext
+	ack := state.ClientNext
+	state.mu.Unlock()
+
+	if err := m.writeTCPPacket(conn, seq, ack, TCPFlagACK, nil); err != nil {
+		slog.Debug("failed to send TCP ACK", "error", err)
+	}
+}
+
+func (m *Manager) sendTCPFin(conn *TrackedConnection) {
+	if conn == nil || conn.TCP == nil {
+		return
+	}
+
+	state := conn.TCP
+	state.mu.Lock()
+	seq := state.ServerNext
+	ack := state.ClientNext
+	state.ServerNext++
+	state.mu.Unlock()
+
+	if err := m.writeTCPPacket(conn, seq, ack, TCPFlagFIN|TCPFlagACK, nil); err != nil {
+		slog.Debug("failed to send TCP FIN", "error", err)
+	}
+}
+
+func (m *Manager) sendTCPRst(conn *TrackedConnection) {
+	if conn == nil || conn.TCP == nil {
+		return
+	}
+
+	state := conn.TCP
+	state.mu.Lock()
+	seq := state.ServerNext
+	ack := state.ClientNext
+	state.mu.Unlock()
+
+	if err := m.writeTCPPacket(conn, seq, ack, TCPFlagRST|TCPFlagACK, nil); err != nil {
+		slog.Debug("failed to send TCP RST", "error", err)
+	}
+}
+
+func (m *Manager) sendTCPData(conn *TrackedConnection, payload []byte) error {
+	if conn == nil || conn.TCP == nil {
+		return nil
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+
+	maxPayload := m.tcpMaxPayload(conn.Key.DstIP)
+	if maxPayload <= 0 {
+		maxPayload = len(payload)
+	}
+
+	for len(payload) > 0 {
+		chunk := payload
+		if len(chunk) > maxPayload {
+			chunk = payload[:maxPayload]
+		}
+
+		state := conn.TCP
+		state.mu.Lock()
+		seq := state.ServerNext
+		ack := state.ClientNext
+		state.ServerNext += uint32(len(chunk))
+		state.mu.Unlock()
+
+		flags := uint8(TCPFlagACK | TCPFlagPSH)
+		if err := m.writeTCPPacket(conn, seq, ack, flags, chunk); err != nil {
+			return err
+		}
+
+		payload = payload[len(chunk):]
+	}
+
+	return nil
+}
+
+func (m *Manager) tcpMaxPayload(dstIP netip.Addr) int {
+	mtu := 1400
+	if m.tun != nil && m.tun.MTU() > 0 {
+		mtu = m.tun.MTU()
+	}
+
+	headerLen := 20 + 20
+	if !dstIP.Is4() {
+		headerLen = 40 + 20
+	}
+
+	maxPayload := mtu - headerLen
+	if maxPayload < 1 {
+		return 1
+	}
+	return maxPayload
+}
+
+func (m *Manager) writeTCPPacket(conn *TrackedConnection, seq, ack uint32, flags uint8, payload []byte) error {
+	if m.tun == nil {
+		return errors.New("TUN device not initialized")
+	}
+
+	srcIP := conn.Key.DstIP
+	dstIP := conn.Key.SrcIP
+	srcPort := conn.Key.DstPort
+	dstPort := conn.Key.SrcPort
+
+	packet := BuildTCPPacket(srcIP, dstIP, srcPort, dstPort, seq, ack, flags, 65535, payload)
+	n, err := m.tun.Write(packet)
+	if err != nil {
+		return err
+	}
+
+	m.packetsSent.Add(1)
+	m.bytesSent.Add(int64(n))
+	return nil
+}
+
+func advanceTCPSeq(seq uint32, payloadLen int, flags uint8) uint32 {
+	next := seq + uint32(payloadLen)
+	if flags&TCPFlagSYN != 0 {
+		next++
+	}
+	if flags&TCPFlagFIN != 0 {
+		next++
+	}
+	return next
+}
+
+func tcpSeqAfter(a, b uint32) bool {
+	return int32(a-b) > 0
+}
+
+func randomISN() uint32 {
+	var buf [4]byte
+	if _, err := rand.Read(buf[:]); err == nil {
+		return binary.BigEndian.Uint32(buf[:])
+	}
+	return uint32(time.Now().UnixNano())
 }
 
 // Status returns the current VPN status and statistics.

@@ -179,6 +179,17 @@ rate_limit:
   burst_size: 200             # Maximum burst size
   per_ip: true                # Rate limit per IP address
   per_user: false             # Rate limit per authenticated user
+  # Bandwidth throttling (per connection)
+  # bandwidth:
+  #   enabled: true
+  #   upload: "10Mbps"         # Upload limit
+  #   download: "100Mbps"      # Download limit
+
+# Access control
+# Restrict client IPs with allow/deny lists.
+access_control:
+  whitelist: []               # Allowed IPs/CIDRs (empty = allow all)
+  blacklist: []               # Denied IPs/CIDRs (always blocked)
 
 # Access logging
 # Log all connections handled by the server.

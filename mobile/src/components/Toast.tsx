@@ -56,10 +56,10 @@ function ToastItem({ toast, onHide }: ToastItemProps) {
       }),
     ]).start()
 
-    // Auto-hide after duration
+    // Auto-hide after duration (5000ms default for accessibility)
     const timer = setTimeout(() => {
       hideToast()
-    }, toast.duration || 3000)
+    }, toast.duration || 5000)
 
     return () => clearTimeout(timer)
   }, [toast.duration])
@@ -140,7 +140,7 @@ interface ToastProviderProps {
 export function ToastProvider({ children }: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastMessage[]>([])
 
-  const showToast = useCallback((message: string, type: ToastType = 'info', duration = 3000) => {
+  const showToast = useCallback((message: string, type: ToastType = 'info', duration = 5000) => {
     const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     setToasts((prev) => [...prev, { id, message, type, duration }])
   }, [])

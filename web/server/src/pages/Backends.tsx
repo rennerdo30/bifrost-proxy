@@ -17,6 +17,7 @@ export function Backends() {
         <button
           onClick={() => refetch()}
           className="btn btn-secondary"
+          aria-label="Refresh backends"
         >
           <svg
             className="w-4 h-4"
@@ -24,6 +25,7 @@ export function Backends() {
             viewBox="0 0 24 24"
             stroke="currentColor"
             strokeWidth={2}
+            aria-hidden="true"
           >
             <path
               strokeLinecap="round"

@@ -65,13 +65,13 @@ export function Clients() {
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [view, setView] = useState<'connections' | 'clients'>('clients')
 
-  const { data: connectionsData, isLoading: connectionsLoading, refetch: refetchConnections } = useQuery({
+  const { data: connectionsData, isLoading: connectionsLoading, error: connectionsError, refetch: refetchConnections } = useQuery({
     queryKey: ['connections'],
     queryFn: () => api.getConnections(),
     refetchInterval: autoRefresh ? 2000 : false,
   })
 
-  const { data: clientsData, isLoading: clientsLoading, refetch: refetchClients } = useQuery({
+  const { data: clientsData, isLoading: clientsLoading, error: clientsError, refetch: refetchClients } = useQuery({
     queryKey: ['clients'],
     queryFn: () => api.getClients(),
     refetchInterval: autoRefresh ? 2000 : false,
@@ -94,6 +94,7 @@ export function Clients() {
   }, [refetch])
 
   const isLoading = view === 'connections' ? connectionsLoading : clientsLoading
+  const error = view === 'connections' ? connectionsError : clientsError
 
   return (
     <div className="space-y-6">
@@ -195,7 +196,33 @@ export function Clients() {
 
       {/* Content */}
       <div className="card overflow-hidden">
-        {isLoading ? (
+        {error ? (
+          <div className="p-8 text-center">
+            <svg
+              className="w-12 h-12 mx-auto mb-4 text-bifrost-error opacity-70"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <p className="text-bifrost-error font-medium">Failed to load {view}</p>
+            <p className="text-sm text-bifrost-muted mt-2">
+              {error instanceof Error ? error.message : 'An unexpected error occurred'}
+            </p>
+            <button
+              onClick={refetch}
+              className="btn btn-secondary mt-4"
+            >
+              Try Again
+            </button>
+          </div>
+        ) : isLoading ? (
           <div className="p-8 text-center text-bifrost-muted">
             <div className="animate-spin w-8 h-8 border-2 border-bifrost-purple border-t-transparent rounded-full mx-auto mb-4" />
             Loading...

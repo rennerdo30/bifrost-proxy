@@ -39,17 +39,21 @@ export function Logs() {
         es.close()
         eventSourceRef.current = null
         setStreaming(false)
+        setStreamLogs([]) // Clear stream logs on error
       }
 
       return () => {
         es.close()
         eventSourceRef.current = null
+        setStreamLogs([]) // Clear stream logs when stopping
       }
     } else {
       if (eventSourceRef.current) {
         eventSourceRef.current.close()
         eventSourceRef.current = null
       }
+      // Clear stream logs when streaming is disabled
+      setStreamLogs([])
     }
   }, [streaming])
 

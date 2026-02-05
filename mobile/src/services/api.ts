@@ -48,7 +48,7 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
   } catch (err) {
     clearTimeout(timeoutId)
     if (err instanceof Error && err.name === 'AbortError') {
-      throw new Error('Request timed out')
+      throw new Error('Request timed out. Check your connection and try again.')
     }
     throw err
   }
@@ -201,4 +201,32 @@ export function formatDuration(seconds: number): string {
     return `${minutes}m ${secs}s`
   }
   return `${secs}s`
+}
+
+/**
+ * Validate server address format (host:port)
+ */
+export function validateServerAddress(address: string): string | null {
+  if (!address.trim()) {
+    return 'Server address is required'
+  }
+
+  // Check for host:port format
+  const parts = address.split(':')
+  if (parts.length !== 2) {
+    return 'Address must be in host:port format (e.g., example.com:8080)'
+  }
+
+  const [host, port] = parts
+
+  if (!host.trim()) {
+    return 'Host cannot be empty'
+  }
+
+  const portNum = parseInt(port, 10)
+  if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+    return 'Port must be between 1 and 65535'
+  }
+
+  return null
 }

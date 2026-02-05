@@ -2,14 +2,19 @@ import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { RouteTestResult } from '../../api/types'
+import { useToast } from '../Toast'
 
 export function RouteTester() {
   const [domain, setDomain] = useState('')
   const [result, setResult] = useState<RouteTestResult | null>(null)
+  const { showToast } = useToast()
 
   const testMutation = useMutation({
     mutationFn: api.testRoute,
     onSuccess: (data) => setResult(data),
+    onError: (error: Error) => {
+      showToast(error.message || 'Failed to test route', 'error')
+    },
   })
 
   const handleTest = (e: React.FormEvent) => {
@@ -36,7 +41,10 @@ export function RouteTester() {
           className="btn btn-primary"
         >
           {testMutation.isPending ? (
-            <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+            <>
+              <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+              <span className="ml-1">Testing...</span>
+            </>
           ) : (
             <>
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

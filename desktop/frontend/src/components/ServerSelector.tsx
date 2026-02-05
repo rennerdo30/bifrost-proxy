@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ServerInfo } from '../hooks/useClient';
-import { getStatusColor } from '../utils/status';
+import { getStatusColor, getStatusLabel } from '../utils/status';
 
 interface ServerSelectorProps {
   servers: ServerInfo[];
@@ -48,7 +48,12 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
         aria-label={`Select server, current: ${selectedServer?.name || 'None'}`}
       >
         <div className="flex items-center gap-3">
-          <span className={`w-2 h-2 rounded-full ${getStatusColor(selectedServer?.status || 'unknown')}`} aria-hidden="true" />
+          <div className="flex items-center gap-1.5">
+            <span className={`w-2 h-2 rounded-full ${getStatusColor(selectedServer?.status || 'unknown')}`} aria-hidden="true" />
+            <span className="text-[10px] text-bifrost-text-muted uppercase">
+              {getStatusLabel(selectedServer?.status || 'unknown')}
+            </span>
+          </div>
           <div className="text-left">
             <p className="text-sm font-medium text-bifrost-text">{selectedServer?.name || 'Select Server'}</p>
             <p className="text-xs text-bifrost-text-muted">{selectedServer?.address}</p>
@@ -98,7 +103,12 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled }: S
                 aria-disabled={server.status === 'offline'}
               >
                 <div className="flex items-center gap-3">
-                  <span className={`w-2 h-2 rounded-full ${getStatusColor(server.status)}`} aria-hidden="true" />
+                  <div className="flex items-center gap-1.5 min-w-[60px]">
+                    <span className={`w-2 h-2 rounded-full ${getStatusColor(server.status)}`} aria-hidden="true" />
+                    <span className="text-[10px] text-bifrost-text-muted uppercase">
+                      {getStatusLabel(server.status)}
+                    </span>
+                  </div>
                   <div className="text-left">
                     <p className="text-sm font-medium text-bifrost-text">{server.name}</p>
                     <p className="text-xs text-bifrost-text-muted">{server.address}</p>

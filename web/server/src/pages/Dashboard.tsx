@@ -1,6 +1,7 @@
 import { useStats, useBackends } from '../hooks/useStats'
 import { StatsCards } from '../components/Dashboard/StatsCards'
 import { BackendHealth } from '../components/Dashboard/BackendHealth'
+import { formatBytes } from '../utils'
 
 export function Dashboard() {
   const { stats, isLoading: statsLoading, isConnected } = useStats()
@@ -83,12 +84,4 @@ export function Dashboard() {
       </div>
     </div>
   )
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`
 }

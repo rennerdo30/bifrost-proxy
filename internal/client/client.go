@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/proxy"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
 	"github.com/rennerdo30/bifrost-proxy/internal/sysproxy"
+	"github.com/rennerdo30/bifrost-proxy/internal/tray"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
@@ -30,6 +33,7 @@ type Client struct {
 	debugger        *debug.Logger
 	vpnManager      *vpn.Manager
 	sysProxyManager sysproxy.Manager
+	tray            *tray.Tray
 
 	httpListener   net.Listener
 	socks5Listener net.Listener
@@ -109,6 +113,11 @@ func (c *Client) Start(ctx context.Context) error {
 	c.mu.Unlock()
 
 	logging.Info("Starting Bifrost client")
+
+	// Start system tray if enabled
+	if c.config.Tray.Enabled {
+		c.startTray(ctx)
+	}
 
 	// Start HTTP listener
 	if c.config.Proxy.HTTP.Listen != "" {
@@ -200,11 +209,20 @@ func (c *Client) Start(ctx context.Context) error {
 		if proxyAddr != "" {
 			if err := c.sysProxyManager.SetProxy(proxyAddr); err != nil {
 				logging.Error("Failed to set system proxy", "error", err)
+				if c.tray != nil {
+					c.tray.SetStatus(tray.StatusWarning)
+				}
 			} else {
 				logging.Info("System proxy enabled", "address", proxyAddr)
+				if c.tray != nil {
+					c.tray.SetStatus(tray.StatusConnected)
+				}
 			}
 		} else {
 			logging.Warn("System proxy enabled but no proxy listeners configured")
+			if c.tray != nil {
+				c.tray.SetStatus(tray.StatusWarning)
+			}
 		}
 	}
 
@@ -252,6 +270,12 @@ func (c *Client) Stop(ctx context.Context) error {
 		} else {
 			logging.Info("System proxy settings restored")
 		}
+	}
+
+	// Stop system tray
+	if c.tray != nil {
+		c.tray.Quit()
+		c.tray = nil
 	}
 
 	// Wait for connections
@@ -587,6 +611,116 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 	}
 
 	return nil
+}
+
+func (c *Client) startTray(ctx context.Context) {
+	c.mu.Lock()
+	if c.tray != nil {
+		c.mu.Unlock()
+		return
+	}
+
+	t := tray.New(tray.Config{
+		OnConnect: func() {
+			c.setSystemProxyEnabled(true)
+		},
+		OnDisconnect: func() {
+			c.setSystemProxyEnabled(false)
+		},
+		OnOpenUI: func() {
+			c.openUI()
+		},
+		OnOpenQuick: func() {
+			c.openUI()
+		},
+		OnQuit: func() {
+			go func() {
+				_ = c.Stop(context.Background())
+				os.Exit(0)
+			}()
+		},
+	})
+	c.tray = t
+	c.mu.Unlock()
+
+	go t.Run(ctx)
+}
+
+func (c *Client) openUI() {
+	url := c.uiURL()
+	if url == "" {
+		logging.Warn("Web UI is not enabled or listen address missing")
+		return
+	}
+	if err := util.OpenURL(url); err != nil {
+		logging.Error("Failed to open Web UI", "error", err, "url", url)
+	}
+}
+
+func (c *Client) uiURL() string {
+	if c.config.API.Enabled && c.config.API.Listen != "" {
+		return normalizeListenAddress(c.config.API.Listen)
+	}
+	if c.config.WebUI.Enabled && c.config.WebUI.Listen != "" {
+		return normalizeListenAddress(c.config.WebUI.Listen)
+	}
+	return ""
+}
+
+func normalizeListenAddress(listen string) string {
+	if strings.HasPrefix(listen, "http://") || strings.HasPrefix(listen, "https://") {
+		return listen
+	}
+	if strings.HasPrefix(listen, ":") {
+		return "http://127.0.0.1" + listen
+	}
+	return "http://" + listen
+}
+
+func (c *Client) setSystemProxyEnabled(enabled bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.config.SystemProxy.Enabled == enabled {
+		return
+	}
+
+	c.config.SystemProxy.Enabled = enabled
+
+	if enabled {
+		proxyAddr := c.config.Proxy.HTTP.Listen
+		if proxyAddr == "" {
+			proxyAddr = c.config.Proxy.SOCKS5.Listen
+		}
+		if proxyAddr != "" {
+			if err := c.sysProxyManager.SetProxy(proxyAddr); err != nil {
+				logging.Error("Failed to enable system proxy", "error", err)
+				if c.tray != nil {
+					c.tray.SetStatus(tray.StatusWarning)
+				}
+				return
+			}
+			if c.tray != nil {
+				c.tray.SetStatus(tray.StatusConnected)
+			}
+		} else {
+			logging.Warn("System proxy enabled but no proxy listeners configured")
+			if c.tray != nil {
+				c.tray.SetStatus(tray.StatusWarning)
+			}
+		}
+	} else {
+		if err := c.sysProxyManager.ClearProxy(); err != nil {
+			logging.Error("Failed to disable system proxy", "error", err)
+			if c.tray != nil {
+				c.tray.SetStatus(tray.StatusWarning)
+			}
+			return
+		}
+		if c.tray != nil {
+			c.tray.SetStatus(tray.StatusDisconnected)
+		}
+	}
 }
 
 // parseDuration parses a duration string like "30s" or "5m".

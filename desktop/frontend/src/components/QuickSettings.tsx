@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { QuickSettings as QuickSettingsType, ProxySettings } from '../hooks/useClient';
+import { validateServerAddress } from '../utils/status';
 
 interface QuickSettingsProps {
   settings: QuickSettingsType | null;
@@ -99,20 +100,50 @@ export function QuickSettings({
 }: QuickSettingsProps) {
   const [pendingProxyChanges, setPendingProxyChanges] = useState(false);
   const [localProxy, setLocalProxy] = useState<Partial<ProxySettings>>({});
+  const [addressError, setAddressError] = useState<string | null>(null);
 
+  // Show loading skeleton when settings haven't loaded yet
   if (!settings) {
-    return null;
+    return (
+      <div className="card space-y-1 animate-pulse">
+        <div className="h-4 bg-bifrost-border rounded w-24 mb-3" />
+        <div className="space-y-3">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="flex items-center justify-between py-2">
+              <div className="space-y-1">
+                <div className="h-3 bg-bifrost-border rounded w-20" />
+                <div className="h-2 bg-bifrost-border rounded w-32" />
+              </div>
+              <div className="h-6 w-10 bg-bifrost-border rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   }
 
   const handleProxyChange = (field: keyof ProxySettings, value: string | number) => {
     setLocalProxy(prev => ({ ...prev, [field]: value }));
     setPendingProxyChanges(true);
+    // Clear address error when user starts typing
+    if (field === 'server_address') {
+      setAddressError(null);
+    }
   };
 
   const saveProxySettings = () => {
+    // Validate server address if it was changed
+    if (localProxy.server_address !== undefined) {
+      const error = validateServerAddress(localProxy.server_address);
+      if (error) {
+        setAddressError(error);
+        return;
+      }
+    }
     onUpdateProxy(localProxy);
     setPendingProxyChanges(false);
     setLocalProxy({});
+    setAddressError(null);
   };
 
   const currentProxy = { ...proxySettings, ...localProxy } as ProxySettings;
@@ -167,8 +198,17 @@ export function QuickSettings({
               value={currentProxy?.server_address || ''}
               onChange={(e) => handleProxyChange('server_address', e.target.value)}
               placeholder="bifrost.example.com:8080"
-              className="w-full px-3 py-1.5 text-sm bg-bifrost-bg border border-bifrost-border rounded-md text-bifrost-text placeholder-bifrost-text-muted focus:outline-none focus:ring-1 focus:ring-bifrost-accent focus:border-bifrost-accent"
+              className={`w-full px-3 py-1.5 text-sm bg-bifrost-bg border rounded-md text-bifrost-text placeholder-bifrost-text-muted focus:outline-none focus:ring-1 focus:ring-bifrost-accent focus:border-bifrost-accent ${
+                addressError ? 'border-bifrost-error' : 'border-bifrost-border'
+              }`}
+              aria-invalid={!!addressError}
+              aria-describedby={addressError ? 'server-address-error' : undefined}
             />
+            {addressError && (
+              <p id="server-address-error" className="text-xs text-bifrost-error mt-1">
+                {addressError}
+              </p>
+            )}
           </div>
 
           {/* Protocol */}

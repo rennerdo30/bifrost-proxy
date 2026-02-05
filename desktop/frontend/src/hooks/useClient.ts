@@ -209,6 +209,7 @@ export function useClient() {
   const connect = useCallback(async () => {
     setLoading(true);
     setConnectionStatus('connecting');
+    setError(null); // Clear previous error on new operation
     try {
       await api.Connect();
       await refreshStatus();
@@ -223,6 +224,7 @@ export function useClient() {
   // Disconnect from server
   const disconnect = useCallback(async () => {
     setLoading(true);
+    setError(null); // Clear previous error on new operation
     try {
       await api.Disconnect();
       await refreshStatus();
@@ -235,6 +237,7 @@ export function useClient() {
 
   // Select server
   const selectServer = useCallback(async (name: string) => {
+    setError(null); // Clear previous error on new operation
     try {
       await api.SelectServer(name);
       await refreshServers();
@@ -247,6 +250,7 @@ export function useClient() {
   // Update settings
   const updateSettings = useCallback(async (newSettings: Partial<QuickSettings>) => {
     if (!settings) return;
+    setError(null); // Clear previous error on new operation
     const updated = { ...settings, ...newSettings };
     try {
       await api.UpdateQuickSettings(updated);
@@ -259,6 +263,7 @@ export function useClient() {
   // Update proxy settings
   const updateProxySettings = useCallback(async (newSettings: Partial<ProxySettings>) => {
     if (!proxySettings) return;
+    setError(null); // Clear previous error on new operation
     const updated = { ...proxySettings, ...newSettings };
     try {
       await api.UpdateProxySettings(updated);
@@ -271,6 +276,7 @@ export function useClient() {
   // Restart client
   const restartClient = useCallback(async () => {
     setRestarting(true);
+    setError(null); // Clear previous error on new operation
     try {
       await api.RestartClient();
       // Wait a moment for the client to restart
@@ -286,6 +292,7 @@ export function useClient() {
 
   // Toggle VPN
   const toggleVPN = useCallback(async (enabled: boolean) => {
+    setError(null); // Clear previous error on new operation
     try {
       if (enabled) {
         await api.EnableVPN();

@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/accesscontrol"
 	"github.com/rennerdo30/bifrost-proxy/internal/accesslog"
 	apiserver "github.com/rennerdo30/bifrost-proxy/internal/api/server"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
@@ -32,7 +33,10 @@ type Server struct {
 	backends         *backend.Manager
 	router           *router.ServerRouter
 	authenticator    auth.Authenticator
-	rateLimiter      *ratelimit.KeyedLimiter
+	rateLimiterIP    *ratelimit.KeyedLimiter
+	rateLimiterUser  *ratelimit.KeyedLimiter
+	accessController *accesscontrol.Controller
+	bandwidthConfig  *ratelimit.BandwidthConfig
 	healthManager    *health.Manager
 	metrics          *metrics.Metrics
 	metricsCollector *metrics.Collector
@@ -83,13 +87,59 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("create authenticator: %w", err)
 	}
 
-	// Create rate limiter
-	var rateLimiter *ratelimit.KeyedLimiter
+	// Create access controller
+	var accessController *accesscontrol.Controller
+	if len(cfg.AccessControl.Whitelist) > 0 || len(cfg.AccessControl.Blacklist) > 0 {
+		accessController, err = accesscontrol.NewController(accesscontrol.Config{
+			Whitelist: cfg.AccessControl.Whitelist,
+			Blacklist: cfg.AccessControl.Blacklist,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("create access controller: %w", err)
+		}
+	}
+
+	// Create rate limiters
+	var rateLimiterIP *ratelimit.KeyedLimiter
+	var rateLimiterUser *ratelimit.KeyedLimiter
 	if cfg.RateLimit.Enabled {
-		rateLimiter = ratelimit.NewKeyedLimiter(ratelimit.Config{
+		perIP := cfg.RateLimit.PerIP
+		perUser := cfg.RateLimit.PerUser
+		if !perIP && !perUser {
+			// Preserve legacy behavior: default to per-IP limiting
+			perIP = true
+		}
+
+		rlCfg := ratelimit.Config{
 			RequestsPerSecond: cfg.RateLimit.RequestsPerSecond,
 			BurstSize:         cfg.RateLimit.BurstSize,
-		})
+		}
+
+		if perIP {
+			rateLimiterIP = ratelimit.NewKeyedLimiter(rlCfg)
+		}
+		if perUser {
+			rateLimiterUser = ratelimit.NewKeyedLimiter(rlCfg)
+		}
+	}
+
+	// Parse bandwidth throttling limits
+	var bandwidthConfig *ratelimit.BandwidthConfig
+	if cfg.RateLimit.Bandwidth != nil && cfg.RateLimit.Bandwidth.Enabled {
+		upload, err := ratelimit.ParseBandwidth(cfg.RateLimit.Bandwidth.Upload)
+		if err != nil {
+			return nil, fmt.Errorf("parse upload bandwidth: %w", err)
+		}
+		download, err := ratelimit.ParseBandwidth(cfg.RateLimit.Bandwidth.Download)
+		if err != nil {
+			return nil, fmt.Errorf("parse download bandwidth: %w", err)
+		}
+		if upload > 0 || download > 0 {
+			bandwidthConfig = &ratelimit.BandwidthConfig{
+				Upload:   upload,
+				Download: download,
+			}
+		}
 	}
 
 	// Create health manager
@@ -122,12 +172,15 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		cacheInterceptor = cache.NewInterceptor(cacheManager)
 	}
 
-	return &Server{
+	srv := &Server{
 		config:           cfg,
 		backends:         backends,
 		router:           r,
 		authenticator:    authenticator,
-		rateLimiter:      rateLimiter,
+		rateLimiterIP:    rateLimiterIP,
+		rateLimiterUser:  rateLimiterUser,
+		accessController: accessController,
+		bandwidthConfig:  bandwidthConfig,
 		healthManager:    healthManager,
 		metrics:          m,
 		metricsCollector: collector,
@@ -135,7 +188,84 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		cacheManager:     cacheManager,
 		cacheInterceptor: cacheInterceptor,
 		done:             make(chan struct{}),
-	}, nil
+	}
+
+	if err := srv.setupHealthChecks(cfg); err != nil {
+		return nil, err
+	}
+
+	return srv, nil
+}
+
+func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
+	if s == nil || s.healthManager == nil || s.backends == nil {
+		return nil
+	}
+
+	for _, backendCfg := range cfg.Backends {
+		if !backendCfg.Enabled {
+			continue
+		}
+
+		hc := backendCfg.HealthCheck
+		if hc == nil {
+			// Use global defaults if provided
+			if cfg.HealthCheck.Type != "" || cfg.HealthCheck.Target != "" || cfg.HealthCheck.Path != "" ||
+				cfg.HealthCheck.Interval.Duration() != 0 || cfg.HealthCheck.Timeout.Duration() != 0 {
+				hc = &cfg.HealthCheck
+			}
+		}
+
+		if hc == nil {
+			continue
+		}
+
+		if hc.Target == "" {
+			logging.Warn("health check target missing; skipping",
+				"backend", backendCfg.Name,
+			)
+			continue
+		}
+
+		checkCfg := health.Config{
+			Type:     hc.Type,
+			Target:   hc.Target,
+			Interval: hc.Interval.Duration(),
+			Timeout:  hc.Timeout.Duration(),
+			Path:     hc.Path,
+		}
+		checker := health.New(checkCfg)
+
+		be, err := s.backends.Get(backendCfg.Name)
+		if err != nil {
+			logging.Warn("health check backend not found; skipping",
+				"backend", backendCfg.Name,
+				"error", err,
+			)
+			continue
+		}
+
+		// Wrap backend to allow health overrides
+		if _, ok := be.(backend.HealthOverride); !ok {
+			wrapped := backend.WrapWithHealth(be)
+			if err := s.backends.Remove(backendCfg.Name); err != nil {
+				return fmt.Errorf("wrap backend health: remove %s: %w", backendCfg.Name, err)
+			}
+			if err := s.backends.Add(wrapped); err != nil {
+				return fmt.Errorf("wrap backend health: add %s: %w", backendCfg.Name, err)
+			}
+			be = wrapped
+		}
+
+		backendForCheck := be
+		s.healthManager.Register(backendCfg.Name, checker, checkCfg.Interval, func(name string, result health.Result) {
+			if ho, ok := backendForCheck.(backend.HealthOverride); ok {
+				ho.SetHealth(result)
+			}
+		})
+	}
+
+	return nil
 }
 
 func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
@@ -503,9 +633,12 @@ func (s *Server) Stop(ctx context.Context) error {
 	// Close access logger
 	s.accessLogger.Close()
 
-	// Close rate limiter
-	if s.rateLimiter != nil {
-		s.rateLimiter.Close()
+	// Close rate limiters
+	if s.rateLimiterIP != nil {
+		s.rateLimiterIP.Close()
+	}
+	if s.rateLimiterUser != nil {
+		s.rateLimiterUser.Close()
 	}
 
 	logging.Info("Bifrost server stopped")
@@ -534,6 +667,22 @@ func (s *Server) GetSanitizedConfig() interface{} {
 			"enabled":             s.config.RateLimit.Enabled,
 			"requests_per_second": s.config.RateLimit.RequestsPerSecond,
 			"burst_size":          s.config.RateLimit.BurstSize,
+			"per_ip":              s.config.RateLimit.PerIP,
+			"per_user":            s.config.RateLimit.PerUser,
+			"bandwidth": func() map[string]interface{} {
+				if s.config.RateLimit.Bandwidth == nil {
+					return map[string]interface{}{"enabled": false}
+				}
+				return map[string]interface{}{
+					"enabled":  s.config.RateLimit.Bandwidth.Enabled,
+					"upload":   s.config.RateLimit.Bandwidth.Upload,
+					"download": s.config.RateLimit.Bandwidth.Download,
+				}
+			}(),
+		},
+		"access_control": map[string]interface{}{
+			"whitelist": s.config.AccessControl.Whitelist,
+			"blacklist": s.config.AccessControl.Blacklist,
 		},
 		"metrics": map[string]interface{}{
 			"enabled": s.config.Metrics.Enabled,
@@ -619,20 +768,97 @@ func (s *Server) ReloadConfig() error {
 	logging.Info("Reloaded routes", "count", len(newCfg.Routes))
 
 	// Update rate limiter settings if changed
-	if newCfg.RateLimit.Enabled && s.rateLimiter != nil {
-		s.rateLimiter.UpdateConfig(ratelimit.Config{
+	if newCfg.RateLimit.Enabled {
+		perIP := newCfg.RateLimit.PerIP
+		perUser := newCfg.RateLimit.PerUser
+		if !perIP && !perUser {
+			perIP = true
+		}
+
+		rlCfg := ratelimit.Config{
 			RequestsPerSecond: newCfg.RateLimit.RequestsPerSecond,
 			BurstSize:         newCfg.RateLimit.BurstSize,
-		})
+		}
+
+		if perIP {
+			if s.rateLimiterIP == nil {
+				s.rateLimiterIP = ratelimit.NewKeyedLimiter(rlCfg)
+			} else {
+				s.rateLimiterIP.UpdateConfig(rlCfg)
+			}
+		} else if s.rateLimiterIP != nil {
+			s.rateLimiterIP.Close()
+			s.rateLimiterIP = nil
+		}
+
+		if perUser {
+			if s.rateLimiterUser == nil {
+				s.rateLimiterUser = ratelimit.NewKeyedLimiter(rlCfg)
+			} else {
+				s.rateLimiterUser.UpdateConfig(rlCfg)
+			}
+		} else if s.rateLimiterUser != nil {
+			s.rateLimiterUser.Close()
+			s.rateLimiterUser = nil
+		}
+
 		reloaded = append(reloaded, "rate_limits")
 		logging.Info("Reloaded rate limits",
 			"requests_per_second", newCfg.RateLimit.RequestsPerSecond,
-			"burst_size", newCfg.RateLimit.BurstSize)
+			"burst_size", newCfg.RateLimit.BurstSize,
+			"per_ip", perIP,
+			"per_user", perUser)
+	} else {
+		if s.rateLimiterIP != nil {
+			s.rateLimiterIP.Close()
+			s.rateLimiterIP = nil
+		}
+		if s.rateLimiterUser != nil {
+			s.rateLimiterUser.Close()
+			s.rateLimiterUser = nil
+		}
 	}
+
+	// Update access control
+	if len(newCfg.AccessControl.Whitelist) > 0 || len(newCfg.AccessControl.Blacklist) > 0 {
+		ac, err := accesscontrol.NewController(accesscontrol.Config{
+			Whitelist: newCfg.AccessControl.Whitelist,
+			Blacklist: newCfg.AccessControl.Blacklist,
+		})
+		if err != nil {
+			return fmt.Errorf("reload access control: %w", err)
+		}
+		s.accessController = ac
+		reloaded = append(reloaded, "access_control")
+	} else {
+		s.accessController = nil
+	}
+
+	// Update bandwidth throttling configuration
+	var bandwidthConfig *ratelimit.BandwidthConfig
+	if newCfg.RateLimit.Bandwidth != nil && newCfg.RateLimit.Bandwidth.Enabled {
+		upload, err := ratelimit.ParseBandwidth(newCfg.RateLimit.Bandwidth.Upload)
+		if err != nil {
+			return fmt.Errorf("reload upload bandwidth: %w", err)
+		}
+		download, err := ratelimit.ParseBandwidth(newCfg.RateLimit.Bandwidth.Download)
+		if err != nil {
+			return fmt.Errorf("reload download bandwidth: %w", err)
+		}
+		if upload > 0 || download > 0 {
+			bandwidthConfig = &ratelimit.BandwidthConfig{
+				Upload:   upload,
+				Download: download,
+			}
+		}
+	}
+	s.bandwidthConfig = bandwidthConfig
+	reloaded = append(reloaded, "bandwidth")
 
 	// Update config reference (for sanitized config endpoint)
 	s.config.Routes = newCfg.Routes
 	s.config.RateLimit = newCfg.RateLimit
+	s.config.AccessControl = newCfg.AccessControl
 
 	// Broadcast reload event via WebSocket
 	if s.wsHub != nil {
@@ -653,6 +879,12 @@ func (s *Server) serveHTTP(ctx context.Context) {
 	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
 		GetBackend:       s.getBackend,
 		DialTimeout:      s.config.Server.HTTP.ReadTimeout.Duration(),
+		Authenticate:     s.authenticateUser,
+		AuthRequired:     s.isAuthRequired(),
+		AccessCheck:      s.accessCheck,
+		RateLimitUser:    s.allowUser,
+		AccessLogger:     s.accessLogger,
+		Bandwidth:        s.bandwidthConfig,
 		OnConnect:        s.onConnect,
 		OnError:          s.onError,
 		CacheInterceptor: s.cacheInterceptor,
@@ -711,8 +943,8 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	clientIP := tcpAddr.IP.String()
 	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
 
-	if s.rateLimiter != nil {
-		if !s.rateLimiter.Allow(clientIP) {
+	if s.rateLimiterIP != nil {
+		if !s.rateLimiterIP.Allow(clientIP) {
 			s.metricsCollector.RecordRateLimit("ip")
 			conn.Write([]byte("HTTP/1.1 429 Too Many Requests\r\n\r\n"))
 			conn.Close()
@@ -741,12 +973,16 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 	defer s.wg.Done()
 
 	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
-		GetBackend:   s.getBackend,
-		Authenticate: s.authenticate,
-		AuthRequired: s.isAuthRequired(),
-		DialTimeout:  30 * time.Second,
-		OnConnect:    s.onConnect,
-		OnError:      s.onError,
+		GetBackend:           s.getBackend,
+		AuthenticateWithInfo: s.authenticateUser,
+		AuthRequired:         s.isAuthRequired(),
+		DialTimeout:          30 * time.Second,
+		AccessCheck:          s.accessCheck,
+		RateLimitUser:        s.allowUser,
+		AccessLogger:         s.accessLogger,
+		Bandwidth:            s.bandwidthConfig,
+		OnConnect:            s.onConnect,
+		OnError:              s.onError,
 	})
 
 	for {
@@ -801,8 +1037,8 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 	clientIP := tcpAddr.IP.String()
 	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
 
-	if s.rateLimiter != nil {
-		if !s.rateLimiter.Allow(clientIP) {
+	if s.rateLimiterIP != nil {
+		if !s.rateLimiterIP.Allow(clientIP) {
 			s.metricsCollector.RecordRateLimit("ip")
 			conn.Close()
 			return
@@ -845,15 +1081,46 @@ func (s *Server) isAuthRequired() bool {
 	return s.config.Auth.Mode != "none" && s.config.Auth.Mode != ""
 }
 
-// authenticate validates credentials.
-func (s *Server) authenticate(username, password string) bool {
-	_, err := s.authenticator.Authenticate(context.Background(), username, password)
-	if err != nil {
-		s.metricsCollector.RecordAuthAttempt(s.authenticator.Type(), false, "invalid_credentials")
+func (s *Server) accessCheck(clientIP string) (bool, string) {
+	if s.accessController == nil {
+		return true, ""
+	}
+	result := s.accessController.Check(clientIP)
+	if result.Action == accesscontrol.ActionDeny {
+		return false, string(result.Reason)
+	}
+	return true, ""
+}
+
+func (s *Server) allowUser(username, clientIP string) bool {
+	if s.rateLimiterUser == nil {
+		return true
+	}
+
+	key := username
+	if key == "" {
+		key = "anonymous:" + clientIP
+	} else {
+		key = "user:" + key
+	}
+
+	if !s.rateLimiterUser.Allow(key) {
+		s.metricsCollector.RecordRateLimit("user")
 		return false
 	}
-	s.metricsCollector.RecordAuthAttempt(s.authenticator.Type(), true, "")
+
 	return true
+}
+
+// authenticate validates credentials.
+func (s *Server) authenticateUser(ctx context.Context, username, password string) (*auth.UserInfo, error) {
+	user, err := s.authenticator.Authenticate(ctx, username, password)
+	if err != nil {
+		s.metricsCollector.RecordAuthAttempt(s.authenticator.Type(), false, "invalid_credentials")
+		return nil, err
+	}
+	s.metricsCollector.RecordAuthAttempt(s.authenticator.Type(), true, "")
+	return user, nil
 }
 
 // onConnect is called when a connection is established.
