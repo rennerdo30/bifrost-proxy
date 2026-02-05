@@ -674,12 +674,13 @@
         "Include man page generation if applicable"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "documentation",
         "cli"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-033",
@@ -746,6 +747,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T07:27:27.226Z"
+    "updatedAt": "2026-02-05T07:32:24.677Z"
   }
 }
