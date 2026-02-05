@@ -9,8 +9,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 	"golang.org/x/crypto/curve25519"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
 
 // WireGuard API endpoints.

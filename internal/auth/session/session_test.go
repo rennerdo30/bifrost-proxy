@@ -8,10 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/auth"
-	"github.com/rennerdo30/bifrost-proxy/internal/auth/session"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth/session"
 )
 
 func TestMemoryStore_CreateAndGet(t *testing.T) {

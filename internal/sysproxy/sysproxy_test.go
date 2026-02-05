@@ -37,8 +37,7 @@ func TestNew(t *testing.T) {
 
 func TestManagerInterface(t *testing.T) {
 	// Verify that the Manager interface is properly defined
-	var mgr Manager
-	mgr = New()
+	mgr := New()
 	assert.NotNil(t, mgr)
 }
 

@@ -1254,7 +1254,7 @@ func TestValidator_BuildConditionalRequest(t *testing.T) {
 		},
 	}
 
-	req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+	req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 	v.BuildConditionalRequest(req, entry)
 
 	assert.Equal(t, `"abc123"`, req.Header.Get("If-None-Match"))
@@ -1294,26 +1294,26 @@ func TestValidator_ShouldCache(t *testing.T) {
 	v := NewValidator()
 
 	t.Run("GET 200", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 		resp := &http.Response{StatusCode: 200, Header: http.Header{}}
 		assert.True(t, v.ShouldCache(req, resp))
 	})
 
 	t.Run("POST", func(t *testing.T) {
-		req, _ := http.NewRequest("POST", "http://example.com/test", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "POST", "http://example.com/test", nil)
 		resp := &http.Response{StatusCode: 200, Header: http.Header{}}
 		assert.False(t, v.ShouldCache(req, resp))
 	})
 
 	t.Run("Authorization header", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 		req.Header.Set("Authorization", "Bearer token")
 		resp := &http.Response{StatusCode: 200, Header: http.Header{}}
 		assert.False(t, v.ShouldCache(req, resp))
 	})
 
 	t.Run("no-store response", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 		resp := &http.Response{
 			StatusCode: 200,
 			Header:     http.Header{"Cache-Control": []string{"no-store"}},
@@ -1322,7 +1322,7 @@ func TestValidator_ShouldCache(t *testing.T) {
 	})
 
 	t.Run("Set-Cookie response", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 		resp := &http.Response{
 			StatusCode: 200,
 			Header:     http.Header{"Set-Cookie": []string{"session=abc"}},
@@ -1331,7 +1331,7 @@ func TestValidator_ShouldCache(t *testing.T) {
 	})
 
 	t.Run("304 response", func(t *testing.T) {
-		req, _ := http.NewRequest("GET", "http://example.com/test", nil)
+		req, _ := http.NewRequestWithContext(context.Background(), "GET", "http://example.com/test", nil)
 		resp := &http.Response{StatusCode: 304, Header: http.Header{}}
 		assert.False(t, v.ShouldCache(req, resp))
 	})

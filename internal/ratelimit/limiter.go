@@ -15,10 +15,10 @@ type Limiter interface {
 	// AllowN checks if n requests are allowed.
 	AllowN(n int) bool
 
-	// Wait blocks until a request is allowed or context is cancelled.
+	// Wait blocks until a request is allowed or context is canceled.
 	Wait(ctx context.Context) error
 
-	// WaitN blocks until n requests are allowed or context is cancelled.
+	// WaitN blocks until n requests are allowed or context is canceled.
 	WaitN(ctx context.Context, n int) error
 }
 

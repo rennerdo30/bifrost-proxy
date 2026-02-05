@@ -7,6 +7,9 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/apikey"
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/ldap"
@@ -15,8 +18,6 @@ import (
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/oauth"
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/system"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // Helper function to create authenticators using the factory

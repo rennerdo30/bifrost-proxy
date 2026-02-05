@@ -328,7 +328,7 @@ func (f *AuthCodeFlow) CallbackHandler() http.Handler {
 }
 
 // StartCallbackServer starts a temporary HTTP server to receive the OAuth callback.
-// Returns when the callback is received or the context is cancelled.
+// Returns when the callback is received or the context is canceled.
 func (f *AuthCodeFlow) StartCallbackServer(ctx context.Context, state string) (*TokenResponse, error) {
 	// Parse redirect URI to get port
 	redirectURL, err := url.Parse(f.authCodeCfg.RedirectURI)

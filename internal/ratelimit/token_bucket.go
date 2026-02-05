@@ -48,12 +48,12 @@ func (tb *TokenBucket) AllowN(n int) bool {
 	return false
 }
 
-// Wait blocks until a request is allowed or context is cancelled.
+// Wait blocks until a request is allowed or context is canceled.
 func (tb *TokenBucket) Wait(ctx context.Context) error {
 	return tb.WaitN(ctx, 1)
 }
 
-// WaitN blocks until n requests are allowed or context is cancelled.
+// WaitN blocks until n requests are allowed or context is canceled.
 func (tb *TokenBucket) WaitN(ctx context.Context, n int) error {
 	for {
 		tb.mu.Lock()

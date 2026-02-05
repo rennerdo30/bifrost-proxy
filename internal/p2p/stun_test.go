@@ -396,7 +396,7 @@ func TestSTUNClientBind(t *testing.T) {
 		assert.True(t, result.RTT > 0)
 	})
 
-	t.Run("context cancelled", func(t *testing.T) {
+	t.Run("context canceled", func(t *testing.T) {
 		client := NewSTUNClient([]string{"192.0.2.1:3478"}, 10*time.Second)
 		defer client.Close()
 

@@ -422,10 +422,8 @@ func (c *PeerRelayedConnection) Receive() ([]byte, error) {
 	}
 	c.mu.RUnlock()
 
-	select {
-	case data := <-c.recvQueue:
-		return data, nil
-	}
+	data := <-c.recvQueue
+	return data, nil
 }
 
 // Latency returns the latency (relay peer latency * 2).

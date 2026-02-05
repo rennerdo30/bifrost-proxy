@@ -197,7 +197,7 @@ func (c *Client) fetchLogicalServers(ctx context.Context) ([]LogicalServer, erro
 
 // convertServers converts ProtonVPN logical servers to vpnprovider.Server format.
 func (c *Client) convertServers(logicals []LogicalServer) []vpnprovider.Server {
-	var servers []vpnprovider.Server
+	var servers []vpnprovider.Server //nolint:prealloc // Size unknown due to filtering
 
 	userTier := 2 // Default to Plus tier
 	if c.manualCreds != nil {

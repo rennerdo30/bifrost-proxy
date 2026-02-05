@@ -282,7 +282,7 @@ func (r *linuxRouteManager) configureDNS(dnsAddr string) error {
 		} else {
 			// Set as default DNS
 			cmd = exec.Command("resolvectl", "default-route", r.tunName, "true") //nolint:gosec // G204: tunName is validated
-			_ = cmd.Run()                                                        // Best effort
+			_ = cmd.Run()                                                        //nolint:errcheck // Best effort
 			return nil
 		}
 	}

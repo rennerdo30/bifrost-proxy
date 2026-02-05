@@ -5,8 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider/mullvad"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider/mullvad"
 )
 
 func createMullvadTestClient() *mullvad.Client {

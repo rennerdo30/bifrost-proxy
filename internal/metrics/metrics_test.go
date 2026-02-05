@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 )
 
 func TestNew(t *testing.T) {

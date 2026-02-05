@@ -367,10 +367,10 @@ func parseByteSize(s string) (ByteSize, error) {
 		return 0, fmt.Errorf("invalid byte size: %s", s)
 	}
 
-	var multiplier float64 = 1
+	var multiplier float64
 	switch unit {
 	case "", "B":
-		multiplier = 1
+		multiplier = 1.0
 	case "K", "KB", "KIB":
 		multiplier = float64(KB)
 	case "M", "MB", "MIB":

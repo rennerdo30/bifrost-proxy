@@ -6,10 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/mesh"
-	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/mesh"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
 func TestLoad(t *testing.T) {

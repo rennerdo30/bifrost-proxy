@@ -84,7 +84,7 @@ func (b *DirectBackend) Dial(ctx context.Context, network, address string) (net.
 	}
 	b.mu.RUnlock()
 
-	// Check if context is already cancelled
+	// Check if context is already canceled
 	if err := ctx.Err(); err != nil {
 		return nil, NewBackendError(b.name, "dial", err)
 	}

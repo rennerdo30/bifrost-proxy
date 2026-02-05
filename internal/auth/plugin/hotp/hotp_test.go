@@ -15,10 +15,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/auth"
-	"github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/hotp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/hotp"
 )
 
 // generateHOTP generates an HOTP code for testing purposes

@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 )
 
 // TestPluginRegistration verifies the plugin is registered correctly.
@@ -539,7 +540,7 @@ func TestValidateWithSu(t *testing.T) {
 	assert.False(t, result)
 }
 
-// TestValidateWithCancelledContext tests password validation with cancelled context.
+// TestValidateWithCancelledContext tests password validation with canceled context.
 func TestValidateWithCancelledContext(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test only runs on Unix")
@@ -549,7 +550,7 @@ func TestValidateWithCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	// With cancelled context, validation should fail
+	// With canceled context, validation should fail
 	result := a.validatePassword(ctx, "anyuser", "anypassword")
 	assert.False(t, result)
 }
@@ -937,7 +938,7 @@ func TestValidateDarwinWithContext(t *testing.T) {
 
 	a := &Authenticator{}
 
-	// Test with already cancelled context
+	// Test with already canceled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -945,7 +946,7 @@ func TestValidateDarwinWithContext(t *testing.T) {
 	assert.False(t, result)
 }
 
-// TestValidateWithSuCancelledContext tests validateWithSu with cancelled context.
+// TestValidateWithSuCancelledContext tests validateWithSu with canceled context.
 func TestValidateWithSuCancelledContext(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test only runs on Unix")
@@ -953,7 +954,7 @@ func TestValidateWithSuCancelledContext(t *testing.T) {
 
 	a := &Authenticator{}
 
-	// Test with already cancelled context
+	// Test with already canceled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -962,7 +963,7 @@ func TestValidateWithSuCancelledContext(t *testing.T) {
 }
 
 // TestValidateWithSuStartError tests validateWithSu when cmd.Start fails.
-// This is hard to test directly, but covered by using a cancelled context
+// This is hard to test directly, but covered by using a canceled context
 // which causes the command to fail.
 func TestValidateWithSuStartError(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -979,7 +980,7 @@ func TestValidateWithSuStartError(t *testing.T) {
 	assert.False(t, result)
 }
 
-// TestAuthenticateContextCancellation tests Authenticate with cancelled context.
+// TestAuthenticateContextCancellation tests Authenticate with canceled context.
 func TestAuthenticateContextCancellation(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("test only runs on Unix")
@@ -995,7 +996,7 @@ func TestAuthenticateContextCancellation(t *testing.T) {
 		allowedGroups: map[string]bool{},
 	}
 
-	// Create cancelled context
+	// Create canceled context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 

@@ -13,8 +13,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"golang.org/x/sys/windows"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 )
 
 // Windows LogonUser constants

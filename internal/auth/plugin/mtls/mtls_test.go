@@ -15,10 +15,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rennerdo30/bifrost-proxy/internal/auth"
-	"github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/mtls"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/mtls"
 )
 
 // testCA holds a test CA certificate and key
@@ -330,7 +331,7 @@ func createExpiredClientCert(t *testing.T, ca *testCA, cn string) *testClientCer
 func createCRL(t *testing.T, ca *testCA, revokedSerials []*big.Int) (pemData []byte, derData []byte) {
 	t.Helper()
 
-	var revokedCerts []x509.RevocationListEntry
+	revokedCerts := make([]x509.RevocationListEntry, 0, len(revokedSerials))
 	for _, serial := range revokedSerials {
 		revokedCerts = append(revokedCerts, x509.RevocationListEntry{
 			SerialNumber:   serial,
