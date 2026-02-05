@@ -403,13 +403,14 @@
         "Show spinner or progress indicator during connection changes"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "dependsOn": [],
       "labels": [
         "desktop",
         "wails",
         "ui"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-020",
@@ -737,6 +738,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T06:53:00.332Z"
+    "updatedAt": "2026-02-05T06:56:23.968Z"
   }
 }
