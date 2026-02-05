@@ -470,7 +470,7 @@ bifrost/
 ├── SPECIFICATION.md
 ├── CLAUDE.md
 ├── IMPLEMENTATION_PLAN.md
-└── TODO.md
+└── NOTE.md
 ```
 
 ### 1.4 Makefile
