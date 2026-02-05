@@ -20,6 +20,7 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/debug"
+	"github.com/rennerdo30/bifrost-proxy/internal/mesh"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
@@ -60,6 +61,20 @@ type CacheManager interface {
 	Clear(ctx context.Context) error
 	Delete(ctx context.Context, key string) error
 	IsEnabled() bool
+}
+
+// MeshManager defines the interface for mesh network management operations
+type MeshManager interface {
+	Status() mesh.NodeStatus
+	Stats() mesh.NodeStats
+	LocalPeerID() string
+	LocalIP() string
+	GetPeers() []*mesh.Peer
+	GetConnectedPeers() []*mesh.Peer
+	GetPeer(peerID string) (*mesh.Peer, bool)
+	GetRoutes() []*mesh.Route
+	Start(ctx context.Context) error
+	Stop() error
 }
 
 // ServerInfo represents a configured server.
@@ -117,6 +132,7 @@ type API struct {
 	token           string
 	vpnManager      VPNManager
 	cacheManager    CacheManager
+	meshManager     MeshManager
 	configGetter    func() interface{}
 	configUpdater   func(map[string]interface{}) error
 	configReloader  func() error
@@ -155,6 +171,7 @@ type Config struct {
 	Token           string
 	VPNManager      VPNManager
 	CacheManager    CacheManager
+	MeshManager     MeshManager
 	ConfigGetter    func() interface{}
 	ConfigUpdater   func(map[string]interface{}) error
 	ConfigReloader  func() error
@@ -183,6 +200,7 @@ func New(cfg Config) *API {
 		token:           cfg.Token,
 		vpnManager:      cfg.VPNManager,
 		cacheManager:    cfg.CacheManager,
+		meshManager:     cfg.MeshManager,
 		configGetter:    cfg.ConfigGetter,
 		configUpdater:   cfg.ConfigUpdater,
 		configReloader:  cfg.ConfigReloader,
@@ -309,6 +327,17 @@ func (a *API) HandlerWithUI() http.Handler {
 			r.Delete("/entries/{key}", a.handleCacheDeleteEntry)
 			r.Post("/clear", a.handleCacheClear)
 		})
+		r.Route("/v1/mesh", func(r chi.Router) {
+			r.Get("/status", a.handleMeshStatus)
+			r.Get("/stats", a.handleMeshStats)
+			r.Post("/enable", a.handleMeshEnable)
+			r.Post("/disable", a.handleMeshDisable)
+			r.Get("/peers", a.handleMeshPeers)
+			r.Get("/peers/connected", a.handleMeshConnectedPeers)
+			r.Get("/peers/{id}", a.handleMeshPeer)
+			r.Get("/routes", a.handleMeshRoutes)
+			r.Get("/network", a.handleMeshNetwork)
+		})
 	})
 
 	// Static files for Web UI - serve everything else
@@ -434,6 +463,19 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		r.Get("/entries", a.handleCacheEntries)
 		r.Delete("/entries/{key}", a.handleCacheDeleteEntry)
 		r.Post("/clear", a.handleCacheClear)
+	})
+
+	// Mesh routes
+	r.Route("/api/v1/mesh", func(r chi.Router) {
+		r.Get("/status", a.handleMeshStatus)
+		r.Get("/stats", a.handleMeshStats)
+		r.Post("/enable", a.handleMeshEnable)
+		r.Post("/disable", a.handleMeshDisable)
+		r.Get("/peers", a.handleMeshPeers)
+		r.Get("/peers/connected", a.handleMeshConnectedPeers)
+		r.Get("/peers/{id}", a.handleMeshPeer)
+		r.Get("/routes", a.handleMeshRoutes)
+		r.Get("/network", a.handleMeshNetwork)
 	})
 }
 
@@ -1884,4 +1926,294 @@ func (a *API) handleCacheClear(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
+}
+
+// Mesh handlers
+
+// MeshStatusResponse represents the mesh network status.
+type MeshStatusResponse struct {
+	Status          string `json:"status"`
+	Enabled         bool   `json:"enabled"`
+	PeerID          string `json:"peer_id,omitempty"`
+	VirtualIP       string `json:"virtual_ip,omitempty"`
+	NetworkID       string `json:"network_id,omitempty"`
+	NetworkCIDR     string `json:"network_cidr,omitempty"`
+	PeerName        string `json:"peer_name,omitempty"`
+	PeerCount       int    `json:"peer_count"`
+	ConnectedPeers  int    `json:"connected_peers"`
+	DirectConns     int    `json:"direct_connections"`
+	RelayedConns    int    `json:"relayed_connections"`
+	BytesSent       int64  `json:"bytes_sent"`
+	BytesReceived   int64  `json:"bytes_received"`
+	PacketsSent     int64  `json:"packets_sent"`
+	PacketsReceived int64  `json:"packets_received"`
+	Uptime          string `json:"uptime,omitempty"`
+}
+
+// MeshPeerResponse represents a peer in the mesh network.
+type MeshPeerResponse struct {
+	ID             string            `json:"id"`
+	Name           string            `json:"name"`
+	VirtualIP      string            `json:"virtual_ip,omitempty"`
+	VirtualMAC     string            `json:"virtual_mac,omitempty"`
+	PublicKey      string            `json:"public_key,omitempty"`
+	Status         string            `json:"status"`
+	ConnectionType string            `json:"connection_type,omitempty"`
+	Latency        int64             `json:"latency_ms"`
+	LastSeen       string            `json:"last_seen"`
+	JoinedAt       string            `json:"joined_at"`
+	BytesSent      int64             `json:"bytes_sent"`
+	BytesReceived  int64             `json:"bytes_received"`
+	Endpoints      []MeshEndpoint    `json:"endpoints,omitempty"`
+	Metadata       map[string]string `json:"metadata,omitempty"`
+}
+
+// MeshEndpoint represents a network endpoint.
+type MeshEndpoint struct {
+	Address  string `json:"address"`
+	Port     uint16 `json:"port"`
+	Type     string `json:"type"`
+	Priority int    `json:"priority"`
+}
+
+// MeshRouteResponse represents a route in the mesh routing table.
+type MeshRouteResponse struct {
+	DestPeerID  string `json:"dest_peer_id"`
+	DestIP      string `json:"dest_ip,omitempty"`
+	NextHop     string `json:"next_hop,omitempty"`
+	Type        string `json:"type"`
+	Metric      int    `json:"metric"`
+	Latency     int64  `json:"latency_ms"`
+	HopCount    int    `json:"hop_count"`
+	LastUpdated string `json:"last_updated"`
+	Active      bool   `json:"active"`
+}
+
+// MeshNetworkResponse represents mesh network information.
+type MeshNetworkResponse struct {
+	NetworkID   string `json:"network_id"`
+	NetworkCIDR string `json:"network_cidr"`
+	PeerName    string `json:"peer_name"`
+	LocalPeerID string `json:"local_peer_id"`
+	VirtualIP   string `json:"virtual_ip"`
+}
+
+func (a *API) handleMeshStatus(w http.ResponseWriter, r *http.Request) {
+	response := MeshStatusResponse{
+		Status:  "disabled",
+		Enabled: false,
+	}
+
+	if a.meshManager != nil {
+		status := a.meshManager.Status()
+		stats := a.meshManager.Stats()
+
+		response.Status = string(status)
+		response.Enabled = status == mesh.NodeStatusRunning
+		response.PeerID = a.meshManager.LocalPeerID()
+		response.VirtualIP = a.meshManager.LocalIP()
+		response.PeerCount = stats.PeerCount
+		response.ConnectedPeers = stats.ConnectedPeers
+		response.DirectConns = stats.DirectConnections
+		response.RelayedConns = stats.RelayedConnections
+		response.BytesSent = stats.BytesSent
+		response.BytesReceived = stats.BytesReceived
+		response.PacketsSent = stats.PacketsSent
+		response.PacketsReceived = stats.PacketsReceived
+
+		if stats.Uptime > 0 {
+			response.Uptime = stats.Uptime.String()
+		}
+
+		// Get network info from config if available
+		if a.configGetter != nil {
+			if cfg, ok := a.configGetter().(*config.ClientConfig); ok {
+				response.NetworkID = cfg.Mesh.NetworkID
+				response.NetworkCIDR = cfg.Mesh.NetworkCIDR
+				response.PeerName = cfg.Mesh.PeerName
+			}
+		}
+	}
+
+	a.writeJSON(w, http.StatusOK, response)
+}
+
+func (a *API) handleMeshStats(w http.ResponseWriter, r *http.Request) {
+	if a.meshManager == nil {
+		a.writeJSON(w, http.StatusOK, mesh.NodeStats{Status: mesh.NodeStatusStopped})
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, a.meshManager.Stats())
+}
+
+func (a *API) handleMeshEnable(w http.ResponseWriter, r *http.Request) {
+	if a.meshManager == nil {
+		http.Error(w, "Mesh not configured", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.meshManager.Start(r.Context()); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "enabled"})
+}
+
+func (a *API) handleMeshDisable(w http.ResponseWriter, r *http.Request) {
+	if a.meshManager == nil {
+		http.Error(w, "Mesh not configured", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.meshManager.Stop(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
+}
+
+func (a *API) handleMeshPeers(w http.ResponseWriter, r *http.Request) {
+	if a.meshManager == nil {
+		a.writeJSON(w, http.StatusOK, []MeshPeerResponse{})
+		return
+	}
+
+	peers := a.meshManager.GetPeers()
+	response := make([]MeshPeerResponse, 0, len(peers))
+
+	for _, peer := range peers {
+		resp := convertPeerToResponse(peer)
+		response = append(response, resp)
+	}
+
+	a.writeJSON(w, http.StatusOK, response)
+}
+
+func (a *API) handleMeshConnectedPeers(w http.ResponseWriter, r *http.Request) {
+	if a.meshManager == nil {
+		a.writeJSON(w, http.StatusOK, []MeshPeerResponse{})
+		return
+	}
+
+	peers := a.meshManager.GetConnectedPeers()
+	response := make([]MeshPeerResponse, 0, len(peers))
+
+	for _, peer := range peers {
+		resp := convertPeerToResponse(peer)
+		response = append(response, resp)
+	}
+
+	a.writeJSON(w, http.StatusOK, response)
+}
+
+func (a *API) handleMeshPeer(w http.ResponseWriter, r *http.Request) {
+	if a.meshManager == nil {
+		http.Error(w, "Mesh not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	peerID := chi.URLParam(r, "id")
+	if peerID == "" {
+		http.Error(w, "peer ID is required", http.StatusBadRequest)
+		return
+	}
+
+	peer, found := a.meshManager.GetPeer(peerID)
+	if !found {
+		http.Error(w, "peer not found", http.StatusNotFound)
+		return
+	}
+
+	response := convertPeerToResponse(peer)
+	a.writeJSON(w, http.StatusOK, response)
+}
+
+func (a *API) handleMeshRoutes(w http.ResponseWriter, r *http.Request) {
+	if a.meshManager == nil {
+		a.writeJSON(w, http.StatusOK, []MeshRouteResponse{})
+		return
+	}
+
+	routes := a.meshManager.GetRoutes()
+	response := make([]MeshRouteResponse, 0, len(routes))
+
+	for _, route := range routes {
+		resp := MeshRouteResponse{
+			DestPeerID:  route.DestPeerID,
+			NextHop:     route.NextHop,
+			Type:        route.Type.String(),
+			Metric:      route.Metric,
+			Latency:     route.Latency.Milliseconds(),
+			HopCount:    route.HopCount,
+			LastUpdated: route.LastUpdated.Format(time.RFC3339),
+			Active:      route.Active,
+		}
+
+		if route.DestIP.IsValid() {
+			resp.DestIP = route.DestIP.String()
+		}
+
+		response = append(response, resp)
+	}
+
+	a.writeJSON(w, http.StatusOK, response)
+}
+
+func (a *API) handleMeshNetwork(w http.ResponseWriter, r *http.Request) {
+	response := MeshNetworkResponse{}
+
+	if a.meshManager != nil {
+		response.LocalPeerID = a.meshManager.LocalPeerID()
+		response.VirtualIP = a.meshManager.LocalIP()
+	}
+
+	// Get network info from config
+	if a.configGetter != nil {
+		if cfg, ok := a.configGetter().(*config.ClientConfig); ok {
+			response.NetworkID = cfg.Mesh.NetworkID
+			response.NetworkCIDR = cfg.Mesh.NetworkCIDR
+			response.PeerName = cfg.Mesh.PeerName
+		}
+	}
+
+	a.writeJSON(w, http.StatusOK, response)
+}
+
+func convertPeerToResponse(peer *mesh.Peer) MeshPeerResponse {
+	resp := MeshPeerResponse{
+		ID:             peer.ID,
+		Name:           peer.Name,
+		PublicKey:      peer.PublicKey,
+		Status:         string(peer.Status),
+		ConnectionType: string(peer.ConnectionType),
+		Latency:        peer.Latency.Milliseconds(),
+		LastSeen:       peer.LastSeen.Format(time.RFC3339),
+		JoinedAt:       peer.JoinedAt.Format(time.RFC3339),
+		BytesSent:      peer.BytesSent,
+		BytesReceived:  peer.BytesReceived,
+		Metadata:       peer.Metadata,
+	}
+
+	if peer.VirtualIP.IsValid() {
+		resp.VirtualIP = peer.VirtualIP.String()
+	}
+
+	if len(peer.VirtualMAC) > 0 {
+		resp.VirtualMAC = peer.VirtualMAC.String()
+	}
+
+	resp.Endpoints = make([]MeshEndpoint, 0, len(peer.Endpoints))
+	for _, ep := range peer.Endpoints {
+		resp.Endpoints = append(resp.Endpoints, MeshEndpoint{
+			Address:  ep.Address,
+			Port:     ep.Port,
+			Type:     ep.Type,
+			Priority: ep.Priority,
+		})
+	}
+
+	return resp
 }

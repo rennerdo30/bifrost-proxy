@@ -5,6 +5,7 @@ import { Traffic } from './pages/Traffic'
 import { RoutesPage } from './pages/Routes'
 import { Cache } from './pages/Cache'
 import { VPN } from './pages/VPN'
+import { Mesh } from './pages/Mesh'
 import { Settings } from './pages/Settings'
 import { Logs } from './pages/Logs'
 
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="routes" element={<RoutesPage />} />
             <Route path="cache" element={<Cache />} />
             <Route path="vpn" element={<VPN />} />
+            <Route path="mesh" element={<Mesh />} />
             <Route path="settings" element={<Settings />} />
             <Route path="logs" element={<Logs />} />
           </Route>

@@ -1,4 +1,4 @@
-import type { VersionInfo, StatusResponse, DebugEntry, Route, RouteTestResult, CacheStats, CacheEntriesResponse } from './types'
+import type { VersionInfo, StatusResponse, DebugEntry, Route, RouteTestResult, CacheStats, CacheEntriesResponse, MeshStatus, MeshStats, MeshPeer, MeshRoute, MeshNetwork } from './types'
 
 const API_BASE = '/api/v1'
 
@@ -456,4 +456,15 @@ export const api = {
     fetchJSON<{ status: string; key: string }>(`/cache/entries/${encodeURIComponent(key)}`, { method: 'DELETE' }),
   clearCache: () =>
     fetchJSON<{ status: string }>('/cache/clear', { method: 'POST' }),
+
+  // Mesh
+  getMeshStatus: () => fetchJSON<MeshStatus>('/mesh/status'),
+  getMeshStats: () => fetchJSON<MeshStats>('/mesh/stats'),
+  enableMesh: () => fetchJSON<{ status: string }>('/mesh/enable', { method: 'POST' }),
+  disableMesh: () => fetchJSON<{ status: string }>('/mesh/disable', { method: 'POST' }),
+  getMeshPeers: () => fetchJSON<MeshPeer[]>('/mesh/peers'),
+  getMeshConnectedPeers: () => fetchJSON<MeshPeer[]>('/mesh/peers/connected'),
+  getMeshPeer: (id: string) => fetchJSON<MeshPeer>(`/mesh/peers/${encodeURIComponent(id)}`),
+  getMeshRoutes: () => fetchJSON<MeshRoute[]>('/mesh/routes'),
+  getMeshNetwork: () => fetchJSON<MeshNetwork>('/mesh/network'),
 }
