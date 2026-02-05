@@ -1,4 +1,4 @@
-import type { VersionInfo, StatusResponse, DebugEntry, Route, RouteTestResult } from './types'
+import type { VersionInfo, StatusResponse, DebugEntry, Route, RouteTestResult, CacheStats, CacheEntriesResponse } from './types'
 
 const API_BASE = '/api/v1'
 
@@ -444,4 +444,16 @@ export const api = {
     }),
   removeSplitTunnelIP: (cidr: string) =>
     fetchJSON<{ status: string }>(`/vpn/split/ips/${encodeURIComponent(cidr)}`, { method: 'DELETE' }),
+
+  // Cache
+  getCacheStats: () => fetchJSON<CacheStats>('/cache/stats'),
+  getCacheEntries: (limit = 100, offset = 0, domain?: string) => {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) })
+    if (domain) params.set('domain', domain)
+    return fetchJSON<CacheEntriesResponse>(`/cache/entries?${params}`)
+  },
+  deleteCacheEntry: (key: string) =>
+    fetchJSON<{ status: string; key: string }>(`/cache/entries/${encodeURIComponent(key)}`, { method: 'DELETE' }),
+  clearCache: () =>
+    fetchJSON<{ status: string }>('/cache/clear', { method: 'POST' }),
 }

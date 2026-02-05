@@ -3854,3 +3854,88 @@ func TestAPI_HandleRemoveRoute_NoRouter(t *testing.T) {
 	// Without a router to check, it should proceed with the update
 	assert.Equal(t, http.StatusOK, w.Code)
 }
+
+// ============================================================================
+// Cache Handler Tests
+// ============================================================================
+
+func TestAPI_HandleCacheStats_NilCacheManager(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("GET", "/api/v1/cache/stats", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Equal(t, false, resp["enabled"])
+	assert.Equal(t, "none", resp["storage_type"])
+}
+
+func TestAPI_HandleCacheEntries_NilCacheManager(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("GET", "/api/v1/cache/entries", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp CacheEntriesResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	assert.Empty(t, resp.Entries)
+	assert.Equal(t, int64(0), resp.Total)
+	assert.Equal(t, 100, resp.Limit)
+	assert.Equal(t, 0, resp.Offset)
+}
+
+func TestAPI_HandleCacheEntries_WithPagination(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	// When cacheManager is nil, the handler returns defaults regardless of query params
+	req := httptest.NewRequest("GET", "/api/v1/cache/entries?limit=50&offset=10", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp CacheEntriesResponse
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+	// With nil cacheManager, we return default values
+	assert.Equal(t, 100, resp.Limit)
+	assert.Equal(t, 0, resp.Offset)
+}
+
+func TestAPI_HandleCacheDeleteEntry_NilCacheManager(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("DELETE", "/api/v1/cache/entries/test-key", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "cache not configured")
+}
+
+func TestAPI_HandleCacheClear_NilCacheManager(t *testing.T) {
+	api := New(Config{})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("POST", "/api/v1/cache/clear", nil)
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), "cache not configured")
+}

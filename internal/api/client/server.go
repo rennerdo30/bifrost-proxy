@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"gopkg.in/yaml.v3"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/debug"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
@@ -50,6 +51,15 @@ type VPNManager interface {
 	AddSplitTunnelIP(cidr string) error
 	RemoveSplitTunnelIP(cidr string) error
 	SetSplitTunnelMode(mode string) error
+}
+
+// CacheManager defines the interface for cache management operations
+type CacheManager interface {
+	Stats() cache.CacheStats
+	Storage() cache.Storage
+	Clear(ctx context.Context) error
+	Delete(ctx context.Context, key string) error
+	IsEnabled() bool
 }
 
 // ServerInfo represents a configured server.
@@ -106,6 +116,7 @@ type API struct {
 	serverConnected func() bool
 	token           string
 	vpnManager      VPNManager
+	cacheManager    CacheManager
 	configGetter    func() interface{}
 	configUpdater   func(map[string]interface{}) error
 	configReloader  func() error
@@ -143,6 +154,7 @@ type Config struct {
 	ServerConnected func() bool
 	Token           string
 	VPNManager      VPNManager
+	CacheManager    CacheManager
 	ConfigGetter    func() interface{}
 	ConfigUpdater   func(map[string]interface{}) error
 	ConfigReloader  func() error
@@ -170,6 +182,7 @@ func New(cfg Config) *API {
 		serverConnected: cfg.ServerConnected,
 		token:           cfg.Token,
 		vpnManager:      cfg.VPNManager,
+		cacheManager:    cfg.CacheManager,
 		configGetter:    cfg.ConfigGetter,
 		configUpdater:   cfg.ConfigUpdater,
 		configReloader:  cfg.ConfigReloader,
@@ -290,6 +303,12 @@ func (a *API) HandlerWithUI() http.Handler {
 			})
 			r.Get("/dns/cache", a.handleVPNDNSCache)
 		})
+		r.Route("/v1/cache", func(r chi.Router) {
+			r.Get("/stats", a.handleCacheStats)
+			r.Get("/entries", a.handleCacheEntries)
+			r.Delete("/entries/{key}", a.handleCacheDeleteEntry)
+			r.Post("/clear", a.handleCacheClear)
+		})
 	})
 
 	// Static files for Web UI - serve everything else
@@ -407,6 +426,14 @@ func (a *API) addAPIRoutes(r chi.Router) {
 
 		// DNS routes
 		r.Get("/dns/cache", a.handleVPNDNSCache)
+	})
+
+	// Cache routes
+	r.Route("/api/v1/cache", func(r chi.Router) {
+		r.Get("/stats", a.handleCacheStats)
+		r.Get("/entries", a.handleCacheEntries)
+		r.Delete("/entries/{key}", a.handleCacheDeleteEntry)
+		r.Post("/clear", a.handleCacheClear)
 	})
 }
 
@@ -1700,4 +1727,161 @@ func (a *API) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	a.writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+}
+
+// Cache handlers
+
+// CacheEntryResponse represents a cache entry for the API response.
+type CacheEntryResponse struct {
+	Key           string `json:"key"`
+	URL           string `json:"url"`
+	Host          string `json:"host"`
+	ContentLength int64  `json:"content_length"`
+	ContentType   string `json:"content_type"`
+	CreatedAt     string `json:"created_at"`
+	ExpiresAt     string `json:"expires_at"`
+	AccessedAt    string `json:"accessed_at"`
+	AccessCount   int64  `json:"access_count"`
+	Size          int64  `json:"size_bytes"`
+	Tier          string `json:"tier"`
+	TTL           int64  `json:"ttl_seconds"`
+}
+
+// CacheEntriesResponse represents the paginated cache entries response.
+type CacheEntriesResponse struct {
+	Entries []*CacheEntryResponse `json:"entries"`
+	Total   int64                 `json:"total"`
+	Limit   int                   `json:"limit"`
+	Offset  int                   `json:"offset"`
+}
+
+func (a *API) handleCacheStats(w http.ResponseWriter, r *http.Request) {
+	if a.cacheManager == nil {
+		a.writeJSON(w, http.StatusOK, cache.CacheStats{
+			Enabled:     false,
+			StorageType: "none",
+		})
+		return
+	}
+
+	stats := a.cacheManager.Stats()
+	a.writeJSON(w, http.StatusOK, stats)
+}
+
+func (a *API) handleCacheEntries(w http.ResponseWriter, r *http.Request) {
+	if a.cacheManager == nil {
+		a.writeJSON(w, http.StatusOK, CacheEntriesResponse{
+			Entries: []*CacheEntryResponse{},
+			Total:   0,
+			Limit:   100,
+			Offset:  0,
+		})
+		return
+	}
+
+	// Parse pagination parameters
+	limitStr := r.URL.Query().Get("limit")
+	offsetStr := r.URL.Query().Get("offset")
+	domain := r.URL.Query().Get("domain")
+
+	limit := 100
+	offset := 0
+
+	if limitStr != "" {
+		if l, err := json.Number(limitStr).Int64(); err == nil && l > 0 {
+			limit = int(l)
+			if limit > 1000 {
+				limit = 1000 // Cap at 1000
+			}
+		}
+	}
+	if offsetStr != "" {
+		if o, err := json.Number(offsetStr).Int64(); err == nil && o >= 0 {
+			offset = int(o)
+		}
+	}
+
+	// Get entries from storage
+	storage := a.cacheManager.Storage()
+	if storage == nil {
+		a.writeJSON(w, http.StatusOK, CacheEntriesResponse{
+			Entries: []*CacheEntryResponse{},
+			Total:   0,
+			Limit:   limit,
+			Offset:  offset,
+		})
+		return
+	}
+
+	metadataList, total, err := storage.List(r.Context(), domain, offset, limit)
+	if err != nil {
+		http.Error(w, "failed to list cache entries: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Convert to response format
+	entries := make([]*CacheEntryResponse, 0, len(metadataList))
+	for _, meta := range metadataList {
+		now := time.Now()
+		ttlSeconds := int64(0)
+		if meta.ExpiresAt.After(now) {
+			ttlSeconds = int64(meta.ExpiresAt.Sub(now).Seconds())
+		}
+
+		entries = append(entries, &CacheEntryResponse{
+			Key:           meta.Key,
+			URL:           meta.URL,
+			Host:          meta.Host,
+			ContentLength: meta.ContentLength,
+			ContentType:   meta.ContentType,
+			CreatedAt:     meta.CreatedAt.Format(time.RFC3339),
+			ExpiresAt:     meta.ExpiresAt.Format(time.RFC3339),
+			AccessedAt:    meta.AccessedAt.Format(time.RFC3339),
+			AccessCount:   meta.AccessCount,
+			Size:          meta.Size,
+			Tier:          meta.Tier,
+			TTL:           ttlSeconds,
+		})
+	}
+
+	a.writeJSON(w, http.StatusOK, CacheEntriesResponse{
+		Entries: entries,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	})
+}
+
+func (a *API) handleCacheDeleteEntry(w http.ResponseWriter, r *http.Request) {
+	if a.cacheManager == nil {
+		http.Error(w, "cache not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	key := chi.URLParam(r, "key")
+	if key == "" {
+		http.Error(w, "key is required", http.StatusBadRequest)
+		return
+	}
+
+	if err := a.cacheManager.Delete(r.Context(), key); err != nil {
+		http.Error(w, "failed to delete cache entry: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "deleted", "key": key})
+}
+
+func (a *API) handleCacheClear(w http.ResponseWriter, r *http.Request) {
+	if a.cacheManager == nil {
+		http.Error(w, "cache not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := a.cacheManager.Clear(r.Context()); err != nil {
+		http.Error(w, "failed to clear cache: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	a.writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
 }
