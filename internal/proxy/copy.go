@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"time"
@@ -18,8 +19,10 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 net.Conn) (sent, receiv
 		defer wg.Done()
 		sent, _ = copyWithContext(ctx, conn2, conn1)
 		// Close write side of conn2 to signal EOF
-		if c, ok := conn2.(*net.TCPConn); ok {
-			c.CloseWrite()
+		if c, ok := conn2.(interface{ CloseWrite() error }); ok {
+			if err := c.CloseWrite(); err != nil {
+				slog.Debug("failed to close write side of destination connection", "error", err)
+			}
 		}
 	}()
 
@@ -28,8 +31,10 @@ func CopyBidirectional(ctx context.Context, conn1, conn2 net.Conn) (sent, receiv
 		defer wg.Done()
 		received, _ = copyWithContext(ctx, conn1, conn2)
 		// Close write side of conn1 to signal EOF
-		if c, ok := conn1.(*net.TCPConn); ok {
-			c.CloseWrite()
+		if c, ok := conn1.(interface{ CloseWrite() error }); ok {
+			if err := c.CloseWrite(); err != nil {
+				slog.Debug("failed to close write side of source connection", "error", err)
+			}
 		}
 	}()
 
@@ -63,8 +68,12 @@ func copyWithContext(ctx context.Context, dst, src net.Conn) (int64, error) {
 		// Context cancelled - set deadline to force io.Copy to return
 		// This ensures the goroutine doesn't leak
 		deadline := time.Now().Add(100 * time.Millisecond)
-		src.SetReadDeadline(deadline)
-		dst.SetWriteDeadline(deadline)
+		if err := src.SetReadDeadline(deadline); err != nil {
+			slog.Debug("failed to set read deadline on source connection", "error", err)
+		}
+		if err := dst.SetWriteDeadline(deadline); err != nil {
+			slog.Debug("failed to set write deadline on destination connection", "error", err)
+		}
 
 		// Wait for the goroutine to finish
 		select {
