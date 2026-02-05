@@ -1,0 +1,493 @@
+---
+title: "Frequently Asked Questions"
+description: "Common questions and quick answers about Bifrost Proxy"
+---
+
+# Frequently Asked Questions
+
+Quick answers to common questions about Bifrost Proxy.
+
+---
+
+## General
+
+### What is Bifrost Proxy?
+
+Bifrost Proxy is a Go-based proxy system with client-server architecture that supports:
+- HTTP and SOCKS5 proxy protocols
+- WireGuard and OpenVPN tunnel backends
+- Domain-based routing
+- Multiple authentication modes
+- VPN mode with split tunneling
+- P2P mesh networking
+
+### What platforms are supported?
+
+| Platform | Server | Client |
+|----------|--------|--------|
+| Linux (x64, ARM64) | Yes | Yes |
+| macOS (Intel, Apple Silicon) | Yes | Yes |
+| Windows (x64) | Yes | Yes |
+| FreeBSD | Yes | Yes |
+| OpenWrt | Limited | Yes |
+
+### What's the difference between server and client?
+
+- **Server**: Central proxy that handles routing, backends (WireGuard, OpenVPN), and caching
+- **Client**: Local proxy with traffic debugging, VPN mode, and connects to servers
+
+---
+
+## Installation & Setup
+
+### How do I install Bifrost?
+
+```bash
+# Using Go
+go install github.com/rennerdo30/bifrost-proxy/cmd/bifrost-server@latest
+go install github.com/rennerdo30/bifrost-proxy/cmd/bifrost-client@latest
+
+# Using Docker
+docker pull ghcr.io/rennerdo30/bifrost-proxy:latest
+
+# Binary releases
+# Download from GitHub releases page
+```
+
+### What are the minimum system requirements?
+
+| Resource | Minimum | Recommended |
+|----------|---------|-------------|
+| CPU | 1 core | 2+ cores |
+| RAM | 128 MB | 512+ MB |
+| Disk | 50 MB | 1+ GB (with caching) |
+
+### How do I verify my installation?
+
+```bash
+# Check version
+bifrost-server version
+
+# Validate configuration
+bifrost-server validate -c config.yaml
+
+# Test startup
+bifrost-server -c config.yaml --log-level debug
+```
+
+---
+
+## Configuration
+
+### Where should I put my config file?
+
+Default locations checked:
+1. Path specified with `-c` flag
+2. `./config.yaml`
+3. `/etc/bifrost/config.yaml`
+4. `~/.config/bifrost/config.yaml`
+
+### How do I use environment variables in config?
+
+Use the `${VAR_NAME}` syntax:
+
+```yaml
+auth:
+  mode: native
+  native:
+    users:
+      - username: admin
+        password_hash: "${ADMIN_PASSWORD_HASH}"
+```
+
+### What config changes require a restart?
+
+**Hot-reloadable (no restart):**
+- Routes
+- Rate limits
+- Access control lists
+- Cache settings
+
+**Require restart:**
+- Listener addresses (ports)
+- TLS configuration
+- Authentication mode
+- Backend type changes
+
+Reload without restart:
+```bash
+# Via signal
+kill -HUP $(pgrep bifrost-server)
+
+# Via API
+curl -X POST http://localhost:7082/api/v1/config/reload
+```
+
+### How do I generate a password hash?
+
+```bash
+# htpasswd (bcrypt)
+htpasswd -nbBC 12 "" "mypassword" | cut -d: -f2
+
+# Python
+python3 -c "import bcrypt; print(bcrypt.hashpw(b'mypassword', bcrypt.gensalt(12)).decode())"
+
+# Go tool
+go run github.com/rennerdo30/bifrost-proxy/tools/hashpw mypassword
+```
+
+---
+
+## Connectivity
+
+### How do I test if the proxy is working?
+
+```bash
+# HTTP proxy
+curl -x http://localhost:7080 https://httpbin.org/ip
+
+# SOCKS5 proxy
+curl --socks5 localhost:7180 https://httpbin.org/ip
+
+# With authentication
+curl -x http://user:pass@localhost:7080 https://httpbin.org/ip
+```
+
+### Why am I getting "Connection refused"?
+
+Common causes:
+1. Service not running: `systemctl status bifrost-server`
+2. Wrong port: Check `listen` in config
+3. Firewall blocking: `sudo ufw status`
+4. Bound to localhost only: Use `:7080` instead of `127.0.0.1:7080`
+
+### Why am I getting 407 errors?
+
+The proxy requires authentication. Provide credentials:
+
+```bash
+curl -x http://username:password@localhost:7080 https://example.com
+```
+
+If credentials are correct, verify the password hash in your config.
+
+### How do I configure my browser to use the proxy?
+
+**Firefox:**
+1. Settings → Network Settings → Manual proxy configuration
+2. HTTP Proxy: `localhost`, Port: `7080`
+3. Check "Use this proxy server for all protocols"
+
+**Chrome:**
+Uses system proxy settings, or use an extension like SwitchyOmega.
+
+**System-wide (environment variables):**
+```bash
+export http_proxy="http://localhost:7080"
+export https_proxy="http://localhost:7080"
+```
+
+---
+
+## Backends & Routing
+
+### How do I route specific domains through different backends?
+
+```yaml
+routes:
+  - domains:
+      - "*.company.com"
+      - "internal.corp"
+    backends:
+      - corporate-vpn
+
+  - domains:
+      - "*.streaming.com"
+    backends:
+      - fast-direct
+
+  - domains:
+      - "*"  # Default/catch-all
+    backends:
+      - default-backend
+```
+
+### How do I set up load balancing?
+
+```yaml
+routes:
+  - domains: ["*"]
+    backends:
+      - backend1
+      - backend2
+      - backend3
+    load_balance: round_robin  # or: least_conn, ip_hash
+```
+
+### Why is my WireGuard backend showing unhealthy?
+
+Check:
+1. Keys match between client and server
+2. Endpoint is reachable: `nc -u -zv endpoint 51820`
+3. Firewall allows UDP: `sudo ufw allow out 51820/udp`
+4. DNS servers configured in backend config
+
+### How do I import a WireGuard config file?
+
+Currently, Bifrost uses its own config format. Convert manually:
+
+```yaml
+backends:
+  - name: wg-vpn
+    type: wireguard
+    config:
+      private_key: "YOUR_PRIVATE_KEY"
+      address: "10.0.0.2/24"
+      dns: ["1.1.1.1"]
+      peer:
+        public_key: "SERVER_PUBLIC_KEY"
+        endpoint: "vpn.example.com:51820"
+        allowed_ips: ["0.0.0.0/0"]
+```
+
+---
+
+## Authentication
+
+### What authentication methods are supported?
+
+| Method | Use Case |
+|--------|----------|
+| `none` | Development, trusted networks |
+| `native` | Simple username/password |
+| `ldap` | Enterprise (Active Directory) |
+| `system` | Linux/macOS users (PAM) |
+| `oauth` | SSO with OAuth/OIDC providers |
+| `jwt` | Token-based APIs |
+| `apikey` | Service-to-service |
+| `totp` | Time-based OTP |
+| `hotp` | Counter-based OTP |
+| `mtls` | Client certificates |
+| `kerberos` | Enterprise SSO |
+| `mfa_wrapper` | Two-factor (password + OTP) |
+
+### Why does system auth fail on Windows?
+
+System authentication uses PAM (Linux) or Directory Services (macOS). Windows is not supported. Use `native`, `ldap`, or `oauth` instead.
+
+### How do I set up two-factor authentication?
+
+```yaml
+auth:
+  mode: mfa_wrapper
+  mfa_wrapper:
+    primary:
+      mode: native
+      native:
+        users:
+          - username: admin
+            password_hash: "$2a$12$..."
+    secondary:
+      mode: totp
+      totp:
+        secrets:
+          admin: "BASE32SECRET"
+    otp_separator: ":"  # Use password:123456
+```
+
+---
+
+## Performance
+
+### How can I improve proxy performance?
+
+1. **Enable caching:**
+   ```yaml
+   cache:
+     enabled: true
+     memory:
+       max_size: "256MB"
+   ```
+
+2. **Optimize connection reuse:**
+   ```yaml
+   server:
+     http:
+       idle_timeout: "120s"
+   ```
+
+3. **Reduce logging:**
+   ```yaml
+   logging:
+     level: warn
+   ```
+
+4. **Increase file descriptors:**
+   ```bash
+   ulimit -n 65536
+   ```
+
+### How much memory does Bifrost use?
+
+Base memory: ~50-100 MB
+
+Memory increases with:
+- Active connections
+- Cache size
+- Request logging
+- Number of routes
+
+### Why are requests slow?
+
+Check:
+1. Backend latency: `curl -s http://localhost:7082/api/v1/backends | jq '.[] | .stats.avg_latency_ms'`
+2. DNS resolution time
+3. TLS handshake overhead
+4. Connection pool exhaustion
+
+---
+
+## VPN Mode
+
+### What's the difference between VPN mode and proxy mode?
+
+| Feature | Proxy Mode | VPN Mode |
+|---------|------------|----------|
+| Traffic capture | Apps configured to use proxy | All system traffic |
+| Protocol | HTTP/SOCKS5 | TUN (IP-level) |
+| Split tunneling | Per-route | Per-app, domain, IP |
+| Setup complexity | Low | Medium |
+| Permissions | User-level | Root/admin |
+
+### Why does VPN mode require root?
+
+Creating TUN/TAP devices requires elevated privileges. On Linux:
+```bash
+# Grant capabilities instead of root
+sudo setcap cap_net_admin+ep ./bifrost-client
+```
+
+### How do I exclude apps from VPN?
+
+```yaml
+vpn:
+  split:
+    mode: exclude
+    apps:
+      - name: "Slack"
+      - name: "Zoom"
+```
+
+---
+
+## Mesh Networking
+
+### What is mesh networking?
+
+A Hamachi-like feature that creates virtual LANs between peers using:
+- Automatic NAT traversal (STUN/TURN/ICE)
+- End-to-end encryption
+- Direct P2P connections when possible
+
+### Why can't peers connect?
+
+1. **Symmetric NAT**: Both peers behind symmetric NAT need TURN relay
+2. **Firewall**: Allow UDP on ephemeral ports
+3. **STUN unreachable**: Check STUN server connectivity
+
+### Do I need a TURN server?
+
+Only if both peers are behind symmetric NAT. Options:
+- Self-host using coturn
+- Use a commercial TURN service
+
+---
+
+## Security
+
+### Is traffic encrypted?
+
+| Path | Encryption |
+|------|------------|
+| Client → Proxy (local) | Optional TLS |
+| Proxy → Backend (WireGuard) | ChaCha20-Poly1305 |
+| Proxy → Backend (OpenVPN) | Configurable (AES, etc.) |
+| Proxy → Upstream (direct) | End-to-end HTTPS |
+| Mesh P2P | ChaCha20-Poly1305 |
+
+### How do I enable TLS for the proxy?
+
+```yaml
+server:
+  http:
+    listen: ":7443"
+    tls:
+      enabled: true
+      cert_file: "/path/to/cert.pem"
+      key_file: "/path/to/key.pem"
+```
+
+### Should I expose the API publicly?
+
+No. The API should only be accessible from localhost or trusted networks:
+
+```yaml
+api:
+  listen: "127.0.0.1:7082"  # Localhost only
+```
+
+Use a reverse proxy with authentication if remote access is needed.
+
+---
+
+## Troubleshooting
+
+### How do I enable debug logging?
+
+```yaml
+logging:
+  level: debug
+  format: text
+```
+
+Or: `bifrost-server -c config.yaml --log-level debug`
+
+### Where are the logs?
+
+| Deployment | Location |
+|------------|----------|
+| Systemd | `journalctl -u bifrost-server` |
+| Docker | `docker logs bifrost-server` |
+| File | Configured in `logging.output` |
+
+### How do I report a bug?
+
+1. Check existing issues on GitHub
+2. Gather: version, OS, config (sanitized), logs
+3. Open issue at: https://github.com/rennerdo30/bifrost-proxy/issues
+
+---
+
+## Upgrading
+
+### How do I upgrade Bifrost?
+
+```bash
+# Go installation
+go install github.com/rennerdo30/bifrost-proxy/cmd/bifrost-server@latest
+
+# Docker
+docker pull ghcr.io/rennerdo30/bifrost-proxy:latest
+docker-compose up -d
+
+# Binary
+# Download new binary and replace, then restart
+```
+
+### Are configuration files backward compatible?
+
+Generally yes. Check the CHANGELOG for breaking changes between versions.
+
+### Do I need to restart after upgrading?
+
+Yes, restart is required after upgrading the binary. Your configuration will be preserved.

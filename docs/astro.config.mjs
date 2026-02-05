@@ -57,7 +57,18 @@ export default defineConfig({
             { label: "CLI Reference", slug: "cli-reference" },
             { label: "Monitoring", slug: "monitoring" },
             { label: "Security", slug: "security" },
-            { label: "Troubleshooting", slug: "troubleshooting" },
+          ],
+        },
+        {
+          label: "Troubleshooting",
+          items: [
+            { label: "Overview", slug: "troubleshooting/index" },
+            { label: "Connection Issues", slug: "troubleshooting/connections" },
+            { label: "Performance", slug: "troubleshooting/performance" },
+            { label: "Authentication", slug: "troubleshooting/authentication" },
+            { label: "VPN & Tunnels", slug: "troubleshooting/vpn-tunnels" },
+            { label: "Diagnostics & Logs", slug: "troubleshooting/diagnostics" },
+            { label: "FAQ", slug: "troubleshooting/faq" },
           ],
         },
         {

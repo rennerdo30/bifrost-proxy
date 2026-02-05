@@ -1,0 +1,570 @@
+---
+title: "Diagnostics & Log Analysis"
+description: "Diagnostic commands, log analysis, and debugging techniques for Bifrost Proxy"
+---
+
+# Diagnostics & Log Analysis
+
+This guide covers diagnostic commands, log analysis techniques, and debugging approaches for Bifrost Proxy.
+
+## Diagnostic Commands
+
+### Health Checks
+
+```bash
+# Quick health check
+curl -s http://localhost:7082/api/v1/health | jq
+# Response: {"status":"healthy","time":"2024-01-15T10:30:00Z"}
+
+# Detailed status
+curl -s http://localhost:7082/api/v1/status | jq
+
+# Backend health
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | {name, type, healthy}'
+```
+
+### Connection Statistics
+
+```bash
+# Overall statistics
+curl -s http://localhost:7082/api/v1/stats | jq
+
+# Active connections
+curl -s http://localhost:7082/api/v1/stats | jq '.active_connections'
+
+# Recent requests (if logging enabled)
+curl -s http://localhost:7082/api/v1/requests | jq '.[-10:]'
+
+# Requests by status
+curl -s http://localhost:7082/api/v1/requests | jq 'group_by(.status) | map({status: .[0].status, count: length})'
+```
+
+### Backend Diagnostics
+
+```bash
+# All backends with stats
+curl -s http://localhost:7082/api/v1/backends | jq
+
+# Specific backend
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | select(.name=="my-backend")'
+
+# Backend latency
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | {name, avg_latency_ms: .stats.avg_latency_ms}'
+
+# Unhealthy backends
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | select(.healthy==false)'
+```
+
+### Network Diagnostics
+
+```bash
+# Test proxy connectivity
+curl -x http://localhost:7080 https://httpbin.org/ip -v
+
+# Test with timing
+curl -x http://localhost:7080 https://httpbin.org/ip -o /dev/null -s -w \
+  "DNS: %{time_namelookup}s\nConnect: %{time_connect}s\nTLS: %{time_appconnect}s\nTotal: %{time_total}s\n"
+
+# Test SOCKS5
+curl --socks5 localhost:7180 https://httpbin.org/ip -v
+
+# Check what ports are listening
+netstat -tlnp | grep bifrost
+ss -tlnp | grep bifrost
+
+# Check open connections
+lsof -i -P -n | grep bifrost
+```
+
+### Cache Diagnostics
+
+```bash
+# Cache statistics
+curl -s http://localhost:7082/api/v1/cache/stats | jq
+
+# Cache hit rate
+curl -s http://localhost:7082/api/v1/cache/stats | jq '{
+  hit_rate: (.hits / (.hits + .misses) * 100),
+  hits: .hits,
+  misses: .misses
+}'
+
+# Clear cache
+curl -X DELETE http://localhost:7082/api/v1/cache
+```
+
+### VPN/Tunnel Diagnostics
+
+```bash
+# VPN status
+curl -s http://localhost:7082/api/v1/vpn/status | jq
+
+# VPN connections
+curl -s http://localhost:7082/api/v1/vpn/connections | jq
+
+# Split tunnel rules
+curl -s http://localhost:7082/api/v1/vpn/split/rules | jq
+
+# WireGuard interface (if kernel mode)
+sudo wg show
+
+# Network interface status
+ip addr show bifrost0
+```
+
+### Mesh Network Diagnostics
+
+```bash
+# Mesh status
+curl -s http://localhost:7082/api/v1/mesh/status | jq
+
+# Peer list
+curl -s http://localhost:7082/api/v1/mesh/networks/my-network/peers | jq
+
+# P2P connections
+curl -s http://localhost:7082/api/v1/p2p/connections | jq
+
+# NAT type detection
+curl -s http://localhost:7082/api/v1/p2p/nat | jq
+
+# Routes
+curl -s http://localhost:7082/api/v1/mesh/routes | jq
+```
+
+---
+
+## Log Analysis
+
+### Viewing Logs
+
+```bash
+# Systemd service logs
+journalctl -u bifrost-server -f
+
+# Last 100 lines
+journalctl -u bifrost-server -n 100 --no-pager
+
+# Since specific time
+journalctl -u bifrost-server --since "1 hour ago"
+
+# Docker container logs
+docker logs bifrost-server -f
+docker logs bifrost-server --tail 100
+
+# File-based logs
+tail -f /var/log/bifrost/server.log
+
+# Multiple log files
+tail -f /var/log/bifrost/*.log
+```
+
+### Enabling Debug Logging
+
+```yaml
+# config.yaml
+logging:
+  level: debug
+  format: text  # Human-readable for debugging
+```
+
+Or via CLI:
+
+```bash
+bifrost-server -c config.yaml --log-level debug
+```
+
+### Filtering Logs
+
+```bash
+# Filter by log level
+journalctl -u bifrost-server | grep -E "error|ERROR"
+journalctl -u bifrost-server | grep -i warn
+
+# Filter by component
+journalctl -u bifrost-server | grep -i backend
+journalctl -u bifrost-server | grep -i auth
+journalctl -u bifrost-server | grep -i wireguard
+
+# Filter by request
+journalctl -u bifrost-server | grep "example.com"
+
+# Filter by IP
+journalctl -u bifrost-server | grep "192.168.1.100"
+```
+
+### JSON Log Analysis
+
+When using JSON log format:
+
+```yaml
+logging:
+  level: info
+  format: json
+```
+
+Parse with `jq`:
+
+```bash
+# All errors
+cat /var/log/bifrost/server.log | jq 'select(.level == "error")'
+
+# Errors in last hour
+cat /var/log/bifrost/server.log | jq 'select(.level == "error" and .time > (now - 3600))'
+
+# Group by error message
+cat /var/log/bifrost/server.log | jq 'select(.level == "error") | .msg' | sort | uniq -c | sort -rn
+
+# Requests to specific domain
+cat /var/log/bifrost/server.log | jq 'select(.msg | contains("example.com"))'
+
+# Slow requests (if request time is logged)
+cat /var/log/bifrost/server.log | jq 'select(.duration_ms > 1000)'
+
+# Authentication failures
+cat /var/log/bifrost/server.log | jq 'select(.msg | contains("auth") and .level == "error")'
+```
+
+### Log Aggregation
+
+#### Loki + Grafana
+
+```yaml
+# docker-compose.yml
+services:
+  loki:
+    image: grafana/loki:2.9.0
+    ports:
+      - "3100:3100"
+
+  bifrost-server:
+    logging:
+      driver: loki
+      options:
+        loki-url: "http://localhost:3100/loki/api/v1/push"
+        labels: "app=bifrost,service=server"
+```
+
+Query in Grafana:
+
+```logql
+{app="bifrost"} |= "error"
+{app="bifrost"} | json | level="error"
+{app="bifrost"} | json | duration_ms > 1000
+```
+
+#### Elasticsearch
+
+Use Filebeat to ship logs:
+
+```yaml
+# filebeat.yml
+filebeat.inputs:
+  - type: container
+    paths:
+      - '/var/lib/docker/containers/*/*.log'
+    json.keys_under_root: true
+    json.message_key: msg
+
+output.elasticsearch:
+  hosts: ["elasticsearch:9200"]
+  index: "bifrost-%{+yyyy.MM.dd}"
+```
+
+---
+
+## Prometheus Metrics
+
+### Accessing Metrics
+
+```bash
+# All metrics
+curl -s http://localhost:7090/metrics
+
+# Specific metrics
+curl -s http://localhost:7090/metrics | grep bifrost_connections
+curl -s http://localhost:7090/metrics | grep bifrost_requests
+curl -s http://localhost:7090/metrics | grep bifrost_backend
+```
+
+### Key Metrics to Monitor
+
+```bash
+# Active connections
+curl -s http://localhost:7090/metrics | grep bifrost_connections_active
+
+# Request rate
+curl -s http://localhost:7090/metrics | grep bifrost_requests_total
+
+# Error rate
+curl -s http://localhost:7090/metrics | grep bifrost_connections_errors_total
+
+# Backend health
+curl -s http://localhost:7090/metrics | grep bifrost_backend_healthy
+
+# Backend latency
+curl -s http://localhost:7090/metrics | grep bifrost_backend_latency_seconds
+
+# Memory usage
+curl -s http://localhost:7090/metrics | grep bifrost_memory_bytes
+
+# Goroutine count
+curl -s http://localhost:7090/metrics | grep bifrost_goroutines
+
+# Cache statistics
+curl -s http://localhost:7090/metrics | grep bifrost_cache
+```
+
+### Prometheus Queries
+
+```promql
+# Request rate per second
+rate(bifrost_requests_total[5m])
+
+# Error rate percentage
+rate(bifrost_connections_errors_total[5m]) / rate(bifrost_connections_total[5m]) * 100
+
+# Average request duration
+rate(bifrost_request_duration_seconds_sum[5m]) / rate(bifrost_request_duration_seconds_count[5m])
+
+# P95 latency
+histogram_quantile(0.95, rate(bifrost_request_duration_seconds_bucket[5m]))
+
+# Unhealthy backends
+bifrost_backend_healthy == 0
+
+# Backend latency comparison
+bifrost_backend_latency_seconds{quantile="0.99"}
+```
+
+---
+
+## Debugging Techniques
+
+### Request Tracing
+
+Enable request logging:
+
+```yaml
+api:
+  enable_request_log: true
+  request_log_size: 1000
+```
+
+View recent requests:
+
+```bash
+# All recent requests
+curl -s http://localhost:7082/api/v1/requests | jq
+
+# Failed requests
+curl -s http://localhost:7082/api/v1/requests | jq '.[] | select(.status >= 400)'
+
+# Slow requests
+curl -s http://localhost:7082/api/v1/requests | jq '.[] | select(.duration_ms > 1000)'
+
+# Requests to specific domain
+curl -s http://localhost:7082/api/v1/requests | jq '.[] | select(.host | contains("example.com"))'
+```
+
+### Network Packet Capture
+
+```bash
+# Capture proxy traffic
+sudo tcpdump -i any port 7080 -w proxy-traffic.pcap
+
+# Capture with filters
+sudo tcpdump -i any port 7080 and host 192.168.1.100 -w filtered.pcap
+
+# Live view
+sudo tcpdump -i any port 7080 -A
+
+# Capture WireGuard traffic
+sudo tcpdump -i any udp port 51820 -w wireguard.pcap
+
+# Analyze with Wireshark
+wireshark proxy-traffic.pcap
+```
+
+### Process Debugging
+
+```bash
+# Check process status
+ps aux | grep bifrost
+
+# Memory map
+pmap $(pgrep bifrost-server)
+
+# Open files
+lsof -p $(pgrep bifrost-server)
+
+# Network connections
+lsof -i -P -n | grep bifrost
+
+# System calls (Linux)
+strace -p $(pgrep bifrost-server) -f
+
+# CPU profiling (if pprof enabled)
+go tool pprof http://localhost:7091/debug/pprof/profile
+
+# Memory profiling
+go tool pprof http://localhost:7091/debug/pprof/heap
+```
+
+### Configuration Validation
+
+```bash
+# Validate configuration
+bifrost-server validate -c config.yaml
+
+# Check YAML syntax
+yamllint config.yaml
+
+# Dump parsed configuration
+bifrost-server dump-config -c config.yaml
+```
+
+---
+
+## Common Log Messages
+
+### Informational
+
+| Message | Meaning |
+|---------|---------|
+| `server starting` | Service is starting |
+| `listening on :7080` | HTTP proxy ready |
+| `backend connected` | Backend is online |
+| `config reloaded` | Hot reload completed |
+
+### Warnings
+
+| Message | Meaning | Action |
+|---------|---------|--------|
+| `backend unhealthy` | Backend failed health check | Check backend connectivity |
+| `rate limit exceeded` | Client hit rate limit | Adjust limits or client behavior |
+| `connection pool exhausted` | Too many connections | Increase pool size |
+| `slow response` | Backend response slow | Investigate backend |
+
+### Errors
+
+| Message | Meaning | Action |
+|---------|---------|--------|
+| `connection refused` | Cannot connect to backend | Check backend is running |
+| `authentication failed` | Invalid credentials | Verify credentials |
+| `certificate error` | TLS issue | Check certificates |
+| `timeout` | Operation took too long | Increase timeout or check network |
+
+---
+
+## Troubleshooting Scripts
+
+### Health Check Script
+
+```bash
+#!/bin/bash
+# health-check.sh
+
+echo "=== Bifrost Health Check ==="
+
+echo -e "\n--- Service Status ---"
+systemctl is-active bifrost-server
+
+echo -e "\n--- Health Endpoint ---"
+curl -s http://localhost:7082/api/v1/health | jq
+
+echo -e "\n--- Backend Status ---"
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | {name, healthy}'
+
+echo -e "\n--- Active Connections ---"
+curl -s http://localhost:7082/api/v1/stats | jq '.active_connections'
+
+echo -e "\n--- Recent Errors ---"
+journalctl -u bifrost-server --since "5 minutes ago" | grep -i error | tail -5
+
+echo -e "\n--- Resource Usage ---"
+ps aux | grep bifrost | grep -v grep | awk '{print "CPU:", $3"%, MEM:", $4"%, RSS:", $6/1024"MB"}'
+```
+
+### Diagnostic Report Script
+
+```bash
+#!/bin/bash
+# diagnostic-report.sh
+
+OUTPUT="bifrost-diagnostic-$(date +%Y%m%d-%H%M%S).txt"
+
+{
+    echo "=== Bifrost Diagnostic Report ==="
+    echo "Generated: $(date)"
+    echo ""
+
+    echo "=== System Info ==="
+    uname -a
+    echo ""
+
+    echo "=== Bifrost Version ==="
+    bifrost-server version 2>/dev/null || echo "Not found in PATH"
+    echo ""
+
+    echo "=== Service Status ==="
+    systemctl status bifrost-server --no-pager 2>/dev/null || echo "Not a systemd service"
+    echo ""
+
+    echo "=== Health Check ==="
+    curl -s http://localhost:7082/api/v1/health 2>/dev/null | jq . || echo "API not reachable"
+    echo ""
+
+    echo "=== Backend Status ==="
+    curl -s http://localhost:7082/api/v1/backends 2>/dev/null | jq . || echo "API not reachable"
+    echo ""
+
+    echo "=== Statistics ==="
+    curl -s http://localhost:7082/api/v1/stats 2>/dev/null | jq . || echo "API not reachable"
+    echo ""
+
+    echo "=== Recent Logs (last 50 lines) ==="
+    journalctl -u bifrost-server -n 50 --no-pager 2>/dev/null || echo "No systemd logs"
+    echo ""
+
+    echo "=== Network Listeners ==="
+    netstat -tlnp 2>/dev/null | grep bifrost || ss -tlnp | grep bifrost
+    echo ""
+
+    echo "=== Resource Usage ==="
+    ps aux | grep bifrost | grep -v grep
+    echo ""
+
+    echo "=== Open Files ==="
+    lsof -p $(pgrep bifrost-server) 2>/dev/null | wc -l
+    echo ""
+
+} > "$OUTPUT"
+
+echo "Diagnostic report saved to: $OUTPUT"
+```
+
+### Monitor Script
+
+```bash
+#!/bin/bash
+# monitor.sh - Real-time monitoring
+
+while true; do
+    clear
+    echo "=== Bifrost Monitor ($(date)) ==="
+
+    echo -e "\n--- Health ---"
+    curl -s http://localhost:7082/api/v1/health | jq -r '.status'
+
+    echo -e "\n--- Connections ---"
+    curl -s http://localhost:7082/api/v1/stats | jq '.active_connections'
+
+    echo -e "\n--- Backend Health ---"
+    curl -s http://localhost:7082/api/v1/backends | jq -r '.[] | "\(.name): \(.healthy)"'
+
+    echo -e "\n--- Resource Usage ---"
+    ps aux | grep bifrost | grep -v grep | awk '{print "CPU:", $3"%, MEM:", $4"%"}'
+
+    sleep 5
+done
+```
