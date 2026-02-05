@@ -423,7 +423,13 @@ func (pm *P2PManager) receiveWorker() {
 		default:
 		}
 
-		pm.conn.SetReadDeadline(time.Now().Add(time.Second))
+		if err := pm.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				slog.Debug("failed to set read deadline in receive worker", "error", err)
+			} else {
+				slog.Warn("failed to set read deadline in receive worker", "error", err)
+			}
+		}
 		n, from, err := pm.conn.ReadFrom(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {

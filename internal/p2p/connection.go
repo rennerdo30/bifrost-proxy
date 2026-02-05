@@ -3,12 +3,25 @@ package p2p
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net"
 	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// logConnSetDeadlineError logs SetDeadline errors appropriately based on error type.
+func logConnSetDeadlineError(context string, err error) {
+	if err == nil {
+		return
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		slog.Debug("failed to set deadline", "context", context, "error", err)
+	} else {
+		slog.Warn("failed to set deadline", "context", context, "error", err)
+	}
+}
 
 // ConnectionType represents the type of P2P connection.
 type ConnectionType int
@@ -236,8 +249,14 @@ func (c *DirectConnection) performHandshake(ctx context.Context) error {
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	c.conn.SetDeadline(deadline)
-	defer c.conn.SetDeadline(time.Time{})
+	if err := c.conn.SetDeadline(deadline); err != nil {
+		logConnSetDeadlineError("handshake deadline", err)
+	}
+	defer func() {
+		if err := c.conn.SetDeadline(time.Time{}); err != nil {
+			logConnSetDeadlineError("clear handshake deadline", err)
+		}
+	}()
 
 	// Send handshake initiation
 	initMsg, err := c.crypto.CreateHandshakeInit(c.config.RemotePublicKey)
@@ -306,8 +325,12 @@ func (c *DirectConnection) sendWorker() {
 
 			// Encrypt and send
 			encrypted := c.crypto.Encrypt(data)
-			c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout))
-			c.conn.WriteTo(encrypted, remoteAddr)
+			if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout)); err != nil {
+				logConnSetDeadlineError("send worker write deadline", err)
+			}
+			if _, err := c.conn.WriteTo(encrypted, remoteAddr); err != nil {
+				slog.Debug("failed to write to connection", "error", err)
+			}
 		}
 	}
 }
@@ -330,7 +353,9 @@ func (c *DirectConnection) recvWorker() {
 			continue
 		}
 
-		c.conn.SetReadDeadline(time.Now().Add(c.config.ReadTimeout))
+		if err := c.conn.SetReadDeadline(time.Now().Add(c.config.ReadTimeout)); err != nil {
+			logConnSetDeadlineError("recv worker read deadline", err)
+		}
 		n, from, err := c.conn.ReadFrom(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -354,7 +379,9 @@ func (c *DirectConnection) recvWorker() {
 		// Handle keep-alive
 		if len(decrypted) == 4 && string(decrypted) == "PING" {
 			pong := c.crypto.Encrypt([]byte("PONG"))
-			c.conn.WriteTo(pong, from)
+			if _, err := c.conn.WriteTo(pong, from); err != nil {
+				slog.Debug("failed to send pong", "error", err)
+			}
 			continue
 		}
 
@@ -391,7 +418,9 @@ func (c *DirectConnection) keepAliveWorker() {
 
 			start := time.Now()
 			pingMsg := c.crypto.Encrypt([]byte("PING"))
-			c.conn.WriteTo(pingMsg, remoteAddr)
+			if _, err := c.conn.WriteTo(pingMsg, remoteAddr); err != nil {
+				slog.Debug("failed to send ping", "error", err)
+			}
 
 			// Wait for PONG (handled in recvWorker)
 			// Update latency after response
