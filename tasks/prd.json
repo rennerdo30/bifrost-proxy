@@ -186,14 +186,15 @@
         "Show success/error toast on operations"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "dependsOn": [
         "US-008"
       ],
       "labels": [
         "frontend",
         "web-server"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-010",
@@ -724,6 +725,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-02-05T05:54:54.469Z"
+    "updatedAt": "2026-02-05T05:59:25.294Z"
   }
 }
