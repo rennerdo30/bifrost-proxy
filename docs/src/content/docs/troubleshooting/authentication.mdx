@@ -1,0 +1,711 @@
+---
+title: "Authentication Troubleshooting"
+description: "Troubleshoot authentication issues with Bifrost Proxy"
+---
+
+# Authentication Troubleshooting
+
+This guide covers authentication-related issues and their solutions across all supported authentication modes.
+
+## Quick Diagnostics
+
+```bash
+# Test authentication with credentials
+curl -x http://user:password@localhost:7080 https://httpbin.org/ip -v
+
+# Check for auth-related errors in logs
+journalctl -u bifrost-server | grep -i "auth\|unauthorized\|forbidden"
+
+# Verify auth configuration
+bifrost-server validate -c config.yaml
+```
+
+---
+
+## Proxy Authentication Required (407)
+
+**Symptoms:** Clients receive HTTP 407 response.
+
+### Cause 1: Missing Credentials
+
+Credentials are not being sent with the request.
+
+**Diagnosis:**
+
+```bash
+# Test without credentials (should fail)
+curl -x http://localhost:7080 https://example.com -v 2>&1 | grep "407"
+
+# Test with credentials
+curl -x http://user:password@localhost:7080 https://example.com -v
+```
+
+**Solution:**
+
+Configure your client to send credentials:
+
+```bash
+# curl
+curl -x http://user:password@localhost:7080 https://example.com
+
+# wget
+wget -e use_proxy=yes -e http_proxy=http://user:password@localhost:7080 https://example.com
+
+# Environment variable
+export http_proxy="http://user:password@localhost:7080"
+export https_proxy="http://user:password@localhost:7080"
+```
+
+### Cause 2: Incorrect Password Hash
+
+The stored password hash doesn't match the provided password.
+
+**Diagnosis:**
+
+```bash
+# Verify hash format (should be bcrypt)
+grep -A5 "native:" config.yaml | grep password_hash
+```
+
+**Solution:**
+
+Generate a correct bcrypt hash:
+
+```bash
+# Using htpasswd
+htpasswd -nbBC 12 "" "mypassword" | cut -d: -f2
+
+# Using Python
+python3 -c "import bcrypt; print(bcrypt.hashpw(b'mypassword', bcrypt.gensalt(12)).decode())"
+
+# Using Go
+go run -mod=mod github.com/rennerdo30/bifrost-proxy/tools/hashpw mypassword
+```
+
+Update configuration:
+
+```yaml
+auth:
+  mode: native
+  native:
+    users:
+      - username: myuser
+        password_hash: "$2a$12$correcthashhere..."
+```
+
+### Cause 3: Special Characters in Password
+
+Passwords with special characters need URL encoding.
+
+**Solution:**
+
+URL encode special characters:
+
+| Character | Encoded |
+|-----------|---------|
+| `@` | `%40` |
+| `:` | `%3A` |
+| `!` | `%21` |
+| `#` | `%23` |
+| `$` | `%24` |
+| `&` | `%26` |
+| `+` | `%2B` |
+| `/` | `%2F` |
+| `?` | `%3F` |
+
+```bash
+# Password "p@ss:word!" becomes:
+curl -x http://user:p%40ss%3Aword%21@localhost:7080 https://example.com
+```
+
+---
+
+## Native Authentication Issues
+
+### User Not Found
+
+**Symptoms:** "user not found" error in logs.
+
+**Solution:**
+
+Verify user exists in configuration:
+
+```yaml
+auth:
+  mode: native
+  native:
+    users:
+      - username: myuser  # Case-sensitive!
+        password_hash: "$2a$12$..."
+```
+
+### Account Disabled
+
+**Symptoms:** "account disabled" error.
+
+**Solution:**
+
+Enable the user account:
+
+```yaml
+users:
+  - username: myuser
+    password_hash: "$2a$12$..."
+    disabled: false  # Must be false or omitted
+```
+
+---
+
+## LDAP Authentication Issues
+
+### Connection Failed
+
+**Symptoms:** "connection refused" or "timeout" errors for LDAP.
+
+**Diagnosis:**
+
+```bash
+# Test LDAP connectivity
+ldapsearch -x -H ldap://ldap.example.com:389 -D "cn=admin,dc=example,dc=com" -W -b "dc=example,dc=com"
+
+# Test network connectivity
+nc -zv ldap.example.com 389
+telnet ldap.example.com 389
+```
+
+**Solution:**
+
+1. Verify LDAP server is reachable
+2. Check firewall rules
+3. Verify URL format:
+
+```yaml
+auth:
+  mode: ldap
+  ldap:
+    url: "ldap://ldap.example.com:389"  # Standard LDAP
+    # or
+    url: "ldaps://ldap.example.com:636"  # LDAP over TLS
+```
+
+### Bind Failed
+
+**Symptoms:** "invalid credentials" error during LDAP bind.
+
+**Diagnosis:**
+
+```bash
+# Test bind credentials
+ldapsearch -x -H ldap://ldap.example.com -D "cn=service,dc=example,dc=com" -w 'password' -b "dc=example,dc=com"
+```
+
+**Solution:**
+
+Verify bind DN and password:
+
+```yaml
+auth:
+  mode: ldap
+  ldap:
+    bind_dn: "cn=service,dc=example,dc=com"
+    bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
+```
+
+### User Not Found in LDAP
+
+**Symptoms:** "user not found" even though user exists in LDAP.
+
+**Diagnosis:**
+
+```bash
+# Search for user manually
+ldapsearch -x -H ldap://ldap.example.com -D "cn=admin,dc=example,dc=com" -W -b "dc=example,dc=com" "(uid=myuser)"
+```
+
+**Solution:**
+
+Adjust user filter to match your LDAP schema:
+
+```yaml
+auth:
+  mode: ldap
+  ldap:
+    # For Unix-style LDAP
+    user_filter: "(uid=%s)"
+
+    # For Active Directory
+    user_filter: "(sAMAccountName=%s)"
+
+    # For email-based lookup
+    user_filter: "(mail=%s)"
+```
+
+### Group Membership Check Failing
+
+**Symptoms:** User authenticates but is denied due to group requirements.
+
+**Diagnosis:**
+
+```bash
+# Check user's group membership
+ldapsearch -x -H ldap://ldap.example.com -D "cn=admin,dc=example,dc=com" -W -b "dc=example,dc=com" "(memberUid=myuser)"
+```
+
+**Solution:**
+
+Adjust group filter or remove group requirement:
+
+```yaml
+auth:
+  mode: ldap
+  ldap:
+    # For groupOfNames (member DN)
+    group_filter: "(member=uid=%s,ou=users,dc=example,dc=com)"
+
+    # For posixGroup (member UID)
+    group_filter: "(memberUid=%s)"
+
+    # Require specific group
+    require_group: "cn=proxy-users,ou=groups,dc=example,dc=com"
+```
+
+### LDAP TLS Issues
+
+**Symptoms:** TLS handshake errors.
+
+**Diagnosis:**
+
+```bash
+# Test TLS connection
+openssl s_client -connect ldap.example.com:636
+
+# Check certificate
+openssl s_client -connect ldap.example.com:636 -showcerts
+```
+
+**Solution:**
+
+```yaml
+auth:
+  mode: ldap
+  ldap:
+    url: "ldaps://ldap.example.com:636"
+    tls: true
+    ca_cert: "/path/to/ca.crt"  # Custom CA if needed
+    # For testing only:
+    insecure_skip_verify: true  # Never use in production!
+```
+
+---
+
+## System Authentication Issues
+
+### Platform Not Supported
+
+**Symptoms:** "system authentication is not supported on Windows" error.
+
+**Solution:**
+
+System authentication only works on Linux and macOS. Use an alternative:
+
+```yaml
+# For Windows, use native authentication instead:
+auth:
+  mode: native
+  native:
+    users:
+      - username: admin
+        password_hash: "$2a$12$..."
+
+# Or LDAP for Active Directory:
+auth:
+  mode: ldap
+  ldap:
+    url: "ldap://your-dc.domain.com:389"
+    base_dn: "dc=domain,dc=com"
+    user_filter: "(sAMAccountName=%s)"
+```
+
+### Permission Denied (Linux)
+
+**Symptoms:** PAM authentication fails with permission errors.
+
+**Solution:**
+
+Bifrost needs appropriate permissions to use PAM:
+
+```bash
+# Run as root (not recommended)
+sudo bifrost-server -c config.yaml
+
+# Or configure PAM permissions
+# Check /etc/pam.d/login or create /etc/pam.d/bifrost
+```
+
+### User/Group Restrictions
+
+**Symptoms:** User authenticates but is denied.
+
+**Solution:**
+
+Check allowed users/groups configuration:
+
+```yaml
+auth:
+  mode: system
+  system:
+    allowed_users:
+      - alice
+      - bob
+    allowed_groups:
+      - admin
+      - proxy-users
+```
+
+---
+
+## OAuth/OIDC Issues
+
+### Invalid Client ID/Secret
+
+**Symptoms:** "invalid_client" error from OAuth provider.
+
+**Diagnosis:**
+
+```bash
+# Test OAuth token endpoint manually
+curl -X POST https://auth.example.com/oauth/token \
+  -d "client_id=YOUR_CLIENT_ID" \
+  -d "client_secret=YOUR_CLIENT_SECRET" \
+  -d "grant_type=client_credentials"
+```
+
+**Solution:**
+
+Verify credentials with your OAuth provider:
+
+```yaml
+auth:
+  mode: oauth
+  oauth:
+    client_id: "${OAUTH_CLIENT_ID}"
+    client_secret: "${OAUTH_CLIENT_SECRET}"
+```
+
+### Redirect URI Mismatch
+
+**Symptoms:** "redirect_uri_mismatch" error.
+
+**Solution:**
+
+Ensure redirect URL exactly matches what's registered with the provider:
+
+```yaml
+auth:
+  mode: oauth
+  oauth:
+    redirect_url: "http://localhost:7081/callback"  # Must match provider config
+```
+
+### Token Validation Failed
+
+**Symptoms:** Token is accepted by provider but rejected by Bifrost.
+
+**Diagnosis:**
+
+```bash
+# Decode JWT token (if applicable)
+echo "your.jwt.token" | cut -d. -f2 | base64 -d | jq
+```
+
+**Solution:**
+
+Verify issuer and audience settings:
+
+```yaml
+auth:
+  mode: oauth
+  oauth:
+    issuer_url: "https://auth.example.com"  # Must match token's 'iss' claim
+```
+
+---
+
+## JWT Authentication Issues
+
+### Invalid Signature
+
+**Symptoms:** "signature verification failed" error.
+
+**Diagnosis:**
+
+```bash
+# Check token signature at jwt.io
+# Or decode locally
+echo "your.jwt.token" | cut -d. -f2 | base64 -d | jq
+```
+
+**Solution:**
+
+1. **Using JWKS (recommended):**
+   ```yaml
+   auth:
+     mode: jwt
+     jwt:
+       jwks_url: "https://auth.example.com/.well-known/jwks.json"
+   ```
+
+2. **Using static key:**
+   ```yaml
+   auth:
+     mode: jwt
+     jwt:
+       signing_key: "${JWT_SIGNING_KEY}"
+   ```
+
+### Token Expired
+
+**Symptoms:** "token expired" error.
+
+**Solution:**
+
+1. Request a new token from your identity provider
+2. Check system clock synchronization:
+   ```bash
+   timedatectl status
+   # Sync if needed
+   sudo timedatectl set-ntp true
+   ```
+
+### Wrong Algorithm
+
+**Symptoms:** "unexpected signing method" error.
+
+**Solution:**
+
+Specify allowed algorithms:
+
+```yaml
+auth:
+  mode: jwt
+  jwt:
+    allowed_algorithms:
+      - RS256
+      - ES256
+```
+
+---
+
+## API Key Authentication Issues
+
+### Invalid API Key
+
+**Symptoms:** "invalid API key" error.
+
+**Solution:**
+
+1. Verify the key hash is correct:
+   ```bash
+   # Generate hash for your API key
+   python3 -c "import bcrypt; print(bcrypt.hashpw(b'your-api-key', bcrypt.gensalt()).decode())"
+   ```
+
+2. Update configuration:
+   ```yaml
+   auth:
+     mode: apikey
+     apikey:
+       header: "X-API-Key"
+       keys:
+         - name: "service-a"
+           key_hash: "$2a$10$correcthash..."
+   ```
+
+### Wrong Header Name
+
+**Symptoms:** API key not being recognized.
+
+**Solution:**
+
+Ensure header name matches configuration:
+
+```yaml
+auth:
+  mode: apikey
+  apikey:
+    header: "X-API-Key"  # Client must use this exact header
+```
+
+```bash
+# Test with correct header
+curl -H "X-API-Key: your-api-key" http://localhost:7080/...
+```
+
+---
+
+## TOTP/HOTP Issues
+
+### Invalid Code
+
+**Symptoms:** "invalid TOTP code" error.
+
+**Diagnosis:**
+
+1. Check time synchronization:
+   ```bash
+   timedatectl status
+   ```
+
+2. Verify secret is correctly configured
+
+**Solution:**
+
+1. Sync system time:
+   ```bash
+   sudo timedatectl set-ntp true
+   ```
+
+2. Verify secret format (must be Base32):
+   ```yaml
+   auth:
+     mode: totp
+     totp:
+       secrets:
+         user1: "JBSWY3DPEHPK3PXP"  # Base32 encoded
+   ```
+
+### Time Drift
+
+**Symptoms:** Codes work sometimes but not always.
+
+**Solution:**
+
+Ensure NTP is configured on all systems:
+
+```bash
+# Check NTP status
+timedatectl show --property=NTPSynchronized
+
+# Enable NTP
+sudo timedatectl set-ntp true
+```
+
+---
+
+## mTLS Certificate Issues
+
+### Certificate Not Trusted
+
+**Symptoms:** "certificate signed by unknown authority" error.
+
+**Solution:**
+
+Specify the CA certificate:
+
+```yaml
+auth:
+  mode: mtls
+  mtls:
+    ca_cert: "/path/to/ca.crt"
+```
+
+### Certificate Expired
+
+**Symptoms:** "certificate has expired" error.
+
+**Diagnosis:**
+
+```bash
+# Check certificate expiration
+openssl x509 -in client.crt -noout -dates
+```
+
+**Solution:**
+
+Renew the client certificate.
+
+### CN Not Allowed
+
+**Symptoms:** "CN not in allowed list" error.
+
+**Solution:**
+
+Update allowed CNs:
+
+```yaml
+auth:
+  mode: mtls
+  mtls:
+    allowed_cns:
+      - "client1.example.com"
+      - "*.internal.example.com"  # Wildcard
+```
+
+---
+
+## MFA Wrapper Issues
+
+### Primary Authentication Failed
+
+**Symptoms:** First factor (password) fails.
+
+**Solution:**
+
+Check primary authentication configuration:
+
+```yaml
+auth:
+  mode: mfa_wrapper
+  mfa_wrapper:
+    primary:
+      mode: native
+      native:
+        users:
+          - username: admin
+            password_hash: "$2a$12$..."
+```
+
+### OTP Not Provided
+
+**Symptoms:** "OTP required" error.
+
+**Solution:**
+
+Provide OTP in one of these ways:
+
+1. **Via header:**
+   ```bash
+   curl -x http://user:password@localhost:7080 \
+     -H "X-OTP: 123456" \
+     https://example.com
+   ```
+
+2. **Appended to password:**
+   ```bash
+   # If otp_separator is ":"
+   curl -x http://user:password:123456@localhost:7080 https://example.com
+   ```
+
+---
+
+## Diagnostic Commands
+
+```bash
+# Test authentication
+curl -x http://user:password@localhost:7080 https://httpbin.org/ip -v
+
+# Check auth errors in logs
+journalctl -u bifrost-server | grep -E "auth|401|403|407"
+
+# Validate configuration
+bifrost-server validate -c config.yaml
+
+# Test LDAP connectivity
+ldapsearch -x -H ldap://ldap.example.com -D "cn=admin,dc=example,dc=com" -W
+
+# Check JWT token
+echo "token" | cut -d. -f2 | base64 -d | jq
+
+# Verify bcrypt hash
+python3 -c "import bcrypt; print(bcrypt.checkpw(b'password', b'\$2a\$12\$hash'))"
+```

@@ -1,0 +1,746 @@
+---
+title: "VPN & Tunnel Troubleshooting"
+description: "Troubleshoot VPN, WireGuard, OpenVPN, and tunnel issues with Bifrost Proxy"
+---
+
+# VPN & Tunnel Troubleshooting
+
+This guide covers issues with VPN backends, tunnel configurations, and VPN mode.
+
+## Quick Diagnostics
+
+```bash
+# Check backend health
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | {name, type, healthy}'
+
+# Check VPN status (client)
+curl -s http://localhost:7082/api/v1/vpn/status | jq
+
+# Test connectivity through tunnel
+curl -x http://localhost:7080 https://ipinfo.io/ip
+```
+
+---
+
+## WireGuard Backend Issues
+
+### Tunnel Not Establishing
+
+**Symptoms:** WireGuard backend shows unhealthy, no connectivity.
+
+**Diagnosis:**
+
+```bash
+# Check WireGuard interface (if using kernel mode)
+sudo wg show
+
+# Check backend status
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | select(.type=="wireguard")'
+
+# Check server logs
+journalctl -u bifrost-server | grep -i wireguard
+```
+
+### Key Mismatch
+
+**Symptoms:** Handshake fails, "invalid MAC" in logs.
+
+**Diagnosis:**
+
+Verify key configuration matches the peer:
+
+```bash
+# Your private key generates your public key
+echo "YOUR_PRIVATE_KEY" | wg pubkey
+
+# Peer should have this as your public key
+```
+
+**Solution:**
+
+Ensure keys are correctly paired:
+
+```yaml
+backends:
+  - name: wg-vpn
+    type: wireguard
+    config:
+      private_key: "YOUR_PRIVATE_KEY_BASE64"  # Your private key
+      peer:
+        public_key: "PEER_PUBLIC_KEY_BASE64"  # Peer's public key
+        preshared_key: "OPTIONAL_PSK"          # Must match both sides
+```
+
+Generate new keys if needed:
+
+```bash
+# Generate private key
+wg genkey > private.key
+
+# Generate public key from private
+wg pubkey < private.key > public.key
+
+# Generate preshared key
+wg genpsk > preshared.key
+```
+
+### Endpoint Unreachable
+
+**Symptoms:** "no route to host" or timeout errors.
+
+**Diagnosis:**
+
+```bash
+# Test UDP connectivity to endpoint
+nc -u -z -v vpn.example.com 51820
+
+# Check if UDP port is blocked
+sudo tcpdump -i any udp port 51820
+```
+
+**Solution:**
+
+1. Verify endpoint address and port:
+   ```yaml
+   peer:
+     endpoint: "vpn.example.com:51820"  # Must be reachable
+   ```
+
+2. Check firewall allows outbound UDP:
+   ```bash
+   sudo ufw allow out 51820/udp
+   ```
+
+### No Traffic Through Tunnel
+
+**Symptoms:** Tunnel established but traffic doesn't flow.
+
+**Diagnosis:**
+
+```bash
+# Check allowed IPs
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | select(.type=="wireguard") | .config.peer.allowed_ips'
+
+# Check routing
+ip route show
+```
+
+**Solution:**
+
+Verify allowed IPs are configured correctly:
+
+```yaml
+peer:
+  allowed_ips:
+    - "0.0.0.0/0"  # Route all traffic (common for VPN)
+    # Or specific ranges:
+    - "10.0.0.0/8"
+    - "192.168.0.0/16"
+```
+
+### DNS Not Working Through Tunnel
+
+**Symptoms:** Domain resolution fails when using WireGuard backend.
+
+**Solution:**
+
+Configure DNS servers for the tunnel:
+
+```yaml
+backends:
+  - name: wg-vpn
+    type: wireguard
+    config:
+      dns:
+        - "1.1.1.1"
+        - "8.8.8.8"
+```
+
+### Permission Denied
+
+**Symptoms:** Cannot create WireGuard interface.
+
+**Solution:**
+
+Bifrost uses userspace WireGuard by default. If using kernel mode:
+
+```bash
+# Grant capabilities
+sudo setcap cap_net_admin+ep /usr/local/bin/bifrost-server
+
+# Or run as root (not recommended)
+sudo bifrost-server -c config.yaml
+```
+
+### Handshake Timeout
+
+**Symptoms:** "handshake did not complete" after 5+ seconds.
+
+**Causes:**
+1. Wrong public key
+2. Firewall blocking UDP
+3. Endpoint not reachable
+4. Clock skew
+
+**Solution:**
+
+1. Verify keys match
+2. Check firewall rules
+3. Test endpoint connectivity
+4. Sync system time:
+   ```bash
+   sudo timedatectl set-ntp true
+   ```
+
+---
+
+## OpenVPN Backend Issues
+
+### Connection Failed
+
+**Symptoms:** OpenVPN backend shows unhealthy.
+
+**Diagnosis:**
+
+```bash
+# Check OpenVPN process
+ps aux | grep openvpn
+
+# View OpenVPN logs
+tail -f /var/log/openvpn.log
+
+# Check backend status
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | select(.type=="openvpn")'
+```
+
+### Config File Not Found
+
+**Symptoms:** "config file not found" error.
+
+**Solution:**
+
+Use absolute path to config file:
+
+```yaml
+backends:
+  - name: ovpn-vpn
+    type: openvpn
+    config:
+      config_file: "/etc/bifrost/client.ovpn"  # Absolute path
+```
+
+### Authentication Failed
+
+**Symptoms:** "AUTH_FAILED" in OpenVPN logs.
+
+**Solution:**
+
+Provide credentials:
+
+```yaml
+backends:
+  - name: ovpn-vpn
+    type: openvpn
+    config:
+      config_file: "/etc/bifrost/client.ovpn"
+      auth_file: "/etc/bifrost/auth.txt"  # username on line 1, password on line 2
+```
+
+Or inline:
+
+```yaml
+config:
+  username: "myuser"
+  password: "${OPENVPN_PASSWORD}"
+```
+
+Auth file format:
+
+```
+username
+password
+```
+
+### OpenVPN Binary Not Found
+
+**Symptoms:** "openvpn: command not found" error.
+
+**Solution:**
+
+Install OpenVPN or specify path:
+
+```bash
+# Install on Debian/Ubuntu
+sudo apt install openvpn
+
+# Install on RHEL/CentOS
+sudo dnf install openvpn
+```
+
+```yaml
+config:
+  binary: "/usr/sbin/openvpn"  # Explicit path
+```
+
+### TLS Handshake Failed
+
+**Symptoms:** "TLS handshake failed" in logs.
+
+**Diagnosis:**
+
+```bash
+# Test manually
+sudo openvpn --config /etc/bifrost/client.ovpn --verb 4
+```
+
+**Solution:**
+
+1. Verify certificates are valid
+2. Check CA certificate is included
+3. Ensure clock is synchronized
+
+### Management Interface Issues
+
+**Symptoms:** Cannot connect to OpenVPN management.
+
+**Solution:**
+
+Configure management interface:
+
+```yaml
+config:
+  management_addr: "127.0.0.1"
+  management_port: 7505
+```
+
+---
+
+## VPN Mode Issues (Client)
+
+### TUN Device Not Created
+
+**Symptoms:** "failed to create TUN device" error.
+
+**Linux:**
+
+```bash
+# Check if tun module is loaded
+lsmod | grep tun
+
+# Load module
+sudo modprobe tun
+
+# Check device permissions
+ls -la /dev/net/tun
+# Should be: crw-rw-rw- 1 root root 10, 200
+
+# Fix permissions if needed
+sudo chmod 666 /dev/net/tun
+```
+
+**macOS:**
+
+```bash
+# Check for tuntap
+ls /dev/tun*
+
+# Install if missing
+brew install --cask tuntap
+```
+
+**Windows:**
+
+```powershell
+# Check for wintun driver
+Get-Service wintun
+
+# Install wintun from https://www.wintun.net/
+```
+
+### Insufficient Permissions
+
+**Symptoms:** "operation not permitted" when creating VPN interface.
+
+**Solution:**
+
+```bash
+# Linux: Grant capabilities
+sudo setcap cap_net_admin+ep /usr/local/bin/bifrost-client
+
+# Or run as root
+sudo bifrost-client -c config.yaml
+```
+
+### VPN Interface Has No IP
+
+**Symptoms:** Interface exists but no IP address assigned.
+
+**Diagnosis:**
+
+```bash
+# Check interface
+ip addr show bifrost0
+
+# Check VPN status
+curl -s http://localhost:7082/api/v1/vpn/status | jq
+```
+
+**Solution:**
+
+Verify VPN configuration:
+
+```yaml
+vpn:
+  enabled: true
+  interface_name: bifrost0
+  # IP should be assigned automatically
+```
+
+Manually assign if needed:
+
+```bash
+# Linux
+sudo ip addr add 10.0.0.2/24 dev bifrost0
+sudo ip link set bifrost0 up
+```
+
+### DNS Not Working in VPN Mode
+
+**Symptoms:** Domain resolution fails when VPN is enabled.
+
+**Diagnosis:**
+
+```bash
+# Check DNS configuration
+cat /etc/resolv.conf
+
+# Test DNS
+nslookup example.com
+```
+
+**Solution:**
+
+Enable DNS interception:
+
+```yaml
+vpn:
+  dns:
+    enabled: true
+    servers:
+      - "1.1.1.1"
+      - "8.8.8.8"
+    cache_ttl: "5m"
+```
+
+Flush DNS cache:
+
+```bash
+# macOS
+sudo dscacheutil -flushcache; sudo killall -HUP mDNSResponder
+
+# Linux (systemd-resolved)
+sudo systemd-resolve --flush-caches
+
+# Windows
+ipconfig /flushdns
+```
+
+### Traffic Not Routing Through VPN
+
+**Symptoms:** Traffic bypasses VPN.
+
+**Diagnosis:**
+
+```bash
+# Check routing table
+ip route show  # Linux
+netstat -rn    # macOS
+route print    # Windows
+
+# Check what IP traffic is using
+curl https://ipinfo.io/ip  # Should show VPN IP
+```
+
+**Solution:**
+
+1. Check split tunnel configuration:
+   ```yaml
+   vpn:
+     split:
+       mode: exclude  # All traffic through VPN except matching
+       # Or
+       mode: include  # Only matching traffic through VPN
+   ```
+
+2. Verify routes are set:
+   ```bash
+   # Check if default route is through VPN
+   ip route | grep default
+   ```
+
+### Split Tunneling Not Working
+
+**Symptoms:** Traffic routes incorrectly based on rules.
+
+**Diagnosis:**
+
+```bash
+# Check split tunnel rules
+curl -s http://localhost:7082/api/v1/vpn/split/rules | jq
+```
+
+**Solution:**
+
+Verify rule configuration:
+
+```yaml
+vpn:
+  split:
+    mode: exclude  # Traffic to these destinations bypasses VPN
+
+    # Domain-based
+    domains:
+      - "*.local"
+      - "localhost"
+
+    # IP-based
+    ips:
+      - "192.168.0.0/16"
+      - "10.0.0.0/8"
+
+    # App-based
+    apps:
+      - name: "Slack"
+      - name: "Zoom"
+```
+
+---
+
+## Upstream Proxy Issues
+
+### HTTP Proxy Backend Failing
+
+**Symptoms:** Upstream HTTP proxy connection fails.
+
+**Diagnosis:**
+
+```bash
+# Test upstream proxy directly
+curl -x http://upstream-proxy:3128 https://example.com
+
+# Check connectivity
+nc -zv upstream-proxy 3128
+```
+
+**Solution:**
+
+```yaml
+backends:
+  - name: upstream-http
+    type: http_proxy
+    config:
+      address: "upstream-proxy:3128"
+      username: "user"     # If auth required
+      password: "password"
+      connect_timeout: "30s"
+```
+
+### SOCKS5 Proxy Backend Failing
+
+**Symptoms:** Upstream SOCKS5 proxy connection fails.
+
+**Diagnosis:**
+
+```bash
+# Test upstream SOCKS5 directly
+curl --socks5 upstream-proxy:1080 https://example.com
+
+# Check connectivity
+nc -zv upstream-proxy 1080
+```
+
+**Solution:**
+
+```yaml
+backends:
+  - name: upstream-socks
+    type: socks5_proxy
+    config:
+      address: "upstream-proxy:1080"
+      username: "user"
+      password: "password"
+```
+
+---
+
+## Health Check Issues
+
+### Backend Marked Unhealthy
+
+**Symptoms:** Backend constantly shows as unhealthy.
+
+**Diagnosis:**
+
+```bash
+# Check health status
+curl -s http://localhost:7082/api/v1/backends | jq '.[] | {name, healthy, last_check}'
+
+# Check logs for health check failures
+journalctl -u bifrost-server | grep -i "health check"
+```
+
+**Solution:**
+
+Adjust health check configuration:
+
+```yaml
+backends:
+  - name: my-backend
+    type: wireguard
+    health_check:
+      type: tcp              # tcp, http, or ping
+      interval: "30s"        # Check frequency
+      timeout: "10s"         # Timeout per check
+      target: "example.com:443"  # What to check
+      healthy_threshold: 2   # Checks to mark healthy
+      unhealthy_threshold: 3 # Checks to mark unhealthy
+```
+
+### Health Check Target Unreachable
+
+**Symptoms:** Health checks fail even though backend works.
+
+**Solution:**
+
+Use a reliable health check target:
+
+```yaml
+health_check:
+  type: http
+  target: "https://www.google.com/generate_204"  # Google's connectivity check
+  # Or
+  type: tcp
+  target: "1.1.1.1:443"  # Cloudflare
+```
+
+---
+
+## Mesh Networking Issues
+
+### Peers Not Connecting
+
+**Symptoms:** Peers discovered but connections fail.
+
+**Diagnosis:**
+
+```bash
+# Check NAT type
+curl -s http://localhost:7082/api/v1/p2p/nat | jq
+
+# Check discovered peers
+curl -s http://localhost:7082/api/v1/mesh/networks/my-network/peers | jq
+
+# Check connection status
+curl -s http://localhost:7082/api/v1/p2p/connections | jq
+```
+
+**Solution:**
+
+1. **Symmetric NAT detected**: Enable TURN relay
+   ```yaml
+   turn:
+     enabled: true
+     servers:
+       - url: "turn:turn.example.com:3478"
+         username: "${TURN_USER}"
+         password: "${TURN_PASS}"
+   ```
+
+2. **Firewall blocking**: Allow UDP traffic
+   ```bash
+   sudo ufw allow 32768:65535/udp  # Ephemeral ports
+   ```
+
+### STUN Connectivity Issues
+
+**Symptoms:** Cannot determine public IP address.
+
+**Diagnosis:**
+
+```bash
+# Test STUN servers
+nc -u -z -v stun.l.google.com 19302
+```
+
+**Solution:**
+
+Add multiple STUN servers:
+
+```yaml
+stun:
+  servers:
+    - "stun:stun.l.google.com:19302"
+    - "stun:stun1.l.google.com:19302"
+    - "stun:stun.cloudflare.com:3478"
+  timeout: 5s
+```
+
+### TURN Relay Not Working
+
+**Symptoms:** Relay connections fail.
+
+**Diagnosis:**
+
+```bash
+# Test TURN server
+turnutils_stunclient -p 3478 turn.example.com
+```
+
+**Solution:**
+
+Verify TURN configuration:
+
+```yaml
+turn:
+  enabled: true
+  servers:
+    - url: "turn:turn.example.com:3478"
+      username: "user"
+      password: "password"
+```
+
+---
+
+## Diagnostic Commands Summary
+
+```bash
+# Backend health
+curl -s http://localhost:7082/api/v1/backends | jq
+
+# VPN status
+curl -s http://localhost:7082/api/v1/vpn/status | jq
+
+# WireGuard interface
+sudo wg show
+
+# OpenVPN status
+ps aux | grep openvpn
+
+# Network interfaces
+ip addr show
+
+# Routing table
+ip route show
+
+# Test through proxy
+curl -x http://localhost:7080 https://ipinfo.io/ip
+
+# DNS test
+nslookup example.com
+
+# NAT type (mesh)
+curl -s http://localhost:7082/api/v1/p2p/nat | jq
+
+# Mesh peers
+curl -s http://localhost:7082/api/v1/mesh/status | jq
+```

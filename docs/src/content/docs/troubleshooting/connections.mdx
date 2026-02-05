@@ -1,0 +1,573 @@
+---
+title: "Connection Issues"
+description: "Troubleshoot connection problems with Bifrost Proxy"
+---
+
+# Connection Issues
+
+This guide covers common connection problems and their solutions.
+
+## Connection Refused
+
+**Symptoms:** Clients receive "Connection refused" error when connecting to the proxy.
+
+### Cause 1: Service Not Running
+
+The Bifrost server process may not be running.
+
+**Diagnosis:**
+
+```bash
+# Check if process is running
+ps aux | grep bifrost
+
+# Check systemd service
+systemctl status bifrost-server
+
+# Check Docker container
+docker ps -a | grep bifrost
+```
+
+**Solution:**
+
+```bash
+# Start via systemd
+sudo systemctl start bifrost-server
+
+# Start via Docker
+docker start bifrost-server
+
+# Start manually
+bifrost-server -c /etc/bifrost/config.yaml
+```
+
+### Cause 2: Wrong Bind Address
+
+The server is bound to localhost only, preventing external connections.
+
+**Diagnosis:**
+
+```bash
+# Check what address the server is listening on
+netstat -tlnp | grep bifrost
+ss -tlnp | grep bifrost
+```
+
+**Solution:**
+
+```yaml
+# Wrong: Only localhost can connect
+server:
+  http:
+    listen: "127.0.0.1:7080"
+
+# Correct: All interfaces
+server:
+  http:
+    listen: ":7080"
+
+# Correct: Specific interface
+server:
+  http:
+    listen: "192.168.1.100:7080"
+```
+
+### Cause 3: Firewall Blocking
+
+A firewall is blocking the proxy port.
+
+**Diagnosis:**
+
+```bash
+# Linux: Check iptables
+sudo iptables -L -n | grep 7080
+
+# Check UFW status
+sudo ufw status
+
+# Check firewalld (RHEL/CentOS)
+sudo firewall-cmd --list-all
+
+# Test port connectivity
+nc -zv localhost 7080
+telnet localhost 7080
+```
+
+**Solution:**
+
+```bash
+# UFW (Ubuntu/Debian)
+sudo ufw allow 7080/tcp
+sudo ufw allow 7180/tcp  # SOCKS5
+sudo ufw allow 7082/tcp  # API
+
+# firewalld (RHEL/CentOS)
+sudo firewall-cmd --permanent --add-port=7080/tcp
+sudo firewall-cmd --reload
+
+# iptables
+sudo iptables -A INPUT -p tcp --dport 7080 -j ACCEPT
+```
+
+### Cause 4: Port Already in Use
+
+Another process is using the configured port.
+
+**Diagnosis:**
+
+```bash
+# Find what's using the port
+lsof -i :7080
+netstat -tlnp | grep 7080
+ss -tlnp | grep 7080
+```
+
+**Solution:**
+
+Either stop the conflicting process or change Bifrost's port:
+
+```yaml
+server:
+  http:
+    listen: ":8080"  # Use different port
+```
+
+---
+
+## Connection Timeout
+
+**Symptoms:** Connections hang and eventually timeout without response.
+
+### Cause 1: Backend Unreachable
+
+The configured backend cannot be reached.
+
+**Diagnosis:**
+
+```bash
+# Check backend health via API
+curl http://localhost:7082/api/v1/backends
+
+# Test a request through the proxy
+curl -x http://localhost:7080 https://example.com -v --max-time 10
+
+# Test direct connectivity to backend
+curl -v https://example.com --max-time 10
+```
+
+**Solution:**
+
+1. Verify backend configuration is correct
+2. Check backend server is running
+3. Test network connectivity to backend
+
+```bash
+# For WireGuard backend
+sudo wg show
+
+# For OpenVPN backend
+ps aux | grep openvpn
+tail -f /var/log/openvpn.log
+
+# For upstream proxy
+curl -x http://upstream-proxy:3128 https://example.com
+```
+
+### Cause 2: DNS Resolution Failure
+
+The proxy cannot resolve domain names.
+
+**Diagnosis:**
+
+```bash
+# Test DNS resolution
+nslookup example.com
+dig example.com
+
+# Test from within container (if using Docker)
+docker exec bifrost-server nslookup example.com
+```
+
+**Solution:**
+
+Ensure DNS servers are configured:
+
+```yaml
+# For WireGuard backend
+backends:
+  - name: wg-vpn
+    type: wireguard
+    config:
+      dns:
+        - "1.1.1.1"
+        - "8.8.8.8"
+```
+
+Or configure system DNS:
+
+```bash
+# Linux: /etc/resolv.conf
+nameserver 1.1.1.1
+nameserver 8.8.8.8
+```
+
+### Cause 3: Timeout Configuration Too Short
+
+Default timeouts may be too short for your network conditions.
+
+**Solution:**
+
+Increase timeout values:
+
+```yaml
+server:
+  http:
+    read_timeout: "120s"
+    write_timeout: "120s"
+    idle_timeout: "300s"
+
+  socks5:
+    connect_timeout: "60s"
+```
+
+### Cause 4: Network Routing Issues
+
+Traffic isn't being routed correctly.
+
+**Diagnosis:**
+
+```bash
+# Check routing table
+ip route show
+netstat -rn
+
+# Trace route to destination
+traceroute example.com
+mtr example.com
+```
+
+---
+
+## Proxy Authentication Required (407)
+
+**Symptoms:** Browser shows authentication prompt or curl returns 407 error.
+
+### Cause 1: Missing or Invalid Credentials
+
+Credentials are not being sent or are incorrect.
+
+**Diagnosis:**
+
+```bash
+# Test with explicit credentials
+curl -x http://user:password@localhost:7080 https://example.com -v
+
+# Check for 407 response
+curl -x http://localhost:7080 https://example.com -v 2>&1 | grep 407
+```
+
+**Solution:**
+
+1. Verify credentials are correct
+2. Ensure credentials are properly URL-encoded if they contain special characters
+
+```bash
+# URL encode special characters
+# password "p@ss:word!" becomes "p%40ss%3Aword%21"
+curl -x http://user:p%40ss%3Aword%21@localhost:7080 https://example.com
+```
+
+### Cause 2: Authentication Misconfigured
+
+The authentication backend is not properly configured.
+
+**Diagnosis:**
+
+```bash
+# Check server logs for auth errors
+journalctl -u bifrost-server | grep -i auth
+
+# Verify auth configuration
+bifrost-server validate -c config.yaml
+```
+
+**Solution:**
+
+Verify authentication configuration:
+
+```yaml
+auth:
+  mode: native
+  native:
+    users:
+      - username: myuser
+        password_hash: "$2a$12$..."  # bcrypt hash
+```
+
+Generate password hash:
+
+```bash
+# Using htpasswd
+htpasswd -nbBC 12 "" "mypassword" | cut -d: -f2
+
+# Using Python
+python3 -c "import bcrypt; print(bcrypt.hashpw(b'mypassword', bcrypt.gensalt(12)).decode())"
+```
+
+### Cause 3: Auth Header Not Forwarded
+
+Some proxy chains strip authentication headers.
+
+**Solution:**
+
+If using an upstream proxy, ensure Proxy-Authorization header is preserved or use a different authentication method.
+
+---
+
+## SSL/TLS Certificate Errors
+
+**Symptoms:** SSL handshake failures, certificate verification errors.
+
+### Cause 1: Self-Signed Certificate
+
+The upstream server uses a self-signed certificate.
+
+**Diagnosis:**
+
+```bash
+# Check certificate
+openssl s_client -connect example.com:443 -servername example.com
+
+# Test with curl
+curl -v https://example.com 2>&1 | grep -i certificate
+```
+
+**Solution:**
+
+For testing only (not recommended for production):
+
+```yaml
+backends:
+  - name: upstream
+    type: http_proxy
+    config:
+      tls_skip_verify: true  # Only for testing!
+```
+
+For production, add the CA certificate:
+
+```yaml
+backends:
+  - name: upstream
+    type: http_proxy
+    config:
+      ca_cert: "/path/to/ca.crt"
+```
+
+### Cause 2: Expired Certificate
+
+The server's TLS certificate has expired.
+
+**Diagnosis:**
+
+```bash
+# Check certificate expiration
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -dates
+```
+
+**Solution:**
+
+Renew the certificate on the target server or contact the server administrator.
+
+### Cause 3: Certificate Name Mismatch
+
+The certificate doesn't match the hostname being accessed.
+
+**Diagnosis:**
+
+```bash
+# Check certificate subject and SAN
+echo | openssl s_client -connect example.com:443 -servername example.com 2>/dev/null | openssl x509 -noout -text | grep -A1 "Subject Alternative Name"
+```
+
+---
+
+## Connection Reset
+
+**Symptoms:** Connection is abruptly terminated with "Connection reset by peer".
+
+### Cause 1: Upstream Server Closed Connection
+
+The upstream server terminated the connection.
+
+**Diagnosis:**
+
+```bash
+# Check server logs
+journalctl -u bifrost-server | grep -i reset
+
+# Test with increased verbosity
+curl -x http://localhost:7080 https://example.com -v 2>&1 | grep -i reset
+```
+
+**Solution:**
+
+1. Check if the upstream server has connection limits
+2. Verify the request is valid for the upstream server
+3. Check for rate limiting
+
+### Cause 2: Idle Connection Timeout
+
+Long-lived connections are being terminated due to inactivity.
+
+**Solution:**
+
+Adjust idle timeout settings:
+
+```yaml
+server:
+  http:
+    idle_timeout: "300s"  # 5 minutes
+```
+
+### Cause 3: MTU Issues
+
+Network path MTU is causing packet fragmentation.
+
+**Diagnosis:**
+
+```bash
+# Test with different packet sizes
+ping -M do -s 1400 example.com
+ping -M do -s 1200 example.com
+```
+
+**Solution:**
+
+Reduce MTU in tunnel configuration:
+
+```yaml
+backends:
+  - name: wg-vpn
+    type: wireguard
+    config:
+      mtu: 1280  # Conservative value
+```
+
+---
+
+## SOCKS5 Connection Issues
+
+**Symptoms:** SOCKS5 proxy connections fail or timeout.
+
+### Cause 1: Wrong Protocol
+
+Client is using HTTP proxy protocol instead of SOCKS5.
+
+**Diagnosis:**
+
+```bash
+# Test SOCKS5 explicitly
+curl --socks5 localhost:7180 https://example.com -v
+
+# Test SOCKS5 with hostname resolution via proxy
+curl --socks5-hostname localhost:7180 https://example.com -v
+```
+
+**Solution:**
+
+Ensure client is configured to use SOCKS5 protocol:
+
+```bash
+# curl
+curl --socks5 localhost:7180 https://example.com
+
+# With authentication
+curl --socks5 user:pass@localhost:7180 https://example.com
+```
+
+### Cause 2: SOCKS5 Listener Not Enabled
+
+The SOCKS5 listener may not be configured.
+
+**Diagnosis:**
+
+```bash
+# Check if SOCKS5 port is listening
+netstat -tlnp | grep 7180
+```
+
+**Solution:**
+
+Enable SOCKS5 listener:
+
+```yaml
+server:
+  socks5:
+    enabled: true
+    listen: ":7180"
+```
+
+---
+
+## Connection Limit Reached
+
+**Symptoms:** New connections are rejected with "too many connections" error.
+
+### Cause: File Descriptor Limit
+
+The system has reached its file descriptor limit.
+
+**Diagnosis:**
+
+```bash
+# Check current limit
+ulimit -n
+
+# Check open file descriptors for bifrost
+ls /proc/$(pgrep bifrost-server)/fd | wc -l
+
+# Check system-wide limits
+cat /proc/sys/fs/file-nr
+```
+
+**Solution:**
+
+Increase file descriptor limits:
+
+```bash
+# Temporary (current session)
+ulimit -n 65536
+
+# Permanent: /etc/security/limits.conf
+* soft nofile 65536
+* hard nofile 65536
+
+# For systemd service: /etc/systemd/system/bifrost-server.service
+[Service]
+LimitNOFILE=65536
+```
+
+---
+
+## Diagnostic Commands Summary
+
+```bash
+# Quick health check
+curl -s http://localhost:7082/api/v1/health | jq
+
+# Connection statistics
+curl -s http://localhost:7082/api/v1/stats | jq
+
+# Backend status
+curl -s http://localhost:7082/api/v1/backends | jq
+
+# Active requests
+curl -s http://localhost:7082/api/v1/requests | jq
+
+# Test proxy connectivity
+curl -x http://localhost:7080 https://httpbin.org/ip -v
+
+# Test SOCKS5 connectivity
+curl --socks5 localhost:7180 https://httpbin.org/ip -v
+```
