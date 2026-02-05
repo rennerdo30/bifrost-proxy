@@ -13,6 +13,7 @@ import {
 } from '../components/form'
 import { useToast } from '../components/Toast'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { RouteManager } from '../components/Routes/RouteManager'
 import { validateDomain, validateIP, validateDomainOrIP } from '../utils/validation'
 import {
   ServerIcon,
@@ -534,55 +535,9 @@ export function Settings() {
       <ConfigSection
         title="Routes"
         icon={<RouteIcon />}
-        description="Domain routing rules"
+        description="Domain routing rules - control how traffic is routed based on domain patterns"
       >
-        <div className="space-y-4">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-bifrost-muted border-b border-bifrost-border">
-                  <th className="pb-2 font-medium">Name</th>
-                  <th className="pb-2 font-medium">Domains</th>
-                  <th className="pb-2 font-medium">Action</th>
-                  <th className="pb-2 font-medium">Priority</th>
-                </tr>
-              </thead>
-              <tbody>
-                {config?.routes?.map((route, index) => (
-                  <tr key={`${route.name || 'route'}-${route.priority}-${index}`} className="border-b border-bifrost-border/50">
-                    <td className="py-2 text-bifrost-text">{route.name || `Rule ${index + 1}`}</td>
-                    <td className="py-2">
-                      <div className="flex flex-wrap gap-1">
-                        {route.domains.slice(0, 3).map((d, i) => (
-                          <span key={i} className="px-2 py-0.5 text-xs bg-bifrost-accent/20 text-bifrost-accent rounded">
-                            {d}
-                          </span>
-                        ))}
-                        {route.domains.length > 3 && (
-                          <span className="text-xs text-bifrost-muted">+{route.domains.length - 3} more</span>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-2">
-                      <span className={`px-2 py-0.5 text-xs rounded ${route.action === 'direct' ? 'bg-bifrost-success/20 text-bifrost-success' : 'bg-bifrost-accent/20 text-bifrost-accent'
-                        }`}>
-                        {route.action}
-                      </span>
-                    </td>
-                    <td className="py-2 text-bifrost-muted">{route.priority}</td>
-                  </tr>
-                )) || (
-                    <tr>
-                      <td colSpan={4} className="py-4 text-center text-bifrost-muted">No routes configured</td>
-                    </tr>
-                  )}
-              </tbody>
-            </table>
-          </div>
-          <p className="text-xs text-bifrost-muted">
-            Edit routes in the configuration file for full control. Route management UI coming soon.
-          </p>
-        </div>
+        <RouteManager />
       </ConfigSection>
 
       {/* Debug Settings */}
