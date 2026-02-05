@@ -54,3 +54,42 @@ export interface RouteTestResult {
   action: 'server' | 'direct'
   matched_route?: string
 }
+
+// Cache Types
+export interface CacheStats {
+  enabled: boolean
+  storage_type: string
+  entries: number
+  total_size_bytes: number
+  max_size_bytes: number
+  used_percent: number
+  hit_count: number
+  miss_count: number
+  hit_rate: number
+  eviction_count: number
+  rules_count: number
+  presets_count: number
+  custom_rules_count: number
+}
+
+export interface CacheEntry {
+  key: string
+  url: string
+  host: string
+  content_length: number
+  content_type: string
+  created_at: string
+  expires_at: string
+  accessed_at: string
+  access_count: number
+  size_bytes: number
+  tier: string
+  ttl_seconds: number
+}
+
+export interface CacheEntriesResponse {
+  entries: CacheEntry[]
+  total: number
+  limit: number
+  offset: number
+}
