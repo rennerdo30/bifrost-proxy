@@ -11,6 +11,18 @@ import (
 	"time"
 )
 
+// logSetDeadlineError logs SetDeadline errors appropriately based on error type.
+func logSetDeadlineError(context string, err error) {
+	if err == nil {
+		return
+	}
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		slog.Debug("failed to set deadline", "context", context, "error", err)
+	} else {
+		slog.Warn("failed to set deadline", "context", context, "error", err)
+	}
+}
+
 // CandidateType represents the type of ICE candidate.
 type CandidateType int
 
@@ -390,7 +402,9 @@ func (a *ICEAgent) checkConnectivity(ctx context.Context, pair *CandidatePair) (
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	conn.SetDeadline(deadline)
+	if err := conn.SetDeadline(deadline); err != nil {
+		logSetDeadlineError("ICE connectivity check", err)
+	}
 
 	// Send probe
 	probe := []byte("BIFROST_ICE_PROBE")

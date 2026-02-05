@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"sync"
@@ -112,7 +113,13 @@ func (c *STUNClient) bindToServer(ctx context.Context, server string) (*STUNResu
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	conn.SetDeadline(deadline)
+	if err := conn.SetDeadline(deadline); err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			slog.Debug("failed to set deadline on STUN connection", "error", err)
+		} else {
+			slog.Warn("failed to set deadline on STUN connection", "error", err)
+		}
+	}
 
 	start := time.Now()
 

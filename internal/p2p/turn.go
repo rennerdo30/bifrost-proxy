@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"sync"
@@ -122,7 +123,13 @@ func (c *TURNClient) Allocate(ctx context.Context) error {
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	c.conn.SetDeadline(deadline)
+	if err := c.conn.SetDeadline(deadline); err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			slog.Debug("failed to set deadline on TURN connection", "error", err)
+		} else {
+			slog.Warn("failed to set deadline on TURN connection", "error", err)
+		}
+	}
 
 	// First request (unauthenticated)
 	transactionID := generateTransactionID()
@@ -161,7 +168,13 @@ func (c *TURNClient) Allocate(ctx context.Context) error {
 			return fmt.Errorf("failed to send authenticated allocate request: %w", err)
 		}
 
-		c.conn.SetDeadline(deadline)
+		if err := c.conn.SetDeadline(deadline); err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				slog.Debug("failed to set deadline for authenticated request", "error", err)
+			} else {
+				slog.Warn("failed to set deadline for authenticated request", "error", err)
+			}
+		}
 		n, _, err = c.conn.ReadFrom(buf)
 		if err != nil {
 			return ErrTURNTimeout
@@ -222,7 +235,13 @@ func (c *TURNClient) CreatePermission(ctx context.Context, peerIP netip.Addr) er
 	transactionID := generateTransactionID()
 	request := c.buildCreatePermissionRequest(transactionID, peerIP)
 
-	c.conn.SetDeadline(time.Now().Add(c.timeout))
+	if err := c.conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			slog.Debug("failed to set deadline for create permission", "error", err)
+		} else {
+			slog.Warn("failed to set deadline for create permission", "error", err)
+		}
+	}
 	if _, err := c.conn.WriteTo(request, addr); err != nil {
 		return err
 	}
@@ -268,7 +287,13 @@ func (c *TURNClient) BindChannel(ctx context.Context, peerAddr netip.AddrPort) (
 	transactionID := generateTransactionID()
 	request := c.buildChannelBindRequest(transactionID, channel, peerAddr)
 
-	c.conn.SetDeadline(time.Now().Add(c.timeout))
+	if err := c.conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			slog.Debug("failed to set deadline for channel bind", "error", err)
+		} else {
+			slog.Warn("failed to set deadline for channel bind", "error", err)
+		}
+	}
 	if _, err := c.conn.WriteTo(request, addr); err != nil {
 		return 0, err
 	}
@@ -391,7 +416,13 @@ func (c *TURNClient) Refresh(ctx context.Context) error {
 	transactionID := generateTransactionID()
 	request := c.buildRefreshRequest(transactionID)
 
-	c.conn.SetDeadline(time.Now().Add(c.timeout))
+	if err := c.conn.SetDeadline(time.Now().Add(c.timeout)); err != nil {
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			slog.Debug("failed to set deadline for refresh", "error", err)
+		} else {
+			slog.Warn("failed to set deadline for refresh", "error", err)
+		}
+	}
 	if _, err := c.conn.WriteTo(request, addr); err != nil {
 		return err
 	}
@@ -425,8 +456,16 @@ func (c *TURNClient) Close() error {
 		transactionID := generateTransactionID()
 		request := c.buildRefreshRequest(transactionID)
 
-		c.conn.SetDeadline(time.Now().Add(2 * time.Second))
-		c.conn.WriteTo(request, addr)
+		if err := c.conn.SetDeadline(time.Now().Add(2 * time.Second)); err != nil {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				slog.Debug("failed to set deadline for close", "error", err)
+			} else {
+				slog.Warn("failed to set deadline for close", "error", err)
+			}
+		}
+		if _, err := c.conn.WriteTo(request, addr); err != nil {
+			slog.Debug("failed to send close request", "error", err)
+		}
 
 		err := c.conn.Close()
 		c.conn = nil
