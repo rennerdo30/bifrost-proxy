@@ -205,33 +205,3 @@ jobs:
           folder-path: '.'
           file-extension: '.md,.mdx'
 
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Set up Go
-        uses: actions/setup-go@v6
-        with:
-          go-version: ${{ env.GO_VERSION }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Build web UIs for embed
-        run: make web-sync
-
-      - name: Run Gosec
-        uses: securego/gosec@master
-        with:
-          # Exclude rules that are already handled via inline //nolint:gosec
-          # comments in golangci-lint. The standalone gosec action does not
-          # respect //nolint directives, so we exclude them here instead.
-          # See .golangci.yml gosec.config.global comments for rationale.
-          # Excluded directories:
-          # web: separate npm-based frontend builds
-          # desktop: separate Wails module with own go.mod and embedded frontend assets
-          args: -exclude=G101,G103,G104,G107,G115,G204,G301,G302,G304,G306,G401,G402,G407,G505,G602 -exclude-dir=web -exclude-dir=desktop ./...
