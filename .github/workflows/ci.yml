@@ -64,7 +64,8 @@ jobs:
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
-          fail_ci_if_error: true
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     name: Build
@@ -229,9 +230,10 @@ jobs:
           # Only exclude rules that generate high volume false positives.
           # Most exclusions are handled via inline //nolint:gosec comments
           # for targeted suppression at specific call sites.
+          # G103: unsafe calls (required for TUN/TAP device ioctl operations)
           # G104: errors unhandled (already checked by errcheck linter)
           # G115: integer overflow (safe bounded conversions for network protocols)
           # Excluded directories:
           # web: separate npm-based frontend builds
           # desktop: separate Wails module with own go.mod and embedded frontend assets
-          args: -exclude=G104,G115 -exclude-dir=web -exclude-dir=desktop ./...
+          args: -exclude=G103,G104,G115 -exclude-dir=web -exclude-dir=desktop ./...

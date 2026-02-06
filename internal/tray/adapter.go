@@ -1,3 +1,5 @@
+//go:build cgo
+
 // Package tray provides system tray integration for Bifrost client.
 package tray
 
