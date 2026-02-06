@@ -227,13 +227,11 @@ jobs:
       - name: Run Gosec
         uses: securego/gosec@master
         with:
-          # Only exclude rules that generate high volume false positives.
-          # Most exclusions are handled via inline //nolint:gosec comments
-          # for targeted suppression at specific call sites.
-          # G103: unsafe calls (required for TUN/TAP device ioctl operations)
-          # G104: errors unhandled (already checked by errcheck linter)
-          # G115: integer overflow (safe bounded conversions for network protocols)
+          # Exclude rules that are already handled via inline //nolint:gosec
+          # comments in golangci-lint. The standalone gosec action does not
+          # respect //nolint directives, so we exclude them here instead.
+          # See .golangci.yml gosec.config.global comments for rationale.
           # Excluded directories:
           # web: separate npm-based frontend builds
           # desktop: separate Wails module with own go.mod and embedded frontend assets
-          args: -exclude=G103,G104,G115 -exclude-dir=web -exclude-dir=desktop ./...
+          args: -exclude=G101,G103,G104,G107,G115,G204,G301,G302,G304,G306,G401,G402,G407,G505,G602 -exclude-dir=web -exclude-dir=desktop ./...
