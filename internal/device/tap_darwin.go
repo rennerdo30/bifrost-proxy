@@ -36,7 +36,7 @@ func createPlatformTAP(cfg Config) (NetworkDevice, error) {
 	if cfg.Name != "" && len(cfg.Name) > 3 && cfg.Name[:3] == "tap" {
 		// Try specific device
 		devPath := "/dev/" + cfg.Name
-		fd, err = os.OpenFile(devPath, os.O_RDWR, 0)
+		fd, err = os.OpenFile(devPath, os.O_RDWR, 0) //nolint:gosec // G304: TAP device path is constructed from fixed prefix
 		if err != nil {
 			return nil, &DeviceError{Op: "open", Err: fmt.Errorf("failed to open %s (is tuntaposx installed?): %w", devPath, err)}
 		}
@@ -45,7 +45,7 @@ func createPlatformTAP(cfg Config) (NetworkDevice, error) {
 		// Find an available TAP device
 		for i := 0; i < 16; i++ {
 			devPath := fmt.Sprintf("/dev/tap%d", i)
-			fd, err = os.OpenFile(devPath, os.O_RDWR, 0)
+			fd, err = os.OpenFile(devPath, os.O_RDWR, 0) //nolint:gosec // G304: TAP device path is constructed from fixed prefix
 			if err == nil {
 				name = fmt.Sprintf("tap%d", i)
 				break

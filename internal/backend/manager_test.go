@@ -355,6 +355,11 @@ func TestValidateName(t *testing.T) {
 		{"contains dot", "my.backend", true},
 		{"contains special char", "my@backend", true},
 		{"contains slash", "my/backend", true},
+
+		// Reserved names
+		{"reserved all", "all", true},
+		{"reserved none", "none", true},
+		{"reserved any", "any", true},
 	}
 
 	for _, tt := range tests {

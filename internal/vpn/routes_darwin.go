@@ -207,9 +207,9 @@ func (r *darwinRouteManager) addRoute(destination, gateway string) error {
 			0xFF<<(8-max(0, min(bits-8, 8))),
 			0xFF<<(8-max(0, min(bits-16, 8))),
 			0xFF<<(8-max(0, min(bits-24, 8))))
-		cmd = exec.Command("route", "-n", "add", "-net", network, "-netmask", mask, gateway)
+		cmd = exec.Command("route", "-n", "add", "-net", network, "-netmask", mask, gateway) //nolint:gosec // G204: VPN route management requires system commands
 	} else {
-		cmd = exec.Command("route", "-n", "add", "-inet6", destination, gateway)
+		cmd = exec.Command("route", "-n", "add", "-inet6", destination, gateway) //nolint:gosec // G204: VPN route management requires system commands
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -236,9 +236,9 @@ func (r *darwinRouteManager) deleteRoute(destination string) error {
 			0xFF<<(8-max(0, min(bits-8, 8))),
 			0xFF<<(8-max(0, min(bits-16, 8))),
 			0xFF<<(8-max(0, min(bits-24, 8))))
-		cmd = exec.Command("route", "-n", "delete", "-net", network, "-netmask", mask)
+		cmd = exec.Command("route", "-n", "delete", "-net", network, "-netmask", mask) //nolint:gosec // G204: VPN route management requires system commands
 	} else {
-		cmd = exec.Command("route", "-n", "delete", "-inet6", destination)
+		cmd = exec.Command("route", "-n", "delete", "-inet6", destination) //nolint:gosec // G204: VPN route management requires system commands
 	}
 
 	output, err := cmd.CombinedOutput()
@@ -253,7 +253,7 @@ func (r *darwinRouteManager) deleteRoute(destination string) error {
 
 // getDefaultGateway gets the current default gateway.
 func (r *darwinRouteManager) getDefaultGateway() (string, error) {
-	cmd := exec.Command("route", "-n", "get", "default")
+	cmd := exec.Command("route", "-n", "get", "default") //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -276,7 +276,7 @@ func (r *darwinRouteManager) getDefaultGateway() (string, error) {
 
 // getPrimaryNetworkService gets the primary network service name.
 func (r *darwinRouteManager) getPrimaryNetworkService() (string, error) {
-	cmd := exec.Command("networksetup", "-listallnetworkservices")
+	cmd := exec.Command("networksetup", "-listallnetworkservices") //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -289,7 +289,7 @@ func (r *darwinRouteManager) getPrimaryNetworkService() (string, error) {
 			continue
 		}
 		// Check if this service has an IP address
-		cmd := exec.Command("networksetup", "-getinfo", line)
+		cmd := exec.Command("networksetup", "-getinfo", line) //nolint:gosec // G204: VPN route management requires system commands
 		info, err := cmd.Output()
 		if err != nil {
 			continue

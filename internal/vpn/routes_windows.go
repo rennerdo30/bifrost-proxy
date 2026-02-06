@@ -210,7 +210,7 @@ func (r *windowsRouteManager) addRoute(destination, gateway string, ifIndex int)
 		args = append(args, "if", fmt.Sprintf("%d", ifIndex))
 	}
 
-	cmd := exec.Command("route", args...)
+	cmd := exec.Command("route", args...) //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("route add failed: %w: %s", err, string(output))
@@ -228,7 +228,7 @@ func (r *windowsRouteManager) deleteRoute(destination string) error {
 	network := prefix.Masked().Addr().String()
 	mask := prefixLengthToMask(prefix.Bits())
 
-	cmd := exec.Command("route", "delete", network, "mask", mask)
+	cmd := exec.Command("route", "delete", network, "mask", mask) //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Ignore "not found" errors
@@ -251,7 +251,7 @@ func prefixLengthToMask(bits int) string {
 
 // getDefaultGateway gets the current default gateway.
 func (r *windowsRouteManager) getDefaultGateway() (string, error) {
-	cmd := exec.Command("route", "print", "0.0.0.0")
+	cmd := exec.Command("route", "print", "0.0.0.0") //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -311,7 +311,7 @@ func (r *windowsRouteManager) configureDNS(dnsAddr string) error {
 	}
 
 	// Save current DNS
-	cmd := exec.Command("netsh", "interface", "ip", "show", "dns", r.tunName)
+	cmd := exec.Command("netsh", "interface", "ip", "show", "dns", r.tunName) //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.Output()
 	if err == nil {
 		lines := strings.Split(string(output), "\n")
@@ -328,7 +328,7 @@ func (r *windowsRouteManager) configureDNS(dnsAddr string) error {
 	}
 
 	// Set new DNS using netsh
-	cmd = exec.Command("netsh", "interface", "ip", "set", "dns",
+	cmd = exec.Command("netsh", "interface", "ip", "set", "dns", //nolint:gosec // G204: VPN route management requires system commands
 		fmt.Sprintf("name=%s", r.tunName),
 		"source=static",
 		fmt.Sprintf("addr=%s", host),
@@ -338,7 +338,7 @@ func (r *windowsRouteManager) configureDNS(dnsAddr string) error {
 	}
 
 	// Flush DNS cache
-	exec.Command("ipconfig", "/flushdns").Run()
+	exec.Command("ipconfig", "/flushdns").Run() //nolint:gosec,errcheck // G204: VPN route management requires system commands; best effort
 
 	return nil
 }
@@ -346,7 +346,7 @@ func (r *windowsRouteManager) configureDNS(dnsAddr string) error {
 // restoreDNS restores the original DNS configuration.
 func (r *windowsRouteManager) restoreDNS() error {
 	// Reset DNS to DHCP
-	cmd := exec.Command("netsh", "interface", "ip", "set", "dns",
+	cmd := exec.Command("netsh", "interface", "ip", "set", "dns", //nolint:gosec // G204: VPN route management requires system commands
 		fmt.Sprintf("name=%s", r.tunName),
 		"source=dhcp")
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -354,7 +354,7 @@ func (r *windowsRouteManager) restoreDNS() error {
 	}
 
 	// Flush DNS cache
-	exec.Command("ipconfig", "/flushdns").Run()
+	exec.Command("ipconfig", "/flushdns").Run() //nolint:gosec,errcheck // G204: VPN route management requires system commands; best effort
 
 	r.originalDNS = nil
 	return nil

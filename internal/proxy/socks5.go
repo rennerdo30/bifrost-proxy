@@ -341,6 +341,13 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 		if _, err := io.ReadFull(conn, lenByte); err != nil {
 			return "", fmt.Errorf("read domain length: %w", err)
 		}
+		if lenByte[0] == 0 {
+			h.sendReply(conn, socks5ReplyGeneralFailure, nil)
+			if entry != nil {
+				entry.StatusCode = int(socks5ReplyGeneralFailure)
+			}
+			return "", fmt.Errorf("empty domain name")
+		}
 		domain := make([]byte, lenByte[0])
 		if _, err := io.ReadFull(conn, domain); err != nil {
 			return "", fmt.Errorf("read domain: %w", err)

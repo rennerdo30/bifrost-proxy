@@ -73,10 +73,10 @@ func getOutput(output string) (io.WriteCloser, error) {
 	default:
 		// File path
 		dir := filepath.Dir(output)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: Log directory permissions are appropriate
 			return nil, fmt.Errorf("create log directory: %w", err)
 		}
-		f, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec // G302: Log file permissions are appropriate
 		if err != nil {
 			return nil, fmt.Errorf("open log file: %w", err)
 		}

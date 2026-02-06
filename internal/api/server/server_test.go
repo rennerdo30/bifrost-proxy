@@ -698,6 +698,10 @@ func TestAPI_HandleReloadConfig_Error(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusInternalServerError, w.Code)
+
+	// Verify response body contains error details
+	body := w.Body.String()
+	assert.Contains(t, body, "error")
 }
 
 func TestAPI_HandleGetRequestStats_NilLog(t *testing.T) {

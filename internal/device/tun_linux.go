@@ -39,7 +39,7 @@ type linuxTUN struct {
 // createPlatformTUN creates a TUN device on Linux.
 func createPlatformTUN(cfg Config) (NetworkDevice, error) {
 	// Open the TUN clone device
-	fd, err := os.OpenFile(tunCloneDevice, os.O_RDWR|syscall.O_CLOEXEC, 0)
+	fd, err := os.OpenFile(tunCloneDevice, os.O_RDWR|syscall.O_CLOEXEC, 0) //nolint:gosec // G304: TUN device path is a fixed system path
 	if err != nil {
 		if os.IsPermission(err) {
 			return nil, ErrPermissionDenied

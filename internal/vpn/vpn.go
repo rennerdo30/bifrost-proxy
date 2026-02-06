@@ -141,7 +141,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.status.Load().(Status) == StatusConnected { //nolint:errcheck // Type is always Status
+	if status, ok := m.status.Load().(Status); ok && status == StatusConnected {
 		return errors.New("VPN already running")
 	}
 
@@ -237,7 +237,7 @@ func (m *Manager) Stop(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if m.status.Load().(Status) != StatusConnected { //nolint:errcheck // Type is always Status
+	if status, ok := m.status.Load().(Status); !ok || status != StatusConnected {
 		return nil
 	}
 
@@ -533,14 +533,18 @@ func (m *Manager) handleConnectionData(conn *TrackedConnection) {
 	}
 
 	// Monitor context for shutdown
+	m.wg.Add(1)
 	go func() {
+		defer m.wg.Done()
 		<-m.ctx.Done()
 		cleanup()
 	}()
 
 	// Also start a goroutine to read from the proxy connection
 	// and handle errors (connection closed, timeouts, etc.)
+	m.wg.Add(1)
 	go func() {
+		defer m.wg.Done()
 		if conn.ProxyConn == nil {
 			return
 		}
@@ -850,21 +854,21 @@ func (m *Manager) Status() VPNStats {
 	if m == nil {
 		return VPNStats{Status: StatusDisabled}
 	}
-	status := m.status.Load().(Status) //nolint:errcheck // Type is always Status
+	status, ok := m.status.Load().(Status)
 
 	var uptime time.Duration
-	if status == StatusConnected {
+	if ok && status == StatusConnected {
 		uptime = time.Since(m.startTime)
 	}
 
 	var lastErr string
-	if e := m.lastError.Load(); e != nil {
-		lastErr = e.(string) //nolint:errcheck // Type is always string
+	if e, ok := m.lastError.Load().(string); ok {
+		lastErr = e
 	}
 
 	var lastErrTime time.Time
-	if t := m.lastErrorTime.Load(); t != nil {
-		lastErrTime = t.(time.Time) //nolint:errcheck // Type is always time.Time
+	if t, ok := m.lastErrorTime.Load().(time.Time); ok {
+		lastErrTime = t
 	}
 
 	var activeConns int64

@@ -206,7 +206,7 @@ func (r *linuxRouteManager) addRoute(destination, gateway, iface string) error {
 		args = append(args, "dev", iface)
 	}
 
-	cmd := exec.Command("ip", args...)
+	cmd := exec.Command("ip", args...) //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("ip route add failed: %w: %s", err, string(output))
@@ -221,7 +221,7 @@ func (r *linuxRouteManager) deleteRoute(destination, iface string) error {
 		args = append(args, "dev", iface)
 	}
 
-	cmd := exec.Command("ip", args...)
+	cmd := exec.Command("ip", args...) //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Ignore "No such process" error (route already removed)
@@ -234,7 +234,7 @@ func (r *linuxRouteManager) deleteRoute(destination, iface string) error {
 
 // getDefaultGateway gets the current default gateway.
 func (r *linuxRouteManager) getDefaultGateway() (string, error) {
-	cmd := exec.Command("ip", "route", "show", "default")
+	cmd := exec.Command("ip", "route", "show", "default") //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

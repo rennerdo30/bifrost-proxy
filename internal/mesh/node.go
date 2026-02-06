@@ -126,6 +126,7 @@ func (n *MeshNode) Start(ctx context.Context) error {
 
 	// Initialize components in order
 	if err := n.initializeDevice(); err != nil {
+		n.cleanup()
 		n.setStatus(NodeStatusError)
 		return fmt.Errorf("failed to initialize device: %w", err)
 	}
@@ -198,7 +199,7 @@ func (n *MeshNode) Stop() error {
 
 	select {
 	case <-done:
-	case <-time.After(10 * time.Second):
+	case <-time.After(30 * time.Second):
 		slog.Warn("timeout waiting for mesh node goroutines to stop")
 	}
 

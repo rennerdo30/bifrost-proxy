@@ -184,7 +184,7 @@ func (m *Manager) installSystemd() error {
 
 	// Write unit file
 	unitPath := m.systemdPath()
-	if err := os.WriteFile(unitPath, buf.Bytes(), 0600); err != nil {
+	if err := os.WriteFile(unitPath, buf.Bytes(), 0600); err != nil { //nolint:gosec // G302: Service file permissions are appropriate
 		return fmt.Errorf("write unit file: %w (try running with sudo)", err)
 	}
 
@@ -280,7 +280,7 @@ func (m *Manager) launchdPath() string {
 
 	// Check if we can write to LaunchDaemons
 	daemonPath := filepath.Join("/Library/LaunchDaemons", m.config.Name+".plist")
-	if f, err := os.OpenFile(daemonPath, os.O_WRONLY|os.O_CREATE, 0644); err == nil {
+	if f, err := os.OpenFile(daemonPath, os.O_WRONLY|os.O_CREATE, 0644); err == nil { //nolint:gosec // G302: Service file permissions are appropriate
 		f.Close()
 		os.Remove(daemonPath)
 		return daemonPath
@@ -303,12 +303,12 @@ func (m *Manager) installLaunchd() error {
 
 	// Ensure directory exists
 	plistPath := m.launchdPath()
-	if err := os.MkdirAll(filepath.Dir(plistPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(plistPath), 0755); err != nil { //nolint:gosec // G301: Service directory permissions are appropriate
 		return fmt.Errorf("create directory: %w", err)
 	}
 
 	// Write plist file
-	if err := os.WriteFile(plistPath, buf.Bytes(), 0600); err != nil {
+	if err := os.WriteFile(plistPath, buf.Bytes(), 0600); err != nil { //nolint:gosec // G302: Service file permissions are appropriate
 		return fmt.Errorf("write plist: %w", err)
 	}
 

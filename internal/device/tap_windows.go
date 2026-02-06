@@ -227,7 +227,7 @@ func (t *windowsTAP) configure(cfg Config) error {
 		addr := prefix.Addr()
 
 		if addr.Is4() {
-			cmd := exec.Command("netsh", "interface", "ip", "set", "address",
+			cmd := exec.Command("netsh", "interface", "ip", "set", "address", //nolint:gosec // G204: Network device setup requires system commands
 				fmt.Sprintf("name=%s", t.name),
 				"source=static",
 				fmt.Sprintf("addr=%s", addr),
@@ -237,7 +237,7 @@ func (t *windowsTAP) configure(cfg Config) error {
 				return &DeviceError{Op: "netsh address", Err: fmt.Errorf("%w: %s", err, string(output))}
 			}
 		} else {
-			cmd := exec.Command("netsh", "interface", "ipv6", "set", "address",
+			cmd := exec.Command("netsh", "interface", "ipv6", "set", "address", //nolint:gosec // G204: Network device setup requires system commands
 				fmt.Sprintf("interface=%s", t.name),
 				fmt.Sprintf("address=%s/%d", addr, prefix.Bits()),
 			)
@@ -248,7 +248,7 @@ func (t *windowsTAP) configure(cfg Config) error {
 	}
 
 	// Set MTU
-	cmd := exec.Command("netsh", "interface", "ipv4", "set", "subinterface",
+	cmd := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", //nolint:gosec // G204: Network device setup requires system commands
 		t.name,
 		fmt.Sprintf("mtu=%d", cfg.MTU),
 		"store=persistent",

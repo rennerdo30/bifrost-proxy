@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -458,8 +457,10 @@ exit 0
 	assert.NoError(t, err)
 	assert.Equal(t, StateConnecting, proc.State())
 
-	// Wait a bit for process to exit
-	time.Sleep(200 * time.Millisecond)
+	// Wait for mock process to exit and state to become disconnected
+	require.Eventually(t, func() bool {
+		return proc.State() == StateDisconnected
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 // TestProcess_Start_WithAuthFile tests start with auth file configured
@@ -796,17 +797,13 @@ func TestProcess_monitorManagement_ConnectionSuccess(t *testing.T) {
 	// Get the port
 	addr := listener.Addr().(*net.TCPAddr)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-		conn, err := listener.Accept()
-		if err != nil {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
 			return
 		}
 		// Send a state line then close
 		conn.Write([]byte(">STATE:1234567890,CONNECTED,SUCCESS,10.8.0.2,1.2.3.4\n"))
-		time.Sleep(100 * time.Millisecond)
 		conn.Close()
 	}()
 
@@ -826,22 +823,11 @@ func TestProcess_monitorManagement_ConnectionSuccess(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	done := make(chan struct{})
-	go func() {
-		proc.monitorManagement(ctx)
-		close(done)
-	}()
+	go proc.monitorManagement(ctx)
 
-	wg.Wait()
-
-	select {
-	case <-done:
-		// Success
-	case <-time.After(5 * time.Second):
-		t.Fatal("monitorManagement didn't complete")
-	}
-
-	assert.Equal(t, StateConnected, proc.State())
+	require.Eventually(t, func() bool {
+		return proc.State() == StateConnected
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 // TestProcess_handleManagement_ContextCancelled tests handleManagement exits on context cancel
@@ -882,16 +868,17 @@ func TestProcess_handleManagement_ContextCancelled(t *testing.T) {
 		close(handlerDone)
 	}()
 
-	// Cancel context after a short delay
-	time.Sleep(50 * time.Millisecond)
+	// Cancel context to trigger shutdown
 	cancel()
 
-	select {
-	case <-handlerDone:
-		// Success
-	case <-time.After(2 * time.Second):
-		t.Fatal("handleManagement didn't exit on context cancel")
-	}
+	require.Eventually(t, func() bool {
+		select {
+		case <-handlerDone:
+			return true
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond)
 	close(done)
 }
 

@@ -256,8 +256,7 @@ func TestSOCKS5Handler_handleRequest_Connect_IPv4(t *testing.T) {
 	assert.Equal(t, socks5Version, reply[0])
 	assert.Equal(t, socks5ReplySuccess, reply[1])
 
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, connectCalled.Load())
+	require.Eventually(t, func() bool { return connectCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestSOCKS5Handler_handleRequest_Connect_Domain(t *testing.T) {
@@ -505,8 +504,7 @@ func TestSOCKS5Handler_handleRequest_NoBackend(t *testing.T) {
 	_, err = io.ReadFull(clientConn, reply)
 	require.NoError(t, err)
 	assert.Equal(t, socks5ReplyGeneralFailure, reply[1])
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, errorCalled.Load())
+	require.Eventually(t, func() bool { return errorCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestSOCKS5Handler_sendReply(t *testing.T) {
@@ -995,8 +993,7 @@ func TestSOCKS5Handler_handlePasswordAuth_InvalidAuthVersion(t *testing.T) {
 	_, err = clientConn.Write([]byte{0x02}) // Invalid version
 	require.NoError(t, err)
 
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, errorCalled.Load())
+	require.Eventually(t, func() bool { return errorCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestSOCKS5Handler_handlePasswordAuth_ReadErrors(t *testing.T) {
@@ -1296,8 +1293,7 @@ func TestSOCKS5Handler_handleConnect_DialFailure(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, socks5ReplySuccess, reply[1])
 
-	time.Sleep(200 * time.Millisecond)
-	assert.True(t, errorCalled.Load())
+	require.Eventually(t, func() bool { return errorCalled.Load() }, time.Second, 10*time.Millisecond)
 	clientConn.Close()
 }
 

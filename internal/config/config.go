@@ -30,7 +30,7 @@ func Load(path string, v any) error {
 // Save writes a configuration struct to a file.
 func Save(path string, v any) error {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: Config directory permissions are appropriate
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -40,7 +40,7 @@ func Save(path string, v any) error {
 	}
 
 	// Use 0600 permissions - config files may contain sensitive data (passwords, tokens)
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil { //nolint:gosec // G302: Config file permissions are restricted
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
 
@@ -79,7 +79,7 @@ func Backup(path string) (string, error) {
 	}
 
 	// Use 0600 permissions - config files may contain sensitive data (passwords, tokens)
-	if err := os.WriteFile(backupPath, data, 0600); err != nil {
+	if err := os.WriteFile(backupPath, data, 0600); err != nil { //nolint:gosec // G302: Config file permissions are restricted
 		return "", fmt.Errorf("failed to write backup: %w", err)
 	}
 

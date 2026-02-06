@@ -384,20 +384,15 @@ func TestTray_onReady_ConnectClick(t *testing.T) {
 
 	tray.Run(context.Background())
 
-	// Give the goroutine time to start
-	time.Sleep(50 * time.Millisecond)
-
 	// Simulate connect click
 	adapter.GetMenuItem(1).Click()
 
 	// Wait for the click to be processed
-	time.Sleep(50 * time.Millisecond)
-
-	assert.True(t, connectCalled.Load(), "OnConnect should have been called")
-	assert.False(t, adapter.GetMenuItem(1).IsVisible(), "Connect should be hidden after click")
-	assert.True(t, adapter.GetMenuItem(2).IsVisible(), "Disconnect should be visible after click")
-	assert.Equal(t, "Status: Connected", adapter.GetMenuItem(0).GetTitle())
-	assert.Equal(t, StatusConnected, tray.status)
+	require.Eventually(t, func() bool { return connectCalled.Load() }, time.Second, 10*time.Millisecond, "OnConnect should have been called")
+	require.Eventually(t, func() bool { return !adapter.GetMenuItem(1).IsVisible() }, time.Second, 10*time.Millisecond, "Connect should be hidden after click")
+	require.Eventually(t, func() bool { return adapter.GetMenuItem(2).IsVisible() }, time.Second, 10*time.Millisecond, "Disconnect should be visible after click")
+	require.Eventually(t, func() bool { return adapter.GetMenuItem(0).GetTitle() == "Status: Connected" }, time.Second, 10*time.Millisecond, "Status should be Connected")
+	require.Eventually(t, func() bool { return tray.status == StatusConnected }, time.Second, 10*time.Millisecond, "tray.status should be StatusConnected")
 }
 
 func TestTray_onReady_DisconnectClick(t *testing.T) {
@@ -410,22 +405,18 @@ func TestTray_onReady_DisconnectClick(t *testing.T) {
 
 	tray.Run(context.Background())
 
-	// Give the goroutine time to start
-	time.Sleep(50 * time.Millisecond)
-
 	// First connect to enable disconnect
 	adapter.GetMenuItem(1).Click()
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool { return adapter.GetMenuItem(2).IsVisible() }, time.Second, 10*time.Millisecond, "Disconnect should become visible after connect")
 
 	// Then disconnect
 	adapter.GetMenuItem(2).Click()
-	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, disconnectCalled.Load(), "OnDisconnect should have been called")
-	assert.True(t, adapter.GetMenuItem(1).IsVisible(), "Connect should be visible after disconnect")
-	assert.False(t, adapter.GetMenuItem(2).IsVisible(), "Disconnect should be hidden after click")
-	assert.Equal(t, "Status: Disconnected", adapter.GetMenuItem(0).GetTitle())
-	assert.Equal(t, StatusDisconnected, tray.status)
+	require.Eventually(t, func() bool { return disconnectCalled.Load() }, time.Second, 10*time.Millisecond, "OnDisconnect should have been called")
+	require.Eventually(t, func() bool { return adapter.GetMenuItem(1).IsVisible() }, time.Second, 10*time.Millisecond, "Connect should be visible after disconnect")
+	require.Eventually(t, func() bool { return !adapter.GetMenuItem(2).IsVisible() }, time.Second, 10*time.Millisecond, "Disconnect should be hidden after click")
+	require.Eventually(t, func() bool { return adapter.GetMenuItem(0).GetTitle() == "Status: Disconnected" }, time.Second, 10*time.Millisecond, "Status should be Disconnected")
+	require.Eventually(t, func() bool { return tray.status == StatusDisconnected }, time.Second, 10*time.Millisecond, "tray.status should be StatusDisconnected")
 }
 
 func TestTray_onReady_OpenQuickClick(t *testing.T) {
@@ -437,13 +428,11 @@ func TestTray_onReady_OpenQuickClick(t *testing.T) {
 	}, adapter)
 
 	tray.Run(context.Background())
-	time.Sleep(50 * time.Millisecond)
 
 	// Simulate quick access click
 	adapter.GetMenuItem(3).Click()
-	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, openQuickCalled.Load(), "OnOpenQuick should have been called")
+	require.Eventually(t, func() bool { return openQuickCalled.Load() }, time.Second, 10*time.Millisecond, "OnOpenQuick should have been called")
 }
 
 func TestTray_onReady_OpenUIClick(t *testing.T) {
@@ -455,13 +444,11 @@ func TestTray_onReady_OpenUIClick(t *testing.T) {
 	}, adapter)
 
 	tray.Run(context.Background())
-	time.Sleep(50 * time.Millisecond)
 
 	// Simulate open dashboard click
 	adapter.GetMenuItem(4).Click()
-	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, openUICalled.Load(), "OnOpenUI should have been called")
+	require.Eventually(t, func() bool { return openUICalled.Load() }, time.Second, 10*time.Millisecond, "OnOpenUI should have been called")
 }
 
 func TestTray_onReady_QuitClick(t *testing.T) {
@@ -473,14 +460,12 @@ func TestTray_onReady_QuitClick(t *testing.T) {
 	}, adapter)
 
 	tray.Run(context.Background())
-	time.Sleep(50 * time.Millisecond)
 
 	// Simulate quit click
 	adapter.GetMenuItem(5).Click()
-	time.Sleep(50 * time.Millisecond)
 
-	assert.True(t, quitCalled.Load(), "OnQuit should have been called")
-	assert.True(t, adapter.IsQuitCalled(), "adapter.Quit should have been called")
+	require.Eventually(t, func() bool { return quitCalled.Load() }, time.Second, 10*time.Millisecond, "OnQuit should have been called")
+	require.Eventually(t, func() bool { return adapter.IsQuitCalled() }, time.Second, 10*time.Millisecond, "adapter.Quit should have been called")
 }
 
 func TestTray_onReady_NilCallbacks(t *testing.T) {
@@ -490,26 +475,20 @@ func TestTray_onReady_NilCallbacks(t *testing.T) {
 	tray := NewWithAdapter(Config{}, adapter)
 
 	tray.Run(context.Background())
-	time.Sleep(50 * time.Millisecond)
 
 	// Click all menu items - should not panic
 	adapter.GetMenuItem(1).Click() // Connect
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool { return adapter.GetMenuItem(2).IsVisible() }, time.Second, 10*time.Millisecond, "Disconnect should become visible after connect")
 
 	adapter.GetMenuItem(2).Click() // Disconnect
-	time.Sleep(50 * time.Millisecond)
+	require.Eventually(t, func() bool { return adapter.GetMenuItem(1).IsVisible() }, time.Second, 10*time.Millisecond, "Connect should become visible after disconnect")
 
 	adapter.GetMenuItem(3).Click() // Quick Access
-	time.Sleep(50 * time.Millisecond)
-
 	adapter.GetMenuItem(4).Click() // Open Dashboard
-	time.Sleep(50 * time.Millisecond)
-
 	adapter.GetMenuItem(5).Click() // Quit
-	time.Sleep(50 * time.Millisecond)
 
 	// If we get here without panic, the test passes
-	assert.True(t, adapter.IsQuitCalled())
+	require.Eventually(t, func() bool { return adapter.IsQuitCalled() }, time.Second, 10*time.Millisecond, "adapter.Quit should have been called")
 }
 
 func TestTray_onExit(t *testing.T) {

@@ -3,12 +3,15 @@ package p2p
 import (
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"io"
 	"sync/atomic"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
+	"golang.org/x/crypto/hkdf"
 )
 
 // Crypto errors.
@@ -309,18 +312,17 @@ func (cs *CryptoSession) Decrypt(msg []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// deriveKey derives a key from shared secret and label.
-// In production, use HKDF or similar.
+// deriveKey derives a key from shared secret and label using HKDF.
 func deriveKey(sharedSecret, label []byte) []byte {
-	// Simple XOR-based derivation (for illustration)
-	// In production, use proper KDF
+	kdf := hkdf.New(sha256.New, sharedSecret, nil, label)
 	key := make([]byte, 32)
-	copy(key, sharedSecret)
-
-	for i := 0; i < len(label) && i < 32; i++ {
-		key[i] ^= label[i]
+	if _, err := io.ReadFull(kdf, key); err != nil {
+		// HKDF with valid params should never fail; fall back to SHA-256
+		h := sha256.New()
+		h.Write(sharedSecret)
+		h.Write(label)
+		return h.Sum(nil)
 	}
-
 	return key
 }
 

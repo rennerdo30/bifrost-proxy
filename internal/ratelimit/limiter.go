@@ -96,7 +96,7 @@ func (kl *KeyedLimiter) cleanupLoop() {
 			kl.mu.Lock()
 			now := time.Now()
 			for key, limiter := range kl.limiters {
-				if now.Sub(limiter.lastAccess) > 10*time.Minute {
+				if now.Sub(limiter.LastAccess()) > 10*time.Minute {
 					delete(kl.limiters, key)
 				}
 			}

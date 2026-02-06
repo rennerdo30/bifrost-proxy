@@ -303,8 +303,7 @@ func TestHTTPHandler_handleConnect(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, connectCalled.Load())
+	require.Eventually(t, func() bool { return connectCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestHTTPHandler_handleConnect_NoBackend(t *testing.T) {
@@ -337,8 +336,7 @@ func TestHTTPHandler_handleConnect_NoBackend(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, errorCalled.Load())
+	require.Eventually(t, func() bool { return errorCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestHTTPHandler_handleConnect_HostWithoutPort(t *testing.T) {
@@ -477,8 +475,7 @@ func TestHTTPHandler_handleHTTP_HTTPS(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, connectCalled.Load())
+	require.Eventually(t, func() bool { return connectCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
@@ -511,8 +508,7 @@ func TestHTTPHandler_handleHTTP_NoBackend(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
-	time.Sleep(50 * time.Millisecond)
-	assert.True(t, errorCalled.Load())
+	require.Eventually(t, func() bool { return errorCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestHTTPHandler_ServeConn_ReadRequestError(t *testing.T) {
@@ -648,8 +644,7 @@ func TestHTTPHandler_handleConnect_DialFailure(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
-	time.Sleep(200 * time.Millisecond)
-	assert.True(t, errorCalled.Load())
+	require.Eventually(t, func() bool { return errorCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestHTTPHandler_handleHTTP_DialFailure(t *testing.T) {
@@ -690,8 +685,7 @@ func TestHTTPHandler_handleHTTP_DialFailure(t *testing.T) {
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadGateway, resp.StatusCode)
 
-	time.Sleep(200 * time.Millisecond)
-	assert.True(t, errorCalled.Load())
+	require.Eventually(t, func() bool { return errorCalled.Load() }, time.Second, 10*time.Millisecond)
 }
 
 func TestHTTPHandler_handleHTTP_EmptyHostFromRequest(t *testing.T) {

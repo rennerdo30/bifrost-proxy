@@ -34,8 +34,12 @@ COPY . .
 # Copy built web UI from web-builder stage
 COPY --from=web-builder /app/internal/api/server/static/ /app/internal/api/server/static/
 
+# Build args for version info (defaults used when not passed)
+ARG VERSION=docker
+ARG COMMIT=docker
+
 # Build server
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X github.com/rennerdo30/bifrost-proxy/internal/version.Version=docker -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit=docker -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o bin/bifrost-server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/rennerdo30/bifrost-proxy/internal/version.Version=${VERSION} -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit=${COMMIT} -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o bin/bifrost-server ./cmd/server
 
 # Runtime stage
 FROM alpine:3.21
@@ -62,8 +66,8 @@ USER bifrost
 EXPOSE 7080 7180 7090 7081
 
 # Health check (use 127.0.0.1 to avoid IPv6 resolution issues)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:7090/metrics || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:7090/api/v1/health || exit 1
 
 # Default command - use config from data directory
 ENTRYPOINT ["/app/bifrost-server"]

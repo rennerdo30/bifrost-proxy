@@ -209,6 +209,14 @@ func (m *Manager) Put(ctx context.Context, req *http.Request, resp *http.Respons
 		return nil
 	}
 
+	// Ensure body is closed if we return early without passing it to storage
+	bodyConsumed := false
+	defer func() {
+		if !bodyConsumed && body != nil {
+			body.Close()
+		}
+	}()
+
 	// Find matching rule
 	rule := m.rules.Match(req)
 	if rule == nil {
@@ -320,6 +328,9 @@ func (m *Manager) Put(ctx context.Context, req *http.Request, resp *http.Respons
 		Metadata: metadata,
 		Body:     body,
 	}
+
+	// Body is now owned by storage; don't close it in our defer
+	bodyConsumed = true
 
 	if err := m.storage.Put(ctx, key, entry); err != nil {
 		slog.Error("failed to store in cache",

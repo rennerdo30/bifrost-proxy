@@ -3,6 +3,8 @@ package auth
 import (
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestBruteForceProtector_Basic(t *testing.T) {
@@ -43,13 +45,8 @@ func TestBruteForceProtector_Basic(t *testing.T) {
 		t.Error("should have lockout remaining")
 	}
 
-	// Wait for lockout to expire
-	time.Sleep(150 * time.Millisecond)
-
-	// Should be allowed again
-	if !bf.IsAllowed(key) {
-		t.Error("should be allowed after lockout expires")
-	}
+	// Wait for lockout to expire, then verify allowed again
+	require.Eventually(t, func() bool { return bf.IsAllowed(key) }, time.Second, 10*time.Millisecond, "should be allowed after lockout expires")
 }
 
 func TestBruteForceProtector_SuccessResets(t *testing.T) {
@@ -104,7 +101,7 @@ func TestBruteForceProtector_ExponentialBackoff(t *testing.T) {
 	}
 
 	// Wait for lockout to expire
-	time.Sleep(60 * time.Millisecond)
+	require.Eventually(t, func() bool { return bf.IsAllowed(key) }, time.Second, 10*time.Millisecond, "lockout should expire")
 
 	// Second lockout should be longer (exponential backoff)
 	bf.RecordFailure(key)
@@ -126,19 +123,20 @@ func TestBruteForceProtector_WindowReset(t *testing.T) {
 
 	key := "test-ip"
 
-	// Record some failures
+	// Record enough failures to trigger lockout
+	bf.RecordFailure(key)
 	bf.RecordFailure(key)
 	bf.RecordFailure(key)
 
-	// Wait for window to expire
-	time.Sleep(150 * time.Millisecond)
-
-	// Should be fully reset
-	if !bf.IsAllowed(key) {
-		t.Error("should be allowed after window expires")
+	// Should now be blocked
+	if bf.IsAllowed(key) {
+		t.Error("should be blocked after 3 failures")
 	}
 
-	// Failure count should have reset
+	// Wait for both lockout and window to expire (both are 100ms), then verify reset
+	require.Eventually(t, func() bool { return bf.IsAllowed(key) }, time.Second, 10*time.Millisecond, "should be allowed after window expires")
+
+	// Failure count should have reset - record 2 failures in new window
 	bf.RecordFailure(key)
 	bf.RecordFailure(key)
 
@@ -222,14 +220,8 @@ func TestBruteForceProtector_GetLockoutRemaining_Expired(t *testing.T) {
 	bf.RecordFailure("test-key")
 	bf.RecordFailure("test-key")
 
-	// Wait for lockout to expire
-	time.Sleep(100 * time.Millisecond)
-
-	// Should return 0 (lockout expired)
-	remaining := bf.GetLockoutRemaining("test-key")
-	if remaining != 0 {
-		t.Errorf("expected 0 lockout remaining after expiry, got %v", remaining)
-	}
+	// Wait for lockout to expire, then verify remaining is 0
+	require.Eventually(t, func() bool { return bf.GetLockoutRemaining("test-key") == 0 }, time.Second, 10*time.Millisecond, "expected 0 lockout remaining after expiry")
 }
 
 func TestBruteForceProtector_Cleanup(t *testing.T) {
@@ -250,17 +242,11 @@ func TestBruteForceProtector_Cleanup(t *testing.T) {
 		t.Errorf("expected 2 tracked keys, got %d", stats.TrackedKeys)
 	}
 
-	// Wait for window and lockout to expire
-	time.Sleep(100 * time.Millisecond)
-
-	// Manually trigger cleanup
-	bf.cleanup()
-
-	// All keys should be cleaned up
-	stats = bf.Stats()
-	if stats.TrackedKeys != 0 {
-		t.Errorf("expected 0 tracked keys after cleanup, got %d", stats.TrackedKeys)
-	}
+	// Wait for window and lockout to expire, then verify cleanup removes all keys
+	require.Eventually(t, func() bool {
+		bf.cleanup()
+		return bf.Stats().TrackedKeys == 0
+	}, time.Second, 10*time.Millisecond, "expected 0 tracked keys after cleanup")
 }
 
 func TestBruteForceProtector_Cleanup_KeepsActiveEntries(t *testing.T) {
@@ -283,18 +269,13 @@ func TestBruteForceProtector_Cleanup_KeepsActiveEntries(t *testing.T) {
 		t.Errorf("expected 2 tracked keys, got %d", stats.TrackedKeys)
 	}
 
-	// Wait for window to expire (but not lockout)
-	time.Sleep(100 * time.Millisecond)
-
-	// Manually trigger cleanup
-	bf.cleanup()
-
+	// Wait for window to expire (but not lockout), then verify cleanup keeps locked key
 	// locked-key should be kept (still locked out)
 	// recent-key should be cleaned up (outside window, not locked)
-	stats = bf.Stats()
-	if stats.TrackedKeys != 1 {
-		t.Errorf("expected 1 tracked key after cleanup, got %d", stats.TrackedKeys)
-	}
+	require.Eventually(t, func() bool {
+		bf.cleanup()
+		return bf.Stats().TrackedKeys == 1
+	}, time.Second, 10*time.Millisecond, "expected 1 tracked key after cleanup")
 }
 
 func TestBruteForceProtector_DefaultConfig(t *testing.T) {
@@ -328,12 +309,12 @@ func TestBruteForceProtector_MaxLockoutCap(t *testing.T) {
 	// First lockout (100ms)
 	bf.RecordFailure(key)
 	bf.RecordFailure(key)
-	time.Sleep(110 * time.Millisecond)
+	require.Eventually(t, func() bool { return bf.IsAllowed(key) }, time.Second, 10*time.Millisecond, "first lockout should expire")
 
 	// Second lockout (would be 200ms, but still within cap)
 	bf.RecordFailure(key)
 	bf.RecordFailure(key)
-	time.Sleep(210 * time.Millisecond)
+	require.Eventually(t, func() bool { return bf.IsAllowed(key) }, time.Second, 10*time.Millisecond, "second lockout should expire")
 
 	// Third lockout (would be 400ms, but capped at 200ms)
 	bf.RecordFailure(key)

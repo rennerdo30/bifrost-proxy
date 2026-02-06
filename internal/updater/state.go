@@ -30,7 +30,7 @@ func LoadState(path string) (*State, error) {
 		if os.IsNotExist(err) {
 			// Create directory if needed
 			dir := filepath.Dir(path)
-			if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil {
+			if mkdirErr := os.MkdirAll(dir, 0755); mkdirErr != nil { //nolint:gosec // G301: State directory permissions are appropriate
 				return nil, mkdirErr
 			}
 			return s, nil
@@ -58,11 +58,11 @@ func (s *State) Save() error {
 
 	// Ensure directory exists
 	dir := filepath.Dir(s.path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: State directory permissions are appropriate
 		return err
 	}
 
-	return os.WriteFile(s.path, data, 0600)
+	return os.WriteFile(s.path, data, 0600) //nolint:gosec // G302: State file permissions are restricted
 }
 
 // ShouldCheck returns true if enough time has passed since last check.
