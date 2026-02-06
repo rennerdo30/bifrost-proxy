@@ -33,6 +33,30 @@
     @apply hover:border-bifrost-accent/30 hover:bg-bifrost-card-hover;
   }
 
+  .card-section {
+    @apply bg-bifrost-card border border-bifrost-border rounded-xl overflow-hidden transition-all duration-200;
+  }
+
+  .card-section-header {
+    @apply p-5 border-b border-transparent hover:bg-bifrost-card-hover/50 transition-colors duration-150;
+  }
+
+  .card-section-body {
+    @apply p-5 pt-4 border-t border-bifrost-border/50;
+  }
+
+  .sticky-bar {
+    @apply sticky bottom-0 z-10 p-4 bg-bifrost-bg/80 backdrop-blur-md border-t border-bifrost-border rounded-b-xl animate-sticky-enter;
+  }
+
+  .section-nav-item {
+    @apply w-full text-left px-3 py-2 text-sm text-bifrost-muted rounded-lg hover:bg-bifrost-card-hover hover:text-white transition-all duration-150;
+  }
+
+  .section-nav-item-active {
+    @apply bg-bifrost-accent/10 text-bifrost-accent border-l-2 border-bifrost-accent;
+  }
+
   .btn {
     @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2;
   }

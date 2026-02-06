@@ -472,6 +472,12 @@ export interface APIConfig {
   websocket_max_clients?: number
 }
 
+// Access Control Configuration
+export interface AccessControlConfig {
+  whitelist: string[]
+  blacklist: string[]
+}
+
 // Full Server Configuration
 export interface ServerConfig {
   server: ServerSettings
@@ -479,6 +485,7 @@ export interface ServerConfig {
   routes: RouteConfig[]
   auth: AuthConfig
   rate_limit: RateLimitConfig
+  access_control?: AccessControlConfig
   access_log: AccessLogConfig
   metrics: MetricsConfig
   logging: LoggingConfig

@@ -15,6 +15,10 @@ const typeLabels: Record<string, string> = {
   socks5_proxy: 'SOCKS5 Proxy',
   wireguard: 'WireGuard',
   openvpn: 'OpenVPN',
+  nordvpn: 'NordVPN',
+  mullvad: 'Mullvad',
+  pia: 'PIA',
+  protonvpn: 'ProtonVPN',
 }
 
 const typeBadgeColors: Record<string, string> = {
@@ -23,6 +27,10 @@ const typeBadgeColors: Record<string, string> = {
   socks5_proxy: 'badge-info',
   wireguard: 'bg-purple-500/20 text-purple-400',
   openvpn: 'bg-orange-500/20 text-orange-400',
+  nordvpn: 'bg-blue-500/20 text-blue-400',
+  mullvad: 'bg-yellow-500/20 text-yellow-400',
+  pia: 'bg-green-500/20 text-green-400',
+  protonvpn: 'bg-violet-500/20 text-violet-400',
 }
 
 export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
@@ -51,6 +59,9 @@ export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
   return (
     <Section title="Backends" badge="restart-required">
       <div className="space-y-4">
+        <p className="text-xs text-bifrost-muted">
+          Backends configured here are persisted to the config file and survive restarts.
+        </p>
         {backends.length === 0 ? (
           <div className="text-center py-8 text-bifrost-muted">
             <p>No backends configured</p>
