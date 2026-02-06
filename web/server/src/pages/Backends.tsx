@@ -148,6 +148,19 @@ export function Backends() {
         </div>
       </div>
 
+      {/* Info Banner */}
+      <div className="p-4 bg-bifrost-accent/10 border border-bifrost-accent/30 rounded-lg">
+        <div className="flex items-start gap-3">
+          <svg className="w-5 h-5 text-bifrost-accent mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm text-gray-300">
+            <strong>Runtime vs Persistent:</strong> Backends added here are active immediately but not persisted across restarts.
+            To make changes permanent, configure backends in the <a href="/config" className="text-bifrost-accent hover:underline">Configuration</a> page.
+          </p>
+        </div>
+      </div>
+
       {/* Backend Summary */}
       {backends && backends.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
