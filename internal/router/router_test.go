@@ -907,6 +907,50 @@ func TestWeightedBalancer_Select_DefaultWeight(t *testing.T) {
 	assert.Greater(t, selections["b1"], selections["b2"])
 }
 
+func TestRouter_Match_InvalidDomains(t *testing.T) {
+	mgr := backend.NewManager()
+	b := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	b.Start(context.Background())
+	mgr.Add(b)
+
+	r := New(mgr)
+	r.AddRoute(&Route{
+		Name:    "catch-all",
+		Matcher: matcher.New([]string{"*"}),
+		Backend: "test",
+	})
+
+	// Empty domain should not match
+	result := r.Match("")
+	assert.False(t, result.Matched, "empty domain should not match")
+
+	// Whitespace-only domain should not match (treated as empty after normalization)
+	result = r.Match("   ")
+	assert.False(t, result.Matched, "whitespace-only domain should not match")
+
+	// Syntactically odd but non-empty domains should still match wildcard
+	result = r.Match("a..b")
+	assert.True(t, result.Matched, "domain: \"a..b\"")
+
+}
+
+func TestServerRouter_GetBackendForDomain_AllBackendsUnhealthy(t *testing.T) {
+	mgr := backend.NewManager()
+	b := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	// Don't start - unhealthy
+	mgr.Add(b)
+
+	r := NewServerRouter(mgr)
+	routes := []config.RouteConfig{
+		{Domains: []string{"*.example.com"}, Backend: "test"},
+	}
+	r.LoadRoutes(routes)
+
+	// Should return nil when backend is unhealthy
+	result := r.GetBackendForDomain("api.example.com", "192.168.1.1")
+	assert.Nil(t, result)
+}
+
 func TestClientAction_Constants(t *testing.T) {
 	assert.Equal(t, ClientAction("server"), ActionServer)
 	assert.Equal(t, ClientAction("direct"), ActionDirect)

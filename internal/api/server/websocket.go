@@ -81,19 +81,34 @@ func (h *WebSocketHub) Run() {
 			h.mu.Unlock()
 
 		case message := <-h.broadcast:
-			// Collect failed clients while holding lock, then unregister after releasing
-			// to prevent deadlock from sending to channel while holding lock
+			// Snapshot client list under lock, then write without lock
+			// to avoid blocking other operations during slow writes
 			h.mu.RLock()
-			var failed []*websocket.Conn
+			clients := make([]*websocket.Conn, 0, len(h.clients))
 			for client := range h.clients {
+				clients = append(clients, client)
+			}
+			h.mu.RUnlock()
+
+			var failed []*websocket.Conn
+			for _, client := range clients {
+				// Set write deadline to prevent slow clients from blocking broadcasts
+				_ = client.SetWriteDeadline(time.Now().Add(5 * time.Second)) //nolint:errcheck // Best effort deadline
 				if _, err := client.Write(message); err != nil {
 					failed = append(failed, client)
 				}
 			}
-			h.mu.RUnlock()
-			// Unregister failed clients after releasing lock
-			for _, client := range failed {
-				h.unregister <- client
+			// Remove failed clients directly instead of sending to unregister channel,
+			// which would deadlock since this goroutine is the only reader
+			if len(failed) > 0 {
+				h.mu.Lock()
+				for _, client := range failed {
+					if _, ok := h.clients[client]; ok {
+						delete(h.clients, client)
+						client.Close()
+					}
+				}
+				h.mu.Unlock()
 			}
 		}
 	}

@@ -68,14 +68,6 @@ func Setup(cfg Config) error {
 		return err
 	}
 
-	// Close previous log file if one exists
-	loggerMu.Lock()
-	if currentLogFile != nil {
-		currentLogFile.Close()
-	}
-	currentLogFile = logFile
-	loggerMu.Unlock()
-
 	opts := &slog.HandlerOptions{
 		Level: level,
 	}
@@ -87,10 +79,19 @@ func Setup(cfg Config) error {
 	case "text", "":
 		handler = slog.NewTextHandler(output, opts)
 	default:
+		// Close new file if we opened one but can't use it
+		if logFile != nil {
+			logFile.Close()
+		}
 		return fmt.Errorf("unknown log format: %s", cfg.Format)
 	}
 
+	// Single critical section: close old file, set new file, and update logger atomically
 	loggerMu.Lock()
+	if currentLogFile != nil {
+		currentLogFile.Close()
+	}
+	currentLogFile = logFile
 	defaultLogger = slog.New(handler)
 	slog.SetDefault(defaultLogger)
 	loggerMu.Unlock()
@@ -125,10 +126,10 @@ func getOutput(output string) (io.Writer, *os.File, error) {
 	default:
 		// Treat as file path
 		dir := filepath.Dir(output)
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0755); err != nil { //nolint:gosec // G301: Config directory permissions are appropriate
 			return nil, nil, fmt.Errorf("failed to create log directory: %w", err)
 		}
-		f, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		f, err := os.OpenFile(output, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644) //nolint:gosec // G302: Log file permissions are appropriate
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to open log file: %w", err)
 		}

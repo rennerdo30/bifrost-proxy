@@ -217,11 +217,13 @@ web-sync-client: web-build-client
 web-build-server:
 	@echo "Building server Web UI..."
 	@cd web/server && npm install && npm run build
+	@test -d internal/api/server/static/assets || (echo "ERROR: Server Web UI build failed - no output in internal/api/server/static/assets" && exit 1)
 
 # Build client web UI with Vite
 web-build-client:
 	@echo "Building client Web UI..."
 	@cd web/client && npm install && npm run build
+	@test -d internal/api/client/static/assets || (echo "ERROR: Client Web UI build failed - no output in internal/api/client/static/assets" && exit 1)
 
 # Build all web UIs
 web-build: web-build-server web-build-client

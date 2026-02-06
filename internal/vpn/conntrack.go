@@ -115,16 +115,17 @@ func NewConnTrackerWithConfig(cfg ConnTrackerConfig) *ConnTracker {
 
 // Add adds a new tracked connection.
 func (ct *ConnTracker) Add(conn *TrackedConnection) {
-	ct.mu.Lock()
-	defer ct.mu.Unlock()
+	var evictedConn net.Conn
 
+	ct.mu.Lock()
 	if ct.closed {
+		ct.mu.Unlock()
 		return
 	}
 
 	// Enforce connection limit - evict oldest if at capacity
 	if len(ct.connections) >= MaxTrackedConnections {
-		ct.evictOldestLocked()
+		evictedConn = ct.evictOldestLocked()
 	}
 
 	conn.Created = time.Now()
@@ -132,10 +133,17 @@ func (ct *ConnTracker) Add(conn *TrackedConnection) {
 	conn.State = ConnStateNew
 
 	ct.connections[conn.Key] = conn
+	ct.mu.Unlock()
+
+	// Close evicted connection outside the lock to avoid blocking
+	if evictedConn != nil {
+		evictedConn.Close()
+	}
 }
 
-// evictOldestLocked removes the oldest connection. Must be called with mu held.
-func (ct *ConnTracker) evictOldestLocked() {
+// evictOldestLocked removes the oldest connection from the map. Must be called with mu held.
+// Returns the evicted connection's ProxyConn (if any) so the caller can close it outside the lock.
+func (ct *ConnTracker) evictOldestLocked() net.Conn {
 	var oldestKey ConnKey
 	var oldestTime time.Time
 
@@ -148,12 +156,12 @@ func (ct *ConnTracker) evictOldestLocked() {
 
 	if !oldestTime.IsZero() {
 		if conn, ok := ct.connections[oldestKey]; ok {
-			if conn.ProxyConn != nil {
-				conn.ProxyConn.Close()
-			}
+			proxyConn := conn.ProxyConn
 			delete(ct.connections, oldestKey)
+			return proxyConn
 		}
 	}
+	return nil
 }
 
 // Get retrieves a tracked connection by its key.
@@ -228,21 +236,27 @@ func (ct *ConnTracker) Count() int {
 // Close closes the connection tracker and all tracked connections.
 func (ct *ConnTracker) Close() {
 	ct.mu.Lock()
-	defer ct.mu.Unlock()
-
 	if ct.closed {
+		ct.mu.Unlock()
 		return
 	}
 
 	ct.closed = true
 	close(ct.done)
 
-	// Close all connections
+	// Collect connections to close
+	var toClose []net.Conn
 	for key, conn := range ct.connections {
 		if conn.ProxyConn != nil {
-			conn.ProxyConn.Close()
+			toClose = append(toClose, conn.ProxyConn)
 		}
 		delete(ct.connections, key)
+	}
+	ct.mu.Unlock()
+
+	// Close connections outside the lock
+	for _, c := range toClose {
+		c.Close()
 	}
 }
 
@@ -263,25 +277,24 @@ func (ct *ConnTracker) cleanupLoop() {
 
 // cleanupIdleConnections removes connections that have been idle too long.
 func (ct *ConnTracker) cleanupIdleConnections() {
+	// Collect idle connections under lock
 	ct.mu.Lock()
-	defer ct.mu.Unlock()
-
 	now := time.Now()
-	toRemove := make([]ConnKey, 0)
+	var toClose []net.Conn
 
 	for key, conn := range ct.connections {
 		if now.Sub(conn.LastActivity) > ct.idleTimeout {
-			toRemove = append(toRemove, key)
-		}
-	}
-
-	for _, key := range toRemove {
-		if conn, ok := ct.connections[key]; ok {
 			if conn.ProxyConn != nil {
-				conn.ProxyConn.Close()
+				toClose = append(toClose, conn.ProxyConn)
 			}
 			delete(ct.connections, key)
 		}
+	}
+	ct.mu.Unlock()
+
+	// Close connections outside the lock to avoid blocking other operations
+	for _, c := range toClose {
+		c.Close()
 	}
 }
 

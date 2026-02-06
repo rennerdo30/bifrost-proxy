@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"sync"
@@ -10,12 +11,22 @@ import (
 // backendNamePattern matches valid backend names: alphanumeric, hyphens, underscores.
 var backendNamePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
+// reservedNames contains backend names that are reserved for internal use.
+var reservedNames = map[string]bool{
+	"all":  true,
+	"none": true,
+	"any":  true,
+}
+
 // ValidateName validates a backend name.
 // Valid names contain only alphanumeric characters, hyphens, and underscores,
-// and must start with an alphanumeric character.
+// and must start with an alphanumeric character. Reserved names are not allowed.
 func ValidateName(name string) error {
 	if name == "" {
 		return fmt.Errorf("%w: backend name cannot be empty", ErrBackendInvalid)
+	}
+	if reservedNames[name] {
+		return fmt.Errorf("%w: backend name %q is reserved", ErrBackendInvalid, name)
 	}
 	if !backendNamePattern.MatchString(name) {
 		return fmt.Errorf("%w: backend name %q must contain only alphanumeric characters, hyphens, and underscores, and must start with alphanumeric", ErrBackendInvalid, name)
@@ -121,12 +132,18 @@ func (m *Manager) Healthy() []Backend {
 
 // StartAll starts all backends.
 func (m *Manager) StartAll(ctx context.Context) error {
+	// Copy backend list under lock, then operate without holding lock
+	// to avoid blocking registration during slow start operations
 	m.mu.RLock()
-	defer m.mu.RUnlock()
+	backends := make([]Backend, 0, len(m.backends))
+	for _, b := range m.backends {
+		backends = append(backends, b)
+	}
+	m.mu.RUnlock()
 
-	for _, backend := range m.backends {
-		if err := backend.Start(ctx); err != nil {
-			return fmt.Errorf("failed to start backend %s: %w", backend.Name(), err)
+	for _, b := range backends {
+		if err := b.Start(ctx); err != nil {
+			return fmt.Errorf("failed to start backend %s: %w", b.Name(), err)
 		}
 	}
 	return nil
@@ -134,16 +151,22 @@ func (m *Manager) StartAll(ctx context.Context) error {
 
 // StopAll stops all backends.
 func (m *Manager) StopAll(ctx context.Context) error {
+	// Copy backend list under lock, then operate without holding lock
+	// to avoid blocking registration during slow stop operations
 	m.mu.RLock()
-	defer m.mu.RUnlock()
+	backends := make([]Backend, 0, len(m.backends))
+	for _, b := range m.backends {
+		backends = append(backends, b)
+	}
+	m.mu.RUnlock()
 
-	var lastErr error
-	for _, backend := range m.backends {
-		if err := backend.Stop(ctx); err != nil {
-			lastErr = fmt.Errorf("failed to stop backend %s: %w", backend.Name(), err)
+	var errs []error
+	for _, b := range backends {
+		if err := b.Stop(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("failed to stop backend %s: %w", b.Name(), err))
 		}
 	}
-	return lastErr
+	return errors.Join(errs...)
 }
 
 // Stats returns statistics for all backends.

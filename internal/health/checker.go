@@ -26,11 +26,13 @@ type Result struct {
 
 // Config holds health check configuration.
 type Config struct {
-	Type     string        `yaml:"type"`     // tcp, http, ping
-	Target   string        `yaml:"target"`   // Target address
-	Interval time.Duration `yaml:"interval"` // Check interval
-	Timeout  time.Duration `yaml:"timeout"`  // Check timeout
-	Path     string        `yaml:"path"`     // For HTTP checks
+	Type               string        `yaml:"type"`                 // tcp, http, ping
+	Target             string        `yaml:"target"`               // Target address
+	Interval           time.Duration `yaml:"interval"`             // Check interval
+	Timeout            time.Duration `yaml:"timeout"`              // Check timeout
+	Path               string        `yaml:"path"`                 // For HTTP checks
+	Scheme             string        `yaml:"scheme"`               // For HTTP checks: "http" or "https" (default: "http")
+	InsecureSkipVerify bool          `yaml:"insecure_skip_verify"` // For HTTP checks: skip TLS verification (default: false)
 }
 
 // DefaultConfig returns default health check configuration.

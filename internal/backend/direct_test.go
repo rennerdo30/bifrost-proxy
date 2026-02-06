@@ -176,9 +176,10 @@ func TestDirectBackend_TrackedConnOnClose(t *testing.T) {
 	conn.Close()
 
 	// After close, active connections should be decremented
-	time.Sleep(10 * time.Millisecond)
+	require.Eventually(t, func() bool {
+		return backend.Stats().ActiveConnections == 0
+	}, time.Second, 10*time.Millisecond)
 	stats = backend.Stats()
-	assert.Equal(t, int64(0), stats.ActiveConnections)
 	assert.Greater(t, stats.BytesReceived, int64(0))
 
 	backend.Stop(ctx)

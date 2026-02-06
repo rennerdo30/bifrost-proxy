@@ -3,6 +3,7 @@ package backend
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net"
 	"sync"
@@ -159,10 +160,8 @@ func TestCopyBidirectional(t *testing.T) {
 		close(done)
 	}()
 
-	// Give it a moment to start
-	time.Sleep(50 * time.Millisecond)
-
-	// Close one side to trigger completion
+	// Close pipes to trigger completion (CopyBidirectional will close connections
+	// once one direction finishes, which unblocks the other)
 	conn1Read.Close()
 	conn2Read.Close()
 
@@ -173,9 +172,11 @@ func TestCopyBidirectional(t *testing.T) {
 		t.Fatal("timeout waiting for CopyBidirectional")
 	}
 
-	// Results may vary based on timing
-	_ = sent
-	_ = received
+	// Verify that the function completed without panicking
+	// and returned sensible values (bytes counts are non-negative)
+	assert.GreaterOrEqual(t, sent, int64(0), "sent bytes should be non-negative")
+	assert.GreaterOrEqual(t, received, int64(0), "received bytes should be non-negative")
+	// Error may or may not be nil depending on which pipe was closed first
 	_ = copyErr
 }
 
@@ -202,8 +203,8 @@ func TestCopyBidirectional_ContextCanceled(t *testing.T) {
 	}
 }
 
-func TestStats_Struct(t *testing.T) {
-	now := time.Now()
+func TestStats_JSONRoundTrip(t *testing.T) {
+	now := time.Now().Truncate(time.Second) // Truncate for JSON round-trip
 	s := Stats{
 		Name:              "test-backend",
 		Type:              "direct",
@@ -219,16 +220,49 @@ func TestStats_Struct(t *testing.T) {
 		Uptime:            time.Hour,
 	}
 
-	assert.Equal(t, "test-backend", s.Name)
-	assert.Equal(t, "direct", s.Type)
-	assert.True(t, s.Healthy)
-	assert.Equal(t, int64(5), s.ActiveConnections)
-	assert.Equal(t, int64(100), s.TotalConnections)
-	assert.Equal(t, int64(1024), s.BytesSent)
-	assert.Equal(t, int64(2048), s.BytesReceived)
-	assert.Equal(t, int64(3), s.Errors)
-	assert.Equal(t, "test error", s.LastError)
-	assert.Equal(t, now, s.LastErrorTime)
+	// Marshal to JSON
+	data, err := json.Marshal(s)
+	require.NoError(t, err)
+
+	// Verify JSON field names match struct tags
+	var raw map[string]interface{}
+	err = json.Unmarshal(data, &raw)
+	require.NoError(t, err)
+
+	assert.Contains(t, raw, "name")
+	assert.Contains(t, raw, "type")
+	assert.Contains(t, raw, "healthy")
+	assert.Contains(t, raw, "active_connections")
+	assert.Contains(t, raw, "total_connections")
+	assert.Contains(t, raw, "bytes_sent")
+	assert.Contains(t, raw, "bytes_received")
+	assert.Contains(t, raw, "errors")
+	assert.Contains(t, raw, "last_error")
+	assert.Contains(t, raw, "latency")
+	assert.Contains(t, raw, "uptime")
+
+	// Unmarshal back and verify values survive round-trip
+	var decoded Stats
+	err = json.Unmarshal(data, &decoded)
+	require.NoError(t, err)
+
+	assert.Equal(t, s.Name, decoded.Name)
+	assert.Equal(t, s.Type, decoded.Type)
+	assert.Equal(t, s.Healthy, decoded.Healthy)
+	assert.Equal(t, s.ActiveConnections, decoded.ActiveConnections)
+	assert.Equal(t, s.TotalConnections, decoded.TotalConnections)
+	assert.Equal(t, s.BytesSent, decoded.BytesSent)
+	assert.Equal(t, s.BytesReceived, decoded.BytesReceived)
+	assert.Equal(t, s.Errors, decoded.Errors)
+	assert.Equal(t, s.LastError, decoded.LastError)
+
+	// Verify omitempty: zero-value Stats should not include last_error (string omitempty works)
+	zeroData, err := json.Marshal(Stats{})
+	require.NoError(t, err)
+	var zeroRaw map[string]interface{}
+	err = json.Unmarshal(zeroData, &zeroRaw)
+	require.NoError(t, err)
+	assert.NotContains(t, zeroRaw, "last_error")
 }
 
 func TestDialer_Type(t *testing.T) {

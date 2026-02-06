@@ -19,6 +19,7 @@ linters:
     - unparam
     - prealloc
     - copyloopvar
+    - ineffassign
 
 linters-settings:
   errcheck:
@@ -31,7 +32,19 @@ linters-settings:
 
   gosec:
     excludes:
-      - G104  # Audit errors not checked (we use errcheck)
+      - G104  # Audit errors not checked (we use errcheck linter)
+      - G115  # Integer overflow conversion (safe bounded conversions for network protocols)
+    config:
+      global:
+        # Remaining exclusions are handled via inline //nolint:gosec comments:
+        # G101: false positives on config patterns (API endpoint URLs)
+        # G103: unsafe calls (needed for low-level device/network code)
+        # G107: URL in http.Get (needed for proxy operations)
+        # G204: command injection (needed for VPN setup commands)
+        # G301/G302/G304/G306: file/dir permissions (appropriate for config handling)
+        # G401/G402/G407/G505: weak crypto (legacy compatibility, self-signed certs)
+        # G602: slice bounds (runtime checks, bounded by protocol)
+        nosec: false
 
   goimports:
     local-prefixes: github.com/rennerdo30/bifrost-proxy

@@ -349,16 +349,15 @@ func TestCollectorLoop(t *testing.T) {
 	m := New()
 	c := NewCollector(m, nil)
 
-	// Start and immediately stop
+	// Start the collector loop
 	c.Start()
-	time.Sleep(50 * time.Millisecond)
-	c.Stop()
+	defer c.Stop()
 
-	// Verify metrics were collected
-	families, _ := m.registry.Gather()
-	if len(families) == 0 {
-		t.Error("No metrics collected during loop")
-	}
+	// Verify metrics were collected by the async loop
+	require.Eventually(t, func() bool {
+		families, _ := m.registry.Gather()
+		return len(families) > 0
+	}, time.Second, 10*time.Millisecond, "metrics should be collected during loop")
 }
 
 // mockBackend implements the backend.Backend interface for testing.
@@ -668,22 +667,21 @@ func TestCollectorCollectLoopWithBackends(t *testing.T) {
 	c := NewCollectorWithInterval(m, mgr, 10*time.Millisecond)
 
 	c.Start()
-	// Wait for at least 2 collection cycles
-	time.Sleep(35 * time.Millisecond)
-	c.Stop()
+	defer c.Stop()
 
-	// Verify backend metrics were collected
-	families, err := m.registry.Gather()
-	require.NoError(t, err)
-
-	backendHealthFound := false
-	for _, f := range families {
-		if f.GetName() == "bifrost_backend_health" {
-			backendHealthFound = true
-			break
+	// Verify backend metrics were collected by the async loop
+	require.Eventually(t, func() bool {
+		families, err := m.registry.Gather()
+		if err != nil {
+			return false
 		}
-	}
-	assert.True(t, backendHealthFound, "backend health metric should be collected during loop")
+		for _, f := range families {
+			if f.GetName() == "bifrost_backend_health" {
+				return true
+			}
+		}
+		return false
+	}, time.Second, 10*time.Millisecond, "backend health metric should be collected during loop")
 }
 
 // TestCollectorRecordConnectionVerifyMetrics verifies actual metric values for connection recording.

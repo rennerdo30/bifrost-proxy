@@ -52,11 +52,14 @@ jobs:
       - name: Run tests with coverage
         run: make test-coverage
 
+      - name: Run integration tests
+        run: make test-integration
+
       - name: Upload coverage
         uses: codecov/codecov-action@v4
         with:
           file: ./coverage.out
-          fail_ci_if_error: false
+          fail_ci_if_error: true
 
   build:
     name: Build
@@ -128,6 +131,9 @@ jobs:
           file: docker/Dockerfile
           push: false
           tags: bifrost-server:test
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -138,6 +144,9 @@ jobs:
           file: docker/Dockerfile.client
           push: false
           tags: bifrost-client:test
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -212,20 +221,12 @@ jobs:
       - name: Run Gosec
         uses: securego/gosec@master
         with:
-          # Exclusions:
-          # G101: hardcoded credentials (false positives on config patterns)
-          # G103: unsafe calls (needed for low-level device/network code)
-          # G104: errors unhandled (already checked by errcheck)
-          # G107: URL in http.Get (needed for proxy operations)
-          # G115: integer overflow (safe conversions for network protocols)
-          # G204: command injection (needed for VPN setup commands)
-          # G301: directory permissions (appropriate for config dirs)
-          # G302: file permissions (appropriate for config files)
-          # G304: file path injection (needed for config file handling)
-          # G306: file permissions (already validated)
-          # G401/G402/G407/G505: weak crypto (legacy compatibility, TLS testing)
-          # G602: slice bounds (runtime checks, bounded by protocol)
+          # Only exclude rules that generate high volume false positives.
+          # Most exclusions are handled via inline //nolint:gosec comments
+          # for targeted suppression at specific call sites.
+          # G104: errors unhandled (already checked by errcheck linter)
+          # G115: integer overflow (safe bounded conversions for network protocols)
           # Excluded directories:
           # web: separate npm-based frontend builds
           # desktop: separate Wails module with own go.mod and embedded frontend assets
-          args: -exclude=G101,G103,G104,G107,G115,G204,G301,G302,G304,G306,G401,G402,G407,G505,G602 -exclude-dir=web -exclude-dir=desktop ./...
+          args: -exclude=G104,G115 -exclude-dir=web -exclude-dir=desktop ./...

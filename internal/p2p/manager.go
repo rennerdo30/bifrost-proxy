@@ -540,8 +540,13 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 	// Create incoming connection
 	conn := newIncomingConnection(config, pm.conn, from, crypto)
 
-	// Store connection
+	// Store connection atomically - re-check under write lock to prevent race
 	pm.mu.Lock()
+	if _, exists := pm.connections[peerID]; exists {
+		pm.mu.Unlock()
+		slog.Debug("already connected to peer (race)", "peer_id", peerID)
+		return
+	}
 	pm.connections[peerID] = conn
 	pm.endpoints[peerID] = []netip.AddrPort{from}
 	pm.mu.Unlock()

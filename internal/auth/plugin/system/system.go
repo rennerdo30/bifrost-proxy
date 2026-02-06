@@ -220,7 +220,7 @@ func (a *Authenticator) validatePassword(ctx context.Context, username, password
 // validateDarwin validates password on macOS using dscl.
 func (a *Authenticator) validateDarwin(ctx context.Context, username, password string) bool {
 	// Use dscl to authenticate
-	cmd := exec.CommandContext(ctx, "dscl", ".", "-authonly", username, password)
+	cmd := exec.CommandContext(ctx, "dscl", ".", "-authonly", username, password) //nolint:gosec // G204: System auth requires OS-level commands
 	if err := cmd.Run(); err == nil {
 		return true
 	}
@@ -239,7 +239,7 @@ func (a *Authenticator) validateLinux(ctx context.Context, username, password st
 // This method works on most Unix systems as su uses PAM.
 func (a *Authenticator) validateWithSu(ctx context.Context, username, password string) bool {
 	// Use expect-like behavior with su
-	cmd := exec.CommandContext(ctx, "su", "-c", "true", username)
+	cmd := exec.CommandContext(ctx, "su", "-c", "true", username) //nolint:gosec // G204: System auth requires OS-level commands
 
 	// Create a pipe to write the password
 	stdin, err := cmd.StdinPipe()

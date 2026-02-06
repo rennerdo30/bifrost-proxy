@@ -416,10 +416,8 @@ func TestServer_StartWithAPI(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, s.Running())
 
-	// Give API server time to start
-	time.Sleep(50 * time.Millisecond)
-
-	assert.NotNil(t, s.API())
+	// Wait for API server to be available
+	require.Eventually(t, func() bool { return s.API() != nil }, time.Second, 10*time.Millisecond)
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -2149,9 +2147,8 @@ func TestServer_StartWithAPIAndRequestLog(t *testing.T) {
 	err = s.Start(ctx)
 	require.NoError(t, err)
 
-	time.Sleep(50 * time.Millisecond)
-
-	assert.NotNil(t, s.API())
+	// Wait for API server to be available
+	require.Eventually(t, func() bool { return s.API() != nil }, time.Second, 10*time.Millisecond)
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

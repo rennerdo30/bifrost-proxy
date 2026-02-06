@@ -86,7 +86,7 @@ func (p *Process) Start(ctx context.Context) error {
 	}
 
 	// Create command
-	p.cmd = exec.CommandContext(ctx, "openvpn", args...)
+	p.cmd = exec.CommandContext(ctx, "openvpn", args...) //nolint:gosec // G204: OpenVPN process management requires command execution
 	p.cmd.Stdout = &logWriter{prefix: "openvpn", logger: p.logger}
 	p.cmd.Stderr = &logWriter{prefix: "openvpn", logger: p.logger}
 

@@ -292,18 +292,28 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 		user:      user,
 		expiresAt: time.Now().Add(a.cacheMaxAge),
 	}
-	// Cleanup old entries periodically
-	if len(a.tokenCache) > 1000 {
-		now := time.Now()
-		for k, v := range a.tokenCache {
-			if now.After(v.expiresAt) {
-				delete(a.tokenCache, k)
-			}
-		}
-	}
+	cacheLen := len(a.tokenCache)
 	a.cacheMu.Unlock()
 
+	// Cleanup old entries in a separate operation to minimize lock hold time
+	if cacheLen > 1000 {
+		a.cleanupExpiredTokens()
+	}
+
 	return user, nil
+}
+
+// cleanupExpiredTokens removes expired entries from the token cache.
+func (a *Authenticator) cleanupExpiredTokens() {
+	a.cacheMu.Lock()
+	defer a.cacheMu.Unlock()
+
+	now := time.Now()
+	for k, v := range a.tokenCache {
+		if now.After(v.expiresAt) {
+			delete(a.tokenCache, k)
+		}
+	}
 }
 
 // introspectToken validates a token using the introspection endpoint.

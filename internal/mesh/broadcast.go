@@ -88,9 +88,10 @@ type BroadcastManager struct {
 	localPeerID string
 	router      *MeshRouter
 
-	groups      map[string]*MulticastGroup
-	seenMsgs    map[string]time.Time // messageID -> seen time
-	seenMsgsTTL time.Duration
+	groups        map[string]*MulticastGroup
+	seenMsgs      map[string]time.Time // messageID -> seen time
+	seenMsgsOrder []string             // insertion order for O(1) eviction
+	seenMsgsTTL   time.Duration
 
 	sendFunc func(peerID string, data []byte) error
 	handlers map[BroadcastType]BroadcastHandler
@@ -127,8 +128,6 @@ func DefaultBroadcastConfig() BroadcastConfig {
 
 // NewBroadcastManager creates a new broadcast manager.
 func NewBroadcastManager(localPeerID string, router *MeshRouter, config BroadcastConfig) *BroadcastManager {
-	ctx, cancel := context.WithCancel(context.Background())
-
 	return &BroadcastManager{
 		localPeerID: localPeerID,
 		router:      router,
@@ -136,14 +135,14 @@ func NewBroadcastManager(localPeerID string, router *MeshRouter, config Broadcas
 		seenMsgs:    make(map[string]time.Time),
 		seenMsgsTTL: config.SeenMsgsTTL,
 		handlers:    make(map[BroadcastType]BroadcastHandler),
-		ctx:         ctx,
-		cancel:      cancel,
 	}
 }
 
 // Start starts the broadcast manager.
 func (bm *BroadcastManager) Start() error {
 	slog.Info("starting broadcast manager")
+
+	bm.ctx, bm.cancel = context.WithCancel(context.Background())
 
 	bm.wg.Add(1)
 	go bm.cleanupWorker()
@@ -155,7 +154,9 @@ func (bm *BroadcastManager) Start() error {
 func (bm *BroadcastManager) Stop() error {
 	slog.Info("stopping broadcast manager")
 
-	bm.cancel()
+	if bm.cancel != nil {
+		bm.cancel()
+	}
 	bm.wg.Wait()
 
 	return nil
@@ -288,26 +289,23 @@ func (bm *BroadcastManager) sendBroadcast(msg *BroadcastMessage) error {
 	return nil
 }
 
-// addSeenMessageLocked adds a message ID to seen list with LRU eviction. Must be called with mu held.
+// addSeenMessageLocked adds a message ID to seen list with O(1) eviction. Must be called with mu held.
 func (bm *BroadcastManager) addSeenMessageLocked(msgID string) {
 	// Evict oldest if at capacity
 	if len(bm.seenMsgs) >= MaxSeenMessages {
-		var oldestID string
-		var oldestTime time.Time
-
-		for id, seen := range bm.seenMsgs {
-			if oldestTime.IsZero() || seen.Before(oldestTime) {
-				oldestID = id
-				oldestTime = seen
+		// Remove from the front of the insertion order
+		for len(bm.seenMsgsOrder) > 0 {
+			oldest := bm.seenMsgsOrder[0]
+			bm.seenMsgsOrder = bm.seenMsgsOrder[1:]
+			if _, exists := bm.seenMsgs[oldest]; exists {
+				delete(bm.seenMsgs, oldest)
+				break
 			}
-		}
-
-		if oldestID != "" {
-			delete(bm.seenMsgs, oldestID)
 		}
 	}
 
 	bm.seenMsgs[msgID] = time.Now()
+	bm.seenMsgsOrder = append(bm.seenMsgsOrder, msgID)
 }
 
 // sendToPeer sends a message to a specific peer.
@@ -534,6 +532,15 @@ func (bm *BroadcastManager) cleanupSeenMsgs() {
 			delete(bm.seenMsgs, id)
 		}
 	}
+
+	// Compact order slice to remove deleted entries
+	alive := bm.seenMsgsOrder[:0]
+	for _, id := range bm.seenMsgsOrder {
+		if _, exists := bm.seenMsgs[id]; exists {
+			alive = append(alive, id)
+		}
+	}
+	bm.seenMsgsOrder = alive
 }
 
 // generateMessageID generates a unique message ID.

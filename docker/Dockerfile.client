@@ -34,8 +34,12 @@ COPY . .
 # Copy built web UI from web-builder stage
 COPY --from=web-builder /app/internal/api/client/static/ /app/internal/api/client/static/
 
+# Build args for version info (defaults used when not passed)
+ARG VERSION=docker
+ARG COMMIT=docker
+
 # Build client
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X github.com/rennerdo30/bifrost-proxy/internal/version.Version=docker -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit=docker -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o bin/bifrost-client ./cmd/client
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/rennerdo30/bifrost-proxy/internal/version.Version=${VERSION} -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit=${COMMIT} -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o bin/bifrost-client ./cmd/client
 
 # Runtime stage
 FROM alpine:3.21

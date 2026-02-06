@@ -12,6 +12,7 @@ import (
 type HTTPChecker struct {
 	target  string
 	path    string
+	scheme  string
 	timeout time.Duration
 	client  *http.Client
 }
@@ -28,15 +29,21 @@ func NewHTTPChecker(cfg Config) *HTTPChecker {
 		path = "/health"
 	}
 
+	scheme := cfg.Scheme
+	if scheme == "" {
+		scheme = "http"
+	}
+
 	transport := &http.Transport{
 		TLSClientConfig: &tls.Config{
-			InsecureSkipVerify: true, //nolint:gosec // G402: Health checks need to accept self-signed certs for internal services
+			InsecureSkipVerify: cfg.InsecureSkipVerify, //nolint:gosec // G402: Configurable per health check for internal services with self-signed certs
 		},
 	}
 
 	return &HTTPChecker{
 		target:  cfg.Target,
 		path:    path,
+		scheme:  scheme,
 		timeout: timeout,
 		client: &http.Client{
 			Timeout:   timeout,
@@ -49,7 +56,7 @@ func NewHTTPChecker(cfg Config) *HTTPChecker {
 func (c *HTTPChecker) Check(ctx context.Context) Result {
 	start := time.Now()
 
-	url := fmt.Sprintf("http://%s%s", c.target, c.path)
+	url := fmt.Sprintf("%s://%s%s", c.scheme, c.target, c.path)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

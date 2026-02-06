@@ -574,17 +574,22 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	s.running = false
 	close(s.done)
+
+	// Close listeners under lock to prevent race between checking running
+	// flag and accepting new connections
+	if s.httpListener != nil {
+		if err := s.httpListener.Close(); err != nil {
+			logging.Warn("Error closing HTTP listener", "error", err)
+		}
+	}
+	if s.socks5Listener != nil {
+		if err := s.socks5Listener.Close(); err != nil {
+			logging.Warn("Error closing SOCKS5 listener", "error", err)
+		}
+	}
 	s.mu.Unlock()
 
 	logging.Info("Stopping Bifrost server")
-
-	// Close listeners to stop accepting new connections
-	if s.httpListener != nil {
-		s.httpListener.Close()
-	}
-	if s.socks5Listener != nil {
-		s.socks5Listener.Close()
-	}
 
 	// Stop metrics server
 	if s.metricsServer != nil {

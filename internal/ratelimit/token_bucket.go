@@ -102,6 +102,13 @@ func (tb *TokenBucket) Tokens() float64 {
 	return tb.tokens
 }
 
+// LastAccess returns the last time the limiter was accessed.
+func (tb *TokenBucket) LastAccess() time.Time {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+	return tb.lastAccess
+}
+
 // Rate returns the token rate.
 func (tb *TokenBucket) Rate() float64 {
 	return tb.rate

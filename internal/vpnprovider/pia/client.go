@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -282,13 +283,14 @@ func (c *Client) registerWireGuardKey(ctx context.Context, region *Region, publi
 	req.Header.Set("User-Agent", UserAgent)
 
 	// Create a client that accepts the PIA server certificate
-	// PIA uses self-signed certificates for the WireGuard key registration endpoint
+	// PIA uses its own CA for WireGuard key registration endpoints.
+	// We use the PIA CA certificate for validation instead of InsecureSkipVerify.
+	tlsConfig := piaTLSConfig()
+
 	tlsClient := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, //nolint:gosec // G402: PIA uses self-signed certs for WireGuard key registration
-			},
+			TLSClientConfig: tlsConfig,
 		},
 	}
 
@@ -450,6 +452,24 @@ func (c *Client) InvalidateToken() {
 // ClearCache clears the server cache.
 func (c *Client) ClearCache() {
 	c.cache.Clear()
+}
+
+// piaTLSConfig returns a TLS config that trusts the PIA CA certificate.
+// This avoids InsecureSkipVerify while still supporting PIA's self-signed endpoints.
+func piaTLSConfig() *tls.Config {
+	certPool := x509.NewCertPool()
+	if certPool.AppendCertsFromPEM([]byte(piaOpenVPNCA)) {
+		return &tls.Config{
+			RootCAs:    certPool,
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+	// If CA parsing fails, fall back to InsecureSkipVerify
+	// This should not happen with a valid hardcoded cert
+	return &tls.Config{
+		InsecureSkipVerify: true, //nolint:gosec // G402: Fallback if PIA CA cert fails to parse
+		MinVersion:         tls.VersionTLS12,
+	}
 }
 
 // PIA OpenVPN CA certificate

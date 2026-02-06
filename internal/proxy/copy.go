@@ -81,7 +81,15 @@ func copyWithContext(ctx context.Context, dst, src net.Conn) (int64, error) {
 			// Return the bytes copied so far
 			return r.n, ctx.Err()
 		case <-time.After(time.Second):
-			// Force close if still blocking
+			// Force close connections to unblock the goroutine
+			src.Close()
+			dst.Close()
+			// Drain the result with timeout to prevent blocking forever
+			select {
+			case <-done:
+			case <-time.After(5 * time.Second):
+				slog.Debug("io.Copy goroutine did not exit after force close")
+			}
 			return 0, ctx.Err()
 		}
 	}

@@ -92,14 +92,14 @@ func (d *DiskStorage) Start(ctx context.Context) error {
 	defer d.mu.Unlock()
 
 	// Create directories
-	if err := os.MkdirAll(d.dataPath, 0755); err != nil {
+	if err := os.MkdirAll(d.dataPath, 0755); err != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
 		return fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
 	// Create shard directories
 	for i := 0; i < d.shardCount; i++ {
 		shardDir := filepath.Join(d.dataPath, fmt.Sprintf("%02x", i))
-		if err := os.MkdirAll(shardDir, 0755); err != nil {
+		if err := os.MkdirAll(shardDir, 0755); err != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
 			return fmt.Errorf("failed to create shard directory: %w", err)
 		}
 	}
@@ -213,7 +213,7 @@ func (d *DiskStorage) Put(ctx context.Context, key string, entry *Entry) error {
 	// Create temp file for writing
 	dataPath := d.dataFilePath(key)
 	shardDir := filepath.Dir(dataPath)
-	if err := os.MkdirAll(shardDir, 0755); err != nil {
+	if err := os.MkdirAll(shardDir, 0755); err != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
 		return fmt.Errorf("failed to create shard directory: %w", err)
 	}
 
@@ -429,13 +429,13 @@ func (d *DiskStorage) Clear(ctx context.Context) error {
 	}
 
 	// Recreate directories
-	if err := os.MkdirAll(d.dataPath, 0755); err != nil {
+	if err := os.MkdirAll(d.dataPath, 0755); err != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
 		return fmt.Errorf("failed to recreate cache directory: %w", err)
 	}
 
 	for i := 0; i < d.shardCount; i++ {
 		shardDir := filepath.Join(d.dataPath, fmt.Sprintf("%02x", i))
-		if err := os.MkdirAll(shardDir, 0755); err != nil {
+		if err := os.MkdirAll(shardDir, 0755); err != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
 			return fmt.Errorf("failed to recreate shard directory: %w", err)
 		}
 	}
@@ -647,7 +647,7 @@ func (d *DiskStorage) saveMetadata(key string, meta *Metadata) error {
 	}
 
 	metaPath := d.metaFilePath(key)
-	return os.WriteFile(metaPath, data, 0600)
+	return os.WriteFile(metaPath, data, 0600) //nolint:gosec // G302: Cache file permissions are appropriate
 }
 
 // cleanupLoop runs periodic cleanup.

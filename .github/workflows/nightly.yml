@@ -150,6 +150,9 @@ jobs:
           file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=nightly
+            COMMIT=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/bifrost-server:nightly
             ghcr.io/${{ github.repository_owner }}/bifrost-server:${{ github.sha }}
@@ -161,6 +164,9 @@ jobs:
           file: docker/Dockerfile.client
           platforms: linux/amd64,linux/arm64
           push: true
+          build-args: |
+            VERSION=nightly
+            COMMIT=${{ github.sha }}
           tags: |
             ghcr.io/${{ github.repository_owner }}/bifrost-client:nightly
             ghcr.io/${{ github.repository_owner }}/bifrost-client:${{ github.sha }}

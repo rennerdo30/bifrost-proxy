@@ -366,8 +366,10 @@ func (b *OpenVPNBackend) Stop(ctx context.Context) error {
 		case <-done:
 		case <-time.After(5 * time.Second):
 			_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort kill
+			<-done                   // Drain Wait goroutine after kill
 		case <-ctx.Done():
 			_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort kill
+			<-done                   // Drain Wait goroutine after kill
 		}
 	}
 
