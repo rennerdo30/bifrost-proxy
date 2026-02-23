@@ -32,7 +32,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # v2 requires a migrated config schema; keep v1 until config migration is completed.
+          version: v1.64.8
           args: --timeout=5m
 
   test:
@@ -204,4 +205,3 @@ jobs:
           config-file: '.markdown-link-check.json'
           folder-path: '.'
           file-extension: '.md,.mdx'
-
