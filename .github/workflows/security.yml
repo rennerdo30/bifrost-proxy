@@ -81,3 +81,5 @@ jobs:
 
       - name: Dependency Review
         uses: actions/dependency-review-action@v4
+        # Repository-level dependency graph can be disabled; keep signal without failing the whole workflow.
+        continue-on-error: true
