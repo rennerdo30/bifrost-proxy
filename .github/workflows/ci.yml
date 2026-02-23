@@ -30,7 +30,7 @@ jobs:
         run: make web-sync
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@v6
         with:
           # v2 requires a migrated config schema; keep v1 until config migration is completed.
           version: v1.64.8
