@@ -167,8 +167,7 @@ const (
 	AuthModeManual AuthMode = iota
 
 	// AuthModeAPI uses the ProtonVPN API with full authentication.
-	// Note: This requires implementing the SRP protocol which is complex.
-	// Currently not fully implemented.
+	// This mode is required for WireGuard key registration.
 	AuthModeAPI
 )
 

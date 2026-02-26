@@ -275,6 +275,9 @@ func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 	if cfg.Mode != "" {
 		return nil, fmt.Errorf("legacy auth.mode is no longer supported; migrate to auth.providers")
 	}
+	if hasLegacyAuthConfig(cfg) {
+		return nil, fmt.Errorf("legacy top-level auth provider config is no longer supported; migrate to auth.providers")
+	}
 
 	// New multi-provider configuration.
 	if len(cfg.Providers) > 0 {
@@ -324,6 +327,10 @@ func convertProvidersConfig(providers []config.AuthProvider) ([]auth.ProviderCon
 
 func hasLegacyProviderConfig(p config.AuthProvider) bool {
 	return p.Native != nil || p.System != nil || p.LDAP != nil || p.OAuth != nil
+}
+
+func hasLegacyAuthConfig(cfg config.AuthConfig) bool {
+	return cfg.Native != nil || cfg.System != nil || cfg.LDAP != nil || cfg.OAuth != nil
 }
 
 // Start starts the server.

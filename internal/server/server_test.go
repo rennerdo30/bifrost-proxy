@@ -248,6 +248,18 @@ func TestCreateAuthenticator_RejectsLegacyMode(t *testing.T) {
 	assert.Contains(t, err.Error(), "legacy auth.mode is no longer supported")
 }
 
+func TestCreateAuthenticator_RejectsLegacyTopLevelProviderConfig(t *testing.T) {
+	_, err := createAuthenticator(config.AuthConfig{
+		Native: &config.NativeAuth{
+			Users: []config.NativeUser{
+				{Username: "test", PasswordHash: "hash"},
+			},
+		},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "legacy top-level auth provider config is no longer supported")
+}
+
 func TestFactory_CreateChain_Empty(t *testing.T) {
 	factory := auth.NewFactory()
 	authenticator, err := factory.CreateChain([]auth.ProviderConfig{})

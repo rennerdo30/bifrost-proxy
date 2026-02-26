@@ -32,7 +32,11 @@ routes:
     priority: 1
 
 auth:
-  mode: none
+  providers:
+    - name: default
+      type: none
+      enabled: true
+      priority: 1
 
 rate_limit:
   enabled: false  # Disable to save CPU

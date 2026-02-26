@@ -18,7 +18,7 @@ type ProtonVPNBackend struct {
 	name           string
 	config         ProtonVPNConfig
 	client         *protonvpn.Client
-	delegate       Backend // OpenVPN backend (WireGuard requires API auth)
+	delegate       Backend // OpenVPN or WireGuard delegate backend
 	selectedServer *vpnprovider.Server
 	startTime      time.Time
 	healthy        atomic.Bool
@@ -44,12 +44,13 @@ type protonvpnStats struct {
 // ProtonVPNConfig holds configuration for a ProtonVPN backend.
 type ProtonVPNConfig struct {
 	Name            string        `yaml:"name"`
-	Username        string        `yaml:"username"`                   // Required: ProtonVPN OpenVPN username
-	Password        string        `yaml:"password"`                   // Required: ProtonVPN OpenVPN password
+	AuthMode        string        `yaml:"auth_mode,omitempty"`        // "manual" (default) or "api"
+	Username        string        `yaml:"username"`                   // Credentials for selected auth_mode
+	Password        string        `yaml:"password"`                   // Credentials for selected auth_mode
 	Country         string        `yaml:"country,omitempty"`          // ISO country code (e.g., "US", "DE")
 	City            string        `yaml:"city,omitempty"`             // City name
 	Tier            int           `yaml:"tier,omitempty"`             // Subscription tier: 0=free, 1=basic, 2=plus (default: 2)
-	Protocol        string        `yaml:"protocol,omitempty"`         // Currently only "openvpn" is supported
+	Protocol        string        `yaml:"protocol,omitempty"`         // "openvpn" or "wireguard"
 	AutoSelect      bool          `yaml:"auto_select,omitempty"`      // Automatically select best server
 	MaxLoad         int           `yaml:"max_load,omitempty"`         // Max server load percentage (0-100)
 	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"` // How often to check for better servers
@@ -59,10 +60,12 @@ type ProtonVPNConfig struct {
 
 // NewProtonVPNBackend creates a new ProtonVPN backend.
 func NewProtonVPNBackend(cfg ProtonVPNConfig) *ProtonVPNBackend {
-	// ProtonVPN WireGuard requires API authentication which is complex,
-	// so we default to OpenVPN
+	// Default protocol remains OpenVPN for backward compatibility.
 	if cfg.Protocol == "" {
 		cfg.Protocol = "openvpn"
+	}
+	if cfg.AuthMode == "" {
+		cfg.AuthMode = "manual"
 	}
 	if cfg.Tier == 0 {
 		cfg.Tier = protonvpn.TierPlus // Default to Plus tier
@@ -74,10 +77,14 @@ func NewProtonVPNBackend(cfg ProtonVPNConfig) *ProtonVPNBackend {
 		cfg.RefreshInterval = 30 * time.Minute
 	}
 
-	// Create client with manual credentials
-	client := protonvpn.NewClient(
-		protonvpn.WithManualCredentials(cfg.Username, cfg.Password, cfg.Tier),
-	)
+	var client *protonvpn.Client
+	if cfg.AuthMode == "api" {
+		client = protonvpn.NewClient()
+	} else {
+		client = protonvpn.NewClient(
+			protonvpn.WithManualCredentials(cfg.Username, cfg.Password, cfg.Tier),
+		)
+	}
 
 	return &ProtonVPNBackend{
 		name:     cfg.Name,
@@ -148,15 +155,18 @@ func (b *ProtonVPNBackend) Start(ctx context.Context) error {
 
 	b.logger.Info("starting ProtonVPN backend",
 		"name", b.name,
+		"auth_mode", b.config.AuthMode,
 		"protocol", b.config.Protocol,
 		"country", b.config.Country,
 		"tier", b.getTierName(),
 		"secure_core", b.config.SecureCore,
 	)
 
-	// WireGuard is not supported without API authentication
-	if b.config.Protocol == "wireguard" {
-		return NewBackendError(b.name, "start", fmt.Errorf("WireGuard requires ProtonVPN API authentication; use OpenVPN with manual credentials instead"))
+	// API mode is required for WireGuard key registration.
+	if b.config.AuthMode == "api" {
+		if err := b.client.Login(ctx, b.config.Username, b.config.Password); err != nil {
+			return NewBackendError(b.name, "api login", err)
+		}
 	}
 
 	// Select a server
@@ -248,8 +258,25 @@ func (b *ProtonVPNBackend) createDelegate(ctx context.Context, server *vpnprovid
 		b.delegate = NewOpenVPNBackend(cfg)
 
 	case "wireguard":
-		// WireGuard is not supported without API authentication
-		return fmt.Errorf("WireGuard requires ProtonVPN API authentication; use OpenVPN instead")
+		wgConfig, err := b.client.GenerateWireGuardConfig(ctx, server, creds)
+		if err != nil {
+			return fmt.Errorf("generate WireGuard config: %w", err)
+		}
+
+		cfg := WireGuardConfig{
+			Name:       b.name + "-wg",
+			PrivateKey: wgConfig.PrivateKey,
+			Address:    wgConfig.Address,
+			DNS:        wgConfig.DNS,
+			Peer: WireGuardPeer{
+				PublicKey:           wgConfig.Peer.PublicKey,
+				Endpoint:            wgConfig.Peer.Endpoint,
+				AllowedIPs:          wgConfig.Peer.AllowedIPs,
+				PersistentKeepalive: wgConfig.Peer.PersistentKeepalive,
+				PresharedKey:        wgConfig.Peer.PresharedKey,
+			},
+		}
+		b.delegate = NewWireGuardBackend(cfg)
 
 	default:
 		return fmt.Errorf("unsupported protocol: %s", b.config.Protocol)

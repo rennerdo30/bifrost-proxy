@@ -31,7 +31,8 @@ func TestNewProtonVPNBackend_Defaults(t *testing.T) {
 
 	b := NewProtonVPNBackend(cfg)
 
-	// Check defaults are applied - ProtonVPN only supports OpenVPN
+	// Check defaults are applied.
+	assert.Equal(t, "manual", b.config.AuthMode)
 	assert.Equal(t, "openvpn", b.config.Protocol)
 	assert.Equal(t, 2, b.config.Tier) // TierPlus = 2
 	assert.Equal(t, 30*time.Minute, b.config.RefreshInterval)
@@ -51,7 +52,7 @@ func TestNewProtonVPNBackend_CustomConfig(t *testing.T) {
 
 	b := NewProtonVPNBackend(cfg)
 
-	// Protocol should always be openvpn
+	// Explicit values should be preserved.
 	assert.Equal(t, "openvpn", b.config.Protocol)
 	assert.Equal(t, "SE", b.config.Country)
 	assert.Equal(t, "Stockholm", b.config.City)
@@ -65,12 +66,26 @@ func TestNewProtonVPNBackend_AllowsWireGuard(t *testing.T) {
 		Name:     "test",
 		Username: "user+pmp",
 		Password: "password",
-		Protocol: "wireguard", // WireGuard can be set (though manual credentials only support OpenVPN)
+		Protocol: "wireguard",
 	}
 
 	b := NewProtonVPNBackend(cfg)
 
 	// WireGuard is allowed to be set (validation happens at runtime)
+	assert.Equal(t, "wireguard", b.config.Protocol)
+}
+
+func TestNewProtonVPNBackend_APIAuthMode(t *testing.T) {
+	cfg := ProtonVPNConfig{
+		Name:     "test",
+		AuthMode: "api",
+		Username: "account_user",
+		Password: "account_pass",
+		Protocol: "wireguard",
+	}
+
+	b := NewProtonVPNBackend(cfg)
+	assert.Equal(t, "api", b.config.AuthMode)
 	assert.Equal(t, "wireguard", b.config.Protocol)
 }
 
