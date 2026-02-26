@@ -423,17 +423,20 @@ func (f *Factory) createProtonVPN(cfg config.BackendConfig) (Backend, error) {
 		Name: cfg.Name,
 	}
 
-	// Credentials are required (OpenVPN credentials from Proton account)
+	if v, ok := cfg.Config["auth_mode"].(string); ok {
+		protonCfg.AuthMode = v
+	}
+	if protonCfg.AuthMode == "" {
+		protonCfg.AuthMode = "manual"
+	}
+
+	// Credentials are required for the selected auth mode.
 	if v, ok := cfg.Config["username"].(string); ok {
 		protonCfg.Username = v
-	} else {
-		return nil, fmt.Errorf("protonvpn backend requires 'username' config (OpenVPN credentials)")
 	}
 
 	if v, ok := cfg.Config["password"].(string); ok {
 		protonCfg.Password = v
-	} else {
-		return nil, fmt.Errorf("protonvpn backend requires 'password' config (OpenVPN credentials)")
 	}
 
 	if v, ok := cfg.Config["country"].(string); ok {
@@ -477,6 +480,31 @@ func (f *Factory) createProtonVPN(cfg config.BackendConfig) (Backend, error) {
 				protonCfg.Features = append(protonCfg.Features, s)
 			}
 		}
+	}
+
+	// Validate protocol/auth-mode combinations.
+	protocol := protonCfg.Protocol
+	if protocol == "" {
+		protocol = "openvpn"
+	}
+
+	switch protonCfg.AuthMode {
+	case "manual":
+		if protonCfg.Username == "" || protonCfg.Password == "" {
+			return nil, fmt.Errorf("protonvpn manual auth requires 'username' and 'password' config (OpenVPN credentials)")
+		}
+		if protocol == "wireguard" {
+			return nil, fmt.Errorf("protonvpn wireguard backend requires auth_mode='api'")
+		}
+	case "api":
+		if protonCfg.Username == "" || protonCfg.Password == "" {
+			return nil, fmt.Errorf("protonvpn api auth requires 'username' and 'password' config (Proton account credentials)")
+		}
+		if protocol == "openvpn" {
+			return nil, fmt.Errorf("protonvpn api auth currently supports protocol='wireguard' only")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported protonvpn auth_mode %q (expected 'manual' or 'api')", protonCfg.AuthMode)
 	}
 
 	return NewProtonVPNBackend(protonCfg), nil

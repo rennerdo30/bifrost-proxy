@@ -79,7 +79,9 @@ type RouteConfig struct {
 type AuthConfig struct {
 	// Mode is deprecated and intentionally unsupported.
 	// Use Providers with explicit plugin types and config maps.
-	Mode   string      `yaml:"mode,omitempty" json:"mode,omitempty"`
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
+	// Legacy type-specific fields are parsed only to surface
+	// migration errors; they are intentionally unsupported.
 	Native *NativeAuth `yaml:"native,omitempty" json:"native,omitempty"`
 	System *SystemAuth `yaml:"system,omitempty" json:"system,omitempty"`
 	LDAP   *LDAPAuth   `yaml:"ldap,omitempty" json:"ldap,omitempty"`
@@ -100,7 +102,8 @@ type AuthProvider struct {
 	Priority int            `yaml:"priority" json:"priority"`                 // Lower priority is tried first
 	Config   map[string]any `yaml:"config,omitempty" json:"config,omitempty"` // Plugin-specific configuration (new format)
 
-	// Legacy type-specific config (for backward compatibility)
+	// Legacy type-specific config is parsed only to surface
+	// migration errors; it is intentionally unsupported.
 	Native *NativeAuth `yaml:"native,omitempty" json:"native,omitempty"`
 	System *SystemAuth `yaml:"system,omitempty" json:"system,omitempty"`
 	LDAP   *LDAPAuth   `yaml:"ldap,omitempty" json:"ldap,omitempty"`

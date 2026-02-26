@@ -46,7 +46,11 @@ routes:
 
 # Authentication settings
 auth:
-  mode: none                  # Auth mode (none, native, system, ldap, oauth)
+  providers:
+    - name: default
+      type: none              # Auth plugin type (none, native, system, ldap, oauth, jwt, apikey, ...)
+      enabled: true
+      priority: 1
 
 # Rate limiting
 # Control the flow of incoming requests.

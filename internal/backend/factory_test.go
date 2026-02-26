@@ -629,3 +629,63 @@ func TestFactory_Create_ProtonVPN_MissingPassword(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "password")
 }
+
+func TestFactory_Create_ProtonVPN_WireGuardRequiresAPIAuthMode(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-protonvpn",
+		Type:    "protonvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"username": "openvpn_user",
+			"password": "openvpn_pass",
+			"protocol": "wireguard",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "requires auth_mode='api'")
+}
+
+func TestFactory_Create_ProtonVPN_APIAuthModeWithWireGuard(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-protonvpn-api",
+		Type:    "protonvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"auth_mode": "api",
+			"username":  "proton_account_user",
+			"password":  "proton_account_pass",
+			"protocol":  "wireguard",
+		},
+	}
+
+	backend, err := f.Create(cfg)
+	require.NoError(t, err)
+	assert.Equal(t, "test-protonvpn-api", backend.Name())
+	assert.Equal(t, "protonvpn", backend.Type())
+}
+
+func TestFactory_Create_ProtonVPN_APIAuthModeOpenVPNRejected(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-protonvpn-api-openvpn",
+		Type:    "protonvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"auth_mode": "api",
+			"username":  "proton_account_user",
+			"password":  "proton_account_pass",
+			"protocol":  "openvpn",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "supports protocol='wireguard' only")
+}
