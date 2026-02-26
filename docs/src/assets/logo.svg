@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- Bifrost: Rainbow bridge / network gateway -->
+  <path d="M4 24C4 14 10 8 16 8s12 6 12 16" stroke="#22d3ee" stroke-width="2" fill="none"/>
+  <path d="M8 24C8 16 11 12 16 12s8 4 8 12" stroke="#f97316" stroke-width="2" fill="none"/>
+  <path d="M12 24c0-6 2-8 4-8s4 2 4 8" stroke="#22d3ee" stroke-width="2" fill="none"/>
+  <circle cx="16" cy="6" r="2" fill="#f97316"/>
+  <rect x="4" y="24" width="24" height="3" rx="1" fill="#22d3ee" opacity="0.5"/>
+</svg>

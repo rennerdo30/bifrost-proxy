@@ -29,7 +29,7 @@ export function HomeScreen() {
   const retryCountRef = useRef(0)
   const lastRetryTimeRef = useRef(0)
 
-  const { data: status, isLoading: statusLoading } = useQuery({
+  const { data: status } = useQuery({
     queryKey: ['status'],
     queryFn: api.getStatus,
     refetchInterval: 5000,
@@ -130,7 +130,7 @@ export function HomeScreen() {
       // Reset retry count on successful refresh
       retryCountRef.current = 0
       lastRetryTimeRef.current = 0
-    } catch (error) {
+    } catch {
       // Calculate exponential backoff delay
       const now = Date.now()
       const timeSinceLastRetry = now - lastRetryTimeRef.current

@@ -237,7 +237,7 @@ func TestHandler_SPNEGO_NoAuthenticator(t *testing.T) {
 
 	_, _, err := handler.Authenticate(context.Background(), req)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Kerberos authenticator not configured")
+	assert.Contains(t, err.Error(), "kerberos authenticator not configured")
 }
 
 func TestHandler_DetectMethod_NTLM(t *testing.T) {
@@ -269,7 +269,7 @@ func TestHandler_DetectMethod_Kerberos(t *testing.T) {
 	// Should detect Kerberos and fail because no authenticator
 	_, _, err := handler.Authenticate(context.Background(), req)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "Kerberos")
+	assert.Contains(t, err.Error(), "kerberos")
 }
 
 func TestHandler_DetectMethod_Unknown(t *testing.T) {

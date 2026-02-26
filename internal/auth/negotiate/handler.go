@@ -178,7 +178,7 @@ func (h *Handler) detectMethod(token []byte) AuthMethod {
 // handleKerberos handles Kerberos/SPNEGO authentication.
 func (h *Handler) handleKerberos(ctx context.Context, r *http.Request, token []byte) (*auth.UserInfo, *Response, error) {
 	if h.kerberos == nil {
-		return nil, nil, fmt.Errorf("Kerberos authenticator not configured")
+		return nil, nil, fmt.Errorf("kerberos authenticator not configured")
 	}
 
 	// Create a context with the SPNEGO token
