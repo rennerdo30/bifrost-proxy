@@ -420,7 +420,7 @@ func TestDefaultServerConfig(t *testing.T) {
 
 	assert.Equal(t, ":7080", cfg.Server.HTTP.Listen)
 	assert.Equal(t, ":7180", cfg.Server.SOCKS5.Listen)
-	assert.Equal(t, "none", cfg.Auth.Mode)
+	assert.Empty(t, cfg.Auth.Mode)
 	assert.False(t, cfg.RateLimit.Enabled)
 	assert.True(t, cfg.AccessLog.Enabled)
 	assert.Equal(t, "json", cfg.AccessLog.Format)

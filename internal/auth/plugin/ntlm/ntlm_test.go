@@ -412,10 +412,11 @@ func TestNTLMAuthenticator_GenerateChallenge(t *testing.T) {
 	type1Msg := createNTLMType1()
 	sessionID := "test-session-123"
 
-	// GenerateChallenge is not fully implemented, should return error
-	_, err = ntlmAuth.GenerateChallenge(type1Msg, sessionID)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not fully implemented")
+	challenge, err := ntlmAuth.GenerateChallenge(type1Msg, sessionID)
+	require.NoError(t, err)
+	require.NotEmpty(t, challenge)
+	assert.GreaterOrEqual(t, len(challenge), 32)
+	assert.Equal(t, "NTLMSSP", string(challenge[:7]))
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate(t *testing.T) {
