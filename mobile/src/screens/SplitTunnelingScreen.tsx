@@ -54,7 +54,7 @@ export function SplitTunnelingScreen() {
   const [newAppPackage, setNewAppPackage] = useState('')
 
   // Fetch server-side split tunnel rules
-  const { data: serverRules, isLoading: isLoadingRules, refetch: refetchRules } = useQuery({
+  const { isLoading: isLoadingRules, refetch: refetchRules } = useQuery({
     queryKey: ['split-tunnel-rules'],
     queryFn: api.getSplitTunnelRules,
     retry: 1,
@@ -69,7 +69,7 @@ export function SplitTunnelingScreen() {
     try {
       const config = await getStoredSplitTunnelConfig()
       setLocalConfig(config)
-    } catch (error) {
+    } catch {
       showToast('Failed to load configuration', 'error')
     }
   }
@@ -78,7 +78,7 @@ export function SplitTunnelingScreen() {
     try {
       await setStoredSplitTunnelConfig(config)
       setLocalConfig(config)
-    } catch (error) {
+    } catch {
       showToast('Failed to save configuration', 'error')
     }
   }

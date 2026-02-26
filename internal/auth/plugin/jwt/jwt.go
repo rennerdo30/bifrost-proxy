@@ -5,6 +5,7 @@ package jwt
 import (
 	"context"
 	"crypto"
+	"crypto/ecdh"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/hmac"
@@ -696,15 +697,25 @@ func parseRSAKey(nStr, eStr string) (*rsa.PublicKey, error) {
 
 // parseECKey parses EC key components from base64url encoded strings.
 func parseECKey(crv, xStr, yStr string) (*ecdsa.PublicKey, error) {
-	// Determine the curve based on the crv parameter
-	var curve elliptic.Curve
+	// Determine the curve and expected coordinate size based on the JWK crv parameter.
+	var (
+		curve     elliptic.Curve
+		ecdhCurve ecdh.Curve
+		coordSize int
+	)
 	switch crv {
 	case "P-256":
 		curve = elliptic.P256()
+		ecdhCurve = ecdh.P256()
+		coordSize = 32
 	case "P-384":
 		curve = elliptic.P384()
+		ecdhCurve = ecdh.P384()
+		coordSize = 48
 	case "P-521":
 		curve = elliptic.P521()
+		ecdhCurve = ecdh.P521()
+		coordSize = 66
 	default:
 		return nil, fmt.Errorf("unsupported curve: %s", crv)
 	}
@@ -721,14 +732,23 @@ func parseECKey(crv, xStr, yStr string) (*ecdsa.PublicKey, error) {
 		return nil, fmt.Errorf("invalid y coordinate: %w", err)
 	}
 
-	// Create the public key
-	x := new(big.Int).SetBytes(xBytes)
-	y := new(big.Int).SetBytes(yBytes)
-
-	// Verify the point is on the curve
-	if !curve.IsOnCurve(x, y) {
-		return nil, fmt.Errorf("point is not on the curve")
+	if len(xBytes) > coordSize || len(yBytes) > coordSize {
+		return nil, fmt.Errorf("invalid EC coordinate size")
 	}
+
+	// Validate the point by parsing SEC1 uncompressed form via crypto/ecdh.
+	encoded := make([]byte, 1+2*coordSize)
+	encoded[0] = 0x04
+	copy(encoded[1+coordSize-len(xBytes):1+coordSize], xBytes)
+	copy(encoded[1+2*coordSize-len(yBytes):], yBytes)
+
+	if _, err := ecdhCurve.NewPublicKey(encoded); err != nil {
+		return nil, fmt.Errorf("point is not on the curve: %w", err)
+	}
+
+	// Build an ECDSA public key from validated coordinates.
+	x := new(big.Int).SetBytes(encoded[1 : 1+coordSize])
+	y := new(big.Int).SetBytes(encoded[1+coordSize:])
 
 	return &ecdsa.PublicKey{
 		Curve: curve,

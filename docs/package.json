@@ -9,9 +9,9 @@
     "preview": "astro preview"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.37.3",
-    "@pasqal-io/starlight-client-mermaid": "^0.1.2",
-    "astro": "^5.0.0",
+    "@astrojs/starlight": "^0.37.6",
+    "@pasqal-io/starlight-client-mermaid": "^0.1.0",
+    "astro": "^5.18.0",
     "starlight-theme-galaxy": "^0.7.0"
   }
 }

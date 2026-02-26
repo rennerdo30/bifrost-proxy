@@ -9,8 +9,6 @@ export default defineConfig({
     starlight({
       title: "Bifrost Proxy",
       description: "A Go-based proxy system with client-server architecture, supporting WireGuard/OpenVPN tunnels, domain-based routing, and multiple authentication modes",
-      logo: { src: "/logo.svg", alt: "Bifrost Proxy" },
-      favicon: "/logo.svg",
       plugins: [starlightThemeGalaxy(), starlightClientMermaid()],
       customCss: ["./src/styles/custom.css"],
       social: [
@@ -62,7 +60,7 @@ export default defineConfig({
         {
           label: "Troubleshooting",
           items: [
-            { label: "Overview", slug: "troubleshooting/index" },
+            { label: "Overview", slug: "troubleshooting" },
             { label: "Connection Issues", slug: "troubleshooting/connections" },
             { label: "Performance", slug: "troubleshooting/performance" },
             { label: "Authentication", slug: "troubleshooting/authentication" },
@@ -74,7 +72,7 @@ export default defineConfig({
         {
           label: "API Reference",
           items: [
-            { label: "Overview", slug: "api/index" },
+            { label: "Overview", slug: "api" },
             { label: "Server API", slug: "api/server" },
             { label: "Client API", slug: "api/client" },
             { label: "WebSocket API", slug: "api/websocket" },
