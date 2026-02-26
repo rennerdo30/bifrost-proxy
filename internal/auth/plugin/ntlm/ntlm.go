@@ -4,6 +4,7 @@ package ntlm
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -318,6 +319,16 @@ func decodeUTF16LE(b []byte) string {
 	return string(utf16.Decode(u16s))
 }
 
+// encodeUTF16LE encodes a string to UTF-16 little-endian bytes.
+func encodeUTF16LE(s string) []byte {
+	u16s := utf16.Encode([]rune(s))
+	b := make([]byte, len(u16s)*2)
+	for i, u := range u16s {
+		binary.LittleEndian.PutUint16(b[i*2:], u)
+	}
+	return b
+}
+
 // transformUsername applies configured transformations to the username.
 func (a *Authenticator) transformUsername(username, domain string) string {
 	if !a.config.StripDomain && domain != "" {
@@ -333,10 +344,15 @@ func (a *Authenticator) transformUsername(username, domain string) string {
 
 // GenerateChallenge generates an NTLM Type 2 (Challenge) message.
 func (a *Authenticator) GenerateChallenge(negotiateMsg []byte, sessionID string) ([]byte, error) {
-	// Create a basic NTLM Type 2 challenge message
-	// This is a simplified implementation
+	if len(negotiateMsg) < 12 || string(negotiateMsg[:7]) != "NTLMSSP" {
+		return nil, fmt.Errorf("invalid NTLM negotiate message")
+	}
 
 	domain := a.config.Domain
+	challenge := make([]byte, 8)
+	if _, err := rand.Read(challenge); err != nil {
+		return nil, fmt.Errorf("generate NTLM challenge bytes: %w", err)
+	}
 
 	// Store challenge state for validation
 	a.mu.Lock()
@@ -349,8 +365,37 @@ func (a *Authenticator) GenerateChallenge(negotiateMsg []byte, sessionID string)
 	// Clean up old challenges periodically
 	go a.cleanupChallenges()
 
-	// Return a placeholder - real implementation would use ntlmssp library
-	return nil, fmt.Errorf("NTLM challenge generation not fully implemented")
+	return buildType2Message(domain, challenge), nil
+}
+
+// buildType2Message builds a minimal NTLM Type 2 challenge message.
+func buildType2Message(domain string, challenge []byte) []byte {
+	targetName := encodeUTF16LE(strings.ToUpper(domain))
+
+	const headerLen = 48
+	msg := make([]byte, headerLen+len(targetName))
+
+	copy(msg[:8], "NTLMSSP\x00")
+	binary.LittleEndian.PutUint32(msg[8:12], 2) // Type 2
+
+	// Target name security buffer
+	binary.LittleEndian.PutUint16(msg[12:14], uint16(len(targetName)))
+	binary.LittleEndian.PutUint16(msg[14:16], uint16(len(targetName)))
+	binary.LittleEndian.PutUint32(msg[16:20], headerLen)
+
+	// Negotiate flags (minimal interoperable set)
+	const flags = 0x00000001 | 0x00000002 | 0x00000200 | 0x00008000 | 0x00080000
+	binary.LittleEndian.PutUint32(msg[20:24], flags)
+
+	copy(msg[24:32], challenge)
+
+	// Target info security buffer (empty in this implementation)
+	binary.LittleEndian.PutUint16(msg[40:42], 0)
+	binary.LittleEndian.PutUint16(msg[42:44], 0)
+	binary.LittleEndian.PutUint32(msg[44:48], headerLen+uint32(len(targetName)))
+
+	copy(msg[headerLen:], targetName)
+	return msg
 }
 
 // ValidateAuthenticate validates an NTLM Type 3 (Authenticate) message.

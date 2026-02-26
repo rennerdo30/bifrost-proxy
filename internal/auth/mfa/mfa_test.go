@@ -117,6 +117,76 @@ func TestMFAWrapperPlugin_ConfigSchema(t *testing.T) {
 	assert.Contains(t, schema, "password_format")
 }
 
+func TestMFAWrapperPlugin_ValidateConfig_InlineProviders(t *testing.T) {
+	plugin, ok := auth.GetPlugin("mfa_wrapper")
+	require.True(t, ok)
+
+	passwordHash, err := auth.HashPassword("password")
+	require.NoError(t, err)
+
+	err = plugin.ValidateConfig(map[string]any{
+		"primary": map[string]any{
+			"mode": "native",
+			"native": map[string]any{
+				"users": []map[string]any{
+					{
+						"username":      "testuser",
+						"password_hash": passwordHash,
+					},
+				},
+			},
+		},
+		"secondary": map[string]any{
+			"mode": "totp",
+			"totp": map[string]any{
+				"secrets": map[string]any{
+					"testuser": "JBSWY3DPEHPK3PXP",
+				},
+			},
+		},
+	})
+	assert.NoError(t, err)
+}
+
+func TestMFAWrapperPlugin_Create_InlineProviders(t *testing.T) {
+	plugin, ok := auth.GetPlugin("mfa_wrapper")
+	require.True(t, ok)
+
+	passwordHash, err := auth.HashPassword("password")
+	require.NoError(t, err)
+
+	authenticator, err := plugin.Create(map[string]any{
+		"primary": map[string]any{
+			"mode": "native",
+			"native": map[string]any{
+				"users": []map[string]any{
+					{
+						"username":      "testuser",
+						"password_hash": passwordHash,
+					},
+				},
+			},
+		},
+		"secondary": map[string]any{
+			"mode": "totp",
+			"totp": map[string]any{
+				"secrets": map[string]any{
+					"testuser": "JBSWY3DPEHPK3PXP",
+				},
+			},
+		},
+		"otp_separator": ":",
+	})
+	require.NoError(t, err)
+
+	code := generateTOTP("JBSWY3DPEHPK3PXP", time.Now())
+	user, err := authenticator.Authenticate(context.Background(), "testuser", "password:"+code)
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	assert.Equal(t, "testuser", user.Username)
+	assert.Equal(t, "mfa_wrapper", user.Metadata["auth_type"])
+}
+
 // Helper to create authenticators for testing the wrapper directly
 //
 //nolint:unparam // totpSecret is always the same in tests but kept for test readability

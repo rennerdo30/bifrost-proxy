@@ -99,7 +99,9 @@ func TestNew_WithAuth(t *testing.T) {
 			{Name: "default", Type: "direct", Enabled: true},
 		},
 		Auth: config.AuthConfig{
-			Mode: "none",
+			Providers: []config.AuthProvider{
+				{Name: "none", Type: "none", Enabled: true},
+			},
 		},
 	}
 
@@ -124,7 +126,11 @@ func TestNew_InvalidBackend(t *testing.T) {
 }
 
 func TestCreateAuthenticator_None(t *testing.T) {
-	auth, err := createAuthenticator(config.AuthConfig{Mode: "none"})
+	auth, err := createAuthenticator(config.AuthConfig{
+		Providers: []config.AuthProvider{
+			{Name: "none", Type: "none", Enabled: true},
+		},
+	})
 	require.NoError(t, err)
 	require.NotNil(t, auth)
 }
@@ -137,10 +143,16 @@ func TestCreateAuthenticator_Empty(t *testing.T) {
 
 func TestCreateAuthenticator_Native(t *testing.T) {
 	auth, err := createAuthenticator(config.AuthConfig{
-		Mode: "native",
-		Native: &config.NativeAuth{
-			Users: []config.NativeUser{
-				{Username: "test", PasswordHash: "hash"},
+		Providers: []config.AuthProvider{
+			{
+				Name:    "native",
+				Type:    "native",
+				Enabled: true,
+				Config: map[string]any{
+					"users": []map[string]any{
+						{"username": "test", "password_hash": "hash"},
+					},
+				},
 			},
 		},
 	})
@@ -150,8 +162,9 @@ func TestCreateAuthenticator_Native(t *testing.T) {
 
 func TestCreateAuthenticator_Native_NilConfig(t *testing.T) {
 	_, err := createAuthenticator(config.AuthConfig{
-		Mode:   "native",
-		Native: nil,
+		Providers: []config.AuthProvider{
+			{Name: "native", Type: "native", Enabled: true},
+		},
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "native auth config is required")
@@ -159,8 +172,9 @@ func TestCreateAuthenticator_Native_NilConfig(t *testing.T) {
 
 func TestCreateAuthenticator_LDAP_NilConfig(t *testing.T) {
 	_, err := createAuthenticator(config.AuthConfig{
-		Mode: "ldap",
-		LDAP: nil,
+		Providers: []config.AuthProvider{
+			{Name: "ldap", Type: "ldap", Enabled: true},
+		},
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "ldap config is required")
@@ -168,8 +182,9 @@ func TestCreateAuthenticator_LDAP_NilConfig(t *testing.T) {
 
 func TestCreateAuthenticator_OAuth_NilConfig(t *testing.T) {
 	_, err := createAuthenticator(config.AuthConfig{
-		Mode:  "oauth",
-		OAuth: nil,
+		Providers: []config.AuthProvider{
+			{Name: "oauth", Type: "oauth", Enabled: true},
+		},
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "oauth config is required")
@@ -177,9 +192,15 @@ func TestCreateAuthenticator_OAuth_NilConfig(t *testing.T) {
 
 func TestCreateAuthenticator_System(t *testing.T) {
 	auth, err := createAuthenticator(config.AuthConfig{
-		Mode: "system",
-		System: &config.SystemAuth{
-			Service: "test-service",
+		Providers: []config.AuthProvider{
+			{
+				Name:    "system",
+				Type:    "system",
+				Enabled: true,
+				Config: map[string]any{
+					"service": "test-service",
+				},
+			},
 		},
 	})
 	require.NoError(t, err)
@@ -189,7 +210,9 @@ func TestCreateAuthenticator_System(t *testing.T) {
 func TestCreateAuthenticator_System_NilConfig(t *testing.T) {
 	// System auth works with nil config (uses defaults)
 	auth, err := createAuthenticator(config.AuthConfig{
-		Mode: "system",
+		Providers: []config.AuthProvider{
+			{Name: "system", Type: "system", Enabled: true},
+		},
 	})
 	require.NoError(t, err)
 	require.NotNil(t, auth)
@@ -197,10 +220,32 @@ func TestCreateAuthenticator_System_NilConfig(t *testing.T) {
 
 func TestCreateAuthenticator_Unknown(t *testing.T) {
 	_, err := createAuthenticator(config.AuthConfig{
-		Mode: "unknown",
+		Providers: []config.AuthProvider{
+			{Name: "unknown", Type: "unknown", Enabled: true},
+		},
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown auth plugin type")
+}
+
+func TestCreateAuthenticator_RejectsLegacyMode(t *testing.T) {
+	_, err := createAuthenticator(config.AuthConfig{
+		Mode: "none",
+		Providers: []config.AuthProvider{
+			{
+				Name:    "native-provider",
+				Type:    "native",
+				Enabled: true,
+				Config: map[string]any{
+					"users": []map[string]any{
+						{"username": "test", "password_hash": "hash"},
+					},
+				},
+			},
+		},
+	})
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "legacy auth.mode is no longer supported")
 }
 
 func TestFactory_CreateChain_Empty(t *testing.T) {
@@ -439,7 +484,9 @@ func TestServer_GetSanitizedConfig(t *testing.T) {
 			{Domains: []string{"*"}, Backend: "backend1"},
 		},
 		Auth: config.AuthConfig{
-			Mode: "none",
+			Providers: []config.AuthProvider{
+				{Name: "none", Type: "none", Enabled: true},
+			},
 		},
 		RateLimit: config.RateLimitConfig{
 			Enabled:           true,
@@ -566,7 +613,9 @@ func TestServer_isAuthRequired_None(t *testing.T) {
 			{Name: "default", Type: "direct", Enabled: true},
 		},
 		Auth: config.AuthConfig{
-			Mode: "none",
+			Providers: []config.AuthProvider{
+				{Name: "none", Type: "none", Enabled: true},
+			},
 		},
 	}
 
@@ -585,7 +634,7 @@ func TestServer_isAuthRequired_Empty(t *testing.T) {
 			{Name: "default", Type: "direct", Enabled: true},
 		},
 		Auth: config.AuthConfig{
-			Mode: "",
+			Providers: nil,
 		},
 	}
 
@@ -604,10 +653,16 @@ func TestServer_isAuthRequired_Native(t *testing.T) {
 			{Name: "default", Type: "direct", Enabled: true},
 		},
 		Auth: config.AuthConfig{
-			Mode: "native",
-			Native: &config.NativeAuth{
-				Users: []config.NativeUser{
-					{Username: "test", PasswordHash: "hash"},
+			Providers: []config.AuthProvider{
+				{
+					Name:    "native",
+					Type:    "native",
+					Enabled: true,
+					Config: map[string]any{
+						"users": []map[string]any{
+							{"username": "test", "password_hash": "hash"},
+						},
+					},
 				},
 			},
 		},
@@ -675,9 +730,9 @@ func TestServer_isAuthRequired_Providers_Native(t *testing.T) {
 					Name:    "test",
 					Type:    "native",
 					Enabled: true,
-					Native: &config.NativeAuth{
-						Users: []config.NativeUser{
-							{Username: "test", PasswordHash: "hash"},
+					Config: map[string]any{
+						"users": []map[string]any{
+							{"username": "test", "password_hash": "hash"},
 						},
 					},
 				},
@@ -779,7 +834,9 @@ func TestServer_authenticate_Success(t *testing.T) {
 			{Name: "default", Type: "direct", Enabled: true},
 		},
 		Auth: config.AuthConfig{
-			Mode: "none",
+			Providers: []config.AuthProvider{
+				{Name: "none", Type: "none", Enabled: true},
+			},
 		},
 	}
 
@@ -804,10 +861,16 @@ func TestServer_authenticate_Failure(t *testing.T) {
 			{Name: "default", Type: "direct", Enabled: true},
 		},
 		Auth: config.AuthConfig{
-			Mode: "native",
-			Native: &config.NativeAuth{
-				Users: []config.NativeUser{
-					{Username: "testuser", PasswordHash: hash},
+			Providers: []config.AuthProvider{
+				{
+					Name:    "native",
+					Type:    "native",
+					Enabled: true,
+					Config: map[string]any{
+						"users": []map[string]any{
+							{"username": "testuser", "password_hash": hash},
+						},
+					},
 				},
 			},
 		},
@@ -1436,162 +1499,28 @@ func TestConvertProvidersConfig_WithConfigMap(t *testing.T) {
 		},
 	}
 
-	result := convertProvidersConfig(providers)
+	result, err := convertProvidersConfig(providers)
+	require.NoError(t, err)
 	require.Len(t, result, 1)
 	assert.Equal(t, "native-with-config", result[0].Name)
 	assert.NotNil(t, result[0].Config)
 }
 
-func TestConvertLegacyConfig_SystemWithConfig(t *testing.T) {
-	cfg := config.AuthConfig{
-		Mode: "system",
-		System: &config.SystemAuth{
-			Service:       "test-service",
-			AllowedUsers:  []string{"user1"},
-			AllowedGroups: []string{"group1"},
-		},
-	}
-
-	result := convertLegacyConfig(cfg)
-	assert.Equal(t, "system", result.Type)
-	assert.NotNil(t, result.Config)
-}
-
-func TestConvertLegacyConfig_LDAPWithConfig(t *testing.T) {
-	cfg := config.AuthConfig{
-		Mode: "ldap",
-		LDAP: &config.LDAPAuth{
-			URL:                "ldap://localhost:389",
-			BaseDN:             "dc=example,dc=com",
-			BindDN:             "cn=admin,dc=example,dc=com",
-			BindPassword:       "secret",
-			UserFilter:         "(uid=%s)",
-			GroupFilter:        "(member=%s)",
-			RequireGroup:       "cn=users,dc=example,dc=com",
-			TLS:                true,
-			InsecureSkipVerify: false,
-		},
-	}
-
-	result := convertLegacyConfig(cfg)
-	assert.Equal(t, "ldap", result.Type)
-	assert.NotNil(t, result.Config)
-
-	configMap := result.Config
-	assert.Equal(t, "ldap://localhost:389", configMap["url"])
-	assert.Equal(t, "dc=example,dc=com", configMap["base_dn"])
-	assert.Equal(t, true, configMap["tls"])
-}
-
-func TestConvertLegacyConfig_OAuthWithConfig(t *testing.T) {
-	cfg := config.AuthConfig{
-		Mode: "oauth",
-		OAuth: &config.OAuthAuth{
-			Provider:     "generic",
-			ClientID:     "client-id",
-			ClientSecret: "client-secret",
-			IssuerURL:    "https://issuer.example.com",
-			Scopes:       []string{"openid", "profile"},
-		},
-	}
-
-	result := convertLegacyConfig(cfg)
-	assert.Equal(t, "oauth", result.Type)
-	assert.NotNil(t, result.Config)
-
-	configMap := result.Config
-	assert.Equal(t, "generic", configMap["provider"])
-	assert.Equal(t, "client-id", configMap["client_id"])
-}
-
-func TestConvertLegacyProviderConfig_Native(t *testing.T) {
-	provider := config.AuthProvider{
-		Type: "native",
-		Native: &config.NativeAuth{
-			Users: []config.NativeUser{
-				{Username: "user1", PasswordHash: "hash1"},
+func TestConvertProvidersConfig_RejectsLegacyTypeSpecificConfig(t *testing.T) {
+	_, err := convertProvidersConfig([]config.AuthProvider{
+		{
+			Name:    "legacy-native",
+			Type:    "native",
+			Enabled: true,
+			Native: &config.NativeAuth{
+				Users: []config.NativeUser{
+					{Username: "user1", PasswordHash: "hash1"},
+				},
 			},
 		},
-	}
-
-	result := convertLegacyProviderConfig(provider)
-	require.NotNil(t, result)
-	users, ok := result["users"].([]map[string]any)
-	require.True(t, ok)
-	require.Len(t, users, 1)
-	assert.Equal(t, "user1", users[0]["username"])
-}
-
-func TestConvertLegacyProviderConfig_System(t *testing.T) {
-	provider := config.AuthProvider{
-		Type: "system",
-		System: &config.SystemAuth{
-			Service:       "ssh",
-			AllowedUsers:  []string{"root"},
-			AllowedGroups: []string{"wheel"},
-		},
-	}
-
-	result := convertLegacyProviderConfig(provider)
-	require.NotNil(t, result)
-	assert.Equal(t, "ssh", result["service"])
-}
-
-func TestConvertLegacyProviderConfig_LDAP(t *testing.T) {
-	provider := config.AuthProvider{
-		Type: "ldap",
-		LDAP: &config.LDAPAuth{
-			URL:                "ldap://localhost:389",
-			BaseDN:             "dc=test,dc=com",
-			TLS:                true,
-			RequireGroup:       "cn=admins",
-			InsecureSkipVerify: true,
-		},
-	}
-
-	result := convertLegacyProviderConfig(provider)
-	require.NotNil(t, result)
-	assert.Equal(t, "ldap://localhost:389", result["url"])
-	assert.Equal(t, true, result["tls"])
-	assert.Equal(t, true, result["insecure_skip_verify"])
-}
-
-func TestConvertLegacyProviderConfig_OAuth(t *testing.T) {
-	provider := config.AuthProvider{
-		Type: "oauth",
-		OAuth: &config.OAuthAuth{
-			Provider:     "google",
-			ClientID:     "google-client-id",
-			ClientSecret: "google-client-secret",
-			IssuerURL:    "https://accounts.google.com",
-			Scopes:       []string{"email"},
-		},
-	}
-
-	result := convertLegacyProviderConfig(provider)
-	require.NotNil(t, result)
-	assert.Equal(t, "google", result["provider"])
-	assert.Equal(t, "google-client-id", result["client_id"])
-}
-
-func TestConvertLegacyProviderConfig_NilConfigs(t *testing.T) {
-	tests := []struct {
-		name     string
-		provider config.AuthProvider
-	}{
-		{"native_nil", config.AuthProvider{Type: "native", Native: nil}},
-		{"system_nil", config.AuthProvider{Type: "system", System: nil}},
-		{"ldap_nil", config.AuthProvider{Type: "ldap", LDAP: nil}},
-		{"oauth_nil", config.AuthProvider{Type: "oauth", OAuth: nil}},
-		{"unknown_type", config.AuthProvider{Type: "unknown"}},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := convertLegacyProviderConfig(tt.provider)
-			assert.Nil(t, result)
-		})
-	}
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "uses legacy type-specific auth config")
 }
 
 func TestServer_StartWithCacheEnabled(t *testing.T) {
@@ -2026,10 +1955,16 @@ func TestServer_HandleSOCKS5Conn_WithAuth(t *testing.T) {
 			{Domains: []string{"*"}, Backend: "default"},
 		},
 		Auth: config.AuthConfig{
-			Mode: "native",
-			Native: &config.NativeAuth{
-				Users: []config.NativeUser{
-					{Username: "testuser", PasswordHash: hash},
+			Providers: []config.AuthProvider{
+				{
+					Name:    "native",
+					Type:    "native",
+					Enabled: true,
+					Config: map[string]any{
+						"users": []map[string]any{
+							{"username": "testuser", "password_hash": hash},
+						},
+					},
 				},
 			},
 		},

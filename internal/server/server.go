@@ -271,153 +271,59 @@ func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
 func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 	factory := auth.NewFactory()
 
-	// Check if using new multi-provider configuration
+	// Legacy mode-based auth is intentionally unsupported.
+	if cfg.Mode != "" {
+		return nil, fmt.Errorf("legacy auth.mode is no longer supported; migrate to auth.providers")
+	}
+
+	// New multi-provider configuration.
 	if len(cfg.Providers) > 0 {
-		providers := convertProvidersConfig(cfg.Providers)
+		providers, err := convertProvidersConfig(cfg.Providers)
+		if err != nil {
+			return nil, err
+		}
 		return factory.CreateChain(providers)
 	}
 
-	// Legacy single-mode configuration - convert to new format
-	provider := convertLegacyConfig(cfg)
-	return factory.Create(provider)
+	// No auth config explicitly set; default to "none".
+	return factory.Create(auth.ProviderConfig{
+		Name:     "none",
+		Type:     "none",
+		Enabled:  true,
+		Priority: 1,
+	})
+}
+
+// ValidateAuthConfig validates authentication configuration against registered plugins.
+func ValidateAuthConfig(cfg config.AuthConfig) error {
+	_, err := createAuthenticator(cfg)
+	return err
 }
 
 // convertProvidersConfig converts config.AuthProvider slice to auth.ProviderConfig slice.
-func convertProvidersConfig(providers []config.AuthProvider) []auth.ProviderConfig {
+func convertProvidersConfig(providers []config.AuthProvider) ([]auth.ProviderConfig, error) {
 	result := make([]auth.ProviderConfig, 0, len(providers))
 
-	for _, p := range providers {
+	for i, p := range providers {
+		if hasLegacyProviderConfig(p) {
+			return nil, fmt.Errorf("provider %q at index %d uses legacy type-specific auth config; migrate to providers[%d].config", p.Name, i, i)
+		}
 		providerCfg := auth.ProviderConfig{
 			Name:     p.Name,
 			Type:     p.Type,
 			Enabled:  p.Enabled,
 			Priority: p.Priority,
-		}
-
-		// Use new Config map if provided, otherwise convert legacy config
-		if p.Config != nil {
-			providerCfg.Config = p.Config
-		} else {
-			providerCfg.Config = convertLegacyProviderConfig(p)
+			Config:   p.Config,
 		}
 
 		result = append(result, providerCfg)
 	}
 
-	return result
+	return result, nil
 }
 
-// convertLegacyConfig converts legacy single-mode config to ProviderConfig.
-func convertLegacyConfig(cfg config.AuthConfig) auth.ProviderConfig {
-	mode := cfg.Mode
-	if mode == "" {
-		mode = "none"
-	}
-
-	provider := auth.ProviderConfig{
-		Name:     mode,
-		Type:     mode,
-		Enabled:  true,
-		Priority: 1,
-	}
-
-	switch mode {
-	case "native":
-		if cfg.Native != nil {
-			users := make([]map[string]any, 0, len(cfg.Native.Users))
-			for _, u := range cfg.Native.Users {
-				users = append(users, map[string]any{
-					"username":      u.Username,
-					"password_hash": u.PasswordHash,
-				})
-			}
-			provider.Config = map[string]any{"users": users}
-		}
-	case "system":
-		if cfg.System != nil {
-			provider.Config = map[string]any{
-				"service":        cfg.System.Service,
-				"allowed_users":  cfg.System.AllowedUsers,
-				"allowed_groups": cfg.System.AllowedGroups,
-			}
-		}
-	case "ldap":
-		if cfg.LDAP != nil {
-			provider.Config = map[string]any{
-				"url":                  cfg.LDAP.URL,
-				"base_dn":              cfg.LDAP.BaseDN,
-				"bind_dn":              cfg.LDAP.BindDN,
-				"bind_password":        cfg.LDAP.BindPassword,
-				"user_filter":          cfg.LDAP.UserFilter,
-				"group_filter":         cfg.LDAP.GroupFilter,
-				"require_group":        cfg.LDAP.RequireGroup,
-				"tls":                  cfg.LDAP.TLS,
-				"insecure_skip_verify": cfg.LDAP.InsecureSkipVerify,
-			}
-		}
-	case "oauth":
-		if cfg.OAuth != nil {
-			provider.Config = map[string]any{
-				"provider":      cfg.OAuth.Provider,
-				"client_id":     cfg.OAuth.ClientID,
-				"client_secret": cfg.OAuth.ClientSecret,
-				"issuer_url":    cfg.OAuth.IssuerURL,
-				"scopes":        cfg.OAuth.Scopes,
-			}
-		}
-	}
-
-	return provider
-}
-
-// convertLegacyProviderConfig converts legacy type-specific config to map[string]any.
-func convertLegacyProviderConfig(p config.AuthProvider) map[string]any {
-	switch p.Type {
-	case "native":
-		if p.Native != nil {
-			users := make([]map[string]any, 0, len(p.Native.Users))
-			for _, u := range p.Native.Users {
-				users = append(users, map[string]any{
-					"username":      u.Username,
-					"password_hash": u.PasswordHash,
-				})
-			}
-			return map[string]any{"users": users}
-		}
-	case "system":
-		if p.System != nil {
-			return map[string]any{
-				"service":        p.System.Service,
-				"allowed_users":  p.System.AllowedUsers,
-				"allowed_groups": p.System.AllowedGroups,
-			}
-		}
-	case "ldap":
-		if p.LDAP != nil {
-			return map[string]any{
-				"url":                  p.LDAP.URL,
-				"base_dn":              p.LDAP.BaseDN,
-				"bind_dn":              p.LDAP.BindDN,
-				"bind_password":        p.LDAP.BindPassword,
-				"user_filter":          p.LDAP.UserFilter,
-				"group_filter":         p.LDAP.GroupFilter,
-				"require_group":        p.LDAP.RequireGroup,
-				"tls":                  p.LDAP.TLS,
-				"insecure_skip_verify": p.LDAP.InsecureSkipVerify,
-			}
-		}
-	case "oauth":
-		if p.OAuth != nil {
-			return map[string]any{
-				"provider":      p.OAuth.Provider,
-				"client_id":     p.OAuth.ClientID,
-				"client_secret": p.OAuth.ClientSecret,
-				"issuer_url":    p.OAuth.IssuerURL,
-				"scopes":        p.OAuth.Scopes,
-			}
-		}
-	}
-	return nil
+func hasLegacyProviderConfig(p config.AuthProvider) bool {
+	return p.Native != nil || p.System != nil || p.LDAP != nil || p.OAuth != nil
 }
 
 // Start starts the server.
@@ -1098,8 +1004,8 @@ func (s *Server) isAuthRequired() bool {
 		}
 		return false
 	}
-	// Legacy single-mode configuration
-	return s.config.Auth.Mode != "none" && s.config.Auth.Mode != ""
+
+	return false
 }
 
 func (s *Server) accessCheck(clientIP string) (bool, string) {

@@ -65,6 +65,9 @@ func init() {
 			if err := config.LoadAndValidate(configFile, &cfg); err != nil {
 				return fmt.Errorf("configuration invalid: %w", err)
 			}
+			if err := server.ValidateAuthConfig(cfg.Auth); err != nil {
+				return fmt.Errorf("configuration invalid: auth: %w", err)
+			}
 			fmt.Println("Configuration is valid")
 			return nil
 		},

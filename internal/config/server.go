@@ -77,23 +77,25 @@ type RouteConfig struct {
 // AuthConfig contains authentication settings.
 // Supports multiple providers that are tried in priority order.
 type AuthConfig struct {
-	// Mode is for backwards compatibility with single-mode configs.
-	// If set, it takes precedence over Providers.
-	Mode   string      `yaml:"mode,omitempty" json:"mode,omitempty"` // none, native, system, ldap, oauth (legacy)
+	// Mode is deprecated and intentionally unsupported.
+	// Use Providers with explicit plugin types and config maps.
+	Mode   string      `yaml:"mode,omitempty" json:"mode,omitempty"`
 	Native *NativeAuth `yaml:"native,omitempty" json:"native,omitempty"`
 	System *SystemAuth `yaml:"system,omitempty" json:"system,omitempty"`
 	LDAP   *LDAPAuth   `yaml:"ldap,omitempty" json:"ldap,omitempty"`
 	OAuth  *OAuthAuth  `yaml:"oauth,omitempty" json:"oauth,omitempty"`
+
 	// Providers allows multiple authentication backends.
 	// Each provider is tried in priority order (lowest first).
 	Providers []AuthProvider `yaml:"providers,omitempty" json:"providers,omitempty"`
 }
 
 // AuthProvider represents a single authentication provider.
-// Supports both the new plugin-based config (Config map) and legacy type-specific config.
+// Use Config for plugin-specific settings.
+// Legacy type-specific fields are deprecated and unsupported.
 type AuthProvider struct {
 	Name     string         `yaml:"name" json:"name"`                         // Unique name for this provider
-	Type     string         `yaml:"type" json:"type"`                         // native, system, ldap, oauth, none
+	Type     string         `yaml:"type" json:"type"`                         // plugin type (e.g., native, ldap, oauth, apikey, jwt, none)
 	Enabled  bool           `yaml:"enabled" json:"enabled"`                   // Whether this provider is active
 	Priority int            `yaml:"priority" json:"priority"`                 // Lower priority is tried first
 	Config   map[string]any `yaml:"config,omitempty" json:"config,omitempty"` // Plugin-specific configuration (new format)
@@ -277,9 +279,7 @@ func DefaultServerConfig() ServerConfig {
 			},
 			GracefulPeriod: Duration(30 * time.Second),
 		},
-		Auth: AuthConfig{
-			Mode: "none",
-		},
+		Auth: AuthConfig{},
 		RateLimit: RateLimitConfig{
 			Enabled: false,
 		},

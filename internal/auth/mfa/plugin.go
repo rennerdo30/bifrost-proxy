@@ -27,10 +27,12 @@ func (p *plugin) Description() string {
 }
 
 // Create creates a new MFA wrapper from the configuration.
-// Note: This requires the primary and MFA providers to already be created.
-// For proper initialization, use the Factory.CreateWithProviders method.
 func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
-	cfg, err := parsePluginConfig(config)
+	if hasInlineProviders(config) {
+		return p.createInlineWrapper(config)
+	}
+
+	cfg, err := parsePluginConfig(config, true)
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +44,30 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 
 // ValidateConfig validates the configuration.
 func (p *plugin) ValidateConfig(config map[string]any) error {
-	_, err := parsePluginConfig(config)
+	if hasInlineProviders(config) {
+		_, _, err := parseInlineAuthenticatorConfig(config, "primary")
+		if err != nil {
+			return err
+		}
+		secondaryMode, _, err := parseInlineAuthenticatorConfig(config, "secondary")
+		if err != nil {
+			return err
+		}
+		wrapperCfg := copyMap(config)
+		if _, ok := wrapperCfg["primary_provider"]; !ok {
+			wrapperCfg["primary_provider"] = "primary"
+		}
+		if _, ok := wrapperCfg["mfa_type"]; !ok {
+			wrapperCfg["mfa_type"] = secondaryMode
+		}
+		if _, ok := wrapperCfg["mfa_provider"]; !ok {
+			wrapperCfg["mfa_provider"] = secondaryMode
+		}
+		_, err = parsePluginConfig(wrapperCfg, false)
+		return err
+	}
+
+	_, err := parsePluginConfig(config, true)
 	return err
 }
 
@@ -109,7 +134,7 @@ func (p *plugin) ConfigSchema() string {
 }
 
 // parsePluginConfig parses the plugin configuration.
-func parsePluginConfig(config map[string]any) (*Config, error) {
+func parsePluginConfig(config map[string]any, requirePrimaryProvider bool) (*Config, error) {
 	if config == nil {
 		return nil, fmt.Errorf("mfa_wrapper config is required")
 	}
@@ -125,7 +150,7 @@ func parsePluginConfig(config map[string]any) (*Config, error) {
 		cfg.PrimaryProvider = primaryProvider
 	}
 
-	if cfg.PrimaryProvider == "" {
+	if cfg.PrimaryProvider == "" && requirePrimaryProvider {
 		return nil, fmt.Errorf("mfa_wrapper config: 'primary_provider' is required")
 	}
 
@@ -160,6 +185,8 @@ func parsePluginConfig(config map[string]any) (*Config, error) {
 				cfg.MFAGroups = append(cfg.MFAGroups, group)
 			}
 		}
+	} else if mfaGroups, ok := config["mfa_groups"].([]string); ok {
+		cfg.MFAGroups = append(cfg.MFAGroups, mfaGroups...)
 	}
 
 	if passwordFormat, ok := config["password_format"].(string); ok {
@@ -186,6 +213,187 @@ func parsePluginConfig(config map[string]any) (*Config, error) {
 	return cfg, nil
 }
 
+func hasInlineProviders(config map[string]any) bool {
+	if config == nil {
+		return false
+	}
+	_, okPrimary := toMap(config["primary"])
+	_, okSecondary := toMap(config["secondary"])
+	return okPrimary && okSecondary
+}
+
+func (p *plugin) createInlineWrapper(config map[string]any) (auth.Authenticator, error) {
+	primaryMode, primaryConfig, err := parseInlineAuthenticatorConfig(config, "primary")
+	if err != nil {
+		return nil, err
+	}
+	secondaryMode, secondaryConfig, err := parseInlineAuthenticatorConfig(config, "secondary")
+	if err != nil {
+		return nil, err
+	}
+
+	wrapperCfgInput := copyMap(config)
+	if _, ok := wrapperCfgInput["primary_provider"]; !ok {
+		wrapperCfgInput["primary_provider"] = primaryMode
+	}
+	if _, ok := wrapperCfgInput["mfa_type"]; !ok {
+		wrapperCfgInput["mfa_type"] = secondaryMode
+	}
+	if _, ok := wrapperCfgInput["mfa_provider"]; !ok {
+		wrapperCfgInput["mfa_provider"] = secondaryMode
+	}
+	if separator, ok := wrapperCfgInput["otp_separator"].(string); ok && separator != "" {
+		if _, exists := wrapperCfgInput["separator"]; !exists {
+			wrapperCfgInput["separator"] = separator
+		}
+		if _, exists := wrapperCfgInput["password_format"]; !exists {
+			wrapperCfgInput["password_format"] = "separated"
+		}
+	}
+
+	wrapperCfg, err := parsePluginConfig(wrapperCfgInput, false)
+	if err != nil {
+		return nil, err
+	}
+
+	primaryAuth, err := createInlineAuthenticator(primaryMode, primaryConfig)
+	if err != nil {
+		return nil, fmt.Errorf("mfa_wrapper primary provider %q: %w", primaryMode, err)
+	}
+	mfaAuth, err := createInlineAuthenticator(secondaryMode, secondaryConfig)
+	if err != nil {
+		return nil, fmt.Errorf("mfa_wrapper secondary provider %q: %w", secondaryMode, err)
+	}
+
+	wrapper, err := NewWrapper(wrapperCfg, primaryAuth, mfaAuth)
+	if err != nil {
+		return nil, err
+	}
+
+	if mfaUsersRaw, ok := config["mfa_users"]; ok {
+		wrapper.SetMFAUsers(toStringSlice(mfaUsersRaw))
+	}
+
+	return wrapper, nil
+}
+
+func parseInlineAuthenticatorConfig(config map[string]any, key string) (string, map[string]any, error) {
+	block, ok := toMap(config[key])
+	if !ok {
+		return "", nil, fmt.Errorf("mfa_wrapper config: '%s' block is required", key)
+	}
+
+	mode, _ := block["mode"].(string) //nolint:errcheck // Empty string is handled below
+	if mode == "" {
+		return "", nil, fmt.Errorf("mfa_wrapper config: '%s.mode' is required", key)
+	}
+
+	authConfig := map[string]any{}
+	if cfg, ok := toMap(block["config"]); ok {
+		for k, v := range cfg {
+			authConfig[k] = v
+		}
+	}
+	if legacyCfg, ok := toMap(block[mode]); ok {
+		for k, v := range legacyCfg {
+			authConfig[k] = v
+		}
+	}
+
+	normalizeOTPSecrets(mode, authConfig)
+	return mode, authConfig, nil
+}
+
+func createInlineAuthenticator(mode string, config map[string]any) (auth.Authenticator, error) {
+	plugin, ok := auth.GetPlugin(mode)
+	if !ok {
+		return nil, fmt.Errorf("unknown auth plugin type: %s", mode)
+	}
+	if err := plugin.ValidateConfig(config); err != nil {
+		return nil, err
+	}
+	return plugin.Create(config)
+}
+
+func normalizeOTPSecrets(mode string, config map[string]any) {
+	if mode != "totp" && mode != "hotp" {
+		return
+	}
+
+	secretsMap, ok := toMap(config["secrets"])
+	if !ok {
+		return
+	}
+
+	secrets := make([]map[string]any, 0, len(secretsMap))
+	for username, raw := range secretsMap {
+		secret, ok := raw.(string)
+		if !ok || username == "" || secret == "" {
+			continue
+		}
+		secrets = append(secrets, map[string]any{
+			"username": username,
+			"secret":   secret,
+		})
+	}
+	config["secrets"] = secrets
+}
+
+func toMap(v any) (map[string]any, bool) {
+	if m, ok := v.(map[string]any); ok {
+		return m, true
+	}
+
+	if m, ok := v.(map[any]any); ok {
+		converted := make(map[string]any, len(m))
+		for k, value := range m {
+			ks, ok := k.(string)
+			if !ok {
+				continue
+			}
+			converted[ks] = value
+		}
+		return converted, true
+	}
+
+	return nil, false
+}
+
+func copyMap(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	for k, v := range src {
+		dst[k] = v
+	}
+	return dst
+}
+
+func toStringSlice(v any) []string {
+	if v == nil {
+		return nil
+	}
+
+	if values, ok := v.([]string); ok {
+		return values
+	}
+
+	rawValues, ok := v.([]any)
+	if !ok {
+		return nil
+	}
+
+	result := make([]string, 0, len(rawValues))
+	for _, raw := range rawValues {
+		value, ok := raw.(string)
+		if ok {
+			result = append(result, value)
+		}
+	}
+	return result
+}
+
 // pendingWrapper is a placeholder for an MFA wrapper that needs its providers set.
 type pendingWrapper struct {
 	config *Config
@@ -193,7 +401,7 @@ type pendingWrapper struct {
 
 // Authenticate returns an error indicating the wrapper needs configuration.
 func (w *pendingWrapper) Authenticate(ctx context.Context, username, password string) (*auth.UserInfo, error) {
-	return nil, fmt.Errorf("MFA wrapper not fully configured: use Factory.CreateWithProviders")
+	return nil, fmt.Errorf("MFA wrapper not fully configured: use inline primary/secondary config")
 }
 
 // Name returns the authenticator name.
