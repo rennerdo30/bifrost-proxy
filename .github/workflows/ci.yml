@@ -38,7 +38,7 @@ jobs:
         run: go run honnef.co/go/tools/cmd/staticcheck@v0.7.0 ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
           # v2 requires a migrated config schema; keep v1 until config migration is completed.
           version: v1.64.8
