@@ -140,7 +140,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build server image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
@@ -153,7 +153,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build client image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.client
