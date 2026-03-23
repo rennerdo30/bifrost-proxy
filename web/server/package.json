@@ -28,7 +28,7 @@
     "react-router-dom": "^7.13.1"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.17",
+    "@tailwindcss/postcss": "^4.2.2",
     "@eslint/js": "^10.0.1",
     "@types/js-yaml": "^4.0.9",
     "@types/react": "^19.2.14",
