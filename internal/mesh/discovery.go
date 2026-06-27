@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"sync"
 	"time"
@@ -33,6 +34,11 @@ type DiscoveryClient struct {
 	wg        sync.WaitGroup
 	mu        sync.RWMutex
 	connected bool
+
+	// assignedIP is the virtual IP assigned to the local peer by the
+	// discovery server in the registration response. It is authoritative and
+	// must be applied to the local device.
+	assignedIP netip.Addr
 }
 
 // PeerEvent represents a peer-related event from the discovery server.
@@ -199,6 +205,21 @@ func (c *DiscoveryClient) register() error {
 		"peer_id", c.localPeer.ID,
 		"virtual_ip", regResp.VirtualIP,
 	)
+
+	// Apply the server-assigned virtual IP. The discovery server is
+	// authoritative for IP allocation, so the locally chosen placeholder is
+	// replaced with the assigned address.
+	if regResp.VirtualIP != "" {
+		if assigned, err := netip.ParseAddr(regResp.VirtualIP); err == nil {
+			c.mu.Lock()
+			c.assignedIP = assigned
+			c.mu.Unlock()
+			c.localPeer.SetVirtualIP(assigned)
+		} else {
+			slog.Warn("discovery server returned invalid virtual IP",
+				"virtual_ip", regResp.VirtualIP, "error", err)
+		}
+	}
 
 	// Add existing peers to registry
 	for _, peerInfo := range regResp.Peers {
@@ -406,6 +427,17 @@ func (c *DiscoveryClient) addPeerFromInfo(info PeerInfo) {
 	peer.Endpoints = info.Endpoints
 	peer.Metadata = info.Metadata
 
+	// Populate the peer's virtual IP so that route installation (which is
+	// gated on a valid VirtualIP) can run once the peer connects.
+	if info.VirtualIP != "" {
+		if ip, err := netip.ParseAddr(info.VirtualIP); err == nil {
+			peer.VirtualIP = ip
+		} else {
+			slog.Warn("peer has invalid virtual IP",
+				"peer_id", info.ID, "virtual_ip", info.VirtualIP, "error", err)
+		}
+	}
+
 	c.registry.Add(peer)
 }
 
@@ -425,6 +457,13 @@ func (c *DiscoveryClient) updatePeerFromInfo(info PeerInfo) {
 		peer.Metadata[k] = v
 	}
 	peer.mu.Unlock()
+
+	// Keep the virtual IP (and the registry's IP index) in sync.
+	if info.VirtualIP != "" {
+		if ip, err := netip.ParseAddr(info.VirtualIP); err == nil && ip != peer.VirtualIP {
+			c.registry.UpdatePeerIP(peer, ip)
+		}
+	}
 }
 
 // ListPeers retrieves all peers from the discovery server.
@@ -525,4 +564,12 @@ func (c *DiscoveryClient) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.connected
+}
+
+// AssignedVirtualIP returns the virtual IP assigned by the discovery server
+// during registration. It is invalid until registration has completed.
+func (c *DiscoveryClient) AssignedVirtualIP() netip.Addr {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.assignedIP
 }
