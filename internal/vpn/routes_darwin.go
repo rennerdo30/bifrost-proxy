@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/netip"
 	"os/exec"
 	"strings"
@@ -64,11 +65,11 @@ func (r *darwinRouteManager) Setup(ctx context.Context, tunName string, cfg Conf
 		}
 	}
 
-	// Add default route through TUN (if not in include mode)
-	if cfg.SplitTunnel.Mode == "exclude" {
-		// Route all traffic through TUN using two specific routes
-		tunGateway := r.tunAddr.Addr().String()
+	tunGateway := r.tunAddr.Addr().String()
 
+	if cfg.SplitTunnel.Mode == "exclude" {
+		// Exclude mode: route all traffic through TUN using two specific routes
+		// that override the default route without replacing it directly.
 		for _, cidr := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
 			if err := r.addRoute(cidr, tunGateway); err != nil {
 				slog.Warn("failed to add default route", "cidr", cidr, "error", err)
@@ -76,6 +77,29 @@ func (r *darwinRouteManager) Setup(ctx context.Context, tunName string, cfg Conf
 				r.savedRoutes = append(r.savedRoutes, SavedRoute{
 					Entry: RouteEntry{
 						Destination: cidr,
+						Gateway:     tunGateway,
+					},
+					WasAdded: true,
+				})
+			}
+		}
+	} else {
+		// Include mode: only the configured IPs/CIDRs are routed into the TUN;
+		// everything else uses the existing default route (bypasses the VPN).
+		// App/domain rules are resolved to IPs dynamically by the DNS server and
+		// split-tunnel engine, so only static IP rules get system routes here.
+		for _, cidr := range cfg.SplitTunnel.IPs {
+			dest, err := normalizeCIDR(cidr)
+			if err != nil {
+				slog.Warn("invalid include IP/CIDR, skipping", "cidr", cidr, "error", err)
+				continue
+			}
+			if err := r.addRoute(dest, tunGateway); err != nil {
+				slog.Warn("failed to add include route", "cidr", dest, "error", err)
+			} else {
+				r.savedRoutes = append(r.savedRoutes, SavedRoute{
+					Entry: RouteEntry{
+						Destination: dest,
 						Gateway:     tunGateway,
 					},
 					WasAdded: true,
@@ -202,11 +226,7 @@ func (r *darwinRouteManager) addRoute(destination, gateway string) error {
 	// route add -net network -netmask mask gateway
 	var cmd *exec.Cmd
 	if prefix.Addr().Is4() {
-		mask := fmt.Sprintf("%d.%d.%d.%d",
-			0xFF<<(8-min(bits, 8)),
-			0xFF<<(8-max(0, min(bits-8, 8))),
-			0xFF<<(8-max(0, min(bits-16, 8))),
-			0xFF<<(8-max(0, min(bits-24, 8))))
+		mask := ipv4MaskString(bits)
 		cmd = exec.Command("route", "-n", "add", "-net", network, "-netmask", mask, gateway) //nolint:gosec // G204: VPN route management requires system commands
 	} else {
 		cmd = exec.Command("route", "-n", "add", "-inet6", destination, gateway) //nolint:gosec // G204: VPN route management requires system commands
@@ -231,11 +251,7 @@ func (r *darwinRouteManager) deleteRoute(destination string) error {
 
 	var cmd *exec.Cmd
 	if prefix.Addr().Is4() {
-		mask := fmt.Sprintf("%d.%d.%d.%d",
-			0xFF<<(8-min(bits, 8)),
-			0xFF<<(8-max(0, min(bits-8, 8))),
-			0xFF<<(8-max(0, min(bits-16, 8))),
-			0xFF<<(8-max(0, min(bits-24, 8))))
+		mask := ipv4MaskString(bits)
 		cmd = exec.Command("route", "-n", "delete", "-net", network, "-netmask", mask) //nolint:gosec // G204: VPN route management requires system commands
 	} else {
 		cmd = exec.Command("route", "-n", "delete", "-inet6", destination) //nolint:gosec // G204: VPN route management requires system commands
@@ -366,20 +382,13 @@ func (r *darwinRouteManager) restoreDNS() error {
 	return nil
 }
 
-//nolint:unparam // b is always 8 in usage but kept for min function semantics
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-//nolint:unparam // a is always 0 in usage but kept for max function semantics
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
+// ipv4MaskString converts an IPv4 prefix length into a dotted-decimal netmask
+// (e.g. 24 -> "255.255.255.0"). It uses net.CIDRMask so the octets are always
+// valid, avoiding the previous hand-rolled bit-shift that produced invalid
+// values like "255.255.255.65280".
+func ipv4MaskString(bits int) string {
+	mask := net.CIDRMask(bits, 32)
+	return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
 }
 
 // splitHostPort splits a host:port string.
