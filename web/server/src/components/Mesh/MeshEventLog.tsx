@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { MeshPeerEvent } from '../../api/types'
+import { BASE_PATH } from '../../api/client'
 
 interface MeshEventLogProps {
   networkId: string | null
@@ -91,7 +92,7 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
 
     // Connect to WebSocket for events
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/mesh/networks/${encodeURIComponent(networkId)}/events`
+    const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/api/v1/mesh/networks/${encodeURIComponent(networkId)}/events`
 
     try {
       const ws = new WebSocket(wsUrl)
