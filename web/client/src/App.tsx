@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/Layout/Layout'
 import { ErrorBoundary, SectionErrorBoundary } from './components/ErrorBoundary'
 import { Traffic } from './pages/Traffic'
@@ -12,7 +12,7 @@ import { Logs } from './pages/Logs'
 export default function App() {
   return (
     <ErrorBoundary section="Application">
-      <BrowserRouter>
+      <HashRouter>
         <Routes>
           <Route path="/" element={<Layout />}>
             <Route index element={<Navigate to="/traffic" replace />} />
@@ -53,7 +53,7 @@ export default function App() {
             } />
           </Route>
         </Routes>
-      </BrowserRouter>
+      </HashRouter>
     </ErrorBoundary>
   )
 }
