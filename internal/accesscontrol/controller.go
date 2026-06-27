@@ -102,18 +102,24 @@ func (c *Controller) AddToBlacklist(entry string) error {
 }
 
 // RemoveFromWhitelist removes an entry from the whitelist.
-func (c *Controller) RemoveFromWhitelist(entry string) {
+// It returns true if the entry was present and removed. When the last whitelist
+// entry is removed, whitelist enforcement is disabled.
+func (c *Controller) RemoveFromWhitelist(entry string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Note: Full removal would require tracking original entries
-	// For now, just clear and rebuild if needed
+	removed := c.whitelist.Remove(entry)
+	if c.whitelist.Count() == 0 {
+		c.useWhitelist = false
+	}
+	return removed
 }
 
 // RemoveFromBlacklist removes an entry from the blacklist.
-func (c *Controller) RemoveFromBlacklist(entry string) {
+// It returns true if the entry was present and removed.
+func (c *Controller) RemoveFromBlacklist(entry string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// Note: Full removal would require tracking original entries
+	return c.blacklist.Remove(entry)
 }
 
 // ClearWhitelist clears all whitelist entries.

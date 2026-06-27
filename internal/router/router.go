@@ -13,9 +13,10 @@ import (
 type Route struct {
 	Name        string
 	Matcher     *matcher.Matcher
-	Backend     string   // Single backend name
-	Backends    []string // Multiple backend names for load balancing
-	LoadBalance string   // round_robin, least_conn, ip_hash, weighted
+	Backend     string         // Single backend name
+	Backends    []string       // Multiple backend names for load balancing
+	LoadBalance string         // round_robin, least_conn, ip_hash, weighted
+	Weights     map[string]int // Per-backend weights for the "weighted" strategy (backend name -> weight)
 	Priority    int
 }
 
@@ -53,7 +54,7 @@ func (r *Router) AddRoute(route *Route) {
 
 	// Create load balancer for multi-backend routes
 	if len(route.Backends) > 1 {
-		r.loadBalancers[route.Name] = NewLoadBalancer(route.LoadBalance)
+		r.loadBalancers[route.Name] = NewLoadBalancerWithWeights(route.LoadBalance, route.Weights)
 	}
 }
 
@@ -170,7 +171,16 @@ type LoadBalancer interface {
 }
 
 // NewLoadBalancer creates a load balancer of the given type.
+// For the "weighted" strategy with no explicit per-backend weights, all
+// backends are treated equally (effectively round-robin). Use
+// NewLoadBalancerWithWeights to supply per-backend weights.
 func NewLoadBalancer(lbType string) LoadBalancer {
+	return NewLoadBalancerWithWeights(lbType, nil)
+}
+
+// NewLoadBalancerWithWeights creates a load balancer of the given type using
+// the supplied per-backend weights (only consulted by the "weighted" strategy).
+func NewLoadBalancerWithWeights(lbType string, weights map[string]int) LoadBalancer {
 	switch lbType {
 	case "round_robin", "":
 		return &RoundRobinBalancer{}
@@ -178,6 +188,8 @@ func NewLoadBalancer(lbType string) LoadBalancer {
 		return &LeastConnBalancer{}
 	case "ip_hash":
 		return &IPHashBalancer{}
+	case "weighted":
+		return NewWeightedBalancer(weights)
 	default:
 		return &RoundRobinBalancer{}
 	}
