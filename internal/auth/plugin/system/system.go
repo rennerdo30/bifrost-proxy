@@ -9,6 +9,7 @@ package system
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"os/user"
 	"runtime"
@@ -212,55 +213,37 @@ func (a *Authenticator) validatePassword(ctx context.Context, username, password
 	case "linux":
 		return a.validateLinux(ctx, username, password)
 	default:
-		// For unsupported platforms, try the su method as fallback
-		return a.validateWithSu(ctx, username, password)
+		// No supported password validation backend for this platform. Fail
+		// closed rather than reporting a false success.
+		slog.Warn("system auth: no supported password validation backend for platform",
+			"platform", runtime.GOOS)
+		return false
 	}
 }
 
-// validateDarwin validates password on macOS using dscl.
+// validateDarwin validates password on macOS using dscl, which authenticates
+// directly against the local directory service without needing a TTY.
 func (a *Authenticator) validateDarwin(ctx context.Context, username, password string) bool {
-	// Use dscl to authenticate
 	cmd := exec.CommandContext(ctx, "dscl", ".", "-authonly", username, password) //nolint:gosec // G204: System auth requires OS-level commands
-	if err := cmd.Run(); err == nil {
-		return true
-	}
-
-	// Fallback to su method
-	return a.validateWithSu(ctx, username, password)
+	return cmd.Run() == nil
 }
 
-// validateLinux validates password on Linux using PAM via su.
-func (a *Authenticator) validateLinux(ctx context.Context, username, password string) bool {
-	// Try using su to validate (this uses PAM internally)
-	return a.validateWithSu(ctx, username, password)
-}
-
-// validateWithSu validates password by attempting to run su.
-// This method works on most Unix systems as su uses PAM.
-func (a *Authenticator) validateWithSu(ctx context.Context, username, password string) bool {
-	// Use expect-like behavior with su
-	cmd := exec.CommandContext(ctx, "su", "-c", "true", username) //nolint:gosec // G204: System auth requires OS-level commands
-
-	// Create a pipe to write the password
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return false
-	}
-
-	if err := cmd.Start(); err != nil {
-		return false
-	}
-
-	// Write password
-	_, _ = stdin.Write([]byte(password + "\n")) //nolint:errcheck // Best effort password write
-	stdin.Close()
-
-	// Wait for result
-	if err := cmd.Wait(); err != nil {
-		return false
-	}
-
-	return true
+// validateLinux validates a password on Linux.
+//
+// A real implementation must call into PAM (which also honours the configured
+// 'service' field). The previous "su with password on stdin" approach did not
+// work: su reads the password from the controlling TTY (/dev/tty), not stdin,
+// so feeding the password to stdin authenticates nothing and could even succeed
+// spuriously when run from a privileged context. Because this is an
+// authentication primitive, we fail closed instead of shipping that unsafe
+// behaviour.
+//
+// To enable Linux system auth, build with a cgo-based PAM backend (not yet
+// implemented). See the 'system' auth docs.
+func (a *Authenticator) validateLinux(_ context.Context, _, _ string) bool {
+	slog.Warn("system auth: PAM password validation is not implemented on Linux; " +
+		"failing closed (the 'service' field is therefore unused on this platform)")
+	return false
 }
 
 // getUserGroups gets the groups for a user.
