@@ -1,15 +1,20 @@
 # Bifrost UCI Configuration
-# This file is used by LuCI and UCI commands
-# Changes here are NOT automatically applied to the YAML config
 #
-# To apply changes:
+# Only the 'main' section is read by the init script:
+#   - option enabled     '1' to start the service, '0' to keep it stopped
+#   - option config_file  path to the YAML config the server is launched with
+#
+# The server/socks5/logging/api sections below are DOCUMENTATION ONLY. They are
+# NOT synced into the YAML config and changing them has no effect on the running
+# server. For full configuration, edit the YAML file referenced by config_file
+# (default /etc/bifrost/config.yaml) directly, then reload:
 #   /etc/init.d/bifrost reload
-#
-# For full configuration, edit /etc/bifrost/config.yaml directly
 
 config bifrost 'main'
     option enabled '1'
     option config_file '/etc/bifrost/config.yaml'
+
+# --- The sections below are decorative placeholders only (see note above). ---
 
 config server 'http'
     option listen ':8080'

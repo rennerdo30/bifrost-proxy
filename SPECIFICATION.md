@@ -1,5 +1,18 @@
 # Bifrost Proxy - Technical Specification
 
+> [!WARNING]
+> **This document may lag the implementation.** It is a high-level architectural
+> reference and parts of it (notably some config snippets, CLI examples, and API
+> paths) can drift from the code. The authoritative, maintained documentation is
+> the Starlight site under [`docs/`](docs/) (also published to GitHub Pages).
+> When in doubt, treat the Go source — `internal/config/`, `cmd/`, and
+> `internal/api/` — as the source of truth. Key conventions to keep in mind:
+> the server listens via `server.http.listen` / `server.socks5.listen` (host:port
+> strings, not numeric `*_port` fields); routing uses top-level `routes:`;
+> authentication uses `auth.providers:` (the legacy `auth.mode` is rejected at
+> load time); CLI management subcommands live under the `ctl` command; and the
+> REST API is served under the `/api/v1` prefix.
+
 **License**: MIT License
 **Repository**: https://github.com/rennerdo30/bifrost-proxy
 **Status**: Production-ready open source software
@@ -100,302 +113,207 @@ graph TD
 
 ### 3.1 Server Configuration (`server-config.yaml`)
 
+> [!NOTE]
+> The schema below mirrors the Go structs in `internal/config/server.go`.
+> Listeners are configured with `listen` (a `host:port` string), routing uses
+> the top-level `routes:` list, and authentication uses `auth.providers:`.
+> See `configs/server-config.example.yaml` for a complete, working example.
+
 ```yaml
-# Server configuration
+# Listeners and lifecycle
 server:
-  http_port: 7080           # HTTP/HTTPS proxy port
-  socks5_port: 7180         # SOCKS5 proxy port
-  bind_address: "0.0.0.0"   # Bind to all interfaces (for clients)
-  web_ui_port: 7081         # Web UI port
-  log_level: "info"         # debug, info, warn, error
-
-  # Authentication for clients (see Section 12 for details)
-  auth:
-    mode: "none"            # none, native, system, ldap, oauth
-
-# Network settings
-network:
-  # IPv6 support
-  ipv6:
-    enabled: true           # Enable IPv6 support
-    prefer_ipv6: false      # Prefer IPv6 over IPv4 when both available
-
-  # Connection timeouts
-  timeouts:
-    connect: "10s"          # Timeout for establishing connection to backend
-    read: "30s"             # Timeout for reading response from backend
-    write: "30s"            # Timeout for writing request to backend
-    idle: "60s"             # Idle timeout before closing connection
-
-  # Keep-alive settings
-  keepalive:
-    enabled: true
-    interval: "30s"         # TCP keepalive probe interval
-    max_idle_conns: 100     # Max idle connections per backend
-    max_idle_time: "90s"    # Max time a connection can be idle
-
-  # Connection limits
-  limits:
-    max_connections: 10000           # Max total connections
-    max_connections_per_ip: 100      # Max connections per client IP
-    max_connections_per_backend: 50  # Max connections per backend
+  http:
+    listen: ":7080"           # HTTP/HTTPS (CONNECT) proxy listen address
+    read_timeout: "60s"
+    write_timeout: "60s"
+    idle_timeout: "120s"
+    max_connections: 0        # 0 = unlimited
+    # tls:                    # Optional TLS for the HTTP listener
+    #   enabled: true
+    #   cert_file: "/path/to/cert.pem"
+    #   key_file: "/path/to/key.pem"
+  socks5:
+    listen: ":7180"           # SOCKS5 proxy listen address
+    max_connections: 0
+  graceful_period: "30s"      # Drain time on shutdown
 
 > [!TIP]
 > Use environment variables (e.g., `${OAUTH_CLIENT_SECRET}`) for sensitive credentials to avoid committing them to version control.
 
-# Rate limiting
-rate_limiting:
-  enabled: true
-  # Global rate limits
-  global:
-    requests_per_second: 1000
-    burst: 100
-  # Per-IP rate limits
-  per_ip:
-    requests_per_second: 100
-    burst: 20
-  # Per-user rate limits (when auth enabled)
-  per_user:
-    requests_per_second: 200
-    burst: 50
-  # Bandwidth throttling
-  bandwidth:
-    enabled: false
-    max_mbps_per_connection: 100    # Max Mbps per connection (0 = unlimited)
-    max_mbps_per_ip: 500            # Max Mbps per client IP
-    max_mbps_total: 10000           # Max total bandwidth
-
-# IP Access Control
-access_control:
-  # IP whitelist (if set, only these IPs can connect)
-  whitelist: []
-    # - "192.168.1.0/24"
-    # - "10.0.0.0/8"
-  # IP blacklist (these IPs are always blocked)
-  blacklist: []
-    # - "1.2.3.4"
-    # - "5.6.7.0/24"
-
-# Access logging
-access_log:
-  enabled: true
-  format: "json"            # json, apache_combined, apache_common
-  output: "file"            # file, stdout, both
-  file: "/var/log/proxy/access.log"
-  # Fields to include
-  fields:
-    - timestamp
-    - client_ip
-    - username
-    - method
-    - host
-    - path
-    - status
-    - bytes_sent
-    - duration
-    - backend
-    - user_agent
-  # Sensitive header masking
-  mask_headers:
-    - "Authorization"
-    - "Cookie"
-    - "X-Api-Key"
-
-# Backend definitions
+# Backend definitions. Type-specific settings live under `config:` (a free-form
+# map), not under a type-named key.
 backends:
   # Direct connection (no proxy)
   - name: "direct"
     type: "direct"
+    enabled: true
+    priority: 10
 
   # WireGuard tunnel
   - name: "germany"
     type: "wireguard"
-    wireguard:
+    enabled: true
+    priority: 5
+    config:
       config_file: "/path/to/germany.conf"
-    # Health check configuration (optional, per backend)
+    # Optional per-backend health check
     health_check:
-      enabled: true
-      interval: "30s"           # How often to check
-      timeout: "5s"             # Health check timeout
-      type: "tcp"               # tcp, http, or ping
-      # For HTTP health checks:
-      # type: "http"
-      # http:
-      #   url: "http://example.com/health"
-      #   expected_status: 200
-
-  - name: "japan"
-    type: "wireguard"
-    wireguard:
-      config_file: "/path/to/japan.conf"
-    health_check:
-      enabled: true
+      type: "tcp"             # tcp, http, or ping
       interval: "30s"
       timeout: "5s"
-      type: "tcp"
 
   # OpenVPN tunnel
   - name: "uk-vpn"
     type: "openvpn"
-    openvpn:
+    enabled: true
+    config:
       config_file: "/path/to/uk.ovpn"
       auth_file: "/path/to/uk-auth.txt"  # Optional: username/password file
 
-  # Traditional forward proxy
+  # Traditional forward HTTP proxy
   - name: "us-proxy"
-    type: "http"
-    proxy:
+    type: "http_proxy"
+    enabled: true
+    config:
       address: "proxy.example.com:7080"
       username: ""
       password: ""
 
   # SOCKS5 forward proxy
   - name: "socks-proxy"
-    type: "socks5"
-    proxy:
+    type: "socks5_proxy"
+    enabled: true
+    config:
       address: "socks.example.com:7180"
-      username: ""
-      password: ""
 
-  # NordVPN - automatic server selection with WireGuard
-  - name: "nordvpn-us"
-    type: "nordvpn"
-    nordvpn:
-      country: "US"              # ISO country code
-      city: "New York"           # Optional: specific city
-      protocol: "wireguard"      # wireguard or openvpn
-      auto_select: true          # Auto-select best server
-      max_load: 50               # Skip servers above 50% load
-
-  # Mullvad - account number authentication
-  - name: "mullvad-de"
-    type: "mullvad"
-    mullvad:
-      account_id: "1234567890123456"  # 16-digit account number
-      country: "DE"
-      city: ""                   # Optional
-      protocol: "wireguard"
-      auto_select: true
-
-  # PIA (Private Internet Access) - username/password auth
-  - name: "pia-uk"
-    type: "pia"
-    pia:
-      username: "p1234567"
-      password: "${PIA_PASSWORD}"  # Use env var for security
-      country: "UK"
-      protocol: "wireguard"
-      port_forwarding: true      # Enable PIA port forwarding
-
-  # ProtonVPN - OpenVPN credentials from account portal
-  - name: "proton-ch"
-    type: "protonvpn"
-    protonvpn:
-      username: "username+pmp"   # OpenVPN/IKEv2 username from account.protonvpn.com
-      password: "${PROTON_PASSWORD}"
-      country: "CH"
-      tier: "plus"               # free, basic, plus, visionary
-      secure_core: false         # Enable Secure Core routing
-      protocol: "openvpn"        # Currently OpenVPN only
-
-# Routing rules (evaluated in order, first match wins)
-rules:
+# Routing rules (top-level `routes:`, evaluated by priority; higher first)
+routes:
   - name: "Crunchyroll via Germany"
-    match:
-      domains:
-        - "*.crunchyroll.com"
-        - "crunchyroll.com"
+    domains:
+      - "*.crunchyroll.com"
+      - "crunchyroll.com"
     backend: "germany"
+    priority: 100
 
-  - name: "Anime via Japan"
-    match:
-      domains:
-        - "*.funimation.com"
-        - "*.animelab.com"
-    backend: "japan"
-
+  # Load balancing across multiple backends for one route
   - name: "US streaming"
-    match:
-      domains:
-        - "*.netflix.com"
-        - "*.hulu.com"
-    backend: "us-proxy"
+    domains:
+      - "*.netflix.com"
+      - "*.hulu.com"
+    backends: ["us-proxy", "us-proxy-2"]
+    load_balance: "round_robin"   # round_robin, least_conn, ip_hash, weighted
+    priority: 50
 
-  # Default rule (always last)
+  # Default route (lowest priority)
   - name: "Default"
-    match:
-      domains:
-        - "*"
+    domains: ["*"]
     backend: "direct"
+    priority: 1
+
+# Authentication: an ordered list of provider plugins (see Section 14/17).
+auth:
+  providers:
+    - name: "default"
+      type: "none"            # none, native, system, ldap, oauth, apikey, jwt, ...
+      enabled: true
+      priority: 1
+      config: {}              # plugin-specific settings
+
+# Rate limiting (flat keys; bandwidth throttling is nested under `bandwidth`)
+rate_limit:
+  enabled: true
+  requests_per_second: 1000
+  burst_size: 100
+  per_ip: true
+  per_user: false
+  bandwidth:
+    enabled: false
+    upload: "10Mbps"          # Per-connection upload cap
+    download: "100Mbps"       # Per-connection download cap
+
+# IP access control
+access_control:
+  whitelist: []               # If non-empty, only these IPs/CIDRs may connect
+  blacklist: []               # These IPs/CIDRs are always blocked
+
+# Access logging
+access_log:
+  enabled: true
+  format: "json"              # json, apache
+  output: "stdout"            # stdout or a file path
+
+# Logging (no built-in rotation; rotate externally with logrotate)
+logging:
+  level: "info"               # debug, info, warn, error
+  format: "json"              # json, text
+  output: "stdout"            # stdout, stderr, or a file path
+
+# Metrics, Web UI, and REST API
+metrics:
+  enabled: true
+web_ui:
+  enabled: true
+api:
+  enabled: true
+  listen: ":7082"
 ```
 
 ### 3.2 Client Configuration (`client-config.yaml`)
 
+> [!NOTE]
+> The schema below mirrors the Go structs in `internal/config/client.go`. Local
+> listeners live under `proxy.http` / `proxy.socks5` with `listen` (host:port)
+> strings, and client-side routing uses a top-level `routes:` list where each
+> route has an `action` of `direct` or `server`. See
+> `configs/client-config.example.yaml` for a complete example.
+
 ```yaml
-# Client configuration
-client:
-  http_port: 7380           # Local HTTP/HTTPS proxy port
-  socks5_port: 7381         # Local SOCKS5 proxy port
-  bind_address: "127.0.0.1" # Only local connections
-  web_ui_port: 7382         # Web UI port
-  log_level: "info"
+# Local proxy listeners
+proxy:
+  http:
+    listen: "127.0.0.1:7380"    # Local HTTP/HTTPS proxy
+    read_timeout: "30s"
+    write_timeout: "30s"
+    idle_timeout: "60s"
+  socks5:
+    listen: "127.0.0.1:7381"    # Local SOCKS5 proxy
 
-# System tray configuration
-tray:
-  enabled: true             # Enable system tray icon
-  start_minimized: false    # Start minimized to tray
-  show_notifications: true  # Show desktop notifications for events
-  autostart: false          # Start on system login (registers with OS)
-
-# Server connection
+# Bifrost server connection
 server:
   address: "proxy-server.example.com:7080"
-  protocol: "http"          # http, https, socks5
-  auth:
-    enabled: false
-    username: ""
-    password: ""
+  protocol: "http"              # http or socks5
+  # username: "user"            # Optional auth
+  # password: "pass"
+  timeout: "30s"
+  retry_count: 3
+  retry_delay: "1s"
+
+# Client-side routing: action is "direct" (bypass server) or "server" (tunnel)
+routes:
+  - domains: ["*.crunchyroll.com", "*.netflix.com"]
+    action: "server"
+    priority: 100
+
+  - domains: ["localhost", "127.0.0.1", "*.local"]
+    action: "direct"
+    priority: 50
+
+  # Everything else through the server
+  - domains: ["*"]
+    action: "server"
+    priority: 1
 
 # Traffic debugging
 debug:
   enabled: true
-  log_requests: true        # Log all requests
-  log_responses: true       # Log response status/timing
-  log_headers: false        # Log request/response headers (verbose)
-  log_body: false           # Log body content (very verbose, use with caution)
-  max_body_log_size: 1024   # Max bytes to log from body
-  output: "file"            # file, stdout, both
-  log_file: "./traffic.log"
+  max_entries: 1000             # Entries kept in memory
+  capture_body: false           # Capture request/response bodies (high memory)
+  max_body_size: 65536          # Max body bytes captured when capture_body is true
+  # filter_domains: ["*.example.com"]
 
-  # Filter what to debug
-  filter:
-    domains: []             # Empty = all, or specify domains to debug
-    methods: []             # Empty = all, or ["GET", "POST", etc.]
-    status_codes: []        # Empty = all, or [400, 500] for errors only
-
-# Routing rules - what goes to server vs direct
-rules:
-  # Traffic that needs special routing goes to server
-  - name: "Streaming sites via server"
-    match:
-      domains:
-        - "*.crunchyroll.com"
-        - "*.netflix.com"
-        - "*.funimation.com"
-    action: "server"        # Route through proxy server
-
-  - name: "Work sites via server"
-    match:
-      domains:
-        - "*.company.com"
-    action: "server"
-
-  # Everything else goes direct
-  - name: "Default direct"
-    match:
-      domains:
-        - "*"
-    action: "direct"        # Direct connection (bypass server)
+# System tray (when running with a GUI environment)
+tray:
+  enabled: true
 ```
 
 ### 3.3 WireGuard Configuration Reference
@@ -497,32 +415,30 @@ GET  /api/debug/stats            - Traffic statistics
 
 ### 5.1 Server CLI Commands
 
+Runtime management commands talk to a running server via its REST API and live
+under the `ctl` subcommand.
+
 ```bash
 # Start the server
 bifrost-server start
 bifrost-server start --config /path/to/server-config.yaml
 
-# Stop the server (graceful)
-bifrost-server stop
+# Validate a config file without starting
+bifrost-server validate --config /path/to/server-config.yaml
 
-# Status
-bifrost-server status
-
-# Backend management
-bifrost-server backend list
-bifrost-server backend add --name "japan" --type wireguard --config /path/to/japan.conf
-bifrost-server backend remove --name "japan"
-bifrost-server backend test --name "germany"
-
-# Rule management
-bifrost-server rule list
-bifrost-server rule add --name "Anime" --domain "*.crunchyroll.com" --backend "germany"
-bifrost-server rule remove --name "Anime"
-
-# Configuration
-bifrost-server config show
-bifrost-server config reload
-bifrost-server config validate
+# Runtime control (via REST API; `ctl` subcommands)
+bifrost-server ctl status
+bifrost-server ctl backend list
+bifrost-server ctl backend show germany
+bifrost-server ctl backend add japan --type wireguard
+bifrost-server ctl backend remove japan
+bifrost-server ctl backend test germany
+bifrost-server ctl rule list
+bifrost-server ctl rule add anime --domain "*.crunchyroll.com" --backend germany
+bifrost-server ctl rule remove anime
+bifrost-server ctl config reload
+bifrost-server ctl stats
+bifrost-server ctl health
 
 # Service management (install as system service)
 bifrost-server service install --config /path/to/config.yaml
@@ -536,34 +452,37 @@ bifrost-server update install --channel stable
 
 ### 5.2 Client CLI Commands
 
+As with the server, runtime control commands live under `ctl` and talk to the
+running client's REST API.
+
 ```bash
 # Start the client
 bifrost-client start
 bifrost-client start --config /path/to/client-config.yaml
 
-# Stop the client
-bifrost-client stop
+# Initialize a default config
+bifrost-client config init
 
-# Status (includes server connection status)
-bifrost-client status
+# Runtime control (via REST API; `ctl` subcommands)
+bifrost-client ctl status
+bifrost-client ctl routes list
+bifrost-client ctl routes test example.com
+bifrost-client ctl routes add work --domain "*.company.com"
+bifrost-client ctl routes remove work
+bifrost-client ctl health
 
-# Rule management (client-side routing)
-bifrost-client rule list
-bifrost-client rule add --name "Work" --domain "*.company.com" --action server
-bifrost-client rule add --name "Direct" --domain "*.local" --action direct
-bifrost-client rule remove --name "Work"
+# Debug / traffic inspection
+bifrost-client ctl debug tail
+bifrost-client ctl debug clear
+bifrost-client ctl debug errors
+bifrost-client ctl debug export --output traffic.har
 
-# Debug commands
-bifrost-client debug on                    # Enable debugging
-bifrost-client debug off                   # Disable debugging
-bifrost-client debug tail                  # Tail traffic log
-bifrost-client debug tail --filter "crunchyroll"
-bifrost-client debug clear                 # Clear traffic log
-bifrost-client debug export --output traffic.har  # Export as HAR file
-
-# Configuration
-bifrost-client config show
-bifrost-client config reload
+# VPN (TUN) mode and split tunneling
+bifrost-client ctl vpn status
+bifrost-client ctl vpn enable
+bifrost-client ctl vpn disable
+bifrost-client ctl vpn split list
+bifrost-client ctl vpn split add-domain "*.internal.company.com"
 
 # Service management (install as system service)
 bifrost-client service install --config /path/to/config.yaml
@@ -577,44 +496,61 @@ bifrost-client update install --channel stable
 
 ### 5.3 Server REST API
 
+All endpoints are served under the `/api/v1` prefix.
+
 ```
-GET    /api/status              - Server status
-GET    /api/backends            - List backends
-POST   /api/backends            - Add backend
-DELETE /api/backends/:name      - Remove backend
-POST   /api/backends/:name/test - Test backend connectivity
+GET    /api/v1/health               - Health check
+GET    /api/v1/version              - Build/version info
+GET    /api/v1/status               - Server status
+GET    /api/v1/stats                - Traffic statistics
 
-GET    /api/rules               - List rules
-POST   /api/rules               - Add rule
-PUT    /api/rules/:name         - Update rule
-DELETE /api/rules/:name         - Remove rule
-POST   /api/rules/reorder       - Reorder rules
+GET    /api/v1/backends             - List backends
+POST   /api/v1/backends             - Add backend
+GET    /api/v1/backends/{name}      - Get backend
+DELETE /api/v1/backends/{name}      - Remove backend
+GET    /api/v1/backends/{name}/stats - Backend statistics
+POST   /api/v1/backends/{name}/test  - Test backend connectivity
 
-GET    /api/config              - Get config
-POST   /api/config/reload       - Reload config
+GET    /api/v1/routes               - List routes
+POST   /api/v1/routes               - Add route
+... (route management)
 
-GET    /api/stats               - Traffic statistics
-GET    /api/clients             - Connected clients (if auth enabled)
+GET    /api/v1/config               - Get config
+GET    /api/v1/config/full          - Get full resolved config
+GET    /api/v1/config/meta          - Config field metadata (reload vs restart)
+PUT    /api/v1/config               - Save config
+POST   /api/v1/config/validate      - Validate config
+POST   /api/v1/config/reload        - Reload config
+
+GET    /api/v1/requests             - Recent proxied requests
+GET    /api/v1/connections          - Active connections
 ```
 
 ### 5.4 Client REST API
 
+All endpoints are served under the `/api/v1` prefix.
+
 ```
-GET    /api/status              - Client status + server connection
-GET    /api/rules               - List routing rules
-POST   /api/rules               - Add rule
-DELETE /api/rules/:name         - Remove rule
+GET    /api/v1/health           - Health check
+GET    /api/v1/status           - Client status + server connection
+POST   /api/v1/connect          - Connect to server
+POST   /api/v1/disconnect       - Disconnect
 
-GET    /api/debug/status        - Debug status
-POST   /api/debug/enable        - Enable debugging
-POST   /api/debug/disable       - Disable debugging
-GET    /api/debug/traffic       - Recent traffic
-GET    /api/debug/traffic/stream - WebSocket for live traffic
-POST   /api/debug/clear         - Clear traffic log
-GET    /api/debug/stats         - Traffic statistics
+GET    /api/v1/servers          - List configured servers
+POST   /api/v1/server/select    - Select active server
 
-GET    /api/config              - Get config
-POST   /api/config/reload       - Reload config
+GET    /api/v1/settings         - Get settings
+POST   /api/v1/settings         - Update settings
+
+GET    /api/v1/routes           - List routing rules (and management)
+GET    /api/v1/debug/...        - Traffic debugging (recent traffic, live WebSocket, clear)
+GET    /api/v1/vpn/...          - VPN/TUN mode control and split tunneling
+GET    /api/v1/cache/...        - Client-side cache control
+GET    /api/v1/mesh/...         - Mesh networking
+GET    /api/v1/logs             - Log streaming
+
+GET    /api/v1/config           - Get config
+POST   /api/v1/config/reload    - Reload config
 ```
 
 ## 6. Technical Details
@@ -923,7 +859,7 @@ proxy_config_reload_errors_total 0
 
 ### 12.3 Grafana Dashboard
 
-Pre-built Grafana dashboard available at `assets/grafana-dashboard.json` with:
+Pre-built Grafana dashboard available at `docker/grafana/dashboards/bifrost-overview.json` with:
 - Request rate and error rate graphs
 - Backend health status
 - Latency histograms
@@ -1004,102 +940,90 @@ reload:
 
 ## 14. Authentication (Server)
 
-The server supports multiple authentication modes for client connections.
+The server supports modular authentication via a list of provider plugins under
+`auth.providers`.
 
-### 14.1 Authentication Modes
+> [!IMPORTANT]
+> The legacy `auth.mode` field (and the legacy type-specific top-level blocks
+> such as `auth.native:` / `auth.ldap:`) are **deprecated and rejected at config
+> load time**. Use `auth.providers` instead. Each provider has a `type`, an
+> `enabled` flag, a `priority` (lower is tried first), and a plugin-specific
+> `config` map. See Section 17 for the full plugin catalog.
 
-| Mode | Description | Use Case |
+### 14.1 Provider Types
+
+| Type | Description | Use Case |
 |------|-------------|----------|
 | `none` | No authentication required | Development, trusted networks |
 | `native` | Server-managed users/passwords | Simple deployments |
 | `system` | OS user authentication (PAM/Windows) | Single-server with OS users |
 | `ldap` | LDAP/Active Directory | Enterprise environments |
 | `oauth` | OAuth 2.0 / OpenID Connect | SSO integration |
+| `apikey`, `jwt`, `mtls`, `totp`, `hotp`, `kerberos`, `ntlm` | See Section 17 | Various |
 
 ### 14.2 Configuration Examples
 
 #### No Authentication
 ```yaml
 auth:
-  mode: "none"
+  providers:
+    - name: "open"
+      type: "none"
+      enabled: true
+      priority: 1
 ```
 
 #### Native Authentication
 ```yaml
 auth:
-  mode: "native"
-  native:
-    users:
-      - username: "user1"
-        password_hash: "$2a$10$..."  # bcrypt hash
-        groups: ["streaming", "work"]
-      - username: "user2"
-        password_hash: "$2a$10$..."
-        groups: ["streaming"]
-    # Optional: allow rule-based access control
-    acl:
-      - group: "streaming"
-        backends: ["germany", "japan"]
-      - group: "work"
-        backends: ["*"]
+  providers:
+    - name: "users"
+      type: "native"
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: "user1"
+            password_hash: "$2a$10$..."  # bcrypt hash
+          - username: "user2"
+            password_hash: "$2a$10$..."
 ```
 
-#### System Authentication (PAM/Windows)
+#### LDAP / Active Directory
 ```yaml
 auth:
-  mode: "system"
-  system:
-    # Linux: uses PAM
-    # Windows: uses Windows authentication
-    # macOS: uses Directory Services
-    allowed_groups: ["proxy-users", "admins"]  # OS groups allowed to use proxy
-```
-
-#### LDAP/Active Directory
-```yaml
-auth:
-  mode: "ldap"
-  ldap:
-    server: "ldap://ldap.example.com:389"
-    # or for LDAPS:
-    # server: "ldaps://ldap.example.com:636"
-    bind_dn: "cn=service,dc=example,dc=com"
-    bind_password: "${LDAP_BIND_PASSWORD}"  # Environment variable
-    base_dn: "dc=example,dc=com"
-    user_filter: "(sAMAccountName=%s)"      # %s = username
-    group_filter: "(member=%s)"             # %s = user DN
-    allowed_groups:
-      - "CN=ProxyUsers,OU=Groups,DC=example,DC=com"
-    # TLS settings
-    tls:
-      skip_verify: false
-      ca_cert: "/path/to/ca.crt"
+  providers:
+    - name: "corp-ldap"
+      type: "ldap"
+      enabled: true
+      priority: 1
+      config:
+        url: "ldaps://ldap.example.com:636"
+        bind_dn: "cn=service,dc=example,dc=com"
+        bind_password: "${LDAP_BIND_PASSWORD}"
+        base_dn: "dc=example,dc=com"
+        user_filter: "(sAMAccountName=%s)"
 ```
 
 #### OAuth 2.0 / OpenID Connect
 ```yaml
 auth:
-  mode: "oauth"
-  oauth:
-    provider: "generic"     # generic, google, azure, okta
-    client_id: "${OAUTH_CLIENT_ID}"
-    client_secret: "${OAUTH_CLIENT_SECRET}"
-    # For generic provider:
-    auth_url: "https://auth.example.com/authorize"
-    token_url: "https://auth.example.com/token"
-    userinfo_url: "https://auth.example.com/userinfo"
-    # Scopes to request
-    scopes: ["openid", "profile", "groups"]
-    # Claim to use as username
-    username_claim: "preferred_username"
-    # Claim to use for group membership
-    groups_claim: "groups"
-    allowed_groups: ["proxy-users"]
-    # Token validation
-    jwt:
-      issuer: "https://auth.example.com"
-      audience: "bifrost-proxy"
+  providers:
+    - name: "sso"
+      type: "oauth"
+      enabled: true
+      priority: 1
+      config:
+        client_id: "${OAUTH_CLIENT_ID}"
+        client_secret: "${OAUTH_CLIENT_SECRET}"
+        auth_url: "https://auth.example.com/authorize"
+        token_url: "https://auth.example.com/token"
+        userinfo_url: "https://auth.example.com/userinfo"
+        scopes: ["openid", "profile", "groups"]
 ```
+
+Multiple providers may be enabled simultaneously; they are tried in `priority`
+order until one authenticates the request.
 
 ### 14.3 Proxy-Authorization Header
 
@@ -1178,13 +1102,15 @@ rules:
 
 ### 16.1 Documentation System
 
-The project uses [MkDocs](https://www.mkdocs.org/) with the [Material theme](https://squidfunk.github.io/mkdocs-material/) for documentation, deployed to GitHub Pages.
+The project uses [Astro](https://astro.build/) with the
+[Starlight](https://starlight.astro.build/) documentation theme, deployed to
+GitHub Pages.
 
-**Location**: `docs/` directory (Markdown source files)
+**Location**: `docs/` directory (Astro/Starlight project; content under `docs/src/content/docs/`)
 
-**Configuration**: `mkdocs.yml`
+**Configuration**: `docs/astro.config.mjs`
 
-**Build**: `make docs-build` or `make docs-serve` (local development)
+**Build**: `make docs-build` (runs `npm run build` in `docs/`) or `make docs-serve` for local development
 
 **Deployment**: Automatically deployed via GitHub Actions workflow (`.github/workflows/docs.yml`)
 
@@ -1195,7 +1121,7 @@ The project uses [MkDocs](https://www.mkdocs.org/) with the [Material theme](htt
 All diagrams in the documentation use **Mermaid** for rendering. Mermaid provides interactive, scalable diagrams that work well in web browsers.
 
 **Why Mermaid?**
-- Native support in MkDocs Material theme
+- Supported in the Astro/Starlight docs site (via the Mermaid integration) and in GitHub Markdown
 - Interactive and scalable
 - Text-based (version control friendly)
 - Wide variety of diagram types
@@ -1246,8 +1172,8 @@ graph LR
 ### 16.3 Documentation Workflow
 
 **Automatic Deployment:**
-- Triggers on push to `main` branch when files in `docs/`, `mkdocs.yml`, `README.md`, `CHANGELOG.md`, or `CONTRIBUTING.md` change
-- Builds documentation using Python/MkDocs
+- Triggers on push to `main` branch when files in `docs/`, `README.md`, `CHANGELOG.md`, or `CONTRIBUTING.md` change
+- Builds documentation using Node.js (Astro/Starlight, `npm run build` in `docs/`)
 - Deploys to GitHub Pages automatically
 
 **Manual Trigger:**
@@ -1338,25 +1264,16 @@ type Plugin interface {
 
 ### 17.3 MFA Wrapper
 
-The MFA wrapper allows combining a primary authentication method with an OTP provider:
+The MFA wrapper allows combining a primary authentication method with an OTP
+provider.
 
-```yaml
-auth:
-  mode: mfa_wrapper
-  mfa_wrapper:
-    primary:
-      mode: native
-      native:
-        users:
-          - username: admin
-            password_hash: "$2a$10$..."
-    secondary:
-      mode: totp
-      totp:
-        issuer: "Bifrost"
-        secrets:
-          admin: "JBSWY3DPEHPK3PXP"
-```
+> [!NOTE]
+> Like all auth configuration, the MFA wrapper is declared as a provider under
+> `auth.providers` with a `config` map (the legacy top-level `auth.mode` /
+> `auth.mfa_wrapper` form is rejected). The exact `config` keys are
+> plugin-specific — consult `internal/auth/` and the Starlight docs for the
+> authoritative shape. Conceptually it nests a primary provider and a secondary
+> OTP provider (e.g. `native` + `totp`).
 
 ### 17.4 Session Management
 
