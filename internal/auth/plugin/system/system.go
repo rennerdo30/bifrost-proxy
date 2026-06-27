@@ -228,23 +228,12 @@ func (a *Authenticator) validateDarwin(ctx context.Context, username, password s
 	return cmd.Run() == nil
 }
 
-// validateLinux validates a password on Linux.
+// NOTE: validateLinux is defined in platform/build-tag-specific files:
+//   - pam_linux.go    (//go:build linux && cgo && pam): real libpam backend
+//   - pam_stub.go     (//go:build linux && !(cgo && pam)): fail-closed stub
 //
-// A real implementation must call into PAM (which also honors the configured
-// 'service' field). The previous "su with password on stdin" approach did not
-// work: su reads the password from the controlling TTY (/dev/tty), not stdin,
-// so feeding the password to stdin authenticates nothing and could even succeed
-// spuriously when run from a privileged context. Because this is an
-// authentication primitive, we fail closed instead of shipping that unsafe
-// behavior.
-//
-// To enable Linux system auth, build with a cgo-based PAM backend (not yet
-// implemented). See the 'system' auth docs.
-func (a *Authenticator) validateLinux(_ context.Context, _, _ string) bool {
-	slog.Warn("system auth: PAM password validation is not implemented on Linux; " +
-		"failing closed (the 'service' field is therefore unused on this platform)")
-	return false
-}
+// The default build (no 'pam' tag) compiles the stub so CI, which lacks libpam
+// headers, stays green. See docs and pam_linux.go for how to build with PAM.
 
 // getUserGroups gets the groups for a user.
 func (a *Authenticator) getUserGroups(sysUser *user.User) ([]string, error) {

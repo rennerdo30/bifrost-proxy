@@ -103,6 +103,57 @@ func (l *Logger) LogResponse(ctx context.Context, host string, statusCode int, h
 	l.storage.Add(entry)
 }
 
+// LogInterceptedRequest logs a request observed via HTTPS interception (MITM).
+// It is identical to LogRequest but stamps Protocol="https" so consumers can
+// distinguish decrypted traffic from plaintext.
+func (l *Logger) LogInterceptedRequest(ctx context.Context, host, method, path string, headers map[string]string, body []byte) {
+	entry := Entry{
+		ID:             l.nextID(),
+		Timestamp:      time.Now(),
+		Type:           EntryTypeRequest,
+		Protocol:       "https",
+		Host:           host,
+		Method:         method,
+		Path:           path,
+		ClientAddr:     util.GetClientIP(ctx),
+		Action:         util.GetBackend(ctx),
+		RequestHeaders: headers,
+	}
+	if l.captureBody && len(body) > 0 {
+		if len(body) > l.maxBodySize {
+			body = body[:l.maxBodySize]
+		}
+		entry.RequestBody = body
+	}
+	l.storage.Add(entry)
+}
+
+// LogInterceptedResponse logs a response observed via HTTPS interception (MITM).
+// It mirrors LogResponse but stamps Protocol="https".
+func (l *Logger) LogInterceptedResponse(ctx context.Context, host string, statusCode int, headers map[string]string, body []byte, duration time.Duration, bytesSent, bytesRecv int64) {
+	entry := Entry{
+		ID:              l.nextID(),
+		Timestamp:       time.Now(),
+		Type:            EntryTypeResponse,
+		Protocol:        "https",
+		Host:            host,
+		StatusCode:      statusCode,
+		Duration:        duration,
+		BytesSent:       bytesSent,
+		BytesReceived:   bytesRecv,
+		ClientAddr:      util.GetClientIP(ctx),
+		Action:          util.GetBackend(ctx),
+		ResponseHeaders: headers,
+	}
+	if l.captureBody && len(body) > 0 {
+		if len(body) > l.maxBodySize {
+			body = body[:l.maxBodySize]
+		}
+		entry.ResponseBody = body
+	}
+	l.storage.Add(entry)
+}
+
 // LogError logs an error event.
 func (l *Logger) LogError(ctx context.Context, host string, err error) {
 	entry := Entry{

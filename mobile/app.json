@@ -22,6 +22,11 @@
           "fetch",
           "remote-notification"
         ]
+      },
+      "entitlements": {
+        "com.apple.developer.networking.networkextension": [
+          "packet-tunnel-provider"
+        ]
       }
     },
     "android": {
@@ -32,9 +37,19 @@
       "package": "com.bifrost.vpn",
       "permissions": [
         "android.permission.INTERNET",
-        "android.permission.ACCESS_NETWORK_STATE"
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
-    "plugins": []
+    "extra": {
+      "eas": {
+        "projectId": "00000000-0000-0000-0000-000000000000"
+      }
+    },
+    "plugins": [
+      "./plugins/withBifrostVpn"
+    ]
   }
 }

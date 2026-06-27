@@ -450,6 +450,193 @@ func TestNTLMAuthenticator_GenerateChallenge(t *testing.T) {
 	assert.Equal(t, "NTLMSSP", string(challenge[:7]))
 }
 
+// parseType2 parses an NTLM Type 2 (Challenge) message into its constituent
+// security buffers. It mirrors the on-wire layout produced by the plugin and is
+// used to assert that the target-info AV pairs are emitted.
+type parsedType2 struct {
+	flags      uint32
+	challenge  []byte
+	targetName []byte
+	targetInfo []byte
+}
+
+func parseType2(t *testing.T, msg []byte) parsedType2 {
+	t.Helper()
+	require.GreaterOrEqual(t, len(msg), 48, "type 2 message too short")
+	require.Equal(t, "NTLMSSP\x00", string(msg[:8]))
+	require.Equal(t, uint32(2), binary.LittleEndian.Uint32(msg[8:12]))
+
+	readBuf := func(off int) []byte {
+		l := binary.LittleEndian.Uint16(msg[off : off+2])
+		o := binary.LittleEndian.Uint32(msg[off+4 : off+8])
+		if l == 0 {
+			return nil
+		}
+		require.LessOrEqual(t, int(o)+int(l), len(msg), "security buffer out of bounds")
+		return msg[o : o+uint32(l)]
+	}
+
+	return parsedType2{
+		flags:      binary.LittleEndian.Uint32(msg[20:24]),
+		challenge:  append([]byte(nil), msg[24:32]...),
+		targetName: readBuf(12),
+		targetInfo: readBuf(40),
+	}
+}
+
+// parseAVPairs decodes a target-info block into a map of AV-pair ID -> raw value.
+func parseAVPairs(t *testing.T, info []byte) map[uint16][]byte {
+	t.Helper()
+	out := make(map[uint16][]byte)
+	i := 0
+	for i+4 <= len(info) {
+		id := binary.LittleEndian.Uint16(info[i : i+2])
+		l := binary.LittleEndian.Uint16(info[i+2 : i+4])
+		i += 4
+		if id == 0x0000 { // MsvAvEOL
+			require.Equal(t, uint16(0), l, "EOL pair must have zero length")
+			return out
+		}
+		require.LessOrEqual(t, i+int(l), len(info), "AV pair value out of bounds")
+		out[id] = append([]byte(nil), info[i:i+int(l)]...)
+		i += int(l)
+	}
+	t.Fatalf("target info missing terminating MsvAvEOL pair")
+	return out
+}
+
+func decodeUTF16LETest(b []byte) string {
+	if len(b)%2 != 0 {
+		return ""
+	}
+	u16s := make([]uint16, len(b)/2)
+	for i := range u16s {
+		u16s[i] = binary.LittleEndian.Uint16(b[i*2:])
+	}
+	return string(utf16.Decode(u16s))
+}
+
+func TestNTLMAuthenticator_Type2TargetInfo(t *testing.T) {
+	factory := auth.NewFactory()
+	authenticator, err := factory.Create(auth.ProviderConfig{
+		Name:    "ntlm-test",
+		Type:    "ntlm",
+		Enabled: true,
+		Config:  map[string]any{"domain": "corp.example.com"},
+	})
+	require.NoError(t, err)
+
+	ntlmAuth, ok := authenticator.(*ntlm.Authenticator)
+	require.True(t, ok)
+
+	msg, err := ntlmAuth.GenerateChallenge(createNTLMType1(), "session-ti")
+	require.NoError(t, err)
+
+	p := parseType2(t, msg)
+
+	// Target name is the uppercased domain.
+	assert.Equal(t, "CORP.EXAMPLE.COM", decodeUTF16LETest(p.targetName))
+
+	// Server challenge is 8 bytes and not all-zero (random).
+	require.Len(t, p.challenge, 8)
+	assert.NotEqual(t, make([]byte, 8), p.challenge, "challenge should be random, not zero")
+
+	// Flags advertise unicode, target info, and domain target type.
+	const (
+		fUnicode    = 0x00000001
+		fTargetInfo = 0x00800000
+		fTargetDom  = 0x00010000
+		fRequestTgt = 0x00000004
+	)
+	assert.NotZero(t, p.flags&fUnicode, "unicode flag must be set")
+	assert.NotZero(t, p.flags&fTargetInfo, "target info flag must be set")
+	assert.NotZero(t, p.flags&fTargetDom, "target type domain flag must be set")
+	assert.NotZero(t, p.flags&fRequestTgt, "request target flag must be set")
+
+	// Target info must be non-empty and contain the expected AV pairs.
+	require.NotEmpty(t, p.targetInfo, "target info block must be present")
+	pairs := parseAVPairs(t, p.targetInfo)
+
+	const (
+		avNbComputer  = 0x0001
+		avNbDomain    = 0x0002
+		avDNSComputer = 0x0003
+		avDNSDomain   = 0x0004
+		avTimestamp   = 0x0007
+	)
+
+	require.Contains(t, pairs, uint16(avNbDomain))
+	assert.Equal(t, "CORP.EXAMPLE.COM", decodeUTF16LETest(pairs[avNbDomain]))
+
+	require.Contains(t, pairs, uint16(avNbComputer))
+	// NetBIOS computer name is the leading label, truncated to 15 chars.
+	assert.Equal(t, "CORP", decodeUTF16LETest(pairs[avNbComputer]))
+
+	require.Contains(t, pairs, uint16(avDNSDomain))
+	assert.Equal(t, "corp.example.com", decodeUTF16LETest(pairs[avDNSDomain]))
+
+	require.Contains(t, pairs, uint16(avDNSComputer))
+	assert.Equal(t, "corp.example.com", decodeUTF16LETest(pairs[avDNSComputer]))
+
+	require.Contains(t, pairs, uint16(avTimestamp))
+	require.Len(t, pairs[avTimestamp], 8, "timestamp must be an 8-byte FILETIME")
+	ft := binary.LittleEndian.Uint64(pairs[avTimestamp])
+	assert.NotZero(t, ft, "timestamp must be set")
+	// Sanity: FILETIME for a recent time is well above the 1970 epoch delta.
+	assert.Greater(t, ft, uint64(11644473600)*10000000)
+}
+
+func TestNTLMAuthenticator_Type2TargetInfo_LongDomainTruncation(t *testing.T) {
+	factory := auth.NewFactory()
+	authenticator, err := factory.Create(auth.ProviderConfig{
+		Name:    "ntlm-test",
+		Type:    "ntlm",
+		Enabled: true,
+		// Leading label longer than 15 chars exercises NetBIOS truncation.
+		Config: map[string]any{"domain": "verylongdomainname.example.com"},
+	})
+	require.NoError(t, err)
+
+	ntlmAuth, ok := authenticator.(*ntlm.Authenticator)
+	require.True(t, ok)
+
+	msg, err := ntlmAuth.GenerateChallenge(createNTLMType1(), "session-long")
+	require.NoError(t, err)
+
+	pairs := parseAVPairs(t, parseType2(t, msg).targetInfo)
+	const avNbComputer = 0x0001
+	require.Contains(t, pairs, uint16(avNbComputer))
+	nb := decodeUTF16LETest(pairs[avNbComputer])
+	assert.LessOrEqual(t, len(nb), 15, "NetBIOS computer name must be truncated to 15 chars")
+	assert.Equal(t, "VERYLONGDOMAINN", nb)
+}
+
+func TestNTLMAuthenticator_Type2TargetInfo_EmptyDomain(t *testing.T) {
+	factory := auth.NewFactory()
+	authenticator, err := factory.Create(auth.ProviderConfig{
+		Name:    "ntlm-test",
+		Type:    "ntlm",
+		Enabled: true,
+		Config:  map[string]any{}, // no domain configured
+	})
+	require.NoError(t, err)
+
+	ntlmAuth, ok := authenticator.(*ntlm.Authenticator)
+	require.True(t, ok)
+
+	msg, err := ntlmAuth.GenerateChallenge(createNTLMType1(), "session-empty")
+	require.NoError(t, err)
+
+	p := parseType2(t, msg)
+	// Even with no domain, the timestamp + EOL must still be present and well-formed.
+	pairs := parseAVPairs(t, p.targetInfo)
+	const avTimestamp = 0x0007
+	require.Contains(t, pairs, uint16(avTimestamp))
+	require.Len(t, pairs[avTimestamp], 8)
+	// No domain/computer pairs when domain is empty.
+	assert.NotContains(t, pairs, uint16(0x0002))
+}
+
 func TestNTLMAuthenticator_ValidateAuthenticate(t *testing.T) {
 	factory := auth.NewFactory()
 	authenticator, err := factory.Create(auth.ProviderConfig{

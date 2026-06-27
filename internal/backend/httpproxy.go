@@ -15,16 +15,17 @@ import (
 
 // HTTPProxyBackend connects through an upstream HTTP proxy using CONNECT.
 type HTTPProxyBackend struct {
-	name      string
-	address   string
-	username  string
-	password  string
-	dialer    *net.Dialer
-	startTime time.Time
-	healthy   atomic.Bool
-	stats     httpProxyStats
-	mu        sync.RWMutex
-	running   bool
+	name       string
+	address    string
+	username   string
+	password   string
+	dialer     *net.Dialer
+	preferIPv6 bool
+	startTime  time.Time
+	healthy    atomic.Bool
+	stats      httpProxyStats
+	mu         sync.RWMutex
+	running    bool
 }
 
 type httpProxyStats struct {
@@ -45,6 +46,10 @@ type HTTPProxyConfig struct {
 	Username       string        `yaml:"username"`
 	Password       string        `yaml:"password"`
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
+
+	// Network carries process-wide outbound tuning applied to the dial that
+	// reaches the HTTP proxy server.
+	Network NetworkTuning `yaml:"-"`
 }
 
 // NewHTTPProxyBackend creates a new HTTP proxy backend.
@@ -53,15 +58,19 @@ func NewHTTPProxyBackend(cfg HTTPProxyConfig) *HTTPProxyBackend {
 		cfg.ConnectTimeout = 30 * time.Second
 	}
 
+	dialer := &net.Dialer{
+		Timeout:   cfg.ConnectTimeout,
+		KeepAlive: 30 * time.Second,
+	}
+	cfg.Network.apply(dialer, false)
+
 	return &HTTPProxyBackend{
-		name:     cfg.Name,
-		address:  cfg.Address,
-		username: cfg.Username,
-		password: cfg.Password,
-		dialer: &net.Dialer{
-			Timeout:   cfg.ConnectTimeout,
-			KeepAlive: 30 * time.Second,
-		},
+		name:       cfg.Name,
+		address:    cfg.Address,
+		username:   cfg.Username,
+		password:   cfg.Password,
+		dialer:     dialer,
+		preferIPv6: cfg.Network.PreferIPv6,
 	}
 }
 
@@ -85,7 +94,13 @@ func (b *HTTPProxyBackend) Dial(ctx context.Context, network, address string) (n
 	b.mu.RUnlock()
 
 	// Connect to the proxy
-	proxyConn, err := b.dialer.DialContext(ctx, "tcp", b.address)
+	var proxyConn net.Conn
+	var err error
+	if b.preferIPv6 {
+		proxyConn, err = dialPreferIPv6(ctx, b.dialer, "tcp", b.address)
+	} else {
+		proxyConn, err = b.dialer.DialContext(ctx, "tcp", b.address)
+	}
 	if err != nil {
 		b.recordError(err)
 		return nil, NewBackendError(b.name, "dial proxy", err)

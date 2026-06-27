@@ -236,3 +236,14 @@ func (r *Region) GetWireGuardEndpoint() string {
 	}
 	return ""
 }
+
+// GetWireGuardCN returns the common name (hostname) of the first WireGuard
+// server. PIA's port-forwarding endpoints present a certificate for this CN even
+// though the connection is made to the tunnel gateway IP, so the CN is required
+// for TLS verification of the getSignature/bindPort calls.
+func (r *Region) GetWireGuardCN() string {
+	if len(r.Servers.WireGuard) > 0 {
+		return r.Servers.WireGuard[0].CN
+	}
+	return ""
+}
