@@ -105,7 +105,11 @@ func TestStaticHandler_ServeJS(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
-	assert.Contains(t, w.Header().Get("Content-Type"), "application/javascript")
+	// mime.TypeByExtension may return either "application/javascript" or
+	// "text/javascript" depending on the host OS's mime table; both are
+	// valid JS MIME types per RFC 9239. Accept either.
+	ct := w.Header().Get("Content-Type")
+	assert.True(t, strings.Contains(ct, "javascript"), "expected JS content type, got %q", ct)
 }
 
 func TestStaticHandler_ServeSVG(t *testing.T) {

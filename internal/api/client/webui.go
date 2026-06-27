@@ -3,12 +3,35 @@ package client
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
+	"path"
 	"strings"
 )
 
 //go:embed all:static
 var staticFiles embed.FS
+
+func init() {
+	// Ensure modern font + image MIME types are registered. Go's default
+	// mime.TypeByExtension table is OS-dependent and on minimal Alpine
+	// images (the Bifrost container base) may be missing entries like
+	// .woff2 / .woff / .ico — those then fall back to
+	// "application/octet-stream", which browsers reject when paired with
+	// our X-Content-Type-Options: nosniff header. Symptom: fonts silently
+	// drop back to system serif. Register the right types up-front.
+	for ext, ct := range map[string]string{
+		".woff2":       "font/woff2",
+		".woff":        "font/woff",
+		".ttf":         "font/ttf",
+		".otf":         "font/otf",
+		".ico":         "image/x-icon",
+		".webp":        "image/webp",
+		".webmanifest": "application/manifest+json",
+	} {
+		_ = mime.AddExtensionType(ext, ct)
+	}
+}
 
 // StaticHandler returns a handler for serving the embedded static files.
 func StaticHandler() http.Handler {
@@ -22,15 +45,15 @@ func StaticHandler() http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
+		urlPath := strings.TrimPrefix(r.URL.Path, "/")
 
 		// Serve index.html for root and non-file paths (SPA support)
-		if path == "" || !strings.Contains(path, ".") {
-			path = "index.html"
+		if urlPath == "" || !strings.Contains(urlPath, ".") {
+			urlPath = "index.html"
 		}
 
 		// Read and serve the file directly to avoid redirect issues
-		content, err := fs.ReadFile(subFS, path)
+		content, err := fs.ReadFile(subFS, urlPath)
 		if err != nil {
 			// Try index.html as fallback for SPA routing
 			content, err = fs.ReadFile(subFS, "index.html")
@@ -38,23 +61,16 @@ func StaticHandler() http.Handler {
 				http.NotFound(w, r)
 				return
 			}
-			path = "index.html"
+			urlPath = "index.html"
 		}
 
-		// Set content type based on extension
-		contentType := "application/octet-stream"
-		if strings.HasSuffix(path, ".html") {
-			contentType = "text/html; charset=utf-8"
-		} else if strings.HasSuffix(path, ".css") {
-			contentType = "text/css; charset=utf-8"
-		} else if strings.HasSuffix(path, ".js") {
-			contentType = "application/javascript"
-		} else if strings.HasSuffix(path, ".json") {
-			contentType = "application/json"
-		} else if strings.HasSuffix(path, ".png") {
-			contentType = "image/png"
-		} else if strings.HasSuffix(path, ".svg") {
-			contentType = "image/svg+xml"
+		// Pick MIME from the file extension. mime.TypeByExtension covers
+		// .html/.css/.js/.json/.svg/.png/.woff2 etc. via the OS table
+		// plus our init() additions. Fall back to octet-stream for
+		// truly unknown extensions.
+		contentType := mime.TypeByExtension(path.Ext(urlPath))
+		if contentType == "" {
+			contentType = "application/octet-stream"
 		}
 
 		w.Header().Set("Content-Type", contentType)
