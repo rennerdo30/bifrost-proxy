@@ -128,7 +128,7 @@ func (a *API) Router() http.Handler {
 
 	// Middleware
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(middleware.RealIP) //nolint:staticcheck // chi v5.3.0 deprecated RealIP (IP-spoofing advisory GHSA-3fxj-6jh8-hvhx); behavior unchanged pending a trusted-proxy-aware replacement
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
@@ -177,7 +177,7 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 
 	// Middleware
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(middleware.RealIP) //nolint:staticcheck // chi v5.3.0 deprecated RealIP (IP-spoofing advisory GHSA-3fxj-6jh8-hvhx); behavior unchanged pending a trusted-proxy-aware replacement
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
