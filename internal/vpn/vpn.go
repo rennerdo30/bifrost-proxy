@@ -959,6 +959,23 @@ func (m *Manager) Enabled() bool {
 	return m.config.Enabled
 }
 
+// DNSCacheEntries returns a snapshot of the VPN DNS resolver's cache. It
+// returns an empty slice when VPN DNS is not running so callers can render an
+// empty list rather than a placeholder.
+func (m *Manager) DNSCacheEntries() []DNSCacheEntry {
+	if m == nil {
+		return nil
+	}
+	m.mu.RLock()
+	dnsServer := m.dnsServer
+	m.mu.RUnlock()
+
+	if dnsServer == nil {
+		return nil
+	}
+	return dnsServer.CacheEntries()
+}
+
 // SplitTunnelRules returns the current split tunnel rules.
 func (m *Manager) SplitTunnelRules() SplitTunnelConfig {
 	if m == nil {

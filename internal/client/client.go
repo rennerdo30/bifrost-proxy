@@ -33,6 +33,7 @@ type Client struct {
 	serverConn      *ServerConnection
 	debugger        *debug.Logger
 	vpnManager      *vpn.Manager
+	meshManager     apiclient.MeshManager
 	sysProxyManager sysproxy.Manager
 	tray            *tray.Tray
 
@@ -92,12 +93,20 @@ func New(cfg *config.ClientConfig) (*Client, error) {
 		vpnManager.Configure(vpn.WithServerConnector(serverConn))
 	}
 
+	// Create mesh manager if enabled. The adapter bridges the mesh node's
+	// netip.Addr LocalIP to the string the client API expects.
+	meshManager, err := newMeshManager(cfg.Mesh)
+	if err != nil {
+		return nil, fmt.Errorf("create mesh manager: %w", err)
+	}
+
 	return &Client{
 		config:          cfg,
 		router:          r,
 		serverConn:      serverConn,
 		debugger:        debugger,
 		vpnManager:      vpnManager,
+		meshManager:     meshManager,
 		sysProxyManager: sysproxy.New(),
 		done:            make(chan struct{}),
 	}, nil
@@ -161,6 +170,7 @@ func (c *Client) Start(ctx context.Context) error {
 				}
 				return c.vpnManager
 			}(),
+			MeshManager:     c.meshManager,
 			ServerAddress:   c.config.Server.Address,
 			HTTPProxyAddr:   c.config.Proxy.HTTP.Listen,
 			SOCKS5ProxyAddr: c.config.Proxy.SOCKS5.Listen,
@@ -200,6 +210,17 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 	}
 
+	// Start mesh networking if enabled. Mesh requires a TUN/TAP device and a
+	// reachable discovery server; failure is logged but not fatal so the proxy
+	// remains usable. The API reflects the resulting status via meshManager.
+	if c.meshManager != nil {
+		if err := c.meshManager.Start(ctx); err != nil {
+			logging.Error("Failed to start mesh networking", "error", err)
+		} else {
+			logging.Info("Mesh networking started")
+		}
+	}
+
 	// Enable System Proxy if configured
 	if c.config.SystemProxy.Enabled {
 		// Prefer HTTP proxy for system settings
@@ -232,8 +253,40 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 	}
 
+	// Apply tray-driven startup behavior (auto-connect, start minimized).
+	c.applyStartupBehavior()
+
 	logging.Info("Bifrost client started")
 	return nil
+}
+
+// applyStartupBehavior applies the persisted tray settings that affect launch:
+//
+//   - AutoConnect: enables the system proxy on startup (the desktop "connect"
+//     action) so traffic is routed without the user clicking Connect. This is a
+//     no-op when system proxy is already enabled.
+//   - StartMinimized: when false, the Web UI dashboard is opened on launch so
+//     the user is presented with a window. When true, nothing is opened and the
+//     client runs in the background (reachable via the tray).
+//
+// These are desktop/tray settings, so they only take effect when the tray is
+// enabled; in headless/server mode the client never spawns a browser. Both were
+// previously persisted but never acted upon.
+func (c *Client) applyStartupBehavior() {
+	if !c.config.Tray.Enabled {
+		return
+	}
+
+	if c.config.Tray.AutoConnect {
+		logging.Info("Auto-connect enabled, connecting on startup")
+		c.setSystemProxyEnabled(true)
+	}
+
+	if !c.config.Tray.StartMinimized {
+		if url := c.uiURL(); url != "" {
+			c.openUI()
+		}
+	}
 }
 
 // Stop stops the client.
@@ -266,6 +319,13 @@ func (c *Client) Stop(ctx context.Context) error {
 	if c.vpnManager != nil {
 		if err := c.vpnManager.Stop(ctx); err != nil {
 			logging.Error("Failed to stop VPN", "error", err)
+		}
+	}
+
+	// Stop mesh networking
+	if c.meshManager != nil {
+		if err := c.meshManager.Stop(); err != nil {
+			logging.Error("Failed to stop mesh networking", "error", err)
 		}
 	}
 
@@ -712,6 +772,7 @@ func (c *Client) startTray(ctx context.Context) {
 				os.Exit(0)
 			}()
 		},
+		ShowQuickGUI: c.config.Tray.ShowQuickGUI,
 	})
 	c.tray = t
 	c.mu.Unlock()
