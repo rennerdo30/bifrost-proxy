@@ -329,22 +329,26 @@ func (a *API) securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Prevent MIME type sniffing
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		// Prevent clickjacking
-		w.Header().Set("X-Frame-Options", "DENY")
+		// Prevent clickjacking. SAMEORIGIN (not DENY) so the Web UI can
+		// be embedded by reverse proxies hosted on the same origin —
+		// e.g. Home Assistant Ingress, Traefik dashboard panels,
+		// Cloudflare Tunnels behind the same domain.
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		// XSS protection (legacy, but still useful)
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		// Referrer policy
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		// Content Security Policy
-		// Allow self, inline styles/scripts for React/Vite, and WebSockets
-		// All assets (including fonts) are now served from 'self'
+		// Allow self, inline styles/scripts for React/Vite, WebSockets,
+		// and same-origin framing (matches X-Frame-Options: SAMEORIGIN).
+		// All assets (including fonts) are served from 'self'.
 		csp := "default-src 'self'; " +
 			"script-src 'self' 'unsafe-inline'; " +
 			"style-src 'self' 'unsafe-inline'; " +
 			"font-src 'self'; " +
 			"img-src 'self' data: https:; " +
 			"connect-src 'self' ws: wss:; " +
-			"frame-ancestors 'none'"
+			"frame-ancestors 'self'"
 		w.Header().Set("Content-Security-Policy", csp)
 
 		next.ServeHTTP(w, r)
