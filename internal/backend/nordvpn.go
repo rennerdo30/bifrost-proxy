@@ -202,11 +202,22 @@ func (b *NordVPNBackend) selectServer(ctx context.Context) (*vpnprovider.Server,
 }
 
 func (b *NordVPNBackend) createDelegate(ctx context.Context, server *vpnprovider.Server, creds vpnprovider.Credentials) error {
+	delegate, err := b.buildDelegate(ctx, server, creds)
+	if err != nil {
+		return err
+	}
+	b.delegate = delegate
+	return nil
+}
+
+// buildDelegate constructs (but does not start) a delegate backend for the
+// given server and credentials, based on the configured protocol.
+func (b *NordVPNBackend) buildDelegate(ctx context.Context, server *vpnprovider.Server, creds vpnprovider.Credentials) (Backend, error) {
 	switch b.config.Protocol {
 	case "wireguard", "nordlynx":
 		wgConfig, err := b.client.GenerateWireGuardConfig(ctx, server, creds)
 		if err != nil {
-			return fmt.Errorf("generate WireGuard config: %w", err)
+			return nil, fmt.Errorf("generate WireGuard config: %w", err)
 		}
 
 		cfg := WireGuardConfig{
@@ -222,12 +233,12 @@ func (b *NordVPNBackend) createDelegate(ctx context.Context, server *vpnprovider
 				PresharedKey:        wgConfig.Peer.PresharedKey,
 			},
 		}
-		b.delegate = NewWireGuardBackend(cfg)
+		return NewWireGuardBackend(cfg), nil
 
 	case "openvpn":
 		ovpnConfig, err := b.client.GenerateOpenVPNConfig(ctx, server, creds)
 		if err != nil {
-			return fmt.Errorf("generate OpenVPN config: %w", err)
+			return nil, fmt.Errorf("generate OpenVPN config: %w", err)
 		}
 
 		cfg := OpenVPNConfig{
@@ -236,13 +247,11 @@ func (b *NordVPNBackend) createDelegate(ctx context.Context, server *vpnprovider
 			Username:      ovpnConfig.Username,
 			Password:      ovpnConfig.Password,
 		}
-		b.delegate = NewOpenVPNBackend(cfg)
+		return NewOpenVPNBackend(cfg), nil
 
 	default:
-		return fmt.Errorf("unsupported protocol: %s", b.config.Protocol)
+		return nil, fmt.Errorf("unsupported protocol: %s", b.config.Protocol)
 	}
-
-	return nil
 }
 
 func (b *NordVPNBackend) serverRefreshLoop() {
@@ -273,17 +282,68 @@ func (b *NordVPNBackend) checkAndRefreshServer() {
 	b.mu.RUnlock()
 
 	// Only switch if the new server is significantly better (20% less load)
-	if currentServer != nil && newServer.Load < currentServer.Load-20 {
-		b.logger.Info("switching to better server",
-			"old_server", currentServer.Hostname,
-			"old_load", currentServer.Load,
-			"new_server", newServer.Hostname,
-			"new_load", newServer.Load,
-		)
-		// Note: Hot-swapping is complex, log for now
-		// In a production implementation, you'd want to gracefully
-		// drain connections and switch to the new server
+	if currentServer == nil || newServer.Load >= currentServer.Load-20 {
+		return
 	}
+
+	b.logger.Info("switching to better server",
+		"old_server", currentServer.Hostname,
+		"old_load", currentServer.Load,
+		"new_server", newServer.Hostname,
+		"new_load", newServer.Load,
+	)
+
+	if err := b.swapDelegate(ctx, newServer); err != nil {
+		b.logger.Warn("failed to switch to better server, keeping current",
+			"new_server", newServer.Hostname,
+			"error", err,
+		)
+		return
+	}
+
+	b.logger.Info("switched to better server", "server", newServer.Hostname)
+}
+
+// swapDelegate builds and starts a new delegate for the given server, then
+// atomically replaces the running delegate and stops the old one. Existing
+// connections on the old delegate are drained by stopping it; new Dials use the
+// new delegate. If building/starting the new delegate fails, the current
+// delegate is left untouched (fail safe).
+func (b *NordVPNBackend) swapDelegate(ctx context.Context, server *vpnprovider.Server) error {
+	creds := vpnprovider.Credentials{
+		AccessToken: b.config.AccessToken,
+		Username:    b.config.Username,
+		Password:    b.config.Password,
+	}
+
+	newDelegate, err := b.buildDelegate(ctx, server, creds)
+	if err != nil {
+		return fmt.Errorf("build delegate: %w", err)
+	}
+
+	if err := newDelegate.Start(ctx); err != nil {
+		return fmt.Errorf("start delegate: %w", err)
+	}
+
+	b.mu.Lock()
+	if !b.running {
+		// Backend was stopped while we were building; tear the new one down.
+		b.mu.Unlock()
+		_ = newDelegate.Stop(ctx) //nolint:errcheck // best-effort cleanup
+		return fmt.Errorf("backend not running")
+	}
+	oldDelegate := b.delegate
+	b.delegate = newDelegate
+	b.selectedServer = server
+	b.mu.Unlock()
+
+	if oldDelegate != nil {
+		if err := oldDelegate.Stop(ctx); err != nil {
+			b.logger.Warn("failed to stop old delegate after swap", "error", err)
+		}
+	}
+
+	return nil
 }
 
 // Stop shuts down the NordVPN connection.
