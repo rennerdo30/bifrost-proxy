@@ -378,33 +378,141 @@ func (a *Authenticator) GenerateChallenge(negotiateMsg []byte, sessionID string)
 	return buildType2Message(domain, challenge), nil
 }
 
-// buildType2Message builds a minimal NTLM Type 2 challenge message.
-func buildType2Message(domain string, challenge []byte) []byte {
-	targetName := encodeUTF16LE(strings.ToUpper(domain))
+// AV pair (target-info) IDs from MS-NLMP §2.2.2.1.
+const (
+	avEOL             uint16 = 0x0000 // MsvAvEOL
+	avNbComputerName  uint16 = 0x0001 // MsvAvNbComputerName
+	avNbDomainName    uint16 = 0x0002 // MsvAvNbDomainName
+	avDNSComputerName uint16 = 0x0003 // MsvAvDnsComputerName
+	avDNSDomainName   uint16 = 0x0004 // MsvAvDnsDomainName
+	avTimestamp       uint16 = 0x0007 // MsvAvTimestamp
+)
 
-	const headerLen = 48
-	msg := make([]byte, headerLen+len(targetName))
+// Negotiate flags from MS-NLMP §2.2.2.5 used in our Type 2 message.
+const (
+	ntlmNegotiateUnicode    uint32 = 0x00000001 // NTLMSSP_NEGOTIATE_UNICODE
+	ntlmNegotiateOEM        uint32 = 0x00000002 // NTLM_NEGOTIATE_OEM
+	ntlmRequestTarget       uint32 = 0x00000004 // NTLMSSP_REQUEST_TARGET
+	ntlmNegotiateNTLM       uint32 = 0x00000200 // NTLMSSP_NEGOTIATE_NTLM
+	ntlmNegotiateAlwaysSign uint32 = 0x00008000 // NTLMSSP_NEGOTIATE_ALWAYS_SIGN
+	ntlmTargetTypeDomain    uint32 = 0x00010000 // NTLMSSP_TARGET_TYPE_DOMAIN
+	ntlmNegotiateTargetInfo uint32 = 0x00800000 // NTLMSSP_NEGOTIATE_TARGET_INFO
+	ntlmNegotiateExtSec     uint32 = 0x00080000 // NTLMSSP_NEGOTIATE_EXTENDED_SESSIONSECURITY (NTLM2)
+)
+
+// appendAVPair appends a single AV pair (2-byte ID, 2-byte length, value) to buf.
+func appendAVPair(buf []byte, id uint16, value []byte) []byte {
+	hdr := make([]byte, 4)
+	binary.LittleEndian.PutUint16(hdr[0:2], id)
+	binary.LittleEndian.PutUint16(hdr[2:4], uint16(len(value)))
+	buf = append(buf, hdr...)
+	buf = append(buf, value...)
+	return buf
+}
+
+// buildTargetInfo constructs the NTLM target-info (AV pair) block. It advertises
+// the NetBIOS/DNS domain and computer names plus a current timestamp so that
+// modern clients (which expect NTLMv2 target info) compute a well-formed
+// response. The names are derived purely from the configured domain; no host
+// secrets are leaked. The timestamp is FILETIME (100ns ticks since 1601-01-01).
+func buildTargetInfo(domain string) []byte {
+	d := strings.ToUpper(strings.TrimSpace(domain))
+
+	// NetBIOS computer name is conventionally the domain's leading label
+	// uppercased and truncated to 15 chars; DNS computer name uses the full
+	// domain. These are advertised hints only — they are never used to make an
+	// authentication decision (the plugin is fail-closed).
+	nbDomain := d
+	dnsDomain := strings.ToLower(d)
+
+	nbComputer := d
+	if idx := strings.IndexByte(d, '.'); idx >= 0 {
+		nbComputer = d[:idx]
+	}
+	if len(nbComputer) > 15 {
+		nbComputer = nbComputer[:15]
+	}
+	dnsComputer := strings.ToLower(d)
+
+	var info []byte
+	if nbDomain != "" {
+		info = appendAVPair(info, avNbDomainName, encodeUTF16LE(nbDomain))
+	}
+	if nbComputer != "" {
+		info = appendAVPair(info, avNbComputerName, encodeUTF16LE(nbComputer))
+	}
+	if dnsDomain != "" {
+		info = appendAVPair(info, avDNSDomainName, encodeUTF16LE(dnsDomain))
+	}
+	if dnsComputer != "" {
+		info = appendAVPair(info, avDNSComputerName, encodeUTF16LE(dnsComputer))
+	}
+	info = appendAVPair(info, avTimestamp, filetimeNow())
+
+	// Terminating MsvAvEOL pair (zero length).
+	info = appendAVPair(info, avEOL, nil)
+	return info
+}
+
+// filetimeNow returns the current time as a little-endian Windows FILETIME
+// (number of 100-nanosecond intervals since 1601-01-01 00:00:00 UTC), 8 bytes.
+func filetimeNow() []byte {
+	// 11644473600 seconds between 1601-01-01 and 1970-01-01.
+	const epochDeltaSeconds = 11644473600
+	now := time.Now().UTC()
+	ticks := (uint64(now.Unix()) + epochDeltaSeconds) * 10000000
+	ticks += uint64(now.Nanosecond()) / 100
+	b := make([]byte, 8)
+	binary.LittleEndian.PutUint64(b, ticks)
+	return b
+}
+
+// buildType2Message builds an NTLM Type 2 (Challenge) message that carries the
+// server challenge and a target-info block (NetBIOS/DNS domain and computer
+// names plus a timestamp) for client compatibility.
+//
+// SECURITY: this message is purely advisory. The plugin remains fail-closed: it
+// has no credential source and never verifies the resulting Type 3 response, so
+// the contents here cannot enable an authentication bypass.
+func buildType2Message(domain string, challenge []byte) []byte {
+	targetName := encodeUTF16LE(strings.ToUpper(strings.TrimSpace(domain)))
+	targetInfo := buildTargetInfo(domain)
+
+	const headerLen = 56 // fixed header incl. 8-byte target-info security buffer + 8-byte context
+	targetNameOffset := uint32(headerLen)
+	targetInfoOffset := targetNameOffset + uint32(len(targetName))
+
+	msg := make([]byte, int(targetInfoOffset)+len(targetInfo))
 
 	copy(msg[:8], "NTLMSSP\x00")
 	binary.LittleEndian.PutUint32(msg[8:12], 2) // Type 2
 
-	// Target name security buffer
+	// Target name security buffer (offset 12).
 	binary.LittleEndian.PutUint16(msg[12:14], uint16(len(targetName)))
 	binary.LittleEndian.PutUint16(msg[14:16], uint16(len(targetName)))
-	binary.LittleEndian.PutUint32(msg[16:20], headerLen)
+	binary.LittleEndian.PutUint32(msg[16:20], targetNameOffset)
 
-	// Negotiate flags (minimal interoperable set)
-	const flags = 0x00000001 | 0x00000002 | 0x00000200 | 0x00008000 | 0x00080000
+	// Negotiate flags (offset 20). Advertise Unicode, target info, and that the
+	// target type is a domain so clients build NTLMv2 responses.
+	flags := ntlmNegotiateUnicode | ntlmNegotiateOEM | ntlmRequestTarget |
+		ntlmNegotiateNTLM | ntlmNegotiateAlwaysSign | ntlmNegotiateExtSec |
+		ntlmTargetTypeDomain | ntlmNegotiateTargetInfo
 	binary.LittleEndian.PutUint32(msg[20:24], flags)
 
+	// Server challenge (offset 24, 8 bytes).
 	copy(msg[24:32], challenge)
 
-	// Target info security buffer (empty in this implementation)
-	binary.LittleEndian.PutUint16(msg[40:42], 0)
-	binary.LittleEndian.PutUint16(msg[42:44], 0)
-	binary.LittleEndian.PutUint32(msg[44:48], headerLen+uint32(len(targetName)))
+	// Reserved/context (offset 32, 8 bytes) — left as zero.
 
-	copy(msg[headerLen:], targetName)
+	// Target info security buffer (offset 40).
+	binary.LittleEndian.PutUint16(msg[40:42], uint16(len(targetInfo)))
+	binary.LittleEndian.PutUint16(msg[42:44], uint16(len(targetInfo)))
+	binary.LittleEndian.PutUint32(msg[44:48], targetInfoOffset)
+
+	// Version (offset 48, 8 bytes) — left as zero; harmless and optional.
+
+	copy(msg[targetNameOffset:], targetName)
+	copy(msg[targetInfoOffset:], targetInfo)
 	return msg
 }
 
