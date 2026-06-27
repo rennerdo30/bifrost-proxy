@@ -138,6 +138,14 @@ func NewMeshRouter(config RouterConfig) *MeshRouter {
 	}
 }
 
+// SetLocalIP updates the router's local virtual IP. This is used after the
+// discovery server assigns the authoritative virtual IP during registration.
+func (r *MeshRouter) SetLocalIP(ip netip.Addr) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.localIP = ip
+}
+
 // AddDirectRoute adds a direct route to a peer.
 func (r *MeshRouter) AddDirectRoute(peerID string, peerIP netip.Addr, latency time.Duration) {
 	r.mu.Lock()

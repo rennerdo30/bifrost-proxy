@@ -526,20 +526,6 @@ func TestValidateLinux(t *testing.T) {
 	assert.False(t, result)
 }
 
-// TestValidateWithSu tests the validateWithSu method.
-func TestValidateWithSu(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
-
-	a := &Authenticator{}
-	ctx := context.Background()
-
-	// With invalid credentials, should return false
-	result := a.validateWithSu(ctx, "nonexistent_user_xyz_12345", "wrong_password")
-	assert.False(t, result)
-}
-
 // TestValidateWithCancelledContext tests password validation with canceled context.
 func TestValidateWithCancelledContext(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -831,22 +817,6 @@ func TestParseConfigAllowedGroupsWrongType(t *testing.T) {
 	assert.Nil(t, cfg.allowedGroups)
 }
 
-// TestValidateWithSuStdinError tests validateWithSu behavior when stdin pipe fails.
-// Note: This is difficult to test directly, but we can verify the method handles
-// the error path by testing with an invalid user.
-func TestValidateWithSuInvalidUser(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
-
-	a := &Authenticator{}
-	ctx := context.Background()
-
-	// With a user that doesn't exist, su should fail
-	result := a.validateWithSu(ctx, "invalid_user_xyz_12345", "any_password")
-	assert.False(t, result)
-}
-
 // TestMultiplePlatformValidation tests validatePassword on the current platform.
 func TestMultiplePlatformValidation(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -946,40 +916,6 @@ func TestValidateDarwinWithContext(t *testing.T) {
 	assert.False(t, result)
 }
 
-// TestValidateWithSuCancelledContext tests validateWithSu with canceled context.
-func TestValidateWithSuCancelledContext(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
-
-	a := &Authenticator{}
-
-	// Test with already canceled context
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	result := a.validateWithSu(ctx, "anyuser", "anypassword")
-	assert.False(t, result)
-}
-
-// TestValidateWithSuStartError tests validateWithSu when cmd.Start fails.
-// This is hard to test directly, but covered by using a canceled context
-// which causes the command to fail.
-func TestValidateWithSuStartError(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
-
-	a := &Authenticator{}
-
-	// Use a deadline that's already passed
-	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-1*time.Second))
-	defer cancel()
-
-	result := a.validateWithSu(ctx, "anyuser", "anypassword")
-	assert.False(t, result)
-}
-
 // TestAuthenticateContextCancellation tests Authenticate with canceled context.
 func TestAuthenticateContextCancellation(t *testing.T) {
 	if runtime.GOOS == "windows" {
@@ -1042,10 +978,9 @@ func TestValidatePasswordPlatformSwitch(t *testing.T) {
 	a := &Authenticator{}
 	ctx := context.Background()
 
-	// This test ensures the switch statement in validatePassword is exercised
-	// On macOS, this goes to validateDarwin
-	// On Linux, this goes to validateLinux
-	// On other platforms, this falls back to validateWithSu
+	// This test ensures the switch statement in validatePassword is exercised.
+	// On macOS, this goes to validateDarwin; on Linux, to validateLinux;
+	// on other platforms, it fails closed.
 	result := a.validatePassword(ctx, "nonexistent_user_xyz", "password")
 	assert.False(t, result, "should return false for nonexistent user")
 }

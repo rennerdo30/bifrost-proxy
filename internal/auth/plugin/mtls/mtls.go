@@ -18,13 +18,14 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 )
 
-// ContextKey is a type for context keys used by this package.
-type ContextKey string
-
-const (
-	// ClientCertContextKey is the context key for the client certificate.
-	ClientCertContextKey ContextKey = "mtls_client_cert"
-)
+// ClientCertContextKey is the canonical context key used to pass the verified
+// client certificate from the TLS-terminating layer into this authenticator.
+//
+// It is an alias of auth.ClientCertContextKey so that the proxy/listener code
+// (which populates the context) and this plugin (which reads it) always agree
+// on a single key. Defining a separate, plugin-local key here previously caused
+// a silent mismatch where the certificate was never found.
+const ClientCertContextKey = auth.ClientCertContextKey
 
 func init() {
 	auth.RegisterPlugin("mtls", &plugin{})

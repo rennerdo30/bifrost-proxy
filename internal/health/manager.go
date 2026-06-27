@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -21,6 +22,14 @@ type managedCheck struct {
 	result   Result
 	callback func(name string, result Result)
 	mu       sync.RWMutex
+
+	// Threshold (flap-prevention) state.
+	healthyThreshold   int
+	unhealthyThreshold int
+	consecutiveOK      int
+	consecutiveFail    int
+	stable             bool // current de-bounced healthy state
+	initialized        bool // whether a stable state has been determined yet
 }
 
 // NewManager creates a new health check manager.
@@ -31,20 +40,37 @@ func NewManager() *Manager {
 	}
 }
 
-// Register registers a health check.
+// Register registers a health check using immediate (threshold of 1) state
+// transitions.
 func (m *Manager) Register(name string, checker Checker, interval time.Duration, callback func(string, Result)) {
+	m.RegisterWithThresholds(name, checker, interval, 1, 1, callback)
+}
+
+// RegisterWithThresholds registers a health check that only transitions its
+// reported healthy state after the configured number of consecutive
+// successful (healthyThreshold) or failed (unhealthyThreshold) checks. This
+// prevents flapping. Thresholds <= 0 are treated as 1.
+func (m *Manager) RegisterWithThresholds(name string, checker Checker, interval time.Duration, healthyThreshold, unhealthyThreshold int, callback func(string, Result)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if interval == 0 {
 		interval = 30 * time.Second
 	}
+	if healthyThreshold <= 0 {
+		healthyThreshold = 1
+	}
+	if unhealthyThreshold <= 0 {
+		unhealthyThreshold = 1
+	}
 
 	m.checks[name] = &managedCheck{
-		name:     name,
-		checker:  checker,
-		interval: interval,
-		callback: callback,
+		name:               name,
+		checker:            checker,
+		interval:           interval,
+		callback:           callback,
+		healthyThreshold:   healthyThreshold,
+		unhealthyThreshold: unhealthyThreshold,
 	}
 }
 
@@ -117,13 +143,59 @@ func (m *Manager) performCheck(ctx context.Context, check *managedCheck) {
 
 	result := check.checker.Check(checkCtx)
 
-	check.mu.Lock()
-	check.result = result
-	check.mu.Unlock()
+	stableResult, changed := check.applyResult(result)
+
+	// Log only on a de-bounced health-state transition to avoid log spam.
+	if changed {
+		if stableResult.Healthy {
+			slog.Info("health check recovered", "check", check.name, "latency", stableResult.Latency)
+		} else {
+			slog.Warn("health check failed", "check", check.name, "message", stableResult.Message, "error", stableResult.Error)
+		}
+	}
 
 	if check.callback != nil {
-		check.callback(check.name, result)
+		check.callback(check.name, stableResult)
 	}
+}
+
+// applyResult records a raw check result, applies threshold de-bouncing, stores
+// the resulting (stable) result and reports whether the stable healthy state
+// changed since the previous check. The reported result always carries the
+// latest latency/message but the de-bounced healthy state.
+func (c *managedCheck) applyResult(result Result) (Result, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if result.Healthy {
+		c.consecutiveOK++
+		c.consecutiveFail = 0
+	} else {
+		c.consecutiveFail++
+		c.consecutiveOK = 0
+	}
+
+	changed := false
+	switch {
+	case !c.initialized:
+		// First result establishes the baseline immediately.
+		c.stable = result.Healthy
+		c.initialized = true
+		changed = true
+	case !c.stable && result.Healthy && c.consecutiveOK >= c.healthyThreshold:
+		c.stable = true
+		changed = true
+	case c.stable && !result.Healthy && c.consecutiveFail >= c.unhealthyThreshold:
+		c.stable = false
+		changed = true
+	}
+
+	// Report the latest latency/message/error but the de-bounced healthy state.
+	stable := result
+	stable.Healthy = c.stable
+	c.result = stable
+
+	return stable, changed
 }
 
 // GetResult returns the latest health check result for a target.
@@ -181,11 +253,9 @@ func (m *Manager) CheckNow(ctx context.Context, name string) (Result, error) {
 
 	result := check.checker.Check(ctx)
 
-	check.mu.Lock()
-	check.result = result
-	check.mu.Unlock()
+	stableResult, _ := check.applyResult(result)
 
-	return result, nil
+	return stableResult, nil
 }
 
 // Error types

@@ -37,6 +37,47 @@ func TestRoundRobinBalancer_CounterOverflow(t *testing.T) {
 	assert.NotNil(t, selected3)
 }
 
+// TestNewLoadBalancer_Types verifies the factory wires each strategy, including
+// the previously missing "weighted" case.
+func TestNewLoadBalancer_Types(t *testing.T) {
+	if _, ok := NewLoadBalancer("round_robin").(*RoundRobinBalancer); !ok {
+		t.Errorf("round_robin should produce *RoundRobinBalancer")
+	}
+	if _, ok := NewLoadBalancer("least_conn").(*LeastConnBalancer); !ok {
+		t.Errorf("least_conn should produce *LeastConnBalancer")
+	}
+	if _, ok := NewLoadBalancer("ip_hash").(*IPHashBalancer); !ok {
+		t.Errorf("ip_hash should produce *IPHashBalancer")
+	}
+	if _, ok := NewLoadBalancer("weighted").(*WeightedBalancer); !ok {
+		t.Errorf("weighted should produce *WeightedBalancer")
+	}
+	if _, ok := NewLoadBalancer("unknown").(*RoundRobinBalancer); !ok {
+		t.Errorf("unknown strategy should fall back to *RoundRobinBalancer")
+	}
+}
+
+// TestNewLoadBalancerWithWeights_Weighted verifies per-backend weights flow
+// through the weighted balancer created by the factory.
+func TestNewLoadBalancerWithWeights_Weighted(t *testing.T) {
+	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})
+	b2 := backend.NewDirectBackend(backend.DirectConfig{Name: "b2"})
+	require.NoError(t, b1.Start(context.Background()))
+	require.NoError(t, b2.Start(context.Background()))
+
+	lb := NewLoadBalancerWithWeights("weighted", map[string]int{"b1": 3, "b2": 1})
+	wb, ok := lb.(*WeightedBalancer)
+	require.True(t, ok)
+
+	backends := []backend.Backend{b1, b2}
+	counts := map[string]int{}
+	for i := 0; i < 400; i++ {
+		counts[wb.Select(backends, "").Name()]++
+	}
+	// b1 has 3x the weight of b2, so it must be selected more often.
+	assert.Greater(t, counts["b1"], counts["b2"])
+}
+
 // TestWeightedBalancer_ZeroWeights tests handling of zero weights.
 func TestWeightedBalancer_ZeroWeights(t *testing.T) {
 	b1 := backend.NewDirectBackend(backend.DirectConfig{Name: "b1"})

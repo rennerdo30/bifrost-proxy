@@ -315,8 +315,14 @@ func (b *SOCKS5ProxyBackend) Stop(ctx context.Context) error {
 }
 
 // IsHealthy returns the health status.
+//
+// In addition to the started/stopped flag, this reflects the minimal static
+// requirement that an upstream SOCKS5 address is configured: a backend with no
+// upstream can never serve traffic, so it is reported unhealthy. Active
+// reachability checks are layered on top via the health-check subsystem (see
+// HealthWrappedBackend).
 func (b *SOCKS5ProxyBackend) IsHealthy() bool {
-	return b.healthy.Load()
+	return b.healthy.Load() && b.address != ""
 }
 
 // Stats returns backend statistics.

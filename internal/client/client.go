@@ -3,6 +3,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -209,7 +210,11 @@ func (c *Client) Start(ctx context.Context) error {
 
 		if proxyAddr != "" {
 			if err := c.sysProxyManager.SetProxy(proxyAddr); err != nil {
-				logging.Error("Failed to set system proxy", "error", err)
+				if errors.Is(err, sysproxy.ErrNotSupported) {
+					logging.Warn("System proxy configuration not supported on this platform; configure your OS/browser proxy manually", "address", proxyAddr)
+				} else {
+					logging.Error("Failed to set system proxy", "error", err)
+				}
 				if c.tray != nil {
 					c.tray.SetStatus(tray.StatusWarning)
 				}
@@ -267,7 +272,12 @@ func (c *Client) Stop(ctx context.Context) error {
 	// Disable System Proxy if it was enabled
 	if c.config.SystemProxy.Enabled {
 		if err := c.sysProxyManager.ClearProxy(); err != nil {
-			logging.Error("Failed to clear system proxy", "error", err)
+			if errors.Is(err, sysproxy.ErrNotSupported) {
+				// Nothing was set, so nothing to restore.
+				logging.Debug("System proxy not supported on this platform; nothing to restore")
+			} else {
+				logging.Error("Failed to clear system proxy", "error", err)
+			}
 		} else {
 			logging.Info("System proxy settings restored")
 		}
@@ -429,6 +439,60 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Handle route add/remove operations specially. These pseudo-keys are sent
+	// by the routes CRUD handlers and must mutate c.config.Routes directly.
+	// They are translated into a full "routes" replacement so they never reach
+	// config.UpdateNode as literal keys (which would corrupt the YAML).
+	routesChanged := false
+	if raw, ok := updates["_add_route"]; ok {
+		delete(updates, "_add_route")
+		route, err := parseRouteUpdate(raw)
+		if err != nil {
+			return err
+		}
+		c.config.Routes = append(c.config.Routes, route)
+		routesChanged = true
+	}
+	if raw, ok := updates["_remove_route"]; ok {
+		delete(updates, "_remove_route")
+		name, isStr := raw.(string)
+		if !isStr || name == "" {
+			return fmt.Errorf("_remove_route requires a non-empty route name")
+		}
+		filtered := c.config.Routes[:0]
+		for _, r := range c.config.Routes {
+			if r.Name == name {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		c.config.Routes = filtered
+		routesChanged = true
+	}
+
+	if routesChanged {
+		// Reload the router so the live routing table reflects the change.
+		if err := c.router.LoadRoutes(c.config.Routes); err != nil {
+			return fmt.Errorf("reload routes: %w", err)
+		}
+		// Translate the in-memory routes into a full "routes" replacement so it
+		// is persisted correctly via the YAML node updater below.
+		routeList := make([]interface{}, 0, len(c.config.Routes))
+		for _, r := range c.config.Routes {
+			domains := make([]interface{}, len(r.Domains))
+			for i, d := range r.Domains {
+				domains[i] = d
+			}
+			routeList = append(routeList, map[string]interface{}{
+				"name":     r.Name,
+				"domains":  domains,
+				"action":   r.Action,
+				"priority": r.Priority,
+			})
+		}
+		updates["routes"] = routeList
+	}
+
 	// Apply updates to the config
 	if server, ok := updates["server"].(map[string]interface{}); ok {
 		if addr, ok := server["address"].(string); ok {
@@ -563,13 +627,21 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 					}
 					if proxyAddr != "" {
 						if err := c.sysProxyManager.SetProxy(proxyAddr); err != nil {
-							logging.Error("Failed to enable system proxy", "error", err)
+							if errors.Is(err, sysproxy.ErrNotSupported) {
+								logging.Warn("System proxy configuration not supported on this platform; configure your OS/browser proxy manually", "address", proxyAddr)
+							} else {
+								logging.Error("Failed to enable system proxy", "error", err)
+							}
 						}
 					}
 				} else {
 					// Disable
 					if err := c.sysProxyManager.ClearProxy(); err != nil {
-						logging.Error("Failed to disable system proxy", "error", err)
+						if errors.Is(err, sysproxy.ErrNotSupported) {
+							logging.Debug("System proxy not supported on this platform; nothing to restore")
+						} else {
+							logging.Error("Failed to disable system proxy", "error", err)
+						}
 					}
 				}
 			}
@@ -695,7 +767,11 @@ func (c *Client) setSystemProxyEnabled(enabled bool) {
 		}
 		if proxyAddr != "" {
 			if err := c.sysProxyManager.SetProxy(proxyAddr); err != nil {
-				logging.Error("Failed to enable system proxy", "error", err)
+				if errors.Is(err, sysproxy.ErrNotSupported) {
+					logging.Warn("System proxy configuration not supported on this platform; configure your OS/browser proxy manually", "address", proxyAddr)
+				} else {
+					logging.Error("Failed to enable system proxy", "error", err)
+				}
 				if c.tray != nil {
 					c.tray.SetStatus(tray.StatusWarning)
 				}
@@ -712,16 +788,57 @@ func (c *Client) setSystemProxyEnabled(enabled bool) {
 		}
 	} else {
 		if err := c.sysProxyManager.ClearProxy(); err != nil {
-			logging.Error("Failed to disable system proxy", "error", err)
-			if c.tray != nil {
-				c.tray.SetStatus(tray.StatusWarning)
+			if errors.Is(err, sysproxy.ErrNotSupported) {
+				logging.Debug("System proxy not supported on this platform; nothing to restore")
+			} else {
+				logging.Error("Failed to disable system proxy", "error", err)
+				if c.tray != nil {
+					c.tray.SetStatus(tray.StatusWarning)
+				}
+				return
 			}
-			return
 		}
 		if c.tray != nil {
 			c.tray.SetStatus(tray.StatusDisconnected)
 		}
 	}
+}
+
+// parseRouteUpdate converts a route map (as sent by the routes CRUD handler)
+// into a config.ClientRouteConfig.
+func parseRouteUpdate(raw interface{}) (config.ClientRouteConfig, error) {
+	m, ok := raw.(map[string]interface{})
+	if !ok {
+		return config.ClientRouteConfig{}, fmt.Errorf("invalid route payload")
+	}
+
+	route := config.ClientRouteConfig{}
+	if name, ok := m["name"].(string); ok {
+		route.Name = name
+	}
+	if action, ok := m["action"].(string); ok {
+		route.Action = action
+	}
+	if route.Action == "" {
+		route.Action = "server"
+	}
+	switch p := m["priority"].(type) {
+	case float64:
+		route.Priority = int(p)
+	case int:
+		route.Priority = p
+	}
+	if domains, ok := m["domains"].([]interface{}); ok {
+		for _, d := range domains {
+			if s, ok := d.(string); ok {
+				route.Domains = append(route.Domains, s)
+			}
+		}
+	}
+	if len(route.Domains) == 0 {
+		return config.ClientRouteConfig{}, fmt.Errorf("route must have at least one domain pattern")
+	}
+	return route, nil
 }
 
 // parseDuration parses a duration string like "30s" or "5m".

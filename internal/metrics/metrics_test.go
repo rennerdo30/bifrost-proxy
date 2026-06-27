@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
+	promdto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -303,6 +305,47 @@ func TestCollectorRecordRequest(t *testing.T) {
 	c.RecordRequest("http", "GET", "200", 100*time.Millisecond)
 
 	// Should not panic
+}
+
+func TestCollectorRecordRequestSize(t *testing.T) {
+	m := New()
+	c := NewCollector(m, nil)
+
+	c.RecordRequestSize("http", 512)
+	c.RecordRequestSize("http", 1024)
+	// Negative sizes (unknown Content-Length) must be ignored.
+	c.RecordRequestSize("http", -1)
+
+	if got := histogramSampleCount(t, m.RequestSize, "http"); got != 2 {
+		t.Errorf("RequestSize sample count = %d, want 2", got)
+	}
+}
+
+func TestCollectorRecordResponseSize(t *testing.T) {
+	m := New()
+	c := NewCollector(m, nil)
+
+	c.RecordResponseSize("http", 2048)
+	c.RecordResponseSize("http", -100) // ignored
+
+	if got := histogramSampleCount(t, m.ResponseSize, "http"); got != 1 {
+		t.Errorf("ResponseSize sample count = %d, want 1", got)
+	}
+}
+
+// histogramSampleCount returns the number of observations recorded for the given
+// label value of a HistogramVec.
+func histogramSampleCount(t *testing.T, vec *prometheus.HistogramVec, labels ...string) uint64 {
+	t.Helper()
+	obs, err := vec.GetMetricWithLabelValues(labels...)
+	if err != nil {
+		t.Fatalf("GetMetricWithLabelValues: %v", err)
+	}
+	var dto promdto.Metric
+	if err := obs.(prometheus.Metric).Write(&dto); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	return dto.GetHistogram().GetSampleCount()
 }
 
 func TestCollectorRecordBytes(t *testing.T) {

@@ -13,11 +13,19 @@ import (
 
 	"github.com/jcmturner/gokrb5/v8/client"
 	"github.com/jcmturner/gokrb5/v8/config"
+	"github.com/jcmturner/gokrb5/v8/credentials"
+	"github.com/jcmturner/gokrb5/v8/gssapi"
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/jcmturner/gokrb5/v8/spnego"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 )
+
+// spnegoCtxCredentials is the context key gokrb5 uses to store the verified
+// client credentials after a successful AcceptSecContext. gokrb5 keeps this
+// key unexported, but its underlying value is a stable, documented string
+// (the same one gokrb5's own HTTP handler reads back), so we mirror it here.
+const spnegoCtxCredentials = "github.com/jcmturner/gokrb5/v8/ctxCredentials"
 
 // ContextKey is a type for context keys used by this package.
 type ContextKey string
@@ -245,23 +253,63 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 	return nil, auth.NewAuthError("kerberos", "authenticate", auth.ErrInvalidCredentials)
 }
 
-// validateSPNEGOToken validates a SPNEGO token and extracts user info.
-// Note: Full SPNEGO validation requires HTTP handler integration.
-// This is a placeholder for direct token validation.
+// validateSPNEGOToken performs service-side SPNEGO/GSSAPI validation of a raw
+// SPNEGO context token against the configured keytab and returns the verified
+// user identity. This is the GSS-API AcceptSecContext step: the token is
+// cryptographically verified against the service's keytab, so a forged or
+// replayed token without a valid KDC-issued service ticket is rejected.
 func (a *Authenticator) validateSPNEGOToken(token []byte) (*auth.UserInfo, error) {
 	a.mu.RLock()
 	kt := a.kt
 	a.mu.RUnlock()
 
-	// Create SPNEGO service for HTTP handler integration
-	// For direct validation, we need to use the HTTP middleware approach
-	_ = spnego.SPNEGOService(kt)
-	_ = token
+	if kt == nil {
+		return nil, auth.NewAuthError("kerberos", "spnego", fmt.Errorf("keytab not loaded"))
+	}
 
-	// SPNEGO tokens should be validated through HTTP middleware
-	// Direct token validation is not supported in this simplified implementation
-	return nil, auth.NewAuthError("kerberos", "spnego",
-		fmt.Errorf("SPNEGO token validation requires HTTP handler integration; use SPNEGOKRB5Authenticate middleware"))
+	// Configure the SPNEGO mechanism for service-side use with our keytab.
+	svc := spnego.SPNEGOService(kt)
+
+	// Unmarshal the raw bytes into an SPNEGO context token.
+	var st spnego.SPNEGOToken
+	if err := st.Unmarshal(token); err != nil {
+		return nil, auth.NewAuthError("kerberos", "spnego", fmt.Errorf("invalid SPNEGO token: %w", err))
+	}
+
+	// Verify the token against the keytab and establish the security context.
+	// On success gokrb5 returns gssapi.StatusComplete (a bit flag, not 0), so
+	// compare against the constant rather than zero.
+	ok, ctx, status := svc.AcceptSecContext(&st)
+	if !ok || (status.Code != gssapi.StatusComplete && status.Code != gssapi.StatusContinueNeeded) {
+		return nil, auth.NewAuthError("kerberos", "spnego",
+			fmt.Errorf("SPNEGO token verification failed: %s", status.Message))
+	}
+
+	// Extract the verified client identity from the established context.
+	creds, ok := ctx.Value(spnegoCtxCredentials).(*credentials.Credentials)
+	if !ok || creds == nil || !creds.Authenticated() {
+		return nil, auth.NewAuthError("kerberos", "spnego",
+			fmt.Errorf("SPNEGO token did not yield an authenticated identity"))
+	}
+
+	realm := creds.Realm()
+	if realm == "" {
+		realm = a.config.Realm
+	}
+	transformedUsername := a.transformUsername(creds.UserName(), realm)
+
+	slog.Debug("Kerberos SPNEGO authentication successful",
+		"username", transformedUsername,
+		"realm", realm,
+	)
+
+	return &auth.UserInfo{
+		Username: transformedUsername,
+		Metadata: map[string]string{
+			"auth_type": "kerberos",
+			"realm":     realm,
+		},
+	}, nil
 }
 
 // authenticateWithPassword performs Kerberos authentication with username and password.

@@ -354,5 +354,29 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
+	if err := c.Auth.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// Validate rejects the legacy auth configuration shapes (auth.mode and
+// type-specific blocks like auth.native/auth.providers[].native) at load/save
+// time so the Web UI can surface a clear error before a save bricks the server.
+// The runtime authenticator factory enforces the same rules; this surfaces them
+// earlier and via the standard config validation path.
+func (c *AuthConfig) Validate() error {
+	if c.Mode != "" {
+		return fmt.Errorf("legacy auth.mode is no longer supported; migrate to auth.providers with explicit plugin types")
+	}
+	if c.Native != nil || c.System != nil || c.LDAP != nil || c.OAuth != nil {
+		return fmt.Errorf("legacy top-level auth provider config (auth.native/system/ldap/oauth) is no longer supported; migrate to auth.providers[].config")
+	}
+	for i, p := range c.Providers {
+		if p.Native != nil || p.System != nil || p.LDAP != nil || p.OAuth != nil {
+			return fmt.Errorf("provider %q at index %d uses legacy type-specific auth config; migrate to providers[%d].config", p.Name, i, i)
+		}
+	}
 	return nil
 }

@@ -94,7 +94,8 @@ docs/                # Astro/Starlight documentation (deployed to GitHub Pages)
 
 ### Logging System (`internal/logging/`)
 - Uses `log/slog` with JSON (production) or text (development) format
-- Supports file rotation with max size/count
+- Config fields: `level`, `format`, `output` (stdout/stderr/file path), `time_format`
+- No built-in log rotation — when logging to a file, rotate externally (e.g. `logrotate` with `copytruncate`, or systemd/journald)
 - **Must call `logging.Close()` on shutdown** to release file handles
 - Log levels: debug, info, warn, error
 

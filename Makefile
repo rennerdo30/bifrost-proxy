@@ -141,20 +141,32 @@ build-openwrt-ipk: build-openwrt-all
 	@mkdir -p $(CURDIR)/$(DIST_DIR)/ipk
 	@for arch in mips mipsle arm6 arm7 arm64-openwrt; do \
 		echo "Packaging for $$arch..."; \
+		case "$$arch" in \
+			mips)          IPK_ARCH=mips_24kc ;; \
+			mipsle)        IPK_ARCH=mipsel_24kc ;; \
+			arm6)          IPK_ARCH=arm_arm1176jzf-s_vfp ;; \
+			arm7)          IPK_ARCH=arm_cortex-a9_vfpv3-d16 ;; \
+			arm64-openwrt) IPK_ARCH=aarch64_generic ;; \
+			*)             echo "Unknown arch $$arch" && exit 1 ;; \
+		esac; \
 		TEMP_DIR=$$(mktemp -d); \
-		mkdir -p $$TEMP_DIR/control $$TEMP_DIR/data/usr/bin $$TEMP_DIR/data/etc/init.d $$TEMP_DIR/data/etc/bifrost || exit 1; \
+		mkdir -p $$TEMP_DIR/control $$TEMP_DIR/data/usr/bin $$TEMP_DIR/data/etc/init.d $$TEMP_DIR/data/etc/config $$TEMP_DIR/data/etc/bifrost || exit 1; \
 		echo "2.0" > $$TEMP_DIR/debian-binary; \
 		echo "Package: bifrost-server" > $$TEMP_DIR/control/control; \
 		echo "Version: $(VERSION)" >> $$TEMP_DIR/control/control; \
-		echo "Architecture: all" >> $$TEMP_DIR/control/control; \
+		echo "Architecture: $$IPK_ARCH" >> $$TEMP_DIR/control/control; \
+		echo "Section: net" >> $$TEMP_DIR/control/control; \
+		echo "Priority: optional" >> $$TEMP_DIR/control/control; \
 		echo "Maintainer: Bifrost Team" >> $$TEMP_DIR/control/control; \
 		echo "Description: Lightweight proxy server with WireGuard and OpenVPN support" >> $$TEMP_DIR/control/control; \
+		printf '/etc/bifrost/config.yaml\n/etc/config/bifrost\n' > $$TEMP_DIR/control/conffiles; \
 		cp $(CURDIR)/$(DIST_DIR)/bifrost-server-linux-$$arch $$TEMP_DIR/data/usr/bin/bifrost-server || exit 1; \
 		cp $(CURDIR)/openwrt/etc/init.d/bifrost $$TEMP_DIR/data/etc/init.d/bifrost || exit 1; \
+		cp $(CURDIR)/openwrt/etc/config/bifrost $$TEMP_DIR/data/etc/config/bifrost || exit 1; \
 		cp $(CURDIR)/configs/server-config.openwrt.yaml $$TEMP_DIR/data/etc/bifrost/config.yaml || exit 1; \
 		(cd $$TEMP_DIR/control && tar -czf ../control.tar.gz .) || exit 1; \
 		(cd $$TEMP_DIR/data && tar -czf ../data.tar.gz .) || exit 1; \
-		(cd $$TEMP_DIR && tar -czf $(CURDIR)/$(DIST_DIR)/ipk/bifrost-server_$(VERSION)_$$arch.ipk debian-binary control.tar.gz data.tar.gz) || exit 1; \
+		(cd $$TEMP_DIR && tar -czf $(CURDIR)/$(DIST_DIR)/ipk/bifrost-server_$(VERSION)_$$IPK_ARCH.ipk debian-binary control.tar.gz data.tar.gz) || exit 1; \
 		rm -rf $$TEMP_DIR; \
 	done
 
@@ -307,18 +319,20 @@ mobile-build-android:
 	@cd mobile/android && ./gradlew assembleRelease
 	@echo "APK available at mobile/android/app/build/outputs/apk/release/"
 
-# Documentation
-.PHONY: docs docs-serve docs-build
+# Documentation (Astro / Starlight in docs/)
+.PHONY: docs docs-install docs-serve docs-build
 
-docs-serve:
-	@echo "Starting documentation server..."
-	@pip install mkdocs-material mkdocs-minify-plugin -q 2>/dev/null || pip install mkdocs-material mkdocs-minify-plugin
-	@mkdocs serve
+docs-install:
+	@echo "Installing documentation dependencies..."
+	@cd docs && npm install
 
-docs-build:
-	@echo "Building documentation..."
-	@pip install mkdocs-material mkdocs-minify-plugin -q 2>/dev/null || pip install mkdocs-material mkdocs-minify-plugin
-	@mkdocs build --strict
+docs-serve: docs-install
+	@echo "Starting documentation dev server (Astro/Starlight)..."
+	@cd docs && npm run dev
+
+docs-build: docs-install
+	@echo "Building documentation (Astro/Starlight)..."
+	@cd docs && npm run build
 
 docs: docs-serve
 
@@ -374,7 +388,7 @@ help:
 	@echo ""
 	@echo "Documentation:"
 	@echo "  make docs           - Start local docs server (alias for docs-serve)"
-	@echo "  make docs-serve     - Start MkDocs development server"
+	@echo "  make docs-serve     - Start Astro/Starlight development server"
 	@echo "  make docs-build     - Build static documentation site"
 	@echo ""
 	@echo "Other:"

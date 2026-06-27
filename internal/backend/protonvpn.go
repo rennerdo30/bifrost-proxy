@@ -190,7 +190,7 @@ func (b *ProtonVPNBackend) Start(ctx context.Context) error {
 		Password: b.config.Password,
 	}
 
-	// Create the delegate backend (OpenVPN only for now)
+	// Create the delegate backend (OpenVPN or WireGuard, per config.Protocol)
 	if err := b.createDelegate(ctx, server, creds); err != nil {
 		return NewBackendError(b.name, "create delegate", err)
 	}
@@ -242,11 +242,21 @@ func (b *ProtonVPNBackend) selectServer(ctx context.Context) (*vpnprovider.Serve
 }
 
 func (b *ProtonVPNBackend) createDelegate(ctx context.Context, server *vpnprovider.Server, creds vpnprovider.Credentials) error {
+	delegate, err := b.buildDelegate(ctx, server, creds)
+	if err != nil {
+		return err
+	}
+	b.delegate = delegate
+	return nil
+}
+
+// buildDelegate constructs (but does not start) a delegate backend.
+func (b *ProtonVPNBackend) buildDelegate(ctx context.Context, server *vpnprovider.Server, creds vpnprovider.Credentials) (Backend, error) {
 	switch b.config.Protocol {
 	case "openvpn":
 		ovpnConfig, err := b.client.GenerateOpenVPNConfig(ctx, server, creds)
 		if err != nil {
-			return fmt.Errorf("generate OpenVPN config: %w", err)
+			return nil, fmt.Errorf("generate OpenVPN config: %w", err)
 		}
 
 		cfg := OpenVPNConfig{
@@ -255,12 +265,12 @@ func (b *ProtonVPNBackend) createDelegate(ctx context.Context, server *vpnprovid
 			Username:      ovpnConfig.Username,
 			Password:      ovpnConfig.Password,
 		}
-		b.delegate = NewOpenVPNBackend(cfg)
+		return NewOpenVPNBackend(cfg), nil
 
 	case "wireguard":
 		wgConfig, err := b.client.GenerateWireGuardConfig(ctx, server, creds)
 		if err != nil {
-			return fmt.Errorf("generate WireGuard config: %w", err)
+			return nil, fmt.Errorf("generate WireGuard config: %w", err)
 		}
 
 		cfg := WireGuardConfig{
@@ -276,13 +286,11 @@ func (b *ProtonVPNBackend) createDelegate(ctx context.Context, server *vpnprovid
 				PresharedKey:        wgConfig.Peer.PresharedKey,
 			},
 		}
-		b.delegate = NewWireGuardBackend(cfg)
+		return NewWireGuardBackend(cfg), nil
 
 	default:
-		return fmt.Errorf("unsupported protocol: %s", b.config.Protocol)
+		return nil, fmt.Errorf("unsupported protocol: %s", b.config.Protocol)
 	}
-
-	return nil
 }
 
 func (b *ProtonVPNBackend) serverRefreshLoop() {
@@ -312,15 +320,65 @@ func (b *ProtonVPNBackend) checkAndRefreshServer() {
 	currentServer := b.selectedServer
 	b.mu.RUnlock()
 
-	// Only log if there's a significantly better server available
-	if currentServer != nil && newServer.Load < currentServer.Load-15 {
-		b.logger.Info("better server available",
-			"current_server", currentServer.Name,
-			"current_load", currentServer.Load,
-			"new_server", newServer.Name,
-			"new_load", newServer.Load,
-		)
+	// Only switch if there's a significantly better server available (15% lower load).
+	if currentServer == nil || newServer.Load >= currentServer.Load-15 {
+		return
 	}
+
+	b.logger.Info("switching to better server",
+		"old_server", currentServer.Name,
+		"old_load", currentServer.Load,
+		"new_server", newServer.Name,
+		"new_load", newServer.Load,
+	)
+
+	if err := b.swapDelegate(ctx, newServer); err != nil {
+		b.logger.Warn("failed to switch to better server, keeping current",
+			"new_server", newServer.Name,
+			"error", err,
+		)
+		return
+	}
+
+	b.logger.Info("switched to better server", "server", newServer.Name)
+}
+
+// swapDelegate builds and starts a new delegate for the given server, then
+// atomically replaces the running delegate and stops the old one. If building
+// or starting the new delegate fails, the current delegate is left untouched.
+func (b *ProtonVPNBackend) swapDelegate(ctx context.Context, server *vpnprovider.Server) error {
+	creds := vpnprovider.Credentials{
+		Username: b.config.Username,
+		Password: b.config.Password,
+	}
+
+	newDelegate, err := b.buildDelegate(ctx, server, creds)
+	if err != nil {
+		return fmt.Errorf("build delegate: %w", err)
+	}
+
+	if err := newDelegate.Start(ctx); err != nil {
+		return fmt.Errorf("start delegate: %w", err)
+	}
+
+	b.mu.Lock()
+	if !b.running {
+		b.mu.Unlock()
+		_ = newDelegate.Stop(ctx) //nolint:errcheck // best-effort cleanup
+		return fmt.Errorf("backend not running")
+	}
+	oldDelegate := b.delegate
+	b.delegate = newDelegate
+	b.selectedServer = server
+	b.mu.Unlock()
+
+	if oldDelegate != nil {
+		if err := oldDelegate.Stop(ctx); err != nil {
+			b.logger.Warn("failed to stop old delegate after swap", "error", err)
+		}
+	}
+
+	return nil
 }
 
 // Stop shuts down the ProtonVPN connection.

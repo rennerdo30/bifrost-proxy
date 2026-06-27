@@ -138,6 +138,7 @@ type API struct {
 	configReloader  func() error
 	logSubscribers  map[*logSubscriber]struct{}
 	logMu           sync.RWMutex
+	logPumpRunning  atomic.Bool
 
 	// Additional fields for desktop app support
 	serverAddress   string
@@ -304,6 +305,8 @@ func (a *API) HandlerWithUI() http.Handler {
 		})
 		r.Route("/v1/routes", func(r chi.Router) {
 			r.Get("/", a.handleGetRoutes)
+			r.Post("/", a.handleAddRoute)
+			r.Delete("/{name}", a.handleRemoveRoute)
 			r.Get("/test", a.handleTestRoute)
 		})
 		r.Route("/v1/vpn", func(r chi.Router) {
@@ -353,17 +356,20 @@ func (a *API) HandlerWithUI() http.Handler {
 func apiSecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("X-Frame-Options", "DENY")
+		// SAMEORIGIN (not DENY): see server-side securityHeadersMiddleware
+		// for rationale — allows embedding by same-origin reverse proxies
+		// like Home Assistant Ingress.
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		// Content Security Policy
-		// Allow self, inline styles/scripts for React/Vite, and WebSockets
-		// All assets (including fonts) are now served from 'self'
+		// Allow self, inline styles/scripts for React/Vite, WebSockets,
+		// and same-origin framing. All assets served from 'self'.
 		csp := "default-src 'self'; " +
 			"script-src 'self' 'unsafe-inline'; " +
 			"style-src 'self' 'unsafe-inline'; " +
 			"font-src 'self'; " +
 			"img-src 'self' data: https:; " +
 			"connect-src 'self' ws: wss:; " +
-			"frame-ancestors 'none'"
+			"frame-ancestors 'self'"
 		w.Header().Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
@@ -586,22 +592,24 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Prevent MIME type sniffing
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		// Prevent clickjacking
-		w.Header().Set("X-Frame-Options", "DENY")
+		// SAMEORIGIN (not DENY): see apiSecurityHeaders for rationale —
+		// allows Web UI to be embedded by same-origin reverse proxies
+		// (HA Ingress, Traefik, Cloudflare Tunnel on same domain).
+		w.Header().Set("X-Frame-Options", "SAMEORIGIN")
 		// XSS protection (legacy, but still useful)
 		w.Header().Set("X-XSS-Protection", "1; mode=block")
 		// Referrer policy
 		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		// Content Security Policy
-		// Allow self, inline styles/scripts for React/Vite, and WebSockets
-		// All assets (including fonts) are now served from 'self'
+		// Allow self, inline styles/scripts for React/Vite, WebSockets,
+		// and same-origin framing. All assets served from 'self'.
 		csp := "default-src 'self'; " +
 			"script-src 'self' 'unsafe-inline'; " +
 			"style-src 'self' 'unsafe-inline'; " +
 			"font-src 'self'; " +
 			"img-src 'self' data: https:; " +
 			"connect-src 'self' ws: wss:; " +
-			"frame-ancestors 'none'"
+			"frame-ancestors 'self'"
 		w.Header().Set("Content-Security-Policy", csp)
 
 		next.ServeHTTP(w, r)
@@ -1502,7 +1510,12 @@ func (a *API) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get logs from debugger if available (for now return debug entries as logs)
+	// NOTE: These are request/traffic debug entries derived from the debug
+	// logger, NOT the application's slog output. Wiring this endpoint to the
+	// real slog pipeline requires a fan-out slog.Handler in internal/logging,
+	// which is owned by another stream (see deferred findings). Until then the
+	// response is explicitly labeled with source="traffic_debug" so the UI and
+	// API consumers are not misled into thinking these are application logs.
 	entries := []LogEntry{}
 	if a.debugger != nil {
 		debugEntries := a.debugger.GetLastEntries(limit + offset)
@@ -1543,6 +1556,7 @@ func (a *API) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
+		"source":  "traffic_debug",
 		"entries": entries,
 		"total":   len(entries),
 		"limit":   limit,
@@ -1601,6 +1615,13 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 
 	// Stream logs
 	ctx := r.Context()
+
+	// Ensure a single background producer is running that polls the traffic
+	// debugger and fans new entries out to all subscribers via BroadcastLog.
+	// Without this the stream would have no producer and emit nothing. These are
+	// request/traffic debug entries, not slog output (see the note in
+	// handleGetLogs and the deferred finding about wiring slog).
+	a.ensureLogPump()
 	for {
 		select {
 		case <-ctx.Done():
@@ -1615,6 +1636,90 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 			}
 			_, _ = w.Write([]byte("data: " + string(data) + "\n\n")) //nolint:errcheck // Best effort SSE write
 			flusher.Flush()
+		}
+	}
+}
+
+// ensureLogPump starts, at most once, a background goroutine that polls the
+// traffic debugger for newly recorded entries and fans them out to all
+// connected SSE subscribers via BroadcastLog. The goroutine exits when there
+// are no subscribers left so it does not run indefinitely when nobody is
+// listening.
+func (a *API) ensureLogPump() {
+	if a.debugger == nil {
+		return
+	}
+	// Only start a pump if one is not already running.
+	if a.logPumpRunning.CompareAndSwap(false, true) {
+		go a.runLogPump()
+	}
+}
+
+// logPumpInterval is how often the traffic-debug log pump polls for new entries.
+const logPumpInterval = time.Second
+
+func (a *API) runLogPump() {
+	// Clear the running flag when we exit so a future subscriber can restart it.
+	defer a.logPumpRunning.Store(false)
+
+	ticker := time.NewTicker(logPumpInterval)
+	defer ticker.Stop()
+
+	// Track the last entry we emitted by its monotonic ID rather than by
+	// Count(): the debug store is a fixed-capacity ring buffer whose Count()
+	// saturates at capacity, which would make a count-based diff stop emitting
+	// once the buffer is full. Start from the current tail so we only stream
+	// entries created after the stream was opened.
+	var lastID string
+	if entries := a.debugger.GetEntries(); len(entries) > 0 {
+		lastID = entries[len(entries)-1].ID
+	}
+
+	for range ticker.C {
+		// Stop the pump if no subscribers remain.
+		a.logMu.RLock()
+		subCount := len(a.logSubscribers)
+		a.logMu.RUnlock()
+		if subCount == 0 {
+			return
+		}
+
+		// Snapshot the ring (oldest -> newest) and emit everything after the
+		// last ID we have seen. If that ID has rotated out of the buffer (or
+		// was never set), every buffered entry is newer, so emit them all.
+		entries := a.debugger.GetEntries()
+		newEntries := entries
+		for i := len(entries) - 1; i >= 0; i-- {
+			if entries[i].ID == lastID {
+				newEntries = entries[i+1:]
+				break
+			}
+		}
+		if len(newEntries) == 0 {
+			continue
+		}
+		lastID = newEntries[len(newEntries)-1].ID
+
+		for _, entry := range newEntries {
+			logLevel := "info"
+			if entry.Error != "" {
+				logLevel = "error"
+			}
+			url := entry.Host + entry.Path
+			a.BroadcastLog(LogEntry{
+				Timestamp: entry.Timestamp.Format(time.RFC3339),
+				Level:     logLevel,
+				Message:   entry.Method + " " + url,
+				Fields: map[string]interface{}{
+					"source":      "traffic_debug",
+					"method":      entry.Method,
+					"url":         url,
+					"status_code": entry.StatusCode,
+					"duration_ms": entry.Duration.Milliseconds(),
+					"action":      entry.Action,
+					"error":       entry.Error,
+				},
+			})
 		}
 	}
 }

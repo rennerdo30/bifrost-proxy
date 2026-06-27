@@ -14,8 +14,23 @@ STOP=10
 USE_PROCD=1
 
 PROG=/usr/bin/bifrost-server
-CONFIG=/etc/bifrost/config.yaml
 PIDFILE=/var/run/bifrost.pid
+
+# Defaults (overridden by UCI config in /etc/config/bifrost).
+CONFIG=/etc/bifrost/config.yaml
+ENABLED=1
+
+# load_uci reads the documented options from the 'main' section of
+# /etc/config/bifrost. Only 'enabled' and 'config_file' are honored by the
+# service; the server/socks5/logging/api sections in the UCI file are
+# documentation aids and are NOT synced into the YAML config. Edit
+# /etc/bifrost/config.yaml directly for full configuration.
+load_uci() {
+    . /lib/functions.sh 2>/dev/null || return 0
+    config_load bifrost 2>/dev/null || return 0
+    config_get ENABLED main enabled "$ENABLED"
+    config_get CONFIG main config_file "$CONFIG"
+}
 
 validate_config() {
     [ -f "$CONFIG" ] || {
@@ -30,6 +45,15 @@ validate_config() {
 }
 
 start_service() {
+    load_uci
+
+    case "$ENABLED" in
+        0|no|false|off)
+            echo "bifrost is disabled in /etc/config/bifrost (option enabled '0')"
+            return 0
+            ;;
+    esac
+
     validate_config || return 1
 
     procd_open_instance bifrost
@@ -61,12 +85,14 @@ stop_service() {
 
 reload_service() {
     # Send SIGHUP to reload configuration
+    load_uci
     local pid
     pid=$(cat "$PIDFILE" 2>/dev/null) || pid=$(pgrep -f "$PROG")
     [ -n "$pid" ] && kill -HUP $pid
 }
 
 service_triggers() {
+    # Restart/reload when the UCI config (/etc/config/bifrost) changes.
     procd_add_reload_trigger "bifrost"
 }
 

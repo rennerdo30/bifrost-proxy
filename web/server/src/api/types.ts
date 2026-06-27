@@ -336,27 +336,39 @@ export interface OAuthAuth {
   scopes: string[]
 }
 
+// Supported auth plugin types (must match registered plugins in internal/auth/plugin).
+export type AuthProviderType =
+  | 'none'
+  | 'native'
+  | 'system'
+  | 'ldap'
+  | 'oauth'
+  | 'jwt'
+  | 'apikey'
+  | 'mtls'
+  | 'kerberos'
+  | 'ntlm'
+
+// Plugin-specific configuration is an untyped map matching the server's
+// AuthProvider.Config (map[string]any). The server rejects the legacy
+// typed fields (native/system/ldap/oauth) and the `mode` field, so the UI
+// must only ever emit the `config` map format.
+export type AuthProviderConfig = Record<string, unknown>
+
 // Auth Provider (for multiple auth backends)
 export interface AuthProvider {
   name: string
-  type: 'none' | 'native' | 'system' | 'ldap' | 'oauth'
+  type: AuthProviderType
   enabled: boolean
   priority: number
-  native?: NativeAuth
-  system?: SystemAuth
-  ldap?: LDAPAuth
-  oauth?: OAuthAuth
+  config?: AuthProviderConfig
 }
 
 // Auth Configuration
+// Only the multi-provider format is supported by the server. The legacy
+// single-mode fields (`mode`, `native`, ...) are intentionally omitted so
+// the UI never emits a server-rejected payload.
 export interface AuthConfig {
-  // Legacy single-mode (backwards compatible)
-  mode?: 'none' | 'native' | 'system' | 'ldap' | 'oauth'
-  native?: NativeAuth
-  system?: SystemAuth
-  ldap?: LDAPAuth
-  oauth?: OAuthAuth
-  // New multi-provider configuration
   providers?: AuthProvider[]
 }
 
@@ -553,9 +565,41 @@ export interface ClientsResponse {
 }
 
 // WebSocket events
+// Event type identifiers must match the server constants in
+// internal/api/server/websocket.go (EventStats, EventBackendHealth, ...).
+export const WS_EVENT_STATS = 'stats.update'
+export const WS_EVENT_BACKEND_HEALTH = 'backend.health'
+export const WS_EVENT_CONNECTION_NEW = 'connection.new'
+export const WS_EVENT_CONNECTION_CLOSE = 'connection.close'
+export const WS_EVENT_CONFIG_RELOAD = 'config.reload'
+
+export type WSEventType =
+  | typeof WS_EVENT_STATS
+  | typeof WS_EVENT_BACKEND_HEALTH
+  | typeof WS_EVENT_CONNECTION_NEW
+  | typeof WS_EVENT_CONNECTION_CLOSE
+  | typeof WS_EVENT_CONFIG_RELOAD
+
 export interface WSEvent {
-  type: 'stats' | 'backend_status' | 'config_reload' | 'request'
+  type: WSEventType | string
+  timestamp?: string
   data: unknown
+}
+
+// Payload of a WS_EVENT_STATS event (subset of ServerStats).
+// Matches StatsEvent in internal/api/server/websocket.go.
+export interface StatsEventData {
+  active_connections: number
+  total_connections: number
+  bytes_sent: number
+  bytes_received: number
+}
+
+// Payload of a WS_EVENT_BACKEND_HEALTH event.
+// Matches BackendHealthEvent in internal/api/server/websocket.go.
+export interface BackendHealthEventData {
+  name: string
+  healthy: boolean
 }
 
 // ============================================
