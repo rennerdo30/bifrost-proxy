@@ -51,27 +51,29 @@ func TestErrNotSupported(t *testing.T) {
 func TestSetProxy(t *testing.T) {
 	mgr := New()
 
-	// On non-Windows platforms, this is a no-op that returns nil
+	// On non-Windows platforms, system proxy configuration is not yet
+	// implemented and fails closed with ErrNotSupported.
 	// On Windows, this would actually modify registry (skip in CI)
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping SetProxy test on Windows to avoid modifying system settings")
 	}
 
 	err := mgr.SetProxy("127.0.0.1:8080")
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrNotSupported)
 }
 
 func TestClearProxy(t *testing.T) {
 	mgr := New()
 
-	// On non-Windows platforms, this is a no-op that returns nil
+	// On non-Windows platforms, system proxy configuration is not yet
+	// implemented and fails closed with ErrNotSupported.
 	// On Windows, this would actually modify registry (skip in CI)
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping ClearProxy test on Windows to avoid modifying system settings")
 	}
 
 	err := mgr.ClearProxy()
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrNotSupported)
 }
 
 func TestSetAndClearProxy(t *testing.T) {
@@ -83,11 +85,11 @@ func TestSetAndClearProxy(t *testing.T) {
 
 	// Set proxy
 	err := mgr.SetProxy("127.0.0.1:8080")
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrNotSupported)
 
 	// Clear proxy
 	err = mgr.ClearProxy()
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrNotSupported)
 }
 
 func TestSetProxy_EmptyAddress(t *testing.T) {
@@ -97,9 +99,9 @@ func TestSetProxy_EmptyAddress(t *testing.T) {
 		t.Skip("Skipping proxy test on Windows to avoid modifying system settings")
 	}
 
-	// Empty address - still no-op on non-Windows
+	// Empty address - not supported on non-Windows
 	err := mgr.SetProxy("")
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrNotSupported)
 }
 
 func TestSetProxy_IPv6Address(t *testing.T) {
@@ -111,7 +113,7 @@ func TestSetProxy_IPv6Address(t *testing.T) {
 
 	// IPv6 address format
 	err := mgr.SetProxy("[::1]:8080")
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrNotSupported)
 }
 
 func TestSetProxy_WithHostname(t *testing.T) {
@@ -123,7 +125,7 @@ func TestSetProxy_WithHostname(t *testing.T) {
 
 	// Hostname instead of IP
 	err := mgr.SetProxy("proxy.example.com:8080")
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrNotSupported)
 }
 
 func TestMultipleOperations(t *testing.T) {
@@ -136,10 +138,10 @@ func TestMultipleOperations(t *testing.T) {
 	// Multiple set/clear operations
 	for i := 0; i < 5; i++ {
 		err := mgr.SetProxy("127.0.0.1:8080")
-		assert.NoError(t, err)
+		assert.ErrorIs(t, err, ErrNotSupported)
 
 		err = mgr.ClearProxy()
-		assert.NoError(t, err)
+		assert.ErrorIs(t, err, ErrNotSupported)
 	}
 }
 

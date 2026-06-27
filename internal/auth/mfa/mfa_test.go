@@ -426,73 +426,35 @@ func TestMFAWrapper_NilMFA(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// Test pendingWrapper methods
-func TestPendingWrapper_Authenticate(t *testing.T) {
+// By-name provider configuration is not supported: Create must fail closed with
+// a clear configuration error rather than returning a wrapper that silently
+// rejects every login.
+func TestByNameProviders_FailClosed(t *testing.T) {
 	plugin, ok := auth.GetPlugin("mfa_wrapper")
 	require.True(t, ok)
 
-	// Create a pendingWrapper via the plugin
-	authenticator, err := plugin.Create(map[string]any{
+	_, err := plugin.Create(map[string]any{
 		"primary_provider": "ldap-main",
 		"mfa_type":         "totp",
 	})
-	require.NoError(t, err)
-
-	// Authenticate should return an error because it's not fully configured
-	_, err = authenticator.Authenticate(context.Background(), "user", "password")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "not fully configured")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not supported")
+	assert.Contains(t, err.Error(), "inline")
 }
 
-func TestPendingWrapper_Name(t *testing.T) {
+// A valid by-name config still fails at Create, but only after passing
+// configuration validation (i.e. the error is about the unsupported mode, not
+// about a malformed config).
+func TestByNameProviders_ValidatesBeforeFailing(t *testing.T) {
 	plugin, ok := auth.GetPlugin("mfa_wrapper")
 	require.True(t, ok)
 
-	authenticator, err := plugin.Create(map[string]any{
-		"primary_provider": "ldap-main",
+	// Missing primary_provider is a config error and should be reported as such.
+	_, err := plugin.Create(map[string]any{
+		"mfa_type": "totp",
 	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "mfa_wrapper", authenticator.Name())
-}
-
-func TestPendingWrapper_Type(t *testing.T) {
-	plugin, ok := auth.GetPlugin("mfa_wrapper")
-	require.True(t, ok)
-
-	authenticator, err := plugin.Create(map[string]any{
-		"primary_provider": "ldap-main",
-	})
-	require.NoError(t, err)
-
-	assert.Equal(t, "mfa_wrapper", authenticator.Type())
-}
-
-// Interface to access GetConfig on pendingWrapper
-type configGetter interface {
-	GetConfig() *mfa.Config
-}
-
-func TestPendingWrapper_GetConfig(t *testing.T) {
-	plugin, ok := auth.GetPlugin("mfa_wrapper")
-	require.True(t, ok)
-
-	authenticator, err := plugin.Create(map[string]any{
-		"primary_provider": "my-ldap",
-		"mfa_type":         "hotp",
-		"mfa_code_length":  8,
-	})
-	require.NoError(t, err)
-
-	// Check if it implements configGetter
-	cg, ok := authenticator.(configGetter)
-	require.True(t, ok, "authenticator should implement GetConfig")
-
-	config := cg.GetConfig()
-	assert.NotNil(t, config)
-	assert.Equal(t, "my-ldap", config.PrimaryProvider)
-	assert.Equal(t, "hotp", config.MFAType)
-	assert.Equal(t, 8, config.MFACodeLength)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "primary_provider")
 }
 
 // Test parsePluginConfig edge cases
@@ -548,37 +510,36 @@ func TestParsePluginConfig_MFAProvider(t *testing.T) {
 	plugin, ok := auth.GetPlugin("mfa_wrapper")
 	require.True(t, ok)
 
-	// mfa_provider should override mfa_type
-	authenticator, err := plugin.Create(map[string]any{
+	// A by-name config with mfa_provider is well-formed (ValidateConfig passes)
+	// but Create fails closed because by-name resolution is unsupported.
+	cfg := map[string]any{
 		"primary_provider": "ldap-main",
 		"mfa_type":         "totp",
 		"mfa_provider":     "custom-totp",
-	})
-	require.NoError(t, err)
+	}
+	require.NoError(t, plugin.ValidateConfig(cfg))
 
-	cg, ok := authenticator.(configGetter)
-	require.True(t, ok)
-
-	config := cg.GetConfig()
-	assert.Equal(t, "custom-totp", config.MFAType)
+	_, err := plugin.Create(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not supported")
 }
 
 func TestParsePluginConfig_CustomSeparator(t *testing.T) {
 	plugin, ok := auth.GetPlugin("mfa_wrapper")
 	require.True(t, ok)
 
-	authenticator, err := plugin.Create(map[string]any{
+	// A by-name config with a custom separator is well-formed but Create still
+	// fails closed (by-name resolution is unsupported).
+	cfg := map[string]any{
 		"primary_provider": "ldap-main",
 		"password_format":  "separated",
 		"separator":        "|",
-	})
-	require.NoError(t, err)
+	}
+	require.NoError(t, plugin.ValidateConfig(cfg))
 
-	cg, ok := authenticator.(configGetter)
-	require.True(t, ok)
-
-	config := cg.GetConfig()
-	assert.Equal(t, "|", config.Separator)
+	_, err := plugin.Create(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not supported")
 }
 
 func TestParsePluginConfig_AllMFAModes(t *testing.T) {

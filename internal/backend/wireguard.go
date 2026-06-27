@@ -88,39 +88,19 @@ func (b *WireGuardBackend) Dial(ctx context.Context, network, address string) (n
 	tnet := b.tnet
 	b.mu.RUnlock()
 
-	var conn net.Conn
-	var err error
-
 	switch network {
-	case "tcp", "tcp4", "tcp6":
-		// Resolve the target address first
-		tcpAddr, resolveErr := net.ResolveTCPAddr(network, address)
-		if resolveErr != nil {
-			b.recordError(resolveErr)
-			return nil, NewBackendError(b.name, "resolve", resolveErr)
-		}
-		// Connect to the target through the WireGuard tunnel
-		conn, err = tnet.DialContextTCPAddrPort(ctx, netip.AddrPortFrom(
-			netip.MustParseAddr(tcpAddr.IP.String()),
-			uint16(tcpAddr.Port), //nolint:gosec // G115: TCP port is always 0-65535
-		))
-	case "udp", "udp4", "udp6":
-		udpAddr, resolveErr := net.ResolveUDPAddr(network, address)
-		if resolveErr != nil {
-			b.recordError(resolveErr)
-			return nil, NewBackendError(b.name, "resolve", resolveErr)
-		}
-		conn, err = tnet.DialUDPAddrPort(
-			netip.AddrPort{},
-			netip.AddrPortFrom(
-				netip.MustParseAddr(udpAddr.IP.String()),
-				uint16(udpAddr.Port), //nolint:gosec // G115: UDP port is always 0-65535
-			),
-		)
+	case "tcp", "tcp4", "tcp6", "udp", "udp4", "udp6":
+		// no-op: supported networks
 	default:
 		return nil, NewBackendError(b.name, "dial", fmt.Errorf("unsupported network: %s", network))
 	}
 
+	// Resolve and dial entirely inside the netstack tunnel. tnet.DialContext
+	// performs hostname resolution via the tunnel's configured DNS servers
+	// (b.config.DNS, supplied to netstack.CreateNetTUN) rather than the host
+	// OS resolver. This prevents a DNS leak: previously net.Resolve{TCP,UDP}Addr
+	// resolved the target via the host resolver before tunneling the dial.
+	conn, err := tnet.DialContext(ctx, network, address)
 	if err != nil {
 		b.recordError(err)
 		return nil, NewBackendError(b.name, "dial", err)

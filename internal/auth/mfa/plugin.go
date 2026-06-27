@@ -2,7 +2,6 @@
 package mfa
 
 import (
-	"context"
 	"fmt"
 	"strings"
 
@@ -32,14 +31,20 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 		return p.createInlineWrapper(config)
 	}
 
-	cfg, err := parsePluginConfig(config, true)
-	if err != nil {
+	// Validate the by-name configuration so misconfigurations are reported,
+	// then fail closed: resolving providers by name (primary_provider /
+	// mfa_provider) requires a registry of already-constructed, named
+	// authenticators that this plugin does not have access to at Create time.
+	// Returning a wrapper that rejects every login would be a silent, surprising
+	// failure, so we reject the configuration explicitly and tell the operator
+	// how to make it work (inline primary/secondary blocks).
+	if _, err := parsePluginConfig(config, true); err != nil {
 		return nil, err
 	}
 
-	// This plugin requires external setup of primary and MFA authenticators
-	// Return a placeholder that must be configured later
-	return &pendingWrapper{config: cfg}, nil
+	return nil, fmt.Errorf("mfa_wrapper: referencing auth providers by name " +
+		"(primary_provider/mfa_provider) is not supported; configure the wrapper " +
+		"with inline 'primary' and 'secondary' blocks instead")
 }
 
 // ValidateConfig validates the configuration.
@@ -392,29 +397,4 @@ func toStringSlice(v any) []string {
 		}
 	}
 	return result
-}
-
-// pendingWrapper is a placeholder for an MFA wrapper that needs its providers set.
-type pendingWrapper struct {
-	config *Config
-}
-
-// Authenticate returns an error indicating the wrapper needs configuration.
-func (w *pendingWrapper) Authenticate(ctx context.Context, username, password string) (*auth.UserInfo, error) {
-	return nil, fmt.Errorf("MFA wrapper not fully configured: use inline primary/secondary config")
-}
-
-// Name returns the authenticator name.
-func (w *pendingWrapper) Name() string {
-	return "mfa_wrapper"
-}
-
-// Type returns the authenticator type.
-func (w *pendingWrapper) Type() string {
-	return "mfa_wrapper"
-}
-
-// GetConfig returns the parsed configuration.
-func (w *pendingWrapper) GetConfig() *Config {
-	return w.config
 }

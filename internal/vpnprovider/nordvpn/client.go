@@ -4,6 +4,7 @@ package nordvpn
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
@@ -383,8 +384,12 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 		port = server.OpenVPN.TCPPort
 	}
 
-	// Generate OpenVPN config content
-	configContent := c.generateOpenVPNConfigContent(server.Hostname, proto, port)
+	// Generate OpenVPN config content. This requires the CA certificate to be
+	// supplied via configuration; we never embed CA material.
+	configContent, err := c.generateOpenVPNConfigContent(server.Hostname, proto, port, creds)
+	if err != nil {
+		return nil, err
+	}
 
 	config := &vpnprovider.OpenVPNConfig{
 		ConfigContent: configContent,
@@ -403,7 +408,21 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 }
 
 // generateOpenVPNConfigContent generates the OpenVPN config file content.
-func (c *Client) generateOpenVPNConfigContent(hostname, proto string, port int) string {
+//
+// The CA certificate must be provided via configuration (creds.CACert). We do
+// NOT embed CA material in the binary: a wrong/placeholder CA would either fail
+// to parse or, worse, disable server verification. If no valid CA is supplied
+// we fail closed so callers never receive a config that can't authenticate the
+// server.
+func (c *Client) generateOpenVPNConfigContent(hostname, proto string, port int, creds vpnprovider.Credentials) (string, error) {
+	caCert := strings.TrimSpace(creds.CACert)
+	if caCert == "" {
+		return "", fmt.Errorf("%w: NordVPN OpenVPN requires a CA certificate to be configured (credentials.ca_cert)", vpnprovider.ErrConfigGenerationFailed)
+	}
+	if block, _ := pem.Decode([]byte(caCert)); block == nil {
+		return "", fmt.Errorf("%w: configured NordVPN CA certificate is not valid PEM", vpnprovider.ErrConfigGenerationFailed)
+	}
+
 	var sb strings.Builder
 
 	sb.WriteString("client\n")
@@ -431,18 +450,26 @@ func (c *Client) generateOpenVPNConfigContent(hostname, proto string, port int) 
 	sb.WriteString("cipher AES-256-GCM\n")
 	sb.WriteString("auth SHA512\n")
 
-	// NordVPN CA certificate
+	// CA certificate (supplied via configuration, validated above).
 	sb.WriteString("<ca>\n")
-	sb.WriteString(nordVPNCACert)
+	sb.WriteString(caCert)
+	if !strings.HasSuffix(caCert, "\n") {
+		sb.WriteString("\n")
+	}
 	sb.WriteString("</ca>\n")
 
-	// TLS authentication key
-	sb.WriteString("key-direction 1\n")
-	sb.WriteString("<tls-auth>\n")
-	sb.WriteString(nordVPNTLSKey)
-	sb.WriteString("</tls-auth>\n")
+	// Optional TLS authentication key (only emitted if configured).
+	if tlsAuth := strings.TrimSpace(creds.TLSAuthKey); tlsAuth != "" {
+		sb.WriteString("key-direction 1\n")
+		sb.WriteString("<tls-auth>\n")
+		sb.WriteString(tlsAuth)
+		if !strings.HasSuffix(tlsAuth, "\n") {
+			sb.WriteString("\n")
+		}
+		sb.WriteString("</tls-auth>\n")
+	}
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // checkResponse checks the HTTP response for errors.
@@ -473,44 +500,9 @@ func (c *Client) CacheStats() (serverCount int, lastFetch time.Time, ttl time.Du
 	return c.cache.ServerCount(), c.cache.LastFetch(), c.cache.TTL()
 }
 
-// NordVPN CA certificate (used for OpenVPN connections).
-const nordVPNCACert = `-----BEGIN CERTIFICATE-----
-MIIFCjCCAvKgAwIBAgIBATANBgkqhkiG9w0BAQ0FADAYMRYwFAYDVQQDDA1OT1JE
-VlBOIFJvb3QwHhcNMjQwMTAxMDAwMDAwWhcNMzQwMTAxMDAwMDAwWjAYMRYwFAYD
-VQQDDA1OT1JEVlBOIFJvb3QwggIiMA0GCSqGSIb3DQEBAQUAA4ICDwAwggIKAoIC
-AQC7aKo7dXiMHejbqJG5Vz8YyFw3C/9XvxLVPLDFMQTJQTQbfQyT8mAHMvPxTQF1
-S7KHRyDfJAFEqaGPVn0Mwez+Z5QbKhgDhLVsJ6LMCRtP9G+ZEJLAFMYbBQz+f2Ld
-kPQiQGFWO0YlBQ6Z+lT3m0OyHQJL0H0m5hHkCAq1p0Wg0qQFBTMLf3Q5Wz0k+Xkm
-W2TDxYvl+L+3JIaHM4HLaLG7GMRl/8EHg+mLHR3DEy5cQplMPRzPV4PYT7T8FvFc
-Ot5kL1QxbGJNSM3rE3/Db9LHsO4Jf2LIMkVB0nN+Db0M6r0FHC7KfJLJ0VZqoG0L
-O/tPyC7D4DwLbFp5WyPkKQpL7kCH6VB6xKhE9P7Q0Rz7MGRBT7kG+HlBAMF3QqK3
-M6SRQclXmXQ+S/lQzW4jfE3Q0UVUz4YKQXP3Q0ZPG3gP+9G3lI7gQtbgHAqDBg5G
-Wl8C7tBCQ6d5mT4C3M6tLpbQgQ0VKPR6sQG0u6R7lT9P0HlJ0r0/MxnLx6+8QHLR
-t8pJ+S+z0m0L3Kb+hLLH0Bg1Jg2MkRj7D6A1PnD7q6Q6Q4G5R7EKvqHVZR6MGFR7
-V8G0Jz6L+D5KiQWGYQ7VL3M0KmS5FV4qL0Q6G5QB5EUt2R7LTsWBhZE5V+0kEL2L
-TL6K+LZTQ7E0K+dVZ3BpPZ9UKQQ0F3M0P6Q0QxH0K8HQJQIDAQABMA0GCSqGSIb3
-DQEBDQUAA4ICAQBk0Lm5MXKL9V2P0D0K0H0Kd0LKQV3L5KBL8LM0LzL7M0LQLHM0
-LLMQLQL0LLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQLQL
------END CERTIFICATE-----
-`
-
-// NordVPN TLS authentication key (used for OpenVPN connections).
-const nordVPNTLSKey = `-----BEGIN OpenVPN Static key V1-----
-e685bdaf659a25a200e2b9e39e51ff03
-0fc72cf1ce07232bd8b2be5e6c670143
-f51e937e670eee09d4f2ea5a6e4e6996
-5db852c275351b86fc4ca892f90c5d0b
-f9f0f5b256c4a7a8e537f337f5c4a517
-5fa2f4e19d2d9a9b9e0d3d8a3e5f6b7c
-8d9e0a1b2c3d4e5f6a7b8c9d0e1f2a3b
-4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f
-0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d
-6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b
-2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f
-8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d
-4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b
-0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f
-6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d
-2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b
------END OpenVPN Static key V1-----
-`
+// NOTE: NordVPN CA / tls-auth material is intentionally NOT embedded here.
+// Embedding placeholder or hard-coded crypto material is unsafe: a wrong CA
+// either fails to parse or silently disables server verification. The CA
+// certificate (and optional tls-auth key) must be supplied via configuration
+// (Credentials.CACert / Credentials.TLSAuthKey) and is validated at OpenVPN
+// config-generation time. See generateOpenVPNConfigContent.

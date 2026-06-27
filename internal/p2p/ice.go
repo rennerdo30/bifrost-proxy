@@ -97,6 +97,12 @@ const (
 )
 
 // ICEAgent manages ICE candidate gathering and connectivity checks.
+//
+// NOTE: The ICEAgent is implemented and unit-tested in isolation but is NOT
+// yet wired into the P2P connection establishment path (see P2PManager /
+// P2PConnection, which currently negotiate connections directly without a
+// full ICE agent). Engaging ICE end-to-end is tracked as future work; until
+// then this type is not exercised by the live connection flow.
 type ICEAgent struct {
 	stunClient *STUNClient
 	turnClient *TURNClient

@@ -1,246 +1,152 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { Section } from '../Section'
-import { NativeAuthForm } from '../auth-forms/NativeAuthForm'
-import { SystemAuthForm } from '../auth-forms/SystemAuthForm'
-import { LDAPAuthForm } from '../auth-forms/LDAPAuthForm'
-import { OAuthForm } from '../auth-forms/OAuthForm'
-import type { AuthConfig, AuthProvider } from '../../../api/types'
+import { NativeUsersForm } from '../auth-forms/NativeUsersForm'
+import { ApiKeysForm } from '../auth-forms/ApiKeysForm'
+import { AuthProviderConfigForm } from '../auth-forms/AuthProviderConfigForm'
+import type { AuthConfig, AuthProvider, AuthProviderConfig, AuthProviderType } from '../../../api/types'
 
 interface AuthSectionProps {
   config: AuthConfig
   onChange: (config: AuthConfig) => void
 }
 
-const authTypes = [
+interface AuthTypeOption {
+  value: AuthProviderType
+  label: string
+  description: string
+}
+
+// All registered auth plugin types (see internal/auth/plugin).
+const authTypes: AuthTypeOption[] = [
+  { value: 'none', label: 'None', description: 'Allow all requests (no authentication)' },
   { value: 'native', label: 'Native', description: 'Built-in user database with bcrypt passwords' },
   { value: 'system', label: 'System (PAM)', description: 'Authenticate against OS users via PAM' },
   { value: 'ldap', label: 'LDAP', description: 'Authenticate against LDAP/Active Directory' },
   { value: 'oauth', label: 'OAuth/OIDC', description: 'Authenticate via OAuth 2.0 / OpenID Connect' },
+  { value: 'jwt', label: 'JWT', description: 'Verify JWT bearer tokens via JWKS or a static key' },
+  { value: 'apikey', label: 'API Key', description: 'Authenticate via API keys in a request header' },
+  { value: 'mtls', label: 'mTLS', description: 'Authenticate via client TLS certificates' },
+  { value: 'kerberos', label: 'Kerberos (SPNEGO)', description: 'Negotiate authentication via Kerberos' },
+  { value: 'ntlm', label: 'NTLM', description: 'Negotiate authentication via NTLM' },
 ]
 
-function getDefaultProviderConfig(type: string): Partial<AuthProvider> {
+// Sensible starting config map per plugin type. Empty maps are fine for
+// types whose required fields the user must fill in.
+function getDefaultProviderConfig(type: AuthProviderType): AuthProviderConfig {
   switch (type) {
     case 'native':
-      return { native: { users: [] } }
-    case 'system':
-      return { system: {} }
+      return { users: [] }
+    case 'apikey':
+      return { header_name: 'X-API-Key', keys: [] }
     case 'ldap':
-      return {
-        ldap: {
-          url: '',
-          base_dn: '',
-          bind_dn: '',
-          bind_password: '',
-          user_filter: '(uid=%s)',
-          tls: false,
-          insecure_skip_verify: false,
-        },
-      }
+      return { user_filter: '(uid=%s)' }
     case 'oauth':
-      return {
-        oauth: {
-          provider: '',
-          client_id: '',
-          client_secret: '',
-          issuer_url: '',
-          redirect_url: '',
-          scopes: ['openid', 'profile', 'email'],
-        },
-      }
+      return { scopes: ['openid', 'profile', 'email'] }
     default:
       return {}
   }
 }
 
+function ProviderConfigEditor({
+  type,
+  config,
+  onChange,
+}: {
+  type: AuthProviderType
+  config: AuthProviderConfig
+  onChange: (config: AuthProviderConfig) => void
+}) {
+  if (type === 'none') {
+    return <p className="text-sm text-bifrost-muted">This provider accepts all requests without authentication.</p>
+  }
+  if (type === 'native') {
+    return <NativeUsersForm config={config} onChange={onChange} />
+  }
+  if (type === 'apikey') {
+    return <ApiKeysForm config={config} onChange={onChange} />
+  }
+  return <AuthProviderConfigForm type={type} config={config} onChange={onChange} />
+}
+
 export function AuthSection({ config, onChange }: AuthSectionProps) {
   const [editingProvider, setEditingProvider] = useState<number | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
-  const [newProviderType, setNewProviderType] = useState<string>('native')
+  const [newProviderType, setNewProviderType] = useState<AuthProviderType>('native')
   const [newProviderName, setNewProviderName] = useState('')
 
-  // Get providers array (use providers if exists, otherwise convert legacy mode)
-  const providers = config.providers || []
-  const hasProviders = providers.length > 0
-
-  // Check if using legacy mode (no providers but has mode set)
-  const isLegacyMode = !hasProviders && config.mode && config.mode !== 'none'
-
-  const handleEnableMultiProvider = useCallback(() => {
-    // Convert legacy config to providers format
-    if (isLegacyMode && config.mode) {
-      const legacyProvider: AuthProvider = {
-        name: `${config.mode}-1`,
-        type: config.mode,
-        enabled: true,
-        priority: 0,
-        native: config.native,
-        system: config.system,
-        ldap: config.ldap,
-        oauth: config.oauth,
-      }
-      onChange({
-        providers: [legacyProvider],
-      })
-    } else {
-      onChange({
-        providers: [],
-      })
-    }
-  }, [isLegacyMode, config, onChange])
-
-  const handleUseLegacyMode = useCallback(() => {
-    // Convert back to legacy single-mode
-    if (providers.length > 0) {
-      const firstEnabled = providers.find((p) => p.enabled) || providers[0]
-      onChange({
-        mode: firstEnabled.type,
-        native: firstEnabled.native,
-        system: firstEnabled.system,
-        ldap: firstEnabled.ldap,
-        oauth: firstEnabled.oauth,
-      })
-    } else {
-      onChange({ mode: 'none' })
-    }
-  }, [providers, onChange])
+  const providers = useMemo(() => config.providers || [], [config.providers])
 
   const handleAddProvider = useCallback(() => {
     if (!newProviderName.trim()) return
 
     const newProvider: AuthProvider = {
       name: newProviderName.trim(),
-      type: newProviderType as AuthProvider['type'],
+      type: newProviderType,
       enabled: true,
       priority: providers.length,
-      ...getDefaultProviderConfig(newProviderType),
+      config: getDefaultProviderConfig(newProviderType),
     }
 
-    onChange({
-      providers: [...providers, newProvider],
-    })
+    onChange({ providers: [...providers, newProvider] })
 
     setNewProviderName('')
     setShowAddForm(false)
     setEditingProvider(providers.length)
   }, [newProviderName, newProviderType, providers, onChange])
 
-  const handleRemoveProvider = useCallback((index: number) => {
-    const newProviders = providers.filter((_, i) => i !== index)
-    onChange({ providers: newProviders })
-    setEditingProvider((current) => current === index ? null : current)
-  }, [providers, onChange])
+  const handleRemoveProvider = useCallback(
+    (index: number) => {
+      onChange({ providers: providers.filter((_, i) => i !== index) })
+      setEditingProvider((current) => (current === index ? null : current))
+    },
+    [providers, onChange]
+  )
 
-  const handleToggleProvider = useCallback((index: number) => {
-    const newProviders = [...providers]
-    newProviders[index] = { ...newProviders[index], enabled: !newProviders[index].enabled }
-    onChange({ providers: newProviders })
-  }, [providers, onChange])
+  const handleToggleProvider = useCallback(
+    (index: number) => {
+      const next = [...providers]
+      next[index] = { ...next[index], enabled: !next[index].enabled }
+      onChange({ providers: next })
+    },
+    [providers, onChange]
+  )
 
-  const handleUpdateProvider = useCallback((index: number, updates: Partial<AuthProvider>) => {
-    const newProviders = [...providers]
-    newProviders[index] = { ...newProviders[index], ...updates }
-    onChange({ providers: newProviders })
-  }, [providers, onChange])
+  const handleUpdateProvider = useCallback(
+    (index: number, updates: Partial<AuthProvider>) => {
+      const next = [...providers]
+      next[index] = { ...next[index], ...updates }
+      onChange({ providers: next })
+    },
+    [providers, onChange]
+  )
 
-  const handleMoveProvider = useCallback((index: number, direction: 'up' | 'down') => {
-    const newIndex = direction === 'up' ? index - 1 : index + 1
-    if (newIndex < 0 || newIndex >= providers.length) return
+  const handleMoveProvider = useCallback(
+    (index: number, direction: 'up' | 'down') => {
+      const newIndex = direction === 'up' ? index - 1 : index + 1
+      if (newIndex < 0 || newIndex >= providers.length) return
 
-    const newProviders = [...providers]
-    ;[newProviders[index], newProviders[newIndex]] = [newProviders[newIndex], newProviders[index]]
-    // Update priorities
-    newProviders.forEach((p, i) => (p.priority = i))
-    onChange({ providers: newProviders })
+      const next = [...providers]
+      ;[next[index], next[newIndex]] = [next[newIndex], next[index]]
+      next.forEach((p, i) => (p.priority = i))
+      onChange({ providers: next })
 
-    setEditingProvider((current) => {
-      if (current === index) return newIndex
-      if (current === newIndex) return index
-      return current
-    })
-  }, [providers, onChange])
+      setEditingProvider((current) => {
+        if (current === index) return newIndex
+        if (current === newIndex) return index
+        return current
+      })
+    },
+    [providers, onChange]
+  )
 
-  // Legacy mode UI (single provider dropdown)
-  if (!hasProviders && !showAddForm) {
-    return (
-      <Section title="Authentication" badge="restart-required">
-        <div className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Authentication Mode</label>
-            <select
-              value={config.mode || 'none'}
-              onChange={(e) => {
-                const mode = e.target.value as AuthConfig['mode']
-                const newConfig: AuthConfig = { mode }
-                if (mode && mode !== 'none') {
-                  Object.assign(newConfig, getDefaultProviderConfig(mode))
-                }
-                onChange(newConfig)
-              }}
-              className="input max-w-xs"
-            >
-              <option value="none">None (No authentication)</option>
-              {authTypes.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {config.mode === 'native' && config.native && (
-            <div className="mt-4 pt-4 border-t border-bifrost-border">
-              <NativeAuthForm config={config.native} onChange={(native) => onChange({ ...config, native })} />
-            </div>
-          )}
-
-          {config.mode === 'system' && config.system && (
-            <div className="mt-4 pt-4 border-t border-bifrost-border">
-              <SystemAuthForm config={config.system} onChange={(system) => onChange({ ...config, system })} />
-            </div>
-          )}
-
-          {config.mode === 'ldap' && config.ldap && (
-            <div className="mt-4 pt-4 border-t border-bifrost-border">
-              <LDAPAuthForm config={config.ldap} onChange={(ldap) => onChange({ ...config, ldap })} />
-            </div>
-          )}
-
-          {config.mode === 'oauth' && config.oauth && (
-            <div className="mt-4 pt-4 border-t border-bifrost-border">
-              <OAuthForm config={config.oauth} onChange={(oauth) => onChange({ ...config, oauth })} />
-            </div>
-          )}
-
-          <div className="mt-6 pt-4 border-t border-bifrost-border">
-            <button onClick={handleEnableMultiProvider} className="btn btn-ghost text-sm">
-              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Enable Multiple Auth Providers
-            </button>
-            <p className="text-xs text-bifrost-muted mt-1">
-              Configure multiple authentication backends that are tried in order
-            </p>
-          </div>
-        </div>
-      </Section>
-    )
-  }
-
-  // Multi-provider UI
   return (
     <Section title="Authentication" badge="restart-required">
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-gray-300">
-            {providers.length === 0
-              ? 'No authentication required'
-              : `${providers.filter((p) => p.enabled).length} of ${providers.length} providers enabled`}
-          </p>
-          <button onClick={handleUseLegacyMode} className="btn btn-ghost text-xs">
-            Switch to Single Mode
-          </button>
-        </div>
+        <p className="text-sm text-gray-300">
+          {providers.length === 0
+            ? 'No authentication required'
+            : `${providers.filter((p) => p.enabled).length} of ${providers.length} providers enabled`}
+        </p>
 
         {/* Provider List */}
         <div className="space-y-2">
@@ -258,6 +164,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     type="checkbox"
                     checked={provider.enabled}
                     onChange={() => handleToggleProvider(index)}
+                    aria-label={`Enable ${provider.name}`}
                     className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                   />
                   <div>
@@ -346,10 +253,10 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                       <select
                         value={provider.type}
                         onChange={(e) => {
-                          const newType = e.target.value as AuthProvider['type']
+                          const newType = e.target.value as AuthProviderType
                           handleUpdateProvider(index, {
                             type: newType,
-                            ...getDefaultProviderConfig(newType),
+                            config: getDefaultProviderConfig(newType),
                           })
                         }}
                         className="input"
@@ -360,55 +267,17 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                           </option>
                         ))}
                       </select>
+                      <p className="text-xs text-bifrost-muted mt-1">
+                        {authTypes.find((t) => t.value === provider.type)?.description}
+                      </p>
                     </div>
                   </div>
 
-                  {provider.type === 'native' && (
-                    <NativeAuthForm
-                      config={provider.native || { users: [] }}
-                      onChange={(native) => handleUpdateProvider(index, { native })}
-                    />
-                  )}
-
-                  {provider.type === 'system' && (
-                    <SystemAuthForm
-                      config={provider.system || {}}
-                      onChange={(system) => handleUpdateProvider(index, { system })}
-                    />
-                  )}
-
-                  {provider.type === 'ldap' && (
-                    <LDAPAuthForm
-                      config={
-                        provider.ldap || {
-                          url: '',
-                          base_dn: '',
-                          bind_dn: '',
-                          bind_password: '',
-                          user_filter: '',
-                          tls: false,
-                          insecure_skip_verify: false,
-                        }
-                      }
-                      onChange={(ldap) => handleUpdateProvider(index, { ldap })}
-                    />
-                  )}
-
-                  {provider.type === 'oauth' && (
-                    <OAuthForm
-                      config={
-                        provider.oauth || {
-                          provider: '',
-                          client_id: '',
-                          client_secret: '',
-                          issuer_url: '',
-                          redirect_url: '',
-                          scopes: [],
-                        }
-                      }
-                      onChange={(oauth) => handleUpdateProvider(index, { oauth })}
-                    />
-                  )}
+                  <ProviderConfigEditor
+                    type={provider.type}
+                    config={provider.config || {}}
+                    onChange={(cfg) => handleUpdateProvider(index, { config: cfg })}
+                  />
                 </div>
               )}
             </div>
@@ -435,7 +304,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                 <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
                 <select
                   value={newProviderType}
-                  onChange={(e) => setNewProviderType(e.target.value)}
+                  onChange={(e) => setNewProviderType(e.target.value as AuthProviderType)}
                   className="input"
                 >
                   {authTypes.map((t) => (
@@ -444,6 +313,9 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-bifrost-muted mt-1">
+                  {authTypes.find((t) => t.value === newProviderType)?.description}
+                </p>
               </div>
             </div>
             <div className="flex justify-end gap-2 mt-4">
@@ -456,8 +328,11 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
             </div>
           </div>
         ) : (
-          <button onClick={() => setShowAddForm(true)} className="btn btn-ghost w-full border-dashed border-2 border-bifrost-border hover:border-bifrost-accent">
-            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="btn btn-ghost w-full border-dashed border-2 border-bifrost-border hover:border-bifrost-accent"
+          >
+            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
             </svg>
             Add Authentication Provider
@@ -465,7 +340,8 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
         )}
 
         <p className="text-xs text-bifrost-muted">
-          Providers are tried in priority order (lowest first). Authentication succeeds when any enabled provider accepts the credentials.
+          Providers are tried in priority order (lowest first). Authentication succeeds when any enabled provider accepts
+          the credentials.
         </p>
       </div>
     </Section>

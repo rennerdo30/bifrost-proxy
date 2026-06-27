@@ -377,19 +377,30 @@ func (m *Manager) handlePacket(packet *IPPacket) {
 }
 
 // handleBypassPacket handles packets that should bypass the VPN.
+//
+// IMPORTANT: bypass is only delivered for destinations that have a host-stack
+// bypass route installed (RouteManager.AddBypassRoute / always_bypass CIDRs and,
+// in include mode, anything not routed into the TUN). Those packets never enter
+// the TUN in the first place, so they reach this function only when a *dynamic*
+// rule (per-app or per-domain) classified an already-tunneled packet as bypass.
+//
+// Once a packet has been read from the TUN device there is no portable way to
+// re-inject it to the host stack and have it egress a physical interface: writing
+// it back to the TUN loops it straight back here, and a raw-socket re-injection
+// would need per-platform policy routing / fwmark plumbing that this client does
+// not set up. Rather than silently dropping such packets and reporting success,
+// we drop them explicitly and surface the limitation so the misconfiguration is
+// visible. Per-app/per-domain bypass must instead be expressed as IP/CIDR bypass
+// rules (handled by the route manager) so the traffic never reaches the TUN.
 func (m *Manager) handleBypassPacket(packet *IPPacket, decision Decision) {
-	// For bypass, we inject the packet directly to the network stack
-	// This requires sending through the original interface, not TUN
-	slog.Debug("bypassing packet",
+	slog.Warn("dropping packet classified as bypass after it entered the TUN; "+
+		"per-app/per-domain bypass is not delivered for already-tunneled packets, "+
+		"use IP/CIDR bypass rules instead",
 		"dst", packet.DstIP,
 		"port", packet.DstPort,
 		"reason", decision.Reason,
 		"matched_by", decision.MatchedBy,
 	)
-
-	// The actual bypass is handled by not routing this packet through the tunnel
-	// On most systems, we need to use policy-based routing or mark packets
-	// For now, we'll rely on the route manager to set up proper bypass routes
 }
 
 // handleTunnelPacket handles packets that should go through the VPN tunnel.
@@ -511,14 +522,28 @@ func (m *Manager) establishProxyConnection(packet *IPPacket) {
 }
 
 // handleConnectionData handles bidirectional data flow for a tracked connection.
+//
+// LIMITATION: this is a simplified userspace TCP shim, NOT a full TCP stack. It
+// reads proxy responses and frames them into TUN segments (see sendTCPData), and
+// forwards client payloads opportunistically (see forwardOnConnection), but it
+// does NOT implement:
+//   - in-order reassembly of out-of-order or overlapping client segments
+//   - retransmission / a real retransmit queue (lost segments are not resent)
+//   - receive-window / congestion control or proper RTO timers
+//   - SACK or duplicate-ACK handling
+//
+// As a result, connections that experience reordering or loss (common with large
+// transfers) can stall or corrupt the byte stream. A correct implementation
+// requires a proper userspace TCP/IP stack (e.g. gVisor netstack). This is
+// deferred as a large piece of work; the limitation is documented here so callers
+// do not assume reliable large-transfer behavior.
+//
+// In a full implementation, we would:
+// 1. Reassemble TCP segments from TUN
+// 2. Forward data to proxy connection
+// 3. Read responses from proxy
+// 4. Create response packets and write to TUN
 func (m *Manager) handleConnectionData(conn *TrackedConnection) {
-	// This is a simplified implementation
-	// In a full implementation, we would:
-	// 1. Reassemble TCP segments from TUN
-	// 2. Forward data to proxy connection
-	// 3. Read responses from proxy
-	// 4. Create response packets and write to TUN
-
 	// Cleanup function to remove connection from tracker
 	cleanup := func() {
 		if conn.ProxyConn != nil {

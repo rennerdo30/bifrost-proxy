@@ -291,12 +291,17 @@ func (h *Handler) handleNTLMType3(ctx context.Context, r *http.Request, token []
 		return userInfo, nil, err
 	}
 
+	// The challenge bytes are not passed back to the NTLM authenticator here:
+	// the NTLM plugin stores and validates its own per-session challenge keyed
+	// by sessionID inside ValidateAuthenticate. The handler's challenge map only
+	// enforces that a Type 1 (Negotiate) message preceded this Type 3 message
+	// for the same session, so we require the state to exist (checked above).
+	_ = state
+
 	userInfo, err := ntlmAuth.ValidateAuthenticate(token, sessionID)
 	if err != nil {
 		return nil, nil, err
 	}
-
-	_ = state // Used for validation in full NTLM implementation
 
 	return userInfo, nil, nil
 }
