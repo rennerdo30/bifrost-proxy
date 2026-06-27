@@ -249,6 +249,10 @@ func (c *Client) GenerateWireGuardConfig(ctx context.Context, server *vpnprovide
 			AllowedIPs:          []string{"0.0.0.0/0", "::/0"},
 			PersistentKeepalive: 25,
 		},
+		// Surface the in-tunnel gateway (server_vip) and the WireGuard server CN
+		// so port forwarding can target the gateway once the tunnel is up.
+		Gateway:         keyResp.ServerVIP,
+		GatewayHostname: region.GetWireGuardCN(),
 	}
 
 	c.logger.Info("generated WireGuard config for PIA",

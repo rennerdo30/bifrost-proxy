@@ -96,6 +96,16 @@ type WireGuardConfig struct {
 	Address    string        `json:"address"`    // Client IP (e.g., "10.0.0.2/32")
 	DNS        []string      `json:"dns"`
 	Peer       WireGuardPeer `json:"peer"`
+
+	// Gateway is the in-tunnel gateway address (e.g. PIA's server_vip). It is
+	// only reachable once the tunnel is established and is used by providers
+	// that bind a forwarded port via the gateway (e.g. PIA port forwarding).
+	// Empty when the provider does not surface a gateway.
+	Gateway string `json:"gateway,omitempty"`
+
+	// GatewayHostname is the common name the gateway's TLS certificate is issued
+	// for, required to verify port-forwarding API calls made to Gateway.
+	GatewayHostname string `json:"gateway_hostname,omitempty"`
 }
 
 // WireGuardPeer represents a WireGuard peer configuration.

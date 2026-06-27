@@ -16,12 +16,11 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
 
-// ErrPortForwardingNotImplemented indicates the PIA port-forwarding flow is not
-// yet implemented. PIA port forwarding is a multi-step, gateway-bound API
-// (getSignature on the connected region's gateway, then periodic bindPort calls
-// authenticated against the PIA CA) that requires the active tunnel's gateway
-// address and CA material. Until that flow is implemented we return this error
-// rather than silently pretending to forward a port (fail closed).
+// ErrPortForwardingNotImplemented is retained for backward compatibility.
+//
+// Deprecated: the port-forwarding flow is now implemented (see PortForwarder and
+// RequestPortForwardParams). Operations that lack the tunnel gateway parameters
+// return ErrPortForwardingNotAvailable instead.
 var ErrPortForwardingNotImplemented = errors.New("pia: port forwarding not implemented")
 
 // Token represents a PIA authentication token.
@@ -206,19 +205,44 @@ type PortForwardResponse struct {
 	Expires int64  `json:"expires_at"`
 }
 
-// PayloadResponse represents the signed port forward payload.
+// PayloadResponse represents the signed port forward payload returned by the
+// gateway's getSignature endpoint.
 type PayloadResponse struct {
+	Status    string `json:"status"`
 	Payload   string `json:"payload"`
 	Signature string `json:"signature"`
 }
 
 // RequestPortForward requests a forwarded port from PIA.
 //
-// NOT IMPLEMENTED. This always returns ErrPortForwardingNotImplemented. The PIA
-// port-forwarding flow requires the active tunnel's gateway address and PIA CA
-// to (1) call getSignature for a signed payload and (2) periodically call
-// bindPort to keep the port alive. That plumbing does not exist here yet, so we
-// fail closed instead of returning a fake/zero port that callers might trust.
+// It requires the active tunnel's gateway address and hostname (CN) so it can
+// (1) call getSignature for a signed payload and (2) bindPort to activate it.
+// Callers that have the tunnel parameters should use RequestPortForwardParams.
+// This no-argument form has no gateway information and therefore fails closed
+// with ErrPortForwardingNotAvailable rather than returning a fake/zero port.
 func (tm *TokenManager) RequestPortForward(_ context.Context) (*PortForwardResponse, error) {
-	return nil, ErrPortForwardingNotImplemented
+	return nil, ErrPortForwardingNotAvailable
+}
+
+// RequestPortForwardParams performs the one-shot getSignature + bindPort flow
+// against the supplied tunnel gateway and returns the granted port. The port
+// must be kept alive by calling bindPort periodically; callers that want the
+// managed lifecycle should use PortForwarder.Run instead.
+//
+// A valid token is fetched automatically if params.Token is empty.
+func (tm *TokenManager) RequestPortForwardParams(ctx context.Context, params PortForwardParams) (*PortForwardResponse, error) {
+	if params.Token == "" {
+		token, err := tm.GetToken(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("get token for port forwarding: %w", err)
+		}
+		params.Token = token.Value
+	}
+
+	pf := NewPortForwarder(params, tm.logger)
+	resp, _, err := pf.Acquire(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }
