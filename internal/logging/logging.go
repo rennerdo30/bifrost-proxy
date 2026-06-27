@@ -17,6 +17,13 @@ type Config struct {
 	Format     string `yaml:"format" json:"format"`           // json, text
 	Output     string `yaml:"output" json:"output"`           // stdout, stderr, or file path
 	TimeFormat string `yaml:"time_format" json:"time_format"` // time format string
+
+	// MaxSizeMB is the maximum size in megabytes of a log file before it is
+	// rotated. Only applies to file outputs. A value <= 0 disables rotation.
+	MaxSizeMB int `yaml:"max_size_mb" json:"max_size_mb"`
+	// MaxBackups is the maximum number of rotated log files to retain. Older
+	// files beyond this count are deleted. A value <= 0 keeps all backups.
+	MaxBackups int `yaml:"max_backups" json:"max_backups"`
 }
 
 // DefaultConfig returns the default logging configuration.
@@ -32,7 +39,7 @@ func DefaultConfig() Config {
 var (
 	defaultLogger  *slog.Logger
 	loggerMu       sync.RWMutex
-	currentLogFile *os.File // Track current log file for cleanup
+	currentLogFile io.Closer // Track current log output for cleanup (file or rotating writer)
 )
 
 func init() {
@@ -63,7 +70,7 @@ func Setup(cfg Config) error {
 		return err
 	}
 
-	output, logFile, err := getOutput(cfg.Output)
+	output, closer, err := getOutputWithConfig(cfg)
 	if err != nil {
 		return err
 	}
@@ -79,24 +86,47 @@ func Setup(cfg Config) error {
 	case "text", "":
 		handler = slog.NewTextHandler(output, opts)
 	default:
-		// Close new file if we opened one but can't use it
-		if logFile != nil {
-			logFile.Close()
+		// Close new output if we opened one but can't use it
+		if closer != nil {
+			closer.Close()
 		}
 		return fmt.Errorf("unknown log format: %s", cfg.Format)
 	}
 
-	// Single critical section: close old file, set new file, and update logger atomically
+	// Single critical section: close old output, set new output, and update logger atomically
 	loggerMu.Lock()
 	if currentLogFile != nil {
 		currentLogFile.Close()
 	}
-	currentLogFile = logFile
+	currentLogFile = closer
 	defaultLogger = slog.New(handler)
 	slog.SetDefault(defaultLogger)
 	loggerMu.Unlock()
 
 	return nil
+}
+
+// getOutputWithConfig returns the log writer for the given config, selecting a
+// rotating file writer when MaxSizeMB > 0 and the output is a file path.
+func getOutputWithConfig(cfg Config) (io.Writer, io.Closer, error) {
+	switch strings.ToLower(cfg.Output) {
+	case "stdout", "", "stderr":
+		w, _, err := getOutput(cfg.Output)
+		return w, nil, err
+	default:
+		if cfg.MaxSizeMB > 0 {
+			rw, err := newRotatingWriter(cfg.Output, int64(cfg.MaxSizeMB)*1024*1024, cfg.MaxBackups)
+			if err != nil {
+				return nil, nil, err
+			}
+			return rw, rw, nil
+		}
+		w, f, err := getOutput(cfg.Output)
+		if err != nil {
+			return nil, nil, err
+		}
+		return w, f, nil
+	}
 }
 
 // parseLevel converts a string log level to slog.Level.

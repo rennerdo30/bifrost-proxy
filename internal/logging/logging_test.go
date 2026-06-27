@@ -466,3 +466,61 @@ func TestSetup_ClosePreviousFile(t *testing.T) {
 		t.Error("Second log file should contain its message")
 	}
 }
+
+func TestRotatingWriter_RotatesOnSize(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/app.log"
+
+	// Tiny max size to force rotation; keep 2 backups.
+	w, err := newRotatingWriter(path, 50, 2)
+	if err != nil {
+		t.Fatalf("newRotatingWriter: %v", err)
+	}
+	defer w.Close()
+
+	line := []byte("0123456789012345678901234567890123456789\n") // 41 bytes
+	for i := 0; i < 6; i++ {
+		if _, err := w.Write(line); err != nil {
+			t.Fatalf("Write: %v", err)
+		}
+	}
+
+	matches, err := filepath.Glob(path + ".*")
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	if len(matches) == 0 {
+		t.Fatal("expected at least one rotated backup file")
+	}
+	if len(matches) > 2 {
+		t.Errorf("expected at most 2 backups, got %d", len(matches))
+	}
+
+	// Active file must still exist.
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("active log file missing: %v", err)
+	}
+}
+
+func TestSetup_FileOutputWithRotation(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/rotate.log"
+
+	cfg := Config{
+		Level:      "info",
+		Format:     "json",
+		Output:     path,
+		MaxSizeMB:  1,
+		MaxBackups: 3,
+	}
+	if err := Setup(cfg); err != nil {
+		t.Fatalf("Setup with rotation: %v", err)
+	}
+	t.Cleanup(func() { _ = Close() })
+
+	Info("hello rotation")
+
+	if _, err := os.Stat(path); err != nil {
+		t.Errorf("log file not created with rotation enabled: %v", err)
+	}
+}
