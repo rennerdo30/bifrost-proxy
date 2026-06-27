@@ -1,13 +1,43 @@
 package backend
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
+
+// generateTestCAPEM returns a valid self-signed CA certificate in PEM form for
+// use in NordVPN OpenVPN config-generation tests.
+func generateTestCAPEM(t *testing.T) string {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test NordVPN CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
 
 func TestNewFactory(t *testing.T) {
 	f := NewFactory()
@@ -393,12 +423,34 @@ func TestFactory_Create_NordVPN_OpenVPN(t *testing.T) {
 			"password": "nord_password",
 			"protocol": "openvpn",
 			"country":  "DE",
+			"ca_cert":  generateTestCAPEM(t),
 		},
 	}
 
 	backend, err := f.Create(cfg)
 	require.NoError(t, err)
 	assert.Equal(t, "test-nordvpn-ovpn", backend.Name())
+}
+
+func TestFactory_Create_NordVPN_OpenVPN_MissingCA(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-nordvpn-ovpn-no-ca",
+		Type:    "nordvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"username": "nord_username",
+			"password": "nord_password",
+			"protocol": "openvpn",
+			"country":  "DE",
+			// No ca_cert: must fail closed.
+		},
+	}
+
+	_, err := f.Create(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ca_cert")
 }
 
 func TestFactory_Create_NordVPN_MissingAccessToken(t *testing.T) {

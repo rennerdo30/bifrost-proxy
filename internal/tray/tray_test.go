@@ -346,7 +346,8 @@ func TestTray_Run(t *testing.T) {
 
 func TestTray_onReady_SetsUpMenu(t *testing.T) {
 	adapter := newMockAdapter()
-	tray := NewWithAdapter(Config{}, adapter)
+	// ShowQuickGUI true so the full 6-item menu (including Quick Access) is built.
+	tray := NewWithAdapter(Config{ShowQuickGUI: true}, adapter)
 
 	tray.Run(context.Background())
 
@@ -372,6 +373,23 @@ func TestTray_onReady_SetsUpMenu(t *testing.T) {
 	assert.False(t, adapter.GetMenuItem(0).IsEnabled(), "Status should be disabled")
 	assert.True(t, adapter.GetMenuItem(1).IsVisible(), "Connect should be visible")
 	assert.False(t, adapter.GetMenuItem(2).IsVisible(), "Disconnect should be hidden initially")
+}
+
+func TestTray_onReady_OmitsQuickAccessWhenDisabled(t *testing.T) {
+	adapter := newMockAdapter()
+	// ShowQuickGUI false (the zero value): the Quick Access entry must be omitted.
+	tray := NewWithAdapter(Config{ShowQuickGUI: false}, adapter)
+
+	tray.Run(context.Background())
+
+	// 5 items: Status, Connect, Disconnect, Open Dashboard, Quit.
+	assert.Equal(t, 5, len(adapter.menuItems))
+	for _, mi := range adapter.menuItems {
+		assert.NotEqual(t, "Quick Access", mi.GetTitle(), "Quick Access must not be present when disabled")
+	}
+	// Open Dashboard now occupies index 3, Quit index 4.
+	assert.Equal(t, "Open Dashboard", adapter.GetMenuItem(3).GetTitle())
+	assert.Equal(t, "Quit", adapter.GetMenuItem(4).GetTitle())
 }
 
 func TestTray_onReady_ConnectClick(t *testing.T) {
@@ -424,7 +442,8 @@ func TestTray_onReady_OpenQuickClick(t *testing.T) {
 	var openQuickCalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnOpenQuick: func() { openQuickCalled.Store(true) },
+		OnOpenQuick:  func() { openQuickCalled.Store(true) },
+		ShowQuickGUI: true,
 	}, adapter)
 
 	tray.Run(context.Background())
@@ -440,12 +459,13 @@ func TestTray_onReady_OpenUIClick(t *testing.T) {
 	var openUICalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnOpenUI: func() { openUICalled.Store(true) },
+		OnOpenUI:     func() { openUICalled.Store(true) },
+		ShowQuickGUI: true,
 	}, adapter)
 
 	tray.Run(context.Background())
 
-	// Simulate open dashboard click
+	// Simulate open dashboard click (index 4 when Quick Access is present)
 	adapter.GetMenuItem(4).Click()
 
 	require.Eventually(t, func() bool { return openUICalled.Load() }, time.Second, 10*time.Millisecond, "OnOpenUI should have been called")
@@ -456,12 +476,13 @@ func TestTray_onReady_QuitClick(t *testing.T) {
 	var quitCalled atomic.Bool
 
 	tray := NewWithAdapter(Config{
-		OnQuit: func() { quitCalled.Store(true) },
+		OnQuit:       func() { quitCalled.Store(true) },
+		ShowQuickGUI: true,
 	}, adapter)
 
 	tray.Run(context.Background())
 
-	// Simulate quit click
+	// Simulate quit click (index 5 when Quick Access is present)
 	adapter.GetMenuItem(5).Click()
 
 	require.Eventually(t, func() bool { return quitCalled.Load() }, time.Second, 10*time.Millisecond, "OnQuit should have been called")
@@ -471,8 +492,8 @@ func TestTray_onReady_QuitClick(t *testing.T) {
 func TestTray_onReady_NilCallbacks(t *testing.T) {
 	adapter := newMockAdapter()
 
-	// Create tray with nil callbacks
-	tray := NewWithAdapter(Config{}, adapter)
+	// Create tray with nil callbacks. ShowQuickGUI true so all 6 items exist.
+	tray := NewWithAdapter(Config{ShowQuickGUI: true}, adapter)
 
 	tray.Run(context.Background())
 

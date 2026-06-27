@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/accesslog"
 	apiserver "github.com/rennerdo30/bifrost-proxy/internal/api/server"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth/negotiate"
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
@@ -44,6 +46,9 @@ type Server struct {
 	cacheManager     *cache.Manager
 	cacheInterceptor *cache.Interceptor
 
+	httpTLSConfig    *tls.Config
+	negotiateHandler *negotiate.Handler
+
 	httpListener   net.Listener
 	socks5Listener net.Listener
 	metricsServer  *http.Server
@@ -59,6 +64,32 @@ type Server struct {
 	// Connection limiting for resource-constrained devices (OpenWrt)
 	httpActiveConns   int32 // atomic counter for active HTTP connections
 	socks5ActiveConns int32 // atomic counter for active SOCKS5 connections
+	totalActiveConns  int32 // atomic counter for active connections across all listeners (network.max_connections)
+}
+
+// acquireGlobalConn enforces the process-wide network.max_connections ceiling.
+// It returns false (without incrementing) when the limit would be exceeded. The
+// caller must call releaseGlobalConn when the connection ends if this returns
+// true. A limit of 0 means unlimited.
+func (s *Server) acquireGlobalConn() bool {
+	limit := s.config.Network.MaxConnections
+	if limit <= 0 {
+		return true
+	}
+	current := atomic.AddInt32(&s.totalActiveConns, 1)
+	if current > int32(limit) { //nolint:gosec // G115: limit is a small config value
+		atomic.AddInt32(&s.totalActiveConns, -1)
+		return false
+	}
+	return true
+}
+
+// releaseGlobalConn decrements the process-wide active-connection counter.
+func (s *Server) releaseGlobalConn() {
+	if s.config.Network.MaxConnections <= 0 {
+		return
+	}
+	atomic.AddInt32(&s.totalActiveConns, -1)
 }
 
 // New creates a new Bifrost server.
@@ -190,9 +221,30 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		done:             make(chan struct{}),
 	}
 
-	if err := srv.setupHealthChecks(cfg); err != nil {
-		return nil, err
+	if hcErr := srv.setupHealthChecks(cfg); hcErr != nil {
+		return nil, hcErr
 	}
+
+	// Build the HTTP proxy listener TLS config (server cert + optional mTLS
+	// client-cert verification). The client CA pool falls back to the mTLS auth
+	// provider's trust anchors when no explicit client_ca_file is set.
+	mtlsPool, err := mtlsCAPoolFromAuth(cfg.Auth)
+	if err != nil {
+		return nil, fmt.Errorf("build mTLS CA pool: %w", err)
+	}
+	httpTLS, err := buildListenerTLSConfig(cfg.Server.HTTP.TLS, mtlsPool)
+	if err != nil {
+		return nil, fmt.Errorf("build HTTP TLS config: %w", err)
+	}
+	srv.httpTLSConfig = httpTLS
+
+	// Construct the Negotiate (SPNEGO/Kerberos + optional NTLM) middleware when
+	// configured. This is middleware, not a chain provider.
+	negHandler, err := buildNegotiateHandler(cfg.Auth)
+	if err != nil {
+		return nil, fmt.Errorf("build negotiate handler: %w", err)
+	}
+	srv.negotiateHandler = negHandler
 
 	return srv, nil
 }
@@ -258,7 +310,10 @@ func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
 		}
 
 		backendForCheck := be
-		s.healthManager.Register(backendCfg.Name, checker, checkCfg.Interval, func(name string, result health.Result) {
+		// Honor de-bounce thresholds (defaults to 1/1 = immediate transitions).
+		healthyThreshold := hc.HealthyThreshold
+		unhealthyThreshold := hc.UnhealthyThreshold
+		s.healthManager.RegisterWithThresholds(backendCfg.Name, checker, checkCfg.Interval, healthyThreshold, unhealthyThreshold, func(name string, result health.Result) {
 			if ho, ok := backendForCheck.(backend.HealthOverride); ok {
 				ho.SetHealth(result)
 			}
@@ -421,6 +476,15 @@ func (s *Server) Start(ctx context.Context) error {
 		listener, err := net.Listen("tcp", s.config.Server.HTTP.Listen)
 		if err != nil {
 			return fmt.Errorf("listen HTTP: %w", err)
+		}
+		// Wrap with TLS when configured so the proxy can terminate TLS and, for
+		// mTLS, verify client certificates. The handshake (and thus client cert
+		// extraction in the proxy handler) happens on the wrapped connection.
+		if s.httpTLSConfig != nil {
+			listener = tls.NewListener(listener, s.httpTLSConfig)
+			logging.Info("HTTP proxy TLS enabled",
+				"client_auth", s.config.Server.HTTP.TLS.ClientAuth,
+			)
 		}
 		s.httpListener = listener
 		logging.Info("HTTP proxy listening", "address", s.config.Server.HTTP.Listen)
@@ -878,7 +942,9 @@ func (s *Server) serveHTTP(ctx context.Context) {
 		GetBackend:       s.getBackend,
 		DialTimeout:      s.config.Server.HTTP.ReadTimeout.Duration(),
 		Authenticate:     s.authenticateUser,
+		NegotiateAuth:    s.negotiateAuthHook(),
 		AuthRequired:     s.isAuthRequired(),
+		DialNetwork:      s.config.Network.AddressFamily(),
 		AccessCheck:      s.accessCheck,
 		RateLimitUser:    s.allowUser,
 		AccessLogger:     s.accessLogger,
@@ -912,6 +978,18 @@ func (s *Server) serveHTTP(ctx context.Context) {
 func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *proxy.HTTPHandler) {
 	// Add request ID
 	ctx = util.WithRequestID(ctx, generateRequestID())
+
+	// Process-wide connection ceiling (network.max_connections).
+	if !s.acquireGlobalConn() {
+		logging.Warn("global connection limit exceeded",
+			"max", s.config.Network.MaxConnections,
+			"client", conn.RemoteAddr().String(),
+		)
+		_, _ = conn.Write([]byte("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 5\r\nConnection: close\r\n\r\n")) //nolint:errcheck // Best effort error response
+		conn.Close()
+		return
+	}
+	defer s.releaseGlobalConn()
 
 	// Connection limiting for resource-constrained devices (OpenWrt)
 	maxConns := s.config.Server.HTTP.MaxConnections
@@ -980,6 +1058,7 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 		AuthenticateWithInfo: s.authenticateUser,
 		AuthRequired:         s.isAuthRequired(),
 		DialTimeout:          30 * time.Second,
+		DialNetwork:          s.config.Network.AddressFamily(),
 		AccessCheck:          s.accessCheck,
 		RateLimitUser:        s.allowUser,
 		AccessLogger:         s.accessLogger,
@@ -1012,6 +1091,17 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *proxy.SOCKS5Handler) {
 	// Add request ID
 	ctx = util.WithRequestID(ctx, generateRequestID())
+
+	// Process-wide connection ceiling (network.max_connections).
+	if !s.acquireGlobalConn() {
+		logging.Warn("global connection limit exceeded",
+			"max", s.config.Network.MaxConnections,
+			"client", conn.RemoteAddr().String(),
+		)
+		conn.Close()
+		return
+	}
+	defer s.releaseGlobalConn()
 
 	// Connection limiting for resource-constrained devices (OpenWrt)
 	maxConns := s.config.Server.SOCKS5.MaxConnections

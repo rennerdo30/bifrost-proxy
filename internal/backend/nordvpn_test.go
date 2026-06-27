@@ -2,11 +2,83 @@ package backend
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
+
+func nordTestCAPEM(t *testing.T) string {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test NordVPN CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	require.NoError(t, err)
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// TestNordVPNBackend_OpenVPNDelegate_RequiresCA verifies that building an
+// OpenVPN delegate fails closed when no CA certificate is configured and
+// succeeds (config generation) when a valid CA is supplied.
+func TestNordVPNBackend_OpenVPNDelegate_RequiresCA(t *testing.T) {
+	server := &vpnprovider.Server{
+		Hostname:    "de123.nordvpn.com",
+		CountryCode: "DE",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "de123.nordvpn.com",
+			UDPPort:  1194,
+		},
+	}
+
+	// Without CA: fail closed.
+	bNoCA := NewNordVPNBackend(NordVPNConfig{
+		Name:     "nord-ovpn",
+		Protocol: "openvpn",
+		Username: "u",
+		Password: "p",
+	})
+	_, err := bNoCA.buildDelegate(context.Background(), server, vpnprovider.Credentials{
+		Username: "u",
+		Password: "p",
+	})
+	require.Error(t, err)
+
+	// With a valid CA: config generation succeeds and produces an OpenVPN
+	// delegate backend.
+	bWithCA := NewNordVPNBackend(NordVPNConfig{
+		Name:     "nord-ovpn",
+		Protocol: "openvpn",
+		Username: "u",
+		Password: "p",
+		CACert:   nordTestCAPEM(t),
+	})
+	delegate, err := bWithCA.buildDelegate(context.Background(), server, vpnprovider.Credentials{
+		Username: "u",
+		Password: "p",
+		CACert:   nordTestCAPEM(t),
+	})
+	require.NoError(t, err)
+	require.NotNil(t, delegate)
+	assert.Equal(t, "openvpn", delegate.Type())
+}
 
 func TestNewNordVPNBackend(t *testing.T) {
 	cfg := NordVPNConfig{

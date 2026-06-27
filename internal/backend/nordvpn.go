@@ -57,6 +57,13 @@ type NordVPNConfig struct {
 	AccessToken string `yaml:"access_token,omitempty"` // WireGuard private key
 	Username    string `yaml:"username,omitempty"`     // OpenVPN username
 	Password    string `yaml:"password,omitempty"`     // OpenVPN password
+
+	// OpenVPN TLS material. CACert is the PEM-encoded CA used to verify the
+	// NordVPN OpenVPN server; it is REQUIRED for the openvpn protocol (config
+	// generation fails closed without it). TLSAuthKey is the optional OpenVPN
+	// tls-auth static key.
+	CACert     string `yaml:"ca_cert,omitempty"`      // OpenVPN CA certificate (PEM)
+	TLSAuthKey string `yaml:"tls_auth_key,omitempty"` // OpenVPN tls-auth static key
 }
 
 // NewNordVPNBackend creates a new NordVPN backend.
@@ -163,6 +170,8 @@ func (b *NordVPNBackend) Start(ctx context.Context) error {
 		AccessToken: b.config.AccessToken,
 		Username:    b.config.Username,
 		Password:    b.config.Password,
+		CACert:      b.config.CACert,
+		TLSAuthKey:  b.config.TLSAuthKey,
 	}
 
 	// Create the delegate backend based on protocol
@@ -314,6 +323,8 @@ func (b *NordVPNBackend) swapDelegate(ctx context.Context, server *vpnprovider.S
 		AccessToken: b.config.AccessToken,
 		Username:    b.config.Username,
 		Password:    b.config.Password,
+		CACert:      b.config.CACert,
+		TLSAuthKey:  b.config.TLSAuthKey,
 	}
 
 	newDelegate, err := b.buildDelegate(ctx, server, creds)

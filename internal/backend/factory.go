@@ -285,6 +285,13 @@ func (f *Factory) createNordVPN(cfg config.BackendConfig) (Backend, error) {
 	if v, ok := cfg.Config["password"].(string); ok {
 		nordCfg.Password = v
 	}
+	// OpenVPN TLS material.
+	if v, ok := cfg.Config["ca_cert"].(string); ok {
+		nordCfg.CACert = v
+	}
+	if v, ok := cfg.Config["tls_auth_key"].(string); ok {
+		nordCfg.TLSAuthKey = v
+	}
 
 	// Validate credentials based on protocol
 	protocol := nordCfg.Protocol
@@ -298,6 +305,12 @@ func (f *Factory) createNordVPN(cfg config.BackendConfig) (Backend, error) {
 	} else if protocol == "openvpn" {
 		if nordCfg.Username == "" || nordCfg.Password == "" {
 			return nil, fmt.Errorf("nordvpn openvpn backend requires 'username' and 'password' config")
+		}
+		// NordVPN OpenVPN requires a CA certificate; without it config
+		// generation fails closed. Surface this at construction time so a
+		// misconfigured backend is rejected early rather than at first dial.
+		if nordCfg.CACert == "" {
+			return nil, fmt.Errorf("nordvpn openvpn backend requires 'ca_cert' (PEM CA certificate) config")
 		}
 	}
 

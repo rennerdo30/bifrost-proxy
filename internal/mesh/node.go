@@ -687,8 +687,9 @@ func (n *MeshNode) handleTUNPacket(packet []byte) {
 		return
 	}
 
-	// Send to peer
-	if err := n.sendToP2P(nextHop, packet); err != nil {
+	// Send to peer with the data-plane marker so the receiver does not
+	// misclassify the raw IP packet as a control message.
+	if err := n.sendToP2P(nextHop, frameData(packet)); err != nil {
 		slog.Debug("failed to send packet to peer",
 			"peer_id", nextHop,
 			"error", err,
@@ -697,8 +698,8 @@ func (n *MeshNode) handleTUNPacket(packet []byte) {
 }
 
 // handleTAPFrame processes an Ethernet frame from the TAP device.
-func (n *MeshNode) handleTAPFrame(frameData []byte) {
-	ethFrame, err := frame.ParseEthernetFrame(frameData)
+func (n *MeshNode) handleTAPFrame(frameBytes []byte) {
+	ethFrame, err := frame.ParseEthernetFrame(frameBytes)
 	if err != nil {
 		slog.Debug("failed to parse ethernet frame", "error", err)
 		return
@@ -709,7 +710,7 @@ func (n *MeshNode) handleTAPFrame(frameData []byte) {
 
 	// Handle ARP
 	if ethFrame.Header.EtherType == frame.EtherTypeARP && n.arpHandler != nil {
-		response := n.arpHandler.HandleFrame(frameData)
+		response := n.arpHandler.HandleFrame(frameBytes)
 		if response != nil {
 			// Write ARP response back to device
 			if _, err := n.device.Write(response); err != nil {
@@ -719,10 +720,12 @@ func (n *MeshNode) handleTAPFrame(frameData []byte) {
 		return
 	}
 
-	// Check if broadcast/multicast
+	// Check if broadcast/multicast. Broadcast/multicast frames are carried
+	// inside the broadcast manager's own serialized message (markerBroadcast),
+	// so they do not need the data-plane marker here.
 	if frame.IsBroadcast(ethFrame.Header.DstMAC) {
 		// Flood to all peers
-		if err := n.broadcast.Broadcast(frameData, 8); err != nil {
+		if err := n.broadcast.Broadcast(frameBytes, 8); err != nil {
 			slog.Debug("failed to broadcast frame", "error", err)
 		}
 		return
@@ -731,7 +734,7 @@ func (n *MeshNode) handleTAPFrame(frameData []byte) {
 	if frame.IsMulticast(ethFrame.Header.DstMAC) {
 		// Multicast handling
 		groupID := macToGroupID(ethFrame.Header.DstMAC)
-		if err := n.broadcast.Multicast(groupID, frameData, 8); err != nil {
+		if err := n.broadcast.Multicast(groupID, frameBytes, 8); err != nil {
 			slog.Debug("failed to multicast frame", "error", err)
 		}
 		return
@@ -741,14 +744,16 @@ func (n *MeshNode) handleTAPFrame(frameData []byte) {
 	entry, found := n.macTable.LookupEntry(ethFrame.Header.DstMAC)
 	if !found {
 		// Unknown destination - flood
-		if err := n.broadcast.Broadcast(frameData, 8); err != nil {
+		if err := n.broadcast.Broadcast(frameBytes, 8); err != nil {
 			slog.Debug("failed to flood unknown frame", "error", err)
 		}
 		return
 	}
 
-	// Send directly to peer
-	if err := n.sendToP2P(entry.PeerID, frameData); err != nil {
+	// Send directly to peer with the data-plane marker so the receiver does not
+	// misclassify a frame whose destination MAC begins with a marker byte
+	// (e.g. 0x02, set by GenerateRandomMAC) as a control message.
+	if err := n.sendToP2P(entry.PeerID, frameData(frameBytes)); err != nil {
 		slog.Debug("failed to send frame to peer",
 			"peer_id", entry.PeerID,
 			"error", err,
@@ -979,9 +984,8 @@ func (n *MeshNode) onP2PData(peerID string, data []byte) {
 		return
 	}
 
-	// Dispatch on the leading marker byte. Senders frame protocol and
-	// broadcast messages with a single marker byte; everything else is raw
-	// tunnel data destined for the local device.
+	// Dispatch on the leading marker byte. Every sender frames its payload with
+	// a single marker byte so the receiver can classify it unambiguously.
 	switch data[0] {
 	case markerProtocol:
 		n.handleProtocolMessage(peerID, data)
@@ -991,18 +995,31 @@ func (n *MeshNode) onP2PData(peerID string, data []byte) {
 		// which expects its own serialized message format.
 		_ = n.broadcast.HandleMessage(peerID, data[1:]) //nolint:errcheck // Best effort broadcast
 		return
+	case markerData:
+		n.handleDataFrame(peerID, data[1:])
+		return
+	default:
+		// Unknown marker. Older peers and any future markers fall through here;
+		// drop rather than risk feeding a malformed buffer to the device.
+		slog.Debug("dropping frame with unknown marker", "peer_id", peerID, "marker", data[0])
+		return
+	}
+}
+
+// handleDataFrame writes a raw (marker-stripped) data-plane payload to the
+// local device, learning the source MAC first for TAP devices.
+func (n *MeshNode) handleDataFrame(peerID string, payload []byte) {
+	if len(payload) == 0 {
+		return
 	}
 
-	// Regular data - write to device
-	if n.device.Type() == device.DeviceTAP {
-		// For TAP, learn the source MAC
-		if len(data) >= 14 {
-			srcMAC := net.HardwareAddr(data[6:12])
-			n.macTable.Learn(srcMAC, peerID)
-		}
+	// For TAP, learn the source MAC from the Ethernet header.
+	if n.device.Type() == device.DeviceTAP && len(payload) >= 14 {
+		srcMAC := net.HardwareAddr(payload[6:12])
+		n.macTable.Learn(srcMAC, peerID)
 	}
 
-	if err := n.writeToDevice(data); err != nil {
+	if err := n.writeToDevice(payload); err != nil {
 		slog.Debug("failed to write to device", "error", err)
 	}
 }
@@ -1117,13 +1134,32 @@ func generatePeerID(peerName string) string {
 	return fmt.Sprintf("peer-%s", base64.RawURLEncoding.EncodeToString(mac))
 }
 
-// Control-plane framing markers. A single marker byte is prepended to control
-// messages before they are sent over a P2P connection so the receiver can
-// distinguish them from raw tunnel data. Raw IP packets / Ethernet frames are
-// never prefixed and are written directly to the local device.
+// Framing markers. A single marker byte is prepended to every message sent
+// over a P2P connection so the receiver can classify it. Control messages use
+// markerProtocol / markerBroadcast; raw data-plane traffic (IP packets /
+// Ethernet frames) uses markerData. Every send path is framed and the receive
+// path strips the marker before dispatch.
 const (
+	// markerData identifies raw data-plane traffic (an IP packet for TUN or an
+	// Ethernet frame for TAP). It MUST be prepended on every raw send and
+	// stripped on receive. Without an explicit marker, a raw Ethernet frame
+	// whose destination MAC first octet happens to equal markerProtocol or
+	// markerBroadcast would be misclassified as a control message. Because
+	// GenerateRandomMAC always sets the locally-administered bit (0x02), unicast
+	// MACs frequently begin with 0x02 == markerBroadcast, so roughly 1/64 of
+	// raw frames collided with the broadcast marker before this marker existed.
+	markerData byte = 0x00
 	// markerProtocol identifies a routing protocol message (JSON payload).
 	markerProtocol byte = 0x01
 	// markerBroadcast identifies a broadcast/multicast message (binary payload).
 	markerBroadcast byte = 0x02
 )
+
+// frameData prepends the data-plane marker to a raw packet/frame. The returned
+// slice is a fresh allocation and does not alias the input.
+func frameData(data []byte) []byte {
+	framed := make([]byte, 0, len(data)+1)
+	framed = append(framed, markerData)
+	framed = append(framed, data...)
+	return framed
+}

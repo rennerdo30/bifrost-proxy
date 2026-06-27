@@ -27,6 +27,7 @@ type ServerConfig struct {
 	HealthCheck   HealthCheckConfig   `yaml:"health_check" json:"health_check"`
 	AutoUpdate    AutoUpdateConfig    `yaml:"auto_update" json:"auto_update"`
 	Cache         cache.Config        `yaml:"cache" json:"cache"`
+	Network       NetworkConfig       `yaml:"network" json:"network"`
 }
 
 // ServerSettings contains server-specific settings.
@@ -51,6 +52,24 @@ type TLSConfig struct {
 	Enabled  bool   `yaml:"enabled" json:"enabled"`
 	CertFile string `yaml:"cert_file" json:"cert_file"`
 	KeyFile  string `yaml:"key_file" json:"key_file"`
+
+	// ClientAuth controls whether and how the listener requests/verifies client
+	// certificates for mutual TLS (mTLS). Recognized values:
+	//   ""                 - no client certificate requested (default)
+	//   "request"          - request but do not verify (tls.RequestClientCert)
+	//   "require_any"      - require a cert, do not verify chain
+	//                        (tls.RequireAnyClientCert)
+	//   "verify_if_given"  - verify chain only if a cert is presented
+	//                        (tls.VerifyClientCertIfGiven)
+	//   "require"          - require AND verify chain
+	//                        (tls.RequireAndVerifyClientCert)
+	// When verification is requested the client CA pool is sourced from
+	// ClientCAFile, or (if empty) from the configured mTLS auth provider.
+	ClientAuth string `yaml:"client_auth,omitempty" json:"client_auth,omitempty"`
+
+	// ClientCAFile is the PEM file of CA certificates used to verify client
+	// certificates. If empty, the mTLS auth provider's CA pool is used.
+	ClientCAFile string `yaml:"client_ca_file,omitempty" json:"client_ca_file,omitempty"`
 }
 
 // BackendConfig describes a backend configuration.
@@ -72,6 +91,11 @@ type RouteConfig struct {
 	Priority    int      `yaml:"priority" json:"priority"`
 	Backends    []string `yaml:"backends,omitempty" json:"backends,omitempty"`         // For load balancing
 	LoadBalance string   `yaml:"load_balance,omitempty" json:"load_balance,omitempty"` // round_robin, least_conn, ip_hash, weighted
+
+	// Weights maps a backend name (from Backends) to its relative weight for the
+	// "weighted" load-balancing strategy. Backends without an entry default to a
+	// weight of 1. Ignored for other strategies.
+	Weights map[string]int `yaml:"weights,omitempty" json:"weights,omitempty"`
 }
 
 // AuthConfig contains authentication settings.
@@ -90,6 +114,33 @@ type AuthConfig struct {
 	// Providers allows multiple authentication backends.
 	// Each provider is tried in priority order (lowest first).
 	Providers []AuthProvider `yaml:"providers,omitempty" json:"providers,omitempty"`
+
+	// Negotiate enables HTTP Negotiate (SPNEGO/Kerberos with optional NTLM
+	// fallback) authentication on the HTTP proxy listener. This is middleware,
+	// not a chain provider: it drives the multi-step challenge/response
+	// handshake required by Windows domain clients and delegates credential
+	// validation to the referenced kerberos/ntlm auth providers.
+	Negotiate *NegotiateConfig `yaml:"negotiate,omitempty" json:"negotiate,omitempty"`
+}
+
+// NegotiateConfig configures HTTP Negotiate (SPNEGO/Kerberos/NTLM) middleware
+// for the HTTP proxy listener.
+type NegotiateConfig struct {
+	// Enabled turns on Negotiate authentication on the HTTP proxy listener.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// KerberosProvider is the name of an auth provider (type "kerberos") whose
+	// authenticator validates SPNEGO/Kerberos tokens. Required when enabled.
+	KerberosProvider string `yaml:"kerberos_provider,omitempty" json:"kerberos_provider,omitempty"`
+	// NTLMProvider is the name of an auth provider (type "ntlm") whose
+	// authenticator validates NTLM tokens. Optional; required only when
+	// AllowNTLM is true.
+	NTLMProvider string `yaml:"ntlm_provider,omitempty" json:"ntlm_provider,omitempty"`
+	// PreferKerberos tries Kerberos before NTLM (default true).
+	PreferKerberos bool `yaml:"prefer_kerberos,omitempty" json:"prefer_kerberos,omitempty"`
+	// AllowNTLM enables NTLM fallback when Kerberos is unavailable/fails.
+	AllowNTLM bool `yaml:"allow_ntlm,omitempty" json:"allow_ntlm,omitempty"`
+	// Realm is the realm advertised in the authentication challenge.
+	Realm string `yaml:"realm,omitempty" json:"realm,omitempty"`
 }
 
 // AuthProvider represents a single authentication provider.
@@ -213,6 +264,13 @@ type HealthCheckConfig struct {
 	Timeout  Duration `yaml:"timeout" json:"timeout"`
 	Target   string   `yaml:"target,omitempty" json:"target,omitempty"`
 	Path     string   `yaml:"path,omitempty" json:"path,omitempty"` // For HTTP health checks
+
+	// HealthyThreshold is the number of consecutive successful checks required
+	// before a backend is marked healthy (de-bouncing). <= 0 means 1.
+	HealthyThreshold int `yaml:"healthy_threshold,omitempty" json:"healthy_threshold,omitempty"`
+	// UnhealthyThreshold is the number of consecutive failed checks required
+	// before a backend is marked unhealthy (de-bouncing). <= 0 means 1.
+	UnhealthyThreshold int `yaml:"unhealthy_threshold,omitempty" json:"unhealthy_threshold,omitempty"`
 }
 
 // AutoUpdateConfig contains auto-update settings.

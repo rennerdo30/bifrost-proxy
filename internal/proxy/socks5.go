@@ -71,6 +71,7 @@ type SOCKS5Handler struct {
 	accessLogger         accesslog.Logger
 	bandwidth            *ratelimit.BandwidthConfig
 	dialTimeout          time.Duration
+	dialNetwork          string
 	onConnect            func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	onError              func(ctx context.Context, conn net.Conn, host string, err error)
 }
@@ -86,14 +87,20 @@ type SOCKS5HandlerConfig struct {
 	AccessLogger         accesslog.Logger
 	Bandwidth            *ratelimit.BandwidthConfig
 	DialTimeout          time.Duration
-	OnConnect            func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
-	OnError              func(ctx context.Context, conn net.Conn, host string, err error)
+	// DialNetwork is the network passed to backend dials ("tcp", "tcp4",
+	// "tcp6"). Empty defaults to "tcp".
+	DialNetwork string
+	OnConnect   func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
+	OnError     func(ctx context.Context, conn net.Conn, host string, err error)
 }
 
 // NewSOCKS5Handler creates a new SOCKS5 proxy handler.
 func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 30 * time.Second
+	}
+	if cfg.DialNetwork == "" {
+		cfg.DialNetwork = "tcp"
 	}
 	return &SOCKS5Handler{
 		getBackend:           cfg.GetBackend,
@@ -105,6 +112,7 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 		accessLogger:         cfg.AccessLogger,
 		bandwidth:            cfg.Bandwidth,
 		dialTimeout:          cfg.DialTimeout,
+		dialNetwork:          cfg.DialNetwork,
 		onConnect:            cfg.OnConnect,
 		onError:              cfg.OnError,
 	}
@@ -464,7 +472,7 @@ func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target
 	ctx = util.WithBackend(ctx, be.Name())
 
 	// Dial the target through the backend
-	targetConn, err := be.DialTimeout(ctx, "tcp", target, h.dialTimeout)
+	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, target, h.dialTimeout)
 	if err != nil {
 		reply := h.errToReply(err)
 		h.sendReply(conn, reply, nil)

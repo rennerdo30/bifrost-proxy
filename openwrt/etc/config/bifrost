@@ -1,34 +1,77 @@
 # Bifrost UCI Configuration
 #
-# Only the 'main' section is read by the init script:
-#   - option enabled     '1' to start the service, '0' to keep it stopped
-#   - option config_file  path to the YAML config the server is launched with
+# How the init script uses this file
+# -----------------------------------
+# The 'main' section controls the service and how the YAML config is sourced:
 #
-# The server/socks5/logging/api sections below are DOCUMENTATION ONLY. They are
-# NOT synced into the YAML config and changing them has no effect on the running
-# server. For full configuration, edit the YAML file referenced by config_file
-# (default /etc/bifrost/config.yaml) directly, then reload:
+#   option enabled    '1'   Start the service ('0' keeps it stopped).
+#   option managed    '1'   Generate /etc/bifrost/config.yaml from the UCI
+#                           sections below on every start/reload. When '0'
+#                           (the default) UCI does NOT touch the YAML file and
+#                           you manage config_file by hand.
+#   option config_file '/etc/bifrost/config.yaml'
+#                           Path to the YAML config the server is launched
+#                           with. When managed='1' this file is OVERWRITTEN.
+#
+# Managed mode maps the core options below into the generated YAML. Anything
+# not expressible here (custom backends, routes, auth providers, caching, TLS,
+# rate limiting, mesh, ...) is NOT generated; for those, set managed='0' and
+# edit the YAML file directly. After editing UCI run:
 #   /etc/init.d/bifrost reload
 
 config bifrost 'main'
     option enabled '1'
+    option managed '0'
     option config_file '/etc/bifrost/config.yaml'
 
-# --- The sections below are decorative placeholders only (see note above). ---
+# --- The sections below are only consumed when 'main.managed' is '1'. ---
 
+# HTTP proxy listener. Leave 'listen' empty to disable the HTTP listener.
 config server 'http'
     option listen ':8080'
+    option read_timeout '30s'
+    option write_timeout '30s'
+    option idle_timeout '60s'
     option max_connections '100'
 
+# SOCKS5 proxy listener. Leave 'listen' empty to disable the SOCKS5 listener.
 config server 'socks5'
     option listen ':1080'
     option max_connections '100'
 
+# Application (diagnostic) logging.
 config logging 'log'
     option level 'warn'
     option format 'text'
+    option output 'stdout'
 
+# Access logging (per-connection).
+config access_log 'access_log'
+    option enabled '1'
+    option format 'json'
+    option output 'stdout'
+
+# Prometheus metrics endpoint.
+config metrics 'metrics'
+    option enabled '0'
+    option listen ':8090'
+    option path '/metrics'
+    # Use a longer interval on low-power devices to reduce overhead.
+    option collection_interval '60s'
+
+# Management Web UI.
+config web_ui 'web_ui'
+    option enabled '0'
+    option listen ':8081'
+
+# REST API.
 config api 'api'
     option enabled '1'
     option listen ':8082'
+    # Optional bearer token; leave empty for no API auth.
+    option token ''
     option websocket_max_clients '5'
+
+# Default direct backend + catch-all route are always generated in managed
+# mode so the proxy is usable out of the box. To customise backends/routes,
+# switch to managed='0' and edit the YAML directly.
