@@ -70,11 +70,10 @@ func (r *windowsRouteManager) Setup(ctx context.Context, tunName string, cfg Con
 		}
 	}
 
-	// Add default route through TUN (if not in include mode)
-	if cfg.SplitTunnel.Mode == "exclude" {
-		tunGateway := r.tunAddr.Addr().String()
+	tunGateway := r.tunAddr.Addr().String()
 
-		// Route all traffic through TUN using two specific routes
+	if cfg.SplitTunnel.Mode == "exclude" {
+		// Exclude mode: route all traffic through TUN using two specific routes.
 		for _, cidr := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
 			if err := r.addRoute(cidr, tunGateway, r.ifIndex); err != nil {
 				slog.Warn("failed to add default route", "cidr", cidr, "error", err)
@@ -82,6 +81,29 @@ func (r *windowsRouteManager) Setup(ctx context.Context, tunName string, cfg Con
 				r.savedRoutes = append(r.savedRoutes, SavedRoute{
 					Entry: RouteEntry{
 						Destination: cidr,
+						Gateway:     tunGateway,
+					},
+					WasAdded: true,
+				})
+			}
+		}
+	} else {
+		// Include mode: only the configured IPs/CIDRs are routed into the TUN;
+		// everything else keeps using the existing default route. App/domain
+		// rules are resolved to IPs dynamically by the DNS server and
+		// split-tunnel engine, so only static IP rules get system routes here.
+		for _, cidr := range cfg.SplitTunnel.IPs {
+			dest, err := normalizeCIDR(cidr)
+			if err != nil {
+				slog.Warn("invalid include IP/CIDR, skipping", "cidr", cidr, "error", err)
+				continue
+			}
+			if err := r.addRoute(dest, tunGateway, r.ifIndex); err != nil {
+				slog.Warn("failed to add include route", "cidr", dest, "error", err)
+			} else {
+				r.savedRoutes = append(r.savedRoutes, SavedRoute{
+					Entry: RouteEntry{
+						Destination: dest,
 						Gateway:     tunGateway,
 					},
 					WasAdded: true,
