@@ -3,8 +3,15 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"fmt"
 	"io"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -1122,4 +1129,79 @@ func TestHTTPHandler_handleHTTP_ReadResponseError(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 	clientConn.Close()
+}
+
+func TestPeerCertificate_NonTLS(t *testing.T) {
+	c1, c2 := net.Pipe()
+	defer c1.Close()
+	defer c2.Close()
+
+	if cert := peerCertificate(c1); cert != nil {
+		t.Fatalf("expected nil cert for non-TLS conn, got %v", cert)
+	}
+}
+
+func TestPeerCertificate_TLSWithClientCert(t *testing.T) {
+	// Generate a CA + client cert and a server cert signed by the CA.
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+	caTmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "Test CA"},
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, caTmpl, caTmpl, &caKey.PublicKey, caKey)
+	require.NoError(t, err)
+	caCert, err := x509.ParseCertificate(caDER)
+	require.NoError(t, err)
+	caPool := x509.NewCertPool()
+	caPool.AddCert(caCert)
+
+	mkLeaf := func(cn string) tls.Certificate {
+		key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		require.NoError(t, err)
+		tmpl := &x509.Certificate{
+			SerialNumber: big.NewInt(time.Now().UnixNano()),
+			Subject:      pkix.Name{CommonName: cn},
+			NotBefore:    time.Now().Add(-time.Hour),
+			NotAfter:     time.Now().Add(time.Hour),
+			DNSNames:     []string{cn},
+			ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, caCert, &key.PublicKey, caKey)
+		require.NoError(t, err)
+		return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
+	}
+
+	serverCert := mkLeaf("localhost")
+	clientCert := mkLeaf("client-user")
+
+	c1, c2 := net.Pipe()
+	serverTLS := tls.Server(c1, &tls.Config{
+		Certificates: []tls.Certificate{serverCert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    caPool,
+		MinVersion:   tls.VersionTLS12,
+	})
+	clientTLS := tls.Client(c2, &tls.Config{
+		Certificates: []tls.Certificate{clientCert},
+		RootCAs:      caPool,
+		ServerName:   "localhost",
+		MinVersion:   tls.VersionTLS12,
+	})
+
+	go func() {
+		_ = clientTLS.Handshake()
+	}()
+
+	got := peerCertificate(serverTLS)
+	require.NotNil(t, got)
+	assert.Equal(t, "client-user", got.Subject.CommonName)
+
+	_ = serverTLS.Close()
+	_ = clientTLS.Close()
 }

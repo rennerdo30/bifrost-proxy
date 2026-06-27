@@ -3,9 +3,11 @@ package nordvpn
 import (
 	"context"
 	"encoding/json"
+	"encoding/pem"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +16,26 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
+
+// testCACertPEM is a real (self-signed) CA certificate used purely for tests so
+// that emitted OpenVPN config can be PEM-decoded. It is not used to connect to
+// any real server.
+const testCACertPEM = `-----BEGIN CERTIFICATE-----
+MIIBUzCB+6ADAgECAgEBMAoGCCqGSM49BAMCMBIxEDAOBgNVBAMTB1Rlc3QgQ0Ew
+HhcNMjYwNjI3MTIzNTI0WhcNMzYwNjI0MTIzNTI0WjASMRAwDgYDVQQDEwdUZXN0
+IENBMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEUzndd0wJKtQO8Q/l4p+0Z/5K
+mS+AtgAehJjRYxWTlgpPogetBPYUlIHG9rmhJFkzVWPZ/i8bTDTtCY6dFx/PtaNC
+MEAwDgYDVR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFKYF
+7ig5A/ISFTZATfLnyWTTcfUUMAoGCCqGSM49BAMCA0cAMEQCIExEnID/hMLz2uhy
+S3vk1kV7KCOQGo8kaZuf/FMb5i01AiBM7NIPGiss4EsEm98gobuEpZGmhAwwWKS4
+PuVu76HIBw==
+-----END CERTIFICATE-----`
+
+// testTLSAuthKey is an arbitrary OpenVPN static key block for tests.
+const testTLSAuthKey = `-----BEGIN OpenVPN Static key V1-----
+e685bdaf659a25a200e2b9e39e51ff03
+0fc72cf1ce07232bd8b2be5e6c670143
+-----END OpenVPN Static key V1-----`
 
 func TestNewClient(t *testing.T) {
 	client := NewClient()
@@ -448,10 +470,12 @@ func TestGenerateOpenVPNConfig(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("generate config with valid credentials", func(t *testing.T) {
+	t.Run("generate config with valid credentials and CA", func(t *testing.T) {
 		creds := vpnprovider.Credentials{
-			Username: "testuser",
-			Password: "testpass",
+			Username:   "testuser",
+			Password:   "testpass",
+			CACert:     testCACertPEM,
+			TLSAuthKey: testTLSAuthKey,
 		}
 
 		config, err := client.GenerateOpenVPNConfig(ctx, serverWithOVPN, creds)
@@ -466,6 +490,34 @@ func TestGenerateOpenVPNConfig(t *testing.T) {
 		assert.Contains(t, config.ConfigContent, "remote us123.nordvpn.com 1194")
 		assert.Contains(t, config.ConfigContent, "<ca>")
 		assert.Contains(t, config.ConfigContent, "<tls-auth>")
+
+		// Whatever CA material is emitted must be valid PEM (no fabricated certs).
+		start := strings.Index(config.ConfigContent, "-----BEGIN CERTIFICATE-----")
+		require.GreaterOrEqual(t, start, 0)
+		block, _ := pem.Decode([]byte(config.ConfigContent[start:]))
+		require.NotNil(t, block, "emitted CA must be valid PEM")
+		assert.Equal(t, "CERTIFICATE", block.Type)
+	})
+
+	t.Run("fail closed without CA certificate", func(t *testing.T) {
+		creds := vpnprovider.Credentials{
+			Username: "testuser",
+			Password: "testpass",
+		}
+		_, err := client.GenerateOpenVPNConfig(ctx, serverWithOVPN, creds)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, vpnprovider.ErrConfigGenerationFailed)
+	})
+
+	t.Run("fail closed with invalid CA PEM", func(t *testing.T) {
+		creds := vpnprovider.Credentials{
+			Username: "testuser",
+			Password: "testpass",
+			CACert:   "not a pem",
+		}
+		_, err := client.GenerateOpenVPNConfig(ctx, serverWithOVPN, creds)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, vpnprovider.ErrConfigGenerationFailed)
 	})
 
 	t.Run("error without credentials", func(t *testing.T) {

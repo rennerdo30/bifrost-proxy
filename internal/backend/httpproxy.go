@@ -179,8 +179,14 @@ func (b *HTTPProxyBackend) Stop(ctx context.Context) error {
 }
 
 // IsHealthy returns the health status.
+//
+// In addition to the started/stopped flag, this reflects the minimal static
+// requirement that an upstream proxy address is configured: a backend with no
+// upstream can never serve traffic, so it is reported unhealthy rather than
+// optimistically healthy. Active reachability checks are layered on top via the
+// health-check subsystem (see HealthWrappedBackend).
 func (b *HTTPProxyBackend) IsHealthy() bool {
-	return b.healthy.Load()
+	return b.healthy.Load() && b.address != ""
 }
 
 // Stats returns backend statistics.

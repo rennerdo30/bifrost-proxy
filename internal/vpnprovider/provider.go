@@ -80,6 +80,13 @@ type Credentials struct {
 	AccountID string `json:"account_id,omitempty"`
 	// AccessToken for providers that use tokens
 	AccessToken string `json:"access_token,omitempty"`
+	// CACert is the PEM-encoded CA certificate used to verify the OpenVPN
+	// server. It must be supplied via configuration; providers do not embed
+	// CA material. Required for OpenVPN config generation.
+	CACert string `json:"ca_cert,omitempty"`
+	// TLSAuthKey is the OpenVPN tls-auth static key (PEM-like OpenVPN static
+	// key block). Optional; if set it is included with key-direction 1.
+	TLSAuthKey string `json:"tls_auth_key,omitempty"`
 }
 
 // WireGuardConfig is the generated WireGuard configuration.
