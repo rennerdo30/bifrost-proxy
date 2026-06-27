@@ -32,7 +32,9 @@ const defaultServer = {
   socks5: { listen: ':1080' },
 }
 
-const defaultAuth = { mode: 'none' as const }
+// The server only accepts the multi-provider format; an empty providers
+// list means "no authentication" and never emits the rejected `mode` field.
+const defaultAuth = { providers: [] }
 
 const defaultRateLimit = {
   enabled: false,
