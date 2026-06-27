@@ -2,6 +2,7 @@ package health
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 )
@@ -142,7 +143,16 @@ func (m *Manager) performCheck(ctx context.Context, check *managedCheck) {
 
 	result := check.checker.Check(checkCtx)
 
-	stableResult, _ := check.applyResult(result)
+	stableResult, changed := check.applyResult(result)
+
+	// Log only on a de-bounced health-state transition to avoid log spam.
+	if changed {
+		if stableResult.Healthy {
+			slog.Info("health check recovered", "check", check.name, "latency", stableResult.Latency)
+		} else {
+			slog.Warn("health check failed", "check", check.name, "message", stableResult.Message, "error", stableResult.Error)
+		}
+	}
 
 	if check.callback != nil {
 		check.callback(check.name, stableResult)

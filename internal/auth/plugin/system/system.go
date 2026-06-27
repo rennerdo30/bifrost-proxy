@@ -230,13 +230,13 @@ func (a *Authenticator) validateDarwin(ctx context.Context, username, password s
 
 // validateLinux validates a password on Linux.
 //
-// A real implementation must call into PAM (which also honours the configured
+// A real implementation must call into PAM (which also honors the configured
 // 'service' field). The previous "su with password on stdin" approach did not
 // work: su reads the password from the controlling TTY (/dev/tty), not stdin,
 // so feeding the password to stdin authenticates nothing and could even succeed
 // spuriously when run from a privileged context. Because this is an
 // authentication primitive, we fail closed instead of shipping that unsafe
-// behaviour.
+// behavior.
 //
 // To enable Linux system auth, build with a cgo-based PAM backend (not yet
 // implemented). See the 'system' auth docs.

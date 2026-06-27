@@ -382,7 +382,7 @@ func (m *Manager) handlePacket(packet *IPPacket) {
 // bypass route installed (RouteManager.AddBypassRoute / always_bypass CIDRs and,
 // in include mode, anything not routed into the TUN). Those packets never enter
 // the TUN in the first place, so they reach this function only when a *dynamic*
-// rule (per-app or per-domain) classified an already-tunnelled packet as bypass.
+// rule (per-app or per-domain) classified an already-tunneled packet as bypass.
 //
 // Once a packet has been read from the TUN device there is no portable way to
 // re-inject it to the host stack and have it egress a physical interface: writing
@@ -394,7 +394,7 @@ func (m *Manager) handlePacket(packet *IPPacket) {
 // rules (handled by the route manager) so the traffic never reaches the TUN.
 func (m *Manager) handleBypassPacket(packet *IPPacket, decision Decision) {
 	slog.Warn("dropping packet classified as bypass after it entered the TUN; "+
-		"per-app/per-domain bypass is not delivered for already-tunnelled packets, "+
+		"per-app/per-domain bypass is not delivered for already-tunneled packets, "+
 		"use IP/CIDR bypass rules instead",
 		"dst", packet.DstIP,
 		"port", packet.DstPort,
@@ -536,7 +536,7 @@ func (m *Manager) establishProxyConnection(packet *IPPacket) {
 // transfers) can stall or corrupt the byte stream. A correct implementation
 // requires a proper userspace TCP/IP stack (e.g. gVisor netstack). This is
 // deferred as a large piece of work; the limitation is documented here so callers
-// do not assume reliable large-transfer behaviour.
+// do not assume reliable large-transfer behavior.
 //
 // In a full implementation, we would:
 // 1. Reassemble TCP segments from TUN

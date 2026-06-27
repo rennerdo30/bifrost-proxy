@@ -92,7 +92,9 @@ func (w *rotatingWriter) rotate() error {
 	rotated := fmt.Sprintf("%s.%s", w.path, ts)
 	if err := os.Rename(w.path, rotated); err != nil {
 		// Try to reopen the original so logging can continue.
-		_ = w.openExisting()
+		if rerr := w.openExisting(); rerr != nil {
+			return fmt.Errorf("failed to rotate log file: %w (reopen failed: %v)", err, rerr)
+		}
 		return fmt.Errorf("failed to rotate log file: %w", err)
 	}
 

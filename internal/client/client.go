@@ -455,7 +455,10 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 	}
 	if raw, ok := updates["_remove_route"]; ok {
 		delete(updates, "_remove_route")
-		name, _ := raw.(string)
+		name, isStr := raw.(string)
+		if !isStr || name == "" {
+			return fmt.Errorf("_remove_route requires a non-empty route name")
+		}
 		filtered := c.config.Routes[:0]
 		for _, r := range c.config.Routes {
 			if r.Name == name {
