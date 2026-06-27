@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { WSEvent } from '../api/types'
+import { BASE_PATH } from '../api/client'
 
 type MessageHandler = (event: WSEvent) => void
 
@@ -20,7 +21,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (!enabled) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}/api/v1/ws`
+    const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/api/v1/ws`
 
     try {
       const ws = new WebSocket(wsUrl)

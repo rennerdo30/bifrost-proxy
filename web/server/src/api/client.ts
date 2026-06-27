@@ -34,7 +34,15 @@ import type {
   UpdateMeshPeerRequest,
 } from './types'
 
-const API_BASE = '/api/v1'
+// Base path of the SPA — everything in window.location.pathname stripped
+// of trailing slashes. With HashRouter, pathname only ever contains the
+// reverse-proxy mount point (the SPA's own route lives in the URL hash),
+// so this is the right prefix to put in front of API calls. Works behind
+// Home Assistant Ingress (/api/hassio_ingress/<token>), Traefik sub-paths,
+// nginx subpaths, Cloudflare Tunnel sub-domains — and a no-op (empty
+// string) when served at the host root.
+export const BASE_PATH = window.location.pathname.replace(/\/+$/, '')
+const API_BASE = `${BASE_PATH}/api/v1`
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
 
 class APIError extends Error {

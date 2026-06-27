@@ -1,6 +1,10 @@
 import type { VersionInfo, StatusResponse, DebugEntry, Route, RouteTestResult, CacheStats, CacheEntriesResponse, MeshStatus, MeshStats, MeshPeer, MeshRoute, MeshNetwork } from './types'
 
-const API_BASE = '/api/v1'
+// See web/server/src/api/client.ts for the rationale — base path computed
+// from window.location.pathname so the SPA works under any reverse-proxy
+// mount point (HA Ingress, Traefik, nginx, etc.).
+export const BASE_PATH = window.location.pathname.replace(/\/+$/, '')
+const API_BASE = `${BASE_PATH}/api/v1`
 
 // Helper function to convert routes to YAML format
 function routesToYaml(routes: Route[]): string {
