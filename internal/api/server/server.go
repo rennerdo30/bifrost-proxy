@@ -345,7 +345,7 @@ func (a *API) securityHeadersMiddleware(next http.Handler) http.Handler {
 		csp := "default-src 'self'; " +
 			"script-src 'self' 'unsafe-inline'; " +
 			"style-src 'self' 'unsafe-inline'; " +
-			"font-src 'self'; " +
+			"font-src 'self' data:; " +
 			"img-src 'self' data: https:; " +
 			"connect-src 'self' ws: wss:; " +
 			"frame-ancestors 'self'"
