@@ -112,7 +112,7 @@ func (r *TCPReassembler) Stats() (bufferedBytes, bufferedSegments int, droppedSe
 // returns the in-order bytes (if any) that are now ready to be delivered
 // upstream. The returned slice is freshly allocated and owned by the caller.
 //
-// Behaviour:
+// Behavior:
 //   - The first segment seen (when uninitialized) seeds nextSeq to its seq.
 //   - In-order data is returned immediately, then any contiguous buffered
 //     segments are appended.
@@ -212,7 +212,7 @@ func (r *TCPReassembler) removeFirstLocked() {
 }
 
 // bufferLocked inserts a future segment into the sorted buffer, trimming
-// overlaps with neighbouring segments and enforcing the size bounds. Must hold
+// overlaps with neighboring segments and enforcing the size bounds. Must hold
 // r.mu.
 func (r *TCPReassembler) bufferLocked(seq uint32, payload []byte) {
 	// Find insertion index (first segment with seq strictly greater).

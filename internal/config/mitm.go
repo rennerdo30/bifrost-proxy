@@ -58,8 +58,8 @@ func (c MITMConfig) LoadCA() (certPEM, keyPEM []byte, err error) {
 	if !c.Enabled {
 		return nil, nil, errors.New("mitm: disabled")
 	}
-	if err := c.Validate(); err != nil {
-		return nil, nil, err
+	if verr := c.Validate(); verr != nil {
+		return nil, nil, verr
 	}
 	certPEM, err = os.ReadFile(c.CACertFile)
 	if err != nil {

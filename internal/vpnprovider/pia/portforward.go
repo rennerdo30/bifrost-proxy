@@ -257,7 +257,7 @@ func (pf *PortForwarder) Acquire(ctx context.Context, params PortForwardParams) 
 }
 
 // Run drives the full port-forwarding lifecycle: it acquires a port, then calls
-// bindPort on BindPortInterval until ctx is cancelled. The granted port is
+// bindPort on BindPortInterval until ctx is canceled. The granted port is
 // delivered on the returned channel exactly once (before renewals begin). Run
 // blocks until ctx is done and returns the terminal error (ctx.Err() on normal
 // shutdown, or the bind error that aborted renewal).

@@ -685,7 +685,29 @@ func (m *Manager) forwardOnConnection(conn *TrackedConnection, packet *IPPacket)
 	// processed, then handle control flags.
 	m.updateTCPClientState(conn, packet)
 
+	// Forward any in-order data BEFORE handling FIN, so in-order payload that
+	// arrives on the FIN segment is delivered rather than lost on teardown.
+	if len(data) > 0 {
+		n, err := conn.ProxyConn.Write(data)
+		if err != nil {
+			slog.Error("failed to forward on connection", "error", err)
+			m.connTracker.Remove(conn.Key)
+			conn.ProxyConn.Close()
+			m.sendTCPRst(conn)
+			return
+		}
+		conn.BytesSent.Add(int64(n))
+	}
+
 	if packet.IsFIN() {
+		// Any segments still buffered sit behind an unfilled gap and cannot be
+		// delivered in order; surface the loss rather than dropping it silently.
+		if conn.TCP != nil && conn.TCP.Reasm != nil {
+			if bufBytes, _, _, _ := conn.TCP.Reasm.Stats(); bufBytes > 0 {
+				slog.Warn("connection FIN with un-reassembled buffered data; dropping",
+					"key", conn.Key, "buffered_bytes", bufBytes)
+			}
+		}
 		m.sendTCPFin(conn)
 		m.connTracker.Remove(conn.Key)
 		conn.ProxyConn.Close()
@@ -696,24 +718,8 @@ func (m *Manager) forwardOnConnection(conn *TrackedConnection, packet *IPPacket)
 		return
 	}
 
-	if len(data) == 0 {
-		// Nothing newly in-order to forward (future, duplicate, or fully
-		// consumed). Still ACK so the peer learns our cumulative position.
-		conn.LastActivity = time.Now()
-		m.sendTCPAck(conn)
-		return
-	}
-
-	n, err := conn.ProxyConn.Write(data)
-	if err != nil {
-		slog.Error("failed to forward on connection", "error", err)
-		m.connTracker.Remove(conn.Key)
-		conn.ProxyConn.Close()
-		m.sendTCPRst(conn)
-		return
-	}
-
-	conn.BytesSent.Add(int64(n))
+	// Received payload (newly in-order, duplicate, or out-of-order): ACK so the
+	// peer learns our cumulative in-order position.
 	conn.LastActivity = time.Now()
 	m.sendTCPAck(conn)
 }

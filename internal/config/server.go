@@ -28,6 +28,8 @@ type ServerConfig struct {
 	AutoUpdate    AutoUpdateConfig    `yaml:"auto_update" json:"auto_update"`
 	Cache         cache.Config        `yaml:"cache" json:"cache"`
 	Network       NetworkConfig       `yaml:"network" json:"network"`
+	Session       SessionConfig       `yaml:"session" json:"session"`
+	MITM          MITMConfig          `yaml:"mitm" json:"mitm"`
 }
 
 // ServerSettings contains server-specific settings.
@@ -413,6 +415,14 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	if err := c.Auth.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.Session.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.MITM.Validate(); err != nil {
 		return err
 	}
 

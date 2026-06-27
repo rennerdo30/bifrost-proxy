@@ -99,8 +99,9 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		return nil, fmt.Errorf("setup logging: %w", err)
 	}
 
-	// Create backends
-	factory := backend.NewFactory()
+	// Create backends, threading network tuning (keep-alive, dial timeout,
+	// address family, prefer-IPv6) into every dialer-owning backend.
+	factory := backend.NewFactoryWithNetwork(cfg.Network)
 	backends, err := factory.CreateAll(cfg.Backends)
 	if err != nil {
 		return nil, fmt.Errorf("create backends: %w", err)

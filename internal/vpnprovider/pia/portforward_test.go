@@ -52,22 +52,22 @@ func TestDecodePayload_Invalid(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// pfTestServer returns an httptest server emulating the PIA gateway PF API and a
-// PortForwarder wired to it.
-func pfTestServer(t *testing.T, handler http.HandlerFunc) (*PortForwarder, *httptest.Server) {
+// pfTestServer starts an httptest server emulating the PIA gateway PF API
+// (cleaned up via t.Cleanup) and returns a PortForwarder wired to it.
+func pfTestServer(t *testing.T, handler http.HandlerFunc) *PortForwarder {
 	t.Helper()
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
 	pf := newPortForwarderWithClient(srv.Client(), nil)
 	pf.baseOverride = srv.URL
-	return pf, srv
+	return pf
 }
 
 func TestPortForwarder_Acquire(t *testing.T) {
 	payload := encodePayload(t, signedPayload{Token: "t", Port: 40001, ExpiresAt: time.Now().Add(2 * time.Hour)})
 
 	var bound atomic.Bool
-	pf, _ := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	pf := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/getSignature":
 			assert.Equal(t, "tok", r.URL.Query().Get("token"))
@@ -98,7 +98,7 @@ func TestPortForwarder_Acquire_ValidationFails(t *testing.T) {
 }
 
 func TestPortForwarder_GetSignature_NonOK(t *testing.T) {
-	pf, _ := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	pf := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = w.Write([]byte("denied"))
 	})
@@ -108,7 +108,7 @@ func TestPortForwarder_GetSignature_NonOK(t *testing.T) {
 }
 
 func TestPortForwarder_GetSignature_StatusNotOK(t *testing.T) {
-	pf, _ := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	pf := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		_ = json.NewEncoder(w).Encode(PayloadResponse{Status: "ERROR"})
 	})
 	params := PortForwardParams{GatewayIP: "10.0.0.1", Hostname: "cn", Token: "t"}
@@ -118,7 +118,7 @@ func TestPortForwarder_GetSignature_StatusNotOK(t *testing.T) {
 
 func TestPortForwarder_BindPort_StatusNotOK(t *testing.T) {
 	payload := encodePayload(t, signedPayload{Port: 1234, ExpiresAt: time.Now().Add(time.Hour)})
-	pf, _ := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	pf := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/getSignature" {
 			_ = json.NewEncoder(w).Encode(PayloadResponse{Status: "OK", Payload: payload, Signature: "s"})
 			return
@@ -132,7 +132,7 @@ func TestPortForwarder_BindPort_StatusNotOK(t *testing.T) {
 
 func TestPortForwarder_Run_DeliversPortAndStops(t *testing.T) {
 	payload := encodePayload(t, signedPayload{Port: 55555, ExpiresAt: time.Now().Add(time.Hour)})
-	pf, _ := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+	pf := pfTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/getSignature" {
 			_ = json.NewEncoder(w).Encode(PayloadResponse{Status: "OK", Payload: payload, Signature: "s"})
 			return
