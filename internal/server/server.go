@@ -401,6 +401,11 @@ func (s *Server) Start(ctx context.Context) error {
 		s.wsHub = apiserver.NewWebSocketHubWithMaxClients(wsMaxClients)
 		go s.wsHub.Run()
 
+		// Periodically broadcast stats and backend health over the WebSocket so
+		// the UI can stop polling once the WS is connected.
+		s.wg.Add(1)
+		go s.broadcastWSEvents()
+
 		// Get the router and add WebSocket routes
 		handler := s.api.RouterWithWebSocket(s.wsHub)
 
@@ -779,6 +784,16 @@ func (s *Server) ReloadConfig() error {
 	s.bandwidthConfig = bandwidthConfig
 	reloaded = append(reloaded, "bandwidth")
 
+	// Reload cache rules/presets (rules are hot-reloadable; storage changes
+	// still require a restart and are ignored by Manager.Reload).
+	if s.cacheManager != nil {
+		if err := s.cacheManager.Reload(&newCfg.Cache); err != nil {
+			return fmt.Errorf("reload cache: %w", err)
+		}
+		s.config.Cache = newCfg.Cache
+		reloaded = append(reloaded, "cache")
+	}
+
 	// Update config reference (for sanitized config endpoint)
 	s.config.Routes = newCfg.Routes
 	s.config.RateLimit = newCfg.RateLimit
@@ -794,6 +809,60 @@ func (s *Server) ReloadConfig() error {
 
 	logging.Info("Configuration reloaded successfully", "reloaded", reloaded)
 	return nil
+}
+
+// wsBroadcastInterval is how often aggregate stats / backend health are pushed
+// to connected WebSocket clients.
+const wsBroadcastInterval = 5 * time.Second
+
+// broadcastWSEvents periodically pushes aggregate stats and backend health
+// events to all connected WebSocket clients. This lets the UI stop polling the
+// REST endpoints once the WebSocket is connected.
+func (s *Server) broadcastWSEvents() {
+	defer s.wg.Done()
+
+	ticker := time.NewTicker(wsBroadcastInterval)
+	defer ticker.Stop()
+
+	// lastHealth tracks the last reported health per backend so we only emit
+	// BackendHealthEvent on transitions.
+	lastHealth := make(map[string]bool)
+
+	for {
+		select {
+		case <-s.done:
+			return
+		case <-ticker.C:
+			if s.wsHub == nil || s.backends == nil {
+				continue
+			}
+
+			var totalConnections, activeConnections, bytesSent, bytesReceived int64
+			for _, b := range s.backends.All() {
+				st := b.Stats()
+				totalConnections += st.TotalConnections
+				activeConnections += st.ActiveConnections
+				bytesSent += st.BytesSent
+				bytesReceived += st.BytesReceived
+
+				healthy := b.IsHealthy()
+				if prev, ok := lastHealth[b.Name()]; !ok || prev != healthy {
+					lastHealth[b.Name()] = healthy
+					s.wsHub.Broadcast(apiserver.EventBackendHealth, apiserver.BackendHealthEvent{
+						Name:    b.Name(),
+						Healthy: healthy,
+					})
+				}
+			}
+
+			s.wsHub.Broadcast(apiserver.EventStats, apiserver.StatsEvent{
+				ActiveConnections: activeConnections,
+				TotalConnections:  totalConnections,
+				BytesSent:         bytesSent,
+				BytesReceived:     bytesReceived,
+			})
+		}
+	}
 }
 
 // serveHTTP handles HTTP proxy connections.
