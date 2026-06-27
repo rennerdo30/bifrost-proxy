@@ -90,9 +90,25 @@ func (b *OpenVPNBackend) Type() string {
 }
 
 // Dial creates a connection through the OpenVPN tunnel.
-// Note: OpenVPN typically works at the OS network level, so this uses
-// the system's routing table. For proper isolation, use a network namespace
-// or ensure the routing is configured correctly.
+//
+// LIMITATION (known IP/DNS leak risk): this backend relies on the host's
+// routing table to send traffic over the tun interface created by the external
+// openvpn process. It best-effort binds the dial to the VPN-assigned local
+// address (b.localAddr) so packets originate from the tunnel, but this does
+// NOT guarantee egress isolation:
+//   - If the host route for the destination does not point at the tun device,
+//     traffic can leave via the default interface (IP leak).
+//   - Hostname resolution still uses the host OS resolver, so DNS queries may
+//     leak outside the tunnel.
+//
+// Proper isolation requires running this process inside a network namespace (or
+// equivalent) whose only egress is the VPN tun device, or routing the specific
+// destination through the tunnel. That is an operational/host-level concern not
+// yet implemented here. Until then, prefer the WireGuard backend (userspace
+// netstack) for guaranteed in-tunnel resolution and egress.
+//
+// TODO(proxy): implement namespace-based egress isolation (and tunnel DNS) for
+// the OpenVPN backend, or document the required host routing setup.
 func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net.Conn, error) {
 	b.mu.RLock()
 	if !b.running {

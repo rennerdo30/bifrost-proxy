@@ -3,6 +3,7 @@ package pia
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,14 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
+
+// ErrPortForwardingNotImplemented indicates the PIA port-forwarding flow is not
+// yet implemented. PIA port forwarding is a multi-step, gateway-bound API
+// (getSignature on the connected region's gateway, then periodic bindPort calls
+// authenticated against the PIA CA) that requires the active tunnel's gateway
+// address and CA material. Until that flow is implemented we return this error
+// rather than silently pretending to forward a port (fail closed).
+var ErrPortForwardingNotImplemented = errors.New("pia: port forwarding not implemented")
 
 // Token represents a PIA authentication token.
 type Token struct {
@@ -201,4 +210,15 @@ type PortForwardResponse struct {
 type PayloadResponse struct {
 	Payload   string `json:"payload"`
 	Signature string `json:"signature"`
+}
+
+// RequestPortForward requests a forwarded port from PIA.
+//
+// NOT IMPLEMENTED. This always returns ErrPortForwardingNotImplemented. The PIA
+// port-forwarding flow requires the active tunnel's gateway address and PIA CA
+// to (1) call getSignature for a signed payload and (2) periodically call
+// bindPort to keep the port alive. That plumbing does not exist here yet, so we
+// fail closed instead of returning a fake/zero port that callers might trust.
+func (tm *TokenManager) RequestPortForward(_ context.Context) (*PortForwardResponse, error) {
+	return nil, ErrPortForwardingNotImplemented
 }
