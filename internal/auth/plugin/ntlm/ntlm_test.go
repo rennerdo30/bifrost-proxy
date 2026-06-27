@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -96,6 +97,36 @@ func createNTLMAuthenticator(t *testing.T, cfg map[string]any) auth.Authenticato
 	return authenticator
 }
 
+// TestNTLMAuthenticator_NoBypass is a security regression test for the former
+// authentication bypass: a syntactically valid Type 3 message used to be
+// accepted and authenticated as whatever username it carried, with no
+// cryptographic verification. The plugin must now fail closed for ANY
+// username, via both the context-token path and the challenge-response path.
+func TestNTLMAuthenticator_NoBypass(t *testing.T) {
+	authenticator := createNTLMAuthenticator(t, map[string]any{"domain": "CORP"})
+
+	for _, name := range []string{"administrator", "root", "attacker", "alice"} {
+		type3Msg := createNTLMType3("CORP", name)
+		ctx := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg)
+
+		user, err := authenticator.Authenticate(ctx, "", "")
+		require.Error(t, err, "forged Type 3 for %q must not authenticate", name)
+		require.Nil(t, user, "no UserInfo may be returned for unverified %q", name)
+		assert.True(t, errors.Is(err, ntlm.ErrVerificationUnsupported),
+			"expected ErrVerificationUnsupported for %q, got %v", name, err)
+	}
+
+	// Same guarantee on the explicit challenge/response (ValidateAuthenticate) path.
+	ntlmAuth, ok := authenticator.(*ntlm.Authenticator)
+	require.True(t, ok)
+	sessionID := "no-bypass-session"
+	_, _ = ntlmAuth.GenerateChallenge(createNTLMType1(), sessionID)
+	user, err := ntlmAuth.ValidateAuthenticate(createNTLMType3("CORP", "administrator"), sessionID)
+	require.Error(t, err)
+	require.Nil(t, user)
+	assert.True(t, errors.Is(err, ntlm.ErrVerificationUnsupported))
+}
+
 func TestNTLMPlugin_Registration(t *testing.T) {
 	plugin, ok := auth.GetPlugin("ntlm")
 	require.True(t, ok, "ntlm plugin not registered")
@@ -184,11 +215,11 @@ func TestNTLMAuthenticator_Type3Message(t *testing.T) {
 	// Pass via context
 	ctx := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg)
 
-	user, err := authenticator.Authenticate(ctx, "", "")
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
-	assert.Equal(t, "ntlm", user.Metadata["auth_type"])
-	assert.Equal(t, "CORP", user.Metadata["domain"])
+	// Fail closed: a syntactically valid Type 3 message must NOT authenticate,
+	// because the NTLMv2 response is never cryptographically verified.
+	_, err := authenticator.Authenticate(ctx, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_Type3Message_WithDomain(t *testing.T) {
@@ -201,9 +232,9 @@ func TestNTLMAuthenticator_Type3Message_WithDomain(t *testing.T) {
 	type3Msg := createNTLMType3("CORP", "testuser")
 	ctx := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg)
 
-	user, err := authenticator.Authenticate(ctx, "", "")
-	require.NoError(t, err)
-	assert.Equal(t, "CORP\\testuser", user.Username)
+	_, err := authenticator.Authenticate(ctx, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_Type3Message_Lowercase(t *testing.T) {
@@ -214,9 +245,9 @@ func TestNTLMAuthenticator_Type3Message_Lowercase(t *testing.T) {
 	type3Msg := createNTLMType3("CORP", "TestUser")
 	ctx := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg)
 
-	user, err := authenticator.Authenticate(ctx, "", "")
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
+	_, err := authenticator.Authenticate(ctx, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_Type1Message_ChallengeRequired(t *testing.T) {
@@ -240,20 +271,21 @@ func TestNTLMAuthenticator_AllowedDomains(t *testing.T) {
 		"allowed_domains": []any{"CORP", "SALES"},
 	})
 
-	// Test allowed domain
+	// Allowed domain passes policy but still fails closed (response unverified).
 	type3Msg := createNTLMType3("CORP", "testuser")
 	ctx := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg)
 
-	user, err := authenticator.Authenticate(ctx, "", "")
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
+	_, err := authenticator.Authenticate(ctx, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 
-	// Test disallowed domain
+	// Disallowed domain is rejected by policy (before the fail-closed step).
 	type3Msg2 := createNTLMType3("OTHER", "testuser")
 	ctx2 := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg2)
 
 	_, err = authenticator.Authenticate(ctx2, "", "")
 	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "domain not allowed")
 }
 
 func TestNTLMAuthenticator_NoToken(t *testing.T) {
@@ -337,11 +369,10 @@ func TestNTLMAuthenticator_Base64EncodedToken(t *testing.T) {
 	type3Msg := createNTLMType3("CORP", "testuser")
 	encodedToken := base64.StdEncoding.EncodeToString(type3Msg)
 
-	// Authenticate using base64-encoded token as password
-	user, err := authenticator.Authenticate(context.Background(), "", encodedToken)
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
-	assert.Equal(t, "ntlm", user.Metadata["auth_type"])
+	// Authenticate using base64-encoded token as password — still fails closed.
+	_, err := authenticator.Authenticate(context.Background(), "", encodedToken)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_Base64EncodedType1Token(t *testing.T) {
@@ -439,13 +470,11 @@ func TestNTLMAuthenticator_ValidateAuthenticate(t *testing.T) {
 	sessionID := "test-session-456"
 	_, _ = ntlmAuth.GenerateChallenge(type1Msg, sessionID) // Creates challenge state
 
-	// Now validate authenticate
+	// Now validate authenticate — fails closed: the response is never verified.
 	type3Msg := createNTLMType3("CORP", "testuser")
-	user, err := ntlmAuth.ValidateAuthenticate(type3Msg, sessionID)
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
-	assert.Equal(t, "ntlm", user.Metadata["auth_type"])
-	assert.Equal(t, "CORP", user.Metadata["domain"])
+	_, err = ntlmAuth.ValidateAuthenticate(type3Msg, sessionID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate_NoSession(t *testing.T) {
@@ -644,10 +673,9 @@ func TestNTLMAuthenticator_Type3Message_EmptyDomain(t *testing.T) {
 	type3Msg := createNTLMType3("", "testuser")
 
 	ctx := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg)
-	user, err := authenticator.Authenticate(ctx, "", "")
-	require.NoError(t, err)
-	// With empty domain and strip_domain=false, username should just be "testuser" (no backslash prepended)
-	assert.Equal(t, "testuser", user.Username)
+	_, err := authenticator.Authenticate(ctx, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_AllowedDomains_CaseInsensitive(t *testing.T) {
@@ -655,13 +683,13 @@ func TestNTLMAuthenticator_AllowedDomains_CaseInsensitive(t *testing.T) {
 		"allowed_domains": []any{"CORP"},
 	})
 
-	// Test with lowercase domain (should match case-insensitively)
+	// Test with lowercase domain (should match policy case-insensitively, then fail closed)
 	type3Msg := createNTLMType3("corp", "testuser")
 	ctx := context.WithValue(context.Background(), ntlm.NTLMTokenContextKey, type3Msg)
 
-	user, err := authenticator.Authenticate(ctx, "", "")
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
+	_, err := authenticator.Authenticate(ctx, "", "")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestParseConfig_AllOptions(t *testing.T) {
@@ -754,11 +782,11 @@ func TestNTLMAuthenticator_ValidateAuthenticate_AllowedDomain(t *testing.T) {
 	type1Msg := createNTLMType1()
 	_, _ = ntlmAuth.GenerateChallenge(type1Msg, sessionID)
 
-	// Validate with allowed domain
+	// Allowed domain passes policy, then fails closed (response unverified).
 	type3Msg := createNTLMType3("CORP", "testuser")
-	user, err := ntlmAuth.ValidateAuthenticate(type3Msg, sessionID)
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
+	_, err = ntlmAuth.ValidateAuthenticate(type3Msg, sessionID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate_TransformUsername(t *testing.T) {
@@ -783,12 +811,11 @@ func TestNTLMAuthenticator_ValidateAuthenticate_TransformUsername(t *testing.T) 
 	type1Msg := createNTLMType1()
 	_, _ = ntlmAuth.GenerateChallenge(type1Msg, sessionID)
 
-	// Validate and check username transformation
+	// Validation reaches the fail-closed step regardless of username transform.
 	type3Msg := createNTLMType3("CORP", "TestUser")
-	user, err := ntlmAuth.ValidateAuthenticate(type3Msg, sessionID)
-	require.NoError(t, err)
-	// strip_domain=false should prepend domain, username_to_lowercase=true should lowercase
-	assert.Equal(t, "corp\\testuser", user.Username)
+	_, err = ntlmAuth.ValidateAuthenticate(type3Msg, sessionID)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_CleanupChallenges(t *testing.T) {
@@ -816,12 +843,13 @@ func TestNTLMAuthenticator_CleanupChallenges(t *testing.T) {
 	// Wait a bit for the cleanup goroutine to run (it's triggered by GenerateChallenge)
 	time.Sleep(100 * time.Millisecond)
 
-	// The cleanup is triggered but challenges should not be expired yet (maxAge is 5 minutes)
-	// Just verify we can still use one of the sessions
+	// The cleanup is triggered but challenges should not be expired yet (maxAge is 5 minutes).
+	// Verify session-0 is still present: we reach the fail-closed step rather than
+	// "no challenge found".
 	type3Msg := createNTLMType3("CORP", "testuser")
-	user, err := ntlmAuth.ValidateAuthenticate(type3Msg, "session-0")
-	require.NoError(t, err)
-	assert.Equal(t, "testuser", user.Username)
+	_, err = ntlmAuth.ValidateAuthenticate(type3Msg, "session-0")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
 
 func TestNTLMAuthenticator_MultipleChallenges(t *testing.T) {
@@ -846,20 +874,20 @@ func TestNTLMAuthenticator_MultipleChallenges(t *testing.T) {
 	_, _ = ntlmAuth.GenerateChallenge(type1Msg, "session-b")
 	_, _ = ntlmAuth.GenerateChallenge(type1Msg, "session-c")
 
-	// Validate session-b first
+	// First use of session-b consumes it but fails closed (response unverified).
 	type3MsgB := createNTLMType3("CORP", "userB")
-	userB, err := ntlmAuth.ValidateAuthenticate(type3MsgB, "session-b")
-	require.NoError(t, err)
-	assert.Equal(t, "userb", userB.Username)
+	_, err = ntlmAuth.ValidateAuthenticate(type3MsgB, "session-b")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 
-	// session-b should be removed, try again should fail
+	// session-b should now be removed, try again should report no challenge
 	_, err = ntlmAuth.ValidateAuthenticate(type3MsgB, "session-b")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no challenge found")
 
-	// session-a and session-c should still work
+	// session-a and session-c are still present (reach the fail-closed step)
 	type3MsgA := createNTLMType3("CORP", "userA")
-	userA, err := ntlmAuth.ValidateAuthenticate(type3MsgA, "session-a")
-	require.NoError(t, err)
-	assert.Equal(t, "usera", userA.Username)
+	_, err = ntlmAuth.ValidateAuthenticate(type3MsgA, "session-a")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "verification is not supported")
 }
