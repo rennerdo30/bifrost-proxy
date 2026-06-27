@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -16,6 +17,17 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 )
+
+// ErrVerificationUnsupported is returned when an NTLM Type 3 message is
+// syntactically valid but cannot be cryptographically verified. This plugin
+// has no credential source (no NT-hash store and no domain-controller
+// pass-through), so it cannot recompute and compare the client's NTLMv2
+// response. Authenticating on the basis of the client-supplied username alone
+// would be an authentication bypass, so the plugin fails closed instead.
+var ErrVerificationUnsupported = errors.New(
+	"NTLM response verification is not supported: no credential source " +
+		"(NT-hash store or domain-controller pass-through) is configured to " +
+		"verify the client response; refusing to authenticate")
 
 // ContextKey is a type for context keys used by this package.
 type ContextKey string
@@ -253,21 +265,19 @@ func (a *Authenticator) handleType3(_ context.Context, token []byte) (*auth.User
 		}
 	}
 
-	// Transform username
+	// Transform username (for logging only — see security note below).
 	transformedUsername := a.transformUsername(username, domain)
 
-	slog.Debug("NTLM Type 3 (Authenticate) message processed",
+	// SECURITY: do NOT authenticate on the basis of the parsed username alone.
+	// The NTLMv2 response in this message is never verified (no credential
+	// source exists), so returning a UserInfo here would let any client
+	// authenticate as any user. Fail closed.
+	slog.Warn("NTLM authentication refused: response verification unsupported",
 		"username", transformedUsername,
 		"domain", domain,
 	)
 
-	return &auth.UserInfo{
-		Username: transformedUsername,
-		Metadata: map[string]string{
-			"auth_type": "ntlm",
-			"domain":    domain,
-		},
-	}, nil
+	return nil, auth.NewAuthError("ntlm", "validate", ErrVerificationUnsupported)
 }
 
 // parseType3Message extracts domain and username from an NTLM Type 3 message.
@@ -418,7 +428,7 @@ func (a *Authenticator) ValidateAuthenticate(authMsg []byte, sessionID string) (
 		return nil, fmt.Errorf("failed to parse authenticate message: %w", err)
 	}
 
-	_ = state // Challenge validation would happen here with proper NTLM library support
+	_ = state // The stored challenge cannot be used to verify the response: no credential source exists.
 
 	// Validate domain
 	if len(a.config.AllowedDomains) > 0 {
@@ -434,16 +444,18 @@ func (a *Authenticator) ValidateAuthenticate(authMsg []byte, sessionID string) (
 		}
 	}
 
-	// Transform username
+	// Transform username (for logging only — see security note below).
 	transformedUsername := a.transformUsername(username, domain)
 
-	return &auth.UserInfo{
-		Username: transformedUsername,
-		Metadata: map[string]string{
-			"auth_type": "ntlm",
-			"domain":    domain,
-		},
-	}, nil
+	// SECURITY: the NTLMv2 response is never cryptographically verified here,
+	// so we must not return a successful UserInfo. Fail closed. The session
+	// challenge has already been consumed above.
+	slog.Warn("NTLM authentication refused: response verification unsupported",
+		"username", transformedUsername,
+		"domain", domain,
+	)
+
+	return nil, auth.NewAuthError("ntlm", "validate", ErrVerificationUnsupported)
 }
 
 // cleanupChallenges removes expired challenge states.
