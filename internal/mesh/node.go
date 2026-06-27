@@ -151,6 +151,16 @@ func (n *MeshNode) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to start components: %w", err)
 	}
 
+	// Registration (performed during startComponents) may have assigned a
+	// different virtual IP than the placeholder used to create the device.
+	// Apply the authoritative server-assigned address before processing
+	// traffic.
+	if err := n.applyAssignedVirtualIP(); err != nil {
+		n.cleanup()
+		n.setStatus(NodeStatusError)
+		return fmt.Errorf("failed to apply assigned virtual IP: %w", err)
+	}
+
 	// Start packet processing loop
 	n.wg.Add(1)
 	go n.packetLoop()
@@ -452,11 +462,24 @@ func (n *MeshNode) wireCallbacks() {
 		OnError:            n.onP2PError,
 	})
 
-	// Routing protocol send function
-	n.protocol.SetSendFunc(n.sendToP2P)
+	// Routing protocol send function.
+	// Protocol messages are framed with the protocol marker byte so the
+	// receiver can distinguish them from raw tunnel data and broadcasts.
+	n.protocol.SetSendFunc(func(peerID string, msg []byte) error {
+		framed := make([]byte, 0, len(msg)+1)
+		framed = append(framed, markerProtocol)
+		framed = append(framed, msg...)
+		return n.sendToP2P(peerID, framed)
+	})
 
-	// Broadcast manager send function
-	n.broadcast.SetSendFunc(n.sendToP2P)
+	// Broadcast manager send function.
+	// Broadcast messages are framed with the broadcast marker byte.
+	n.broadcast.SetSendFunc(func(peerID string, data []byte) error {
+		framed := make([]byte, 0, len(data)+1)
+		framed = append(framed, markerBroadcast)
+		framed = append(framed, data...)
+		return n.sendToP2P(peerID, framed)
+	})
 
 	// Register broadcast handlers
 	n.broadcast.RegisterHandler(BroadcastTypeFlood, n.handleFloodBroadcast)
@@ -487,6 +510,75 @@ func (n *MeshNode) startComponents() error {
 	if err := n.discovery.Start(n.ctx); err != nil {
 		return fmt.Errorf("failed to start discovery: %w", err)
 	}
+
+	return nil
+}
+
+// applyAssignedVirtualIP applies the virtual IP assigned by the discovery
+// server to the local device and routing state.
+//
+// initializeDevice creates the device using a placeholder address (derived
+// from the network prefix) because the device must exist before registration.
+// The discovery server is authoritative for IP allocation, so once
+// registration completes we adopt the assigned address. Because the device
+// interface does not support changing its address in place, the device is
+// recreated with the correct address when the assigned IP differs from the
+// placeholder.
+func (n *MeshNode) applyAssignedVirtualIP() error {
+	if n.discovery == nil {
+		return nil
+	}
+
+	assigned := n.discovery.AssignedVirtualIP()
+	if !assigned.IsValid() || assigned == n.localIP {
+		// No assignment, or the placeholder already matches.
+		return nil
+	}
+
+	prefix, err := n.config.NetworkPrefix()
+	if err != nil {
+		return fmt.Errorf("invalid network CIDR: %w", err)
+	}
+
+	// Recreate the device with the assigned address.
+	oldDevice := n.device
+	deviceCfg := n.config.Device.ToDeviceConfig(fmt.Sprintf("%s/%d", assigned.String(), prefix.Bits()))
+	dev, err := device.Create(deviceCfg)
+	if err != nil {
+		return fmt.Errorf("failed to recreate device with assigned IP: %w", err)
+	}
+
+	if oldDevice != nil {
+		oldDevice.Close()
+	}
+
+	n.mu.Lock()
+	n.device = dev
+	n.localIP = assigned
+	n.mu.Unlock()
+
+	// Refresh MAC for TAP devices (a new device may have a new MAC).
+	if n.config.Device.Type == "tap" {
+		if tapDev, ok := dev.(device.TAPDevice); ok {
+			n.localMAC = tapDev.MACAddress()
+		}
+		if n.localMAC != nil {
+			n.arpHandler = frame.NewARPInterceptor(n.localMAC, assigned, n.macTable)
+		}
+	}
+
+	// Update routing state with the authoritative local IP.
+	if n.router != nil {
+		n.router.SetLocalIP(assigned)
+	}
+	if n.protocol != nil {
+		n.protocol.SetLocalIP(assigned)
+	}
+
+	slog.Info("applied server-assigned virtual IP",
+		"peer_id", n.localPeerID,
+		"virtual_ip", assigned.String(),
+	)
 
 	return nil
 }
@@ -681,7 +773,14 @@ func (n *MeshNode) sendToP2P(peerID string, data []byte) error {
 		return conn.Send(data)
 	}
 
-	// Check for multi-hop route
+	// Check for multi-hop route.
+	//
+	// NOTE: Multi-hop relaying through intermediate peers is only partially
+	// wired. Routes are learned via the routing protocol, but the relaying
+	// peer does not yet re-forward data-plane traffic on a destination's
+	// behalf (peer relay is not engaged; see onPeerConnected). This recursion
+	// only succeeds when the next hop is itself directly connected to us;
+	// genuine multi-hop forwarding is tracked as future work.
 	nextHop := n.router.GetNextHop(peerID)
 	if nextHop == "" || nextHop == peerID {
 		return ErrNoPeerConnection
@@ -876,15 +975,21 @@ func (n *MeshNode) onP2PData(peerID string, data []byte) {
 		peer.UpdateLastSeen()
 	}
 
-	// Check if this is a protocol message
-	if len(data) > 0 && isProtocolMessage(data) {
-		n.handleProtocolMessage(peerID, data)
+	if len(data) == 0 {
 		return
 	}
 
-	// Check if this is a broadcast message
-	if len(data) > 0 && isBroadcastMessage(data) {
-		_ = n.broadcast.HandleMessage(peerID, data) //nolint:errcheck // Best effort broadcast
+	// Dispatch on the leading marker byte. Senders frame protocol and
+	// broadcast messages with a single marker byte; everything else is raw
+	// tunnel data destined for the local device.
+	switch data[0] {
+	case markerProtocol:
+		n.handleProtocolMessage(peerID, data)
+		return
+	case markerBroadcast:
+		// Strip the marker before handing off to the broadcast manager,
+		// which expects its own serialized message format.
+		_ = n.broadcast.HandleMessage(peerID, data[1:]) //nolint:errcheck // Best effort broadcast
 		return
 	}
 
@@ -908,8 +1013,10 @@ func (n *MeshNode) onP2PError(peerID string, err error) {
 }
 
 // handleProtocolMessage processes an incoming routing protocol message.
+// The incoming data still carries the leading protocol marker byte, which is
+// stripped here before the JSON message is handed to the routing protocol.
 func (n *MeshNode) handleProtocolMessage(peerID string, data []byte) {
-	// Strip message type marker
+	// Strip the protocol marker byte.
 	if len(data) < 2 {
 		return
 	}
@@ -1010,20 +1117,13 @@ func generatePeerID(peerName string) string {
 	return fmt.Sprintf("peer-%s", base64.RawURLEncoding.EncodeToString(mac))
 }
 
-// isProtocolMessage checks if data is a routing protocol message.
-func isProtocolMessage(data []byte) bool {
-	if len(data) < 1 {
-		return false
-	}
-	// Protocol messages start with 0x01 marker
-	return data[0] == 0x01
-}
-
-// isBroadcastMessage checks if data is a broadcast message.
-func isBroadcastMessage(data []byte) bool {
-	if len(data) < 1 {
-		return false
-	}
-	// Broadcast messages start with 0x02 marker
-	return data[0] == 0x02
-}
+// Control-plane framing markers. A single marker byte is prepended to control
+// messages before they are sent over a P2P connection so the receiver can
+// distinguish them from raw tunnel data. Raw IP packets / Ethernet frames are
+// never prefixed and are written directly to the local device.
+const (
+	// markerProtocol identifies a routing protocol message (JSON payload).
+	markerProtocol byte = 0x01
+	// markerBroadcast identifies a broadcast/multicast message (binary payload).
+	markerBroadcast byte = 0x02
+)

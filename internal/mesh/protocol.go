@@ -185,6 +185,22 @@ func (p *RoutingProtocol) SetSendFunc(sendFunc func(peerID string, msg []byte) e
 	p.sendFunc = sendFunc
 }
 
+// SetLocalIP updates the protocol's local virtual IP. This is used after the
+// discovery server assigns the authoritative virtual IP during registration so
+// that hello messages and route announcements carry the correct address.
+func (p *RoutingProtocol) SetLocalIP(ip netip.Addr) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.localIP = ip
+}
+
+// getLocalIP returns the protocol's local virtual IP under lock.
+func (p *RoutingProtocol) getLocalIP() netip.Addr {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.localIP
+}
+
 // Start starts the routing protocol.
 func (p *RoutingProtocol) Start() error {
 	slog.Info("starting routing protocol", "peer_id", p.localPeerID)
@@ -271,7 +287,7 @@ func (p *RoutingProtocol) sendHelloToNeighbors() {
 
 	hello := HelloMessage{
 		PeerID:    p.localPeerID,
-		VirtualIP: p.localIP,
+		VirtualIP: p.getLocalIP(),
 		Timestamp: time.Now(),
 		Neighbors: neighbors,
 	}
@@ -422,7 +438,7 @@ func (p *RoutingProtocol) handleHello(fromPeerID string, payload json.RawMessage
 	// Send hello ack
 	ack := HelloAckMessage{
 		PeerID:       p.localPeerID,
-		VirtualIP:    p.localIP,
+		VirtualIP:    p.getLocalIP(),
 		RequestTime:  hello.Timestamp,
 		ResponseTime: time.Now(),
 	}
