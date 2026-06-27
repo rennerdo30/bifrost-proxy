@@ -1106,3 +1106,104 @@ func TestHTTPChecker_Status400(t *testing.T) {
 	assert.Contains(t, result.Message, "400")
 	assert.Contains(t, result.Error, "unhealthy status code: 400")
 }
+
+// scriptedChecker returns predefined results in sequence, repeating the last
+// one once exhausted. It is used to drive deterministic threshold tests.
+type scriptedChecker struct {
+	results []Result
+	idx     int
+}
+
+func (s *scriptedChecker) Check(context.Context) Result {
+	if s.idx < len(s.results) {
+		r := s.results[s.idx]
+		s.idx++
+		return r
+	}
+	return s.results[len(s.results)-1]
+}
+
+func (s *scriptedChecker) Type() string { return "scripted" }
+
+func healthy() Result   { return Result{Healthy: true, Timestamp: time.Now()} }
+func unhealthy() Result { return Result{Healthy: false, Timestamp: time.Now()} }
+
+func TestManager_UnhealthyThreshold(t *testing.T) {
+	mgr := NewManager()
+	checker := &scriptedChecker{results: []Result{
+		healthy(),   // initial -> stable healthy
+		unhealthy(), // 1st failure -> still healthy (threshold 3)
+		unhealthy(), // 2nd failure -> still healthy
+		unhealthy(), // 3rd failure -> now unhealthy
+	}}
+	mgr.RegisterWithThresholds("t", checker, time.Hour, 1, 3, nil)
+
+	ctx := context.Background()
+
+	r, _ := mgr.CheckNow(ctx, "t")
+	assert.True(t, r.Healthy, "initial check establishes healthy baseline")
+
+	r, _ = mgr.CheckNow(ctx, "t")
+	assert.True(t, r.Healthy, "1 failure below unhealthy threshold")
+
+	r, _ = mgr.CheckNow(ctx, "t")
+	assert.True(t, r.Healthy, "2 failures below unhealthy threshold")
+
+	r, _ = mgr.CheckNow(ctx, "t")
+	assert.False(t, r.Healthy, "3 consecutive failures cross unhealthy threshold")
+}
+
+func TestManager_HealthyThreshold(t *testing.T) {
+	mgr := NewManager()
+	checker := &scriptedChecker{results: []Result{
+		unhealthy(), // initial -> stable unhealthy
+		healthy(),   // 1st success -> still unhealthy (threshold 2)
+		healthy(),   // 2nd success -> now healthy
+	}}
+	mgr.RegisterWithThresholds("t", checker, time.Hour, 2, 1, nil)
+
+	ctx := context.Background()
+
+	r, _ := mgr.CheckNow(ctx, "t")
+	assert.False(t, r.Healthy, "initial check establishes unhealthy baseline")
+
+	r, _ = mgr.CheckNow(ctx, "t")
+	assert.False(t, r.Healthy, "1 success below healthy threshold")
+
+	r, _ = mgr.CheckNow(ctx, "t")
+	assert.True(t, r.Healthy, "2 consecutive successes cross healthy threshold")
+}
+
+func TestManager_ThresholdResetsOnFlap(t *testing.T) {
+	mgr := NewManager()
+	checker := &scriptedChecker{results: []Result{
+		healthy(),   // baseline healthy
+		unhealthy(), // fail 1
+		healthy(),   // success resets fail counter
+		unhealthy(), // fail 1 again
+		unhealthy(), // fail 2 -> unhealthy (threshold 2)
+	}}
+	mgr.RegisterWithThresholds("t", checker, time.Hour, 1, 2, nil)
+
+	ctx := context.Background()
+	mgr.CheckNow(ctx, "t") // healthy
+	mgr.CheckNow(ctx, "t") // fail 1
+	r, _ := mgr.CheckNow(ctx, "t")
+	assert.True(t, r.Healthy, "success between failures keeps it healthy")
+	mgr.CheckNow(ctx, "t") // fail 1
+	r, _ = mgr.CheckNow(ctx, "t")
+	assert.False(t, r.Healthy, "two fresh consecutive failures cross threshold")
+}
+
+func TestManager_RegisterDefaultThresholds(t *testing.T) {
+	mgr := NewManager()
+	checker := &scriptedChecker{results: []Result{healthy(), unhealthy()}}
+	// Register delegates to thresholds of 1/1: immediate transitions.
+	mgr.Register("t", checker, time.Hour, nil)
+
+	ctx := context.Background()
+	r, _ := mgr.CheckNow(ctx, "t")
+	assert.True(t, r.Healthy)
+	r, _ = mgr.CheckNow(ctx, "t")
+	assert.False(t, r.Healthy, "with threshold 1 a single failure flips state")
+}

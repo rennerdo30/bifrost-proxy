@@ -33,6 +33,15 @@ type Config struct {
 	Path               string        `yaml:"path"`                 // For HTTP checks
 	Scheme             string        `yaml:"scheme"`               // For HTTP checks: "http" or "https" (default: "http")
 	InsecureSkipVerify bool          `yaml:"insecure_skip_verify"` // For HTTP checks: skip TLS verification (default: false)
+
+	// HealthyThreshold is the number of consecutive successful checks required
+	// before a target transitions from unhealthy to healthy. A value <= 0 is
+	// treated as 1 (transition immediately).
+	HealthyThreshold int `yaml:"healthy_threshold"`
+	// UnhealthyThreshold is the number of consecutive failed checks required
+	// before a target transitions from healthy to unhealthy. A value <= 0 is
+	// treated as 1 (transition immediately).
+	UnhealthyThreshold int `yaml:"unhealthy_threshold"`
 }
 
 // DefaultConfig returns default health check configuration.

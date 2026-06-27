@@ -135,6 +135,24 @@ func (c *Collector) RecordRequest(protocol, method, status string, duration time
 	c.metrics.RequestDuration.WithLabelValues(protocol, method).Observe(duration.Seconds())
 }
 
+// RecordRequestSize records the size of an inbound request body in bytes.
+// Negative sizes (e.g. unknown Content-Length) are ignored.
+func (c *Collector) RecordRequestSize(protocol string, size int64) {
+	if size < 0 {
+		return
+	}
+	c.metrics.RequestSize.WithLabelValues(protocol).Observe(float64(size))
+}
+
+// RecordResponseSize records the size of an outbound response body in bytes.
+// Negative sizes (e.g. unknown Content-Length) are ignored.
+func (c *Collector) RecordResponseSize(protocol string, size int64) {
+	if size < 0 {
+		return
+	}
+	c.metrics.ResponseSize.WithLabelValues(protocol).Observe(float64(size))
+}
+
 // RecordBytes records bytes transferred.
 func (c *Collector) RecordBytes(backend string, sent, received int64) {
 	c.metrics.BytesSent.WithLabelValues(backend).Add(float64(sent))
