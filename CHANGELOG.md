@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - IP/CIDR-based rules
   - DNS interception and caching
 - OpenWrt compatibility with resource optimizations
+- OpenWrt UCI-managed configuration: the procd init script can generate
+  `/etc/bifrost/config.yaml` from `/etc/config/bifrost` when `main.managed` is
+  set to `1`, mapping the core HTTP/SOCKS5/logging/access-log/metrics/web-ui/api
+  options (opt-in; defaults to leaving the YAML file untouched)
 - Authentication plugin system with new providers:
   - API Key authentication (`apikey`) - header-based token auth
   - JWT token authentication (`jwt`) - with JWKS support and claims mapping
