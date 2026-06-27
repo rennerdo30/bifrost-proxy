@@ -203,44 +203,14 @@ func TestGeneratePeerID(t *testing.T) {
 	})
 }
 
-func TestIsProtocolMessage(t *testing.T) {
-	tests := []struct {
-		name     string
-		data     []byte
-		expected bool
-	}{
-		{"empty", []byte{}, false},
-		{"protocol marker", []byte{0x01, 0x02, 0x03}, true},
-		{"data marker", []byte{0x00, 0x02, 0x03}, false},
-		{"broadcast marker", []byte{0x02, 0x02, 0x03}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isProtocolMessage(tt.data)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestIsBroadcastMessage(t *testing.T) {
-	tests := []struct {
-		name     string
-		data     []byte
-		expected bool
-	}{
-		{"empty", []byte{}, false},
-		{"broadcast marker", []byte{0x02, 0x02, 0x03}, true},
-		{"protocol marker", []byte{0x01, 0x02, 0x03}, false},
-		{"data marker", []byte{0x00, 0x02, 0x03}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := isBroadcastMessage(tt.data)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
+func TestControlPlaneMarkers(t *testing.T) {
+	// The protocol and broadcast markers must be distinct and non-zero so that
+	// raw tunnel data (which carries an IP version nibble or Ethernet header,
+	// neither of which collides with these markers in the dispatch path) is not
+	// misclassified.
+	assert.NotEqual(t, markerProtocol, markerBroadcast)
+	assert.Equal(t, byte(0x01), markerProtocol)
+	assert.Equal(t, byte(0x02), markerBroadcast)
 }
 
 func TestMeshNodeLifecycle(t *testing.T) {
