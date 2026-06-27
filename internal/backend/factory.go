@@ -10,11 +10,29 @@ import (
 )
 
 // Factory creates backends from configuration.
-type Factory struct{}
+type Factory struct {
+	// network carries process-wide outbound tuning (keep-alive, dial timeout,
+	// prefer-IPv6, address family) applied to the net.Dialer of dialer-owning
+	// backends (direct, http_proxy, socks5_proxy, openvpn).
+	network NetworkTuning
+}
 
-// NewFactory creates a new backend factory.
+// NewFactory creates a new backend factory with default (zero) network tuning.
 func NewFactory() *Factory {
 	return &Factory{}
+}
+
+// NewFactoryWithNetwork creates a backend factory that threads the supplied
+// network configuration into the dialers of backends it builds.
+func NewFactoryWithNetwork(net config.NetworkConfig) *Factory {
+	return &Factory{network: NetworkTuningFromConfig(net)}
+}
+
+// SetNetwork updates the network tuning applied to subsequently-created
+// backends. It is provided so callers that construct the factory before the
+// network config is known can still thread it through.
+func (f *Factory) SetNetwork(net config.NetworkConfig) {
+	f.network = NetworkTuningFromConfig(net)
 }
 
 // Create creates a backend from configuration.
@@ -64,6 +82,7 @@ func (f *Factory) createDirect(cfg config.BackendConfig) (Backend, error) {
 		directCfg.LocalAddr = v
 	}
 
+	directCfg.Network = f.network
 	return NewDirectBackend(directCfg), nil
 }
 
@@ -92,6 +111,7 @@ func (f *Factory) createHTTPProxy(cfg config.BackendConfig) (Backend, error) {
 		}
 	}
 
+	httpCfg.Network = f.network
 	return NewHTTPProxyBackend(httpCfg), nil
 }
 
@@ -120,6 +140,7 @@ func (f *Factory) createSOCKS5Proxy(cfg config.BackendConfig) (Backend, error) {
 		}
 	}
 
+	socksCfg.Network = f.network
 	return NewSOCKS5ProxyBackend(socksCfg), nil
 }
 
@@ -233,6 +254,11 @@ func (f *Factory) createOpenVPN(cfg config.BackendConfig) (Backend, error) {
 		}
 	}
 
+	if v, ok := cfg.Config["leak_proof_routing"].(bool); ok {
+		ovpnCfg.LeakProofRouting = v
+	}
+
+	ovpnCfg.Network = f.network
 	return NewOpenVPNBackend(ovpnCfg), nil
 }
 

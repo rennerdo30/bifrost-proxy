@@ -10,13 +10,14 @@ import (
 
 // DirectBackend provides direct connections without any tunneling.
 type DirectBackend struct {
-	name      string
-	dialer    *net.Dialer
-	startTime time.Time
-	healthy   atomic.Bool
-	stats     directStats
-	mu        sync.RWMutex
-	running   bool
+	name       string
+	dialer     *net.Dialer
+	preferIPv6 bool
+	startTime  time.Time
+	healthy    atomic.Bool
+	stats      directStats
+	mu         sync.RWMutex
+	running    bool
 }
 
 type directStats struct {
@@ -36,6 +37,10 @@ type DirectConfig struct {
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
 	KeepAlive      time.Duration `yaml:"keep_alive"`
 	LocalAddr      string        `yaml:"local_addr"`
+
+	// Network carries process-wide outbound tuning (keep-alive, dial timeout,
+	// prefer-IPv6). Backend-specific fields above take precedence when set.
+	Network NetworkTuning `yaml:"-"`
 }
 
 // NewDirectBackend creates a new direct connection backend.
@@ -54,13 +59,19 @@ func NewDirectBackend(cfg DirectConfig) *DirectBackend {
 		localAddr, _ = net.ResolveTCPAddr("tcp", cfg.LocalAddr) //nolint:errcheck
 	}
 
+	dialer := &net.Dialer{
+		Timeout:   cfg.ConnectTimeout,
+		KeepAlive: cfg.KeepAlive,
+		LocalAddr: localAddr,
+	}
+	// Apply process-wide network tuning. The backend already derived a timeout
+	// from its own config, so the network default only fills an unset value.
+	cfg.Network.apply(dialer, false)
+
 	return &DirectBackend{
-		name: cfg.Name,
-		dialer: &net.Dialer{
-			Timeout:   cfg.ConnectTimeout,
-			KeepAlive: cfg.KeepAlive,
-			LocalAddr: localAddr,
-		},
+		name:       cfg.Name,
+		dialer:     dialer,
+		preferIPv6: cfg.Network.PreferIPv6,
 	}
 }
 
@@ -101,7 +112,13 @@ func (b *DirectBackend) Dial(ctx context.Context, network, address string) (net.
 		}
 	}
 
-	conn, err := dialer.DialContext(ctx, network, address)
+	var conn net.Conn
+	var err error
+	if b.preferIPv6 {
+		conn, err = dialPreferIPv6(ctx, dialer, network, address)
+	} else {
+		conn, err = dialer.DialContext(ctx, network, address)
+	}
 	if err != nil {
 		b.recordError(err)
 		return nil, NewBackendError(b.name, "dial", err)

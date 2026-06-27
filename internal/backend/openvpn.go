@@ -29,6 +29,7 @@ type OpenVPNBackend struct {
 	stopChan       chan struct{}
 	tempConfigFile string // Temporary config file created from ConfigContent
 	tempAuthFile   string // Temporary auth file created from Username/Password
+	leakRouter     leakProofRouter
 }
 
 type openvpnStats struct {
@@ -55,6 +56,16 @@ type OpenVPNConfig struct {
 	Binary         string        `yaml:"binary"`          // Path to openvpn binary
 	ExtraArgs      []string      `yaml:"extra_args"`      // Extra command line arguments
 	ConnectTimeout time.Duration `yaml:"connect_timeout"`
+
+	// Network carries process-wide outbound tuning applied to the in-tunnel
+	// dialer (keep-alive, dial timeout, prefer-IPv6). The tunnel local-address
+	// binding still takes precedence to keep egress on the VPN interface.
+	Network NetworkTuning `yaml:"-"`
+
+	// LeakProofRouting, when true, requests Linux policy-routing/netns based
+	// egress isolation so traffic cannot leak outside the tunnel. It requires
+	// root and is runtime-unvalidated here; see leakproof_linux.go. Default OFF.
+	LeakProofRouting bool `yaml:"leak_proof_routing"`
 }
 
 // NewOpenVPNBackend creates a new OpenVPN backend.
@@ -123,6 +134,9 @@ func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net
 		Timeout:   30 * time.Second,
 		KeepAlive: 30 * time.Second,
 	}
+	// Apply process-wide network tuning (keep-alive/timeout/prefer-IPv6). The
+	// local-address binding below still takes precedence for tunnel egress.
+	b.config.Network.apply(dialer, false)
 
 	// If we have a local address from the VPN, use it
 	if localAddr != "" {
@@ -133,7 +147,13 @@ func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net
 		}
 	}
 
-	conn, err := dialer.DialContext(ctx, network, address)
+	var conn net.Conn
+	var err error
+	if b.config.Network.PreferIPv6 {
+		conn, err = dialPreferIPv6(ctx, dialer, network, address)
+	} else {
+		conn, err = dialer.DialContext(ctx, network, address)
+	}
 	if err != nil {
 		b.recordError(err)
 		return nil, NewBackendError(b.name, "dial", err)
@@ -261,6 +281,16 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 		b.recordError(err)
 	}
 
+	// Optionally install leak-proof routing so all backend egress is forced
+	// through the tunnel. This is OFF by default. It requires root and is
+	// runtime-unvalidated in CI; failures are fatal (fail-closed) so a
+	// misconfigured deployment never silently leaks via the default interface.
+	if err := b.installLeakProof(ctx); err != nil {
+		_ = b.cmd.Process.Kill() //nolint:errcheck // best-effort cleanup on fail-closed
+		b.cleanupTempFiles()
+		return NewBackendError(b.name, "leak-proof routing", err)
+	}
+
 	b.running = true
 	b.startTime = time.Now()
 	b.healthy.Store(true)
@@ -325,6 +355,23 @@ func (b *OpenVPNBackend) queryLocalAddress() error {
 	return nil
 }
 
+// installLeakProof installs leak-proof egress routing when enabled. It fails
+// closed: if the tunnel local address is unknown or installation errors, it
+// returns an error so the caller aborts startup rather than allowing traffic to
+// leak via the default interface. It is a no-op when the feature is disabled.
+func (b *OpenVPNBackend) installLeakProof(ctx context.Context) error {
+	if !b.config.LeakProofRouting {
+		return nil
+	}
+	if b.localAddr == "" {
+		return fmt.Errorf("tunnel local address unavailable; refusing to start without leak protection")
+	}
+	if b.leakRouter == nil {
+		b.leakRouter = newLeakProofRouter(b.name)
+	}
+	return b.leakRouter.Install(ctx, b.localAddr)
+}
+
 func (b *OpenVPNBackend) monitor() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
@@ -362,6 +409,13 @@ func (b *OpenVPNBackend) Stop(ctx context.Context) error {
 	}
 
 	close(b.stopChan)
+
+	// Tear down leak-proof routing rules if they were installed.
+	if b.leakRouter != nil {
+		if err := b.leakRouter.Remove(ctx); err != nil {
+			b.recordError(fmt.Errorf("remove leak-proof routing: %w", err))
+		}
+	}
 
 	// Close management connection
 	if b.mgmtConn != nil {
