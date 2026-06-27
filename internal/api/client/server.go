@@ -138,6 +138,7 @@ type API struct {
 	configReloader  func() error
 	logSubscribers  map[*logSubscriber]struct{}
 	logMu           sync.RWMutex
+	logPumpRunning  atomic.Bool
 
 	// Additional fields for desktop app support
 	serverAddress   string
@@ -304,6 +305,8 @@ func (a *API) HandlerWithUI() http.Handler {
 		})
 		r.Route("/v1/routes", func(r chi.Router) {
 			r.Get("/", a.handleGetRoutes)
+			r.Post("/", a.handleAddRoute)
+			r.Delete("/{name}", a.handleRemoveRoute)
 			r.Get("/test", a.handleTestRoute)
 		})
 		r.Route("/v1/vpn", func(r chi.Router) {
@@ -1502,7 +1505,12 @@ func (a *API) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get logs from debugger if available (for now return debug entries as logs)
+	// NOTE: These are request/traffic debug entries derived from the debug
+	// logger, NOT the application's slog output. Wiring this endpoint to the
+	// real slog pipeline requires a fan-out slog.Handler in internal/logging,
+	// which is owned by another stream (see deferred findings). Until then the
+	// response is explicitly labelled with source="traffic_debug" so the UI and
+	// API consumers are not misled into thinking these are application logs.
 	entries := []LogEntry{}
 	if a.debugger != nil {
 		debugEntries := a.debugger.GetLastEntries(limit + offset)
@@ -1543,6 +1551,7 @@ func (a *API) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := map[string]interface{}{
+		"source":  "traffic_debug",
 		"entries": entries,
 		"total":   len(entries),
 		"limit":   limit,
@@ -1601,6 +1610,13 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 
 	// Stream logs
 	ctx := r.Context()
+
+	// Ensure a single background producer is running that polls the traffic
+	// debugger and fans new entries out to all subscribers via BroadcastLog.
+	// Without this the stream would have no producer and emit nothing. These are
+	// request/traffic debug entries, not slog output (see the note in
+	// handleGetLogs and the deferred finding about wiring slog).
+	a.ensureLogPump()
 	for {
 		select {
 		case <-ctx.Done():
@@ -1615,6 +1631,77 @@ func (a *API) handleLogStream(w http.ResponseWriter, r *http.Request) {
 			}
 			_, _ = w.Write([]byte("data: " + string(data) + "\n\n")) //nolint:errcheck // Best effort SSE write
 			flusher.Flush()
+		}
+	}
+}
+
+// ensureLogPump starts, at most once, a background goroutine that polls the
+// traffic debugger for newly recorded entries and fans them out to all
+// connected SSE subscribers via BroadcastLog. The goroutine exits when there
+// are no subscribers left so it does not run indefinitely when nobody is
+// listening.
+func (a *API) ensureLogPump() {
+	if a.debugger == nil {
+		return
+	}
+	// Only start a pump if one is not already running.
+	if a.logPumpRunning.CompareAndSwap(false, true) {
+		go a.runLogPump()
+	}
+}
+
+// logPumpInterval is how often the traffic-debug log pump polls for new entries.
+const logPumpInterval = time.Second
+
+func (a *API) runLogPump() {
+	// Clear the running flag when we exit so a future subscriber can restart it.
+	defer a.logPumpRunning.Store(false)
+
+	ticker := time.NewTicker(logPumpInterval)
+	defer ticker.Stop()
+
+	// Start from the current tail so we only stream entries created after the
+	// stream was opened.
+	lastCount := a.debugger.Count()
+
+	for range ticker.C {
+		// Stop the pump if no subscribers remain.
+		a.logMu.RLock()
+		subCount := len(a.logSubscribers)
+		a.logMu.RUnlock()
+		if subCount == 0 {
+			return
+		}
+
+		count := a.debugger.Count()
+		if count <= lastCount {
+			lastCount = count // handle Clear() resetting the count
+			continue
+		}
+
+		newEntries := a.debugger.GetLastEntries(count - lastCount)
+		lastCount = count
+
+		for _, entry := range newEntries {
+			logLevel := "info"
+			if entry.Error != "" {
+				logLevel = "error"
+			}
+			url := entry.Host + entry.Path
+			a.BroadcastLog(LogEntry{
+				Timestamp: entry.Timestamp.Format(time.RFC3339),
+				Level:     logLevel,
+				Message:   entry.Method + " " + url,
+				Fields: map[string]interface{}{
+					"source":      "traffic_debug",
+					"method":      entry.Method,
+					"url":         url,
+					"status_code": entry.StatusCode,
+					"duration_ms": entry.Duration.Milliseconds(),
+					"action":      entry.Action,
+					"error":       entry.Error,
+				},
+			})
 		}
 	}
 }
