@@ -22,16 +22,30 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
+// NegotiateResult is returned by a NegotiateAuth hook. On success UserInfo is
+// set. When the hook needs the client to continue the handshake it sets
+// Challenge=true along with ChallengeStatus/ChallengeHeaders (the
+// Proxy-Authenticate response). An error indicates a hard authentication
+// failure.
+type NegotiateResult struct {
+	UserInfo         *auth.UserInfo
+	ChallengeStatus  int
+	ChallengeHeaders map[string]string
+	Challenge        bool
+}
+
 // HTTPHandler handles HTTP and HTTPS CONNECT proxy requests.
 type HTTPHandler struct {
 	getBackend       func(domain, clientIP string) backend.Backend
 	authenticate     func(ctx context.Context, username, password string) (*auth.UserInfo, error)
+	negotiateAuth    func(ctx context.Context, req *http.Request) (*NegotiateResult, error)
 	authRequired     bool
 	accessCheck      func(clientIP string) (bool, string)
 	rateLimitUser    func(username, clientIP string) bool
 	accessLogger     accesslog.Logger
 	bandwidth        *ratelimit.BandwidthConfig
 	dialTimeout      time.Duration
+	dialNetwork      string
 	onConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	onError          func(ctx context.Context, conn net.Conn, host string, err error)
 	cacheInterceptor *cache.Interceptor
@@ -39,14 +53,18 @@ type HTTPHandler struct {
 
 // HTTPHandlerConfig configures the HTTP handler.
 type HTTPHandlerConfig struct {
-	GetBackend       func(domain, clientIP string) backend.Backend
-	Authenticate     func(ctx context.Context, username, password string) (*auth.UserInfo, error)
-	AuthRequired     bool
-	AccessCheck      func(clientIP string) (bool, string)
-	RateLimitUser    func(username, clientIP string) bool
-	AccessLogger     accesslog.Logger
-	Bandwidth        *ratelimit.BandwidthConfig
-	DialTimeout      time.Duration
+	GetBackend    func(domain, clientIP string) backend.Backend
+	Authenticate  func(ctx context.Context, username, password string) (*auth.UserInfo, error)
+	NegotiateAuth func(ctx context.Context, req *http.Request) (*NegotiateResult, error)
+	AuthRequired  bool
+	AccessCheck   func(clientIP string) (bool, string)
+	RateLimitUser func(username, clientIP string) bool
+	AccessLogger  accesslog.Logger
+	Bandwidth     *ratelimit.BandwidthConfig
+	DialTimeout   time.Duration
+	// DialNetwork is the network passed to backend dials ("tcp", "tcp4",
+	// "tcp6"). Empty defaults to "tcp".
+	DialNetwork      string
 	OnConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	OnError          func(ctx context.Context, conn net.Conn, host string, err error)
 	CacheInterceptor *cache.Interceptor
@@ -57,15 +75,20 @@ func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
 	if cfg.DialTimeout == 0 {
 		cfg.DialTimeout = 30 * time.Second
 	}
+	if cfg.DialNetwork == "" {
+		cfg.DialNetwork = "tcp"
+	}
 	return &HTTPHandler{
 		getBackend:       cfg.GetBackend,
 		authenticate:     cfg.Authenticate,
+		negotiateAuth:    cfg.NegotiateAuth,
 		authRequired:     cfg.AuthRequired,
 		accessCheck:      cfg.AccessCheck,
 		rateLimitUser:    cfg.RateLimitUser,
 		accessLogger:     cfg.AccessLogger,
 		bandwidth:        cfg.Bandwidth,
 		dialTimeout:      cfg.DialTimeout,
+		dialNetwork:      cfg.DialNetwork,
 		onConnect:        cfg.OnConnect,
 		onError:          cfg.OnError,
 		cacheInterceptor: cfg.CacheInterceptor,
@@ -132,6 +155,11 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 
+	// http.ReadRequest on a raw net.Conn does not populate RemoteAddr; set it
+	// so request-scoped consumers (e.g. the Negotiate handler's per-client
+	// session key) can distinguish clients instead of all sharing "".
+	req.RemoteAddr = conn.RemoteAddr().String()
+
 	// Extract host
 	host := req.Host
 	if host == "" {
@@ -181,8 +209,19 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 		}
 	}
 
-	// Authentication (Proxy-Authorization)
-	if h.authRequired || req.Header.Get("Proxy-Authorization") != "" {
+	// Negotiate (SPNEGO/Kerberos, optionally NTLM) authentication. This runs
+	// before Basic/Bearer handling because it uses the Negotiate/NTLM
+	// Proxy-Authorization schemes and may need to send a challenge.
+	if h.negotiateAuth != nil && isNegotiateScheme(req.Header.Get("Proxy-Authorization")) {
+		handled, ng := h.handleNegotiate(ctx, counting, req, entry)
+		if handled {
+			return
+		}
+		if ng != nil && ng.UserInfo != nil {
+			ctx = util.WithUsername(ctx, ng.UserInfo.Username)
+		}
+	} else if h.authRequired || req.Header.Get("Proxy-Authorization") != "" {
+		// Authentication (Proxy-Authorization)
 		userInfo, authErr := h.authenticateRequest(ctx, req)
 		if authErr != nil {
 			entry.StatusCode = http.StatusProxyAuthRequired
@@ -241,7 +280,7 @@ func (h *HTTPHandler) handleConnect(ctx context.Context, conn net.Conn, req *htt
 	ctx = util.WithBackend(ctx, be.Name())
 
 	// Dial the target through the backend
-	targetConn, err := be.DialTimeout(ctx, "tcp", host, h.dialTimeout)
+	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, host, h.dialTimeout)
 	if err != nil {
 		h.sendResponse(conn, http.StatusBadGateway, "Connection failed")
 		entry.StatusCode = http.StatusBadGateway
@@ -308,7 +347,7 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 	ctx = util.WithBackend(ctx, be.Name())
 
 	// Dial the target through the backend
-	targetConn, err := be.DialTimeout(ctx, "tcp", host, h.dialTimeout)
+	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, host, h.dialTimeout)
 	if err != nil {
 		h.sendHTTPError(conn, http.StatusBadGateway, "Connection failed")
 		entry.StatusCode = http.StatusBadGateway
@@ -428,12 +467,82 @@ func (h *HTTPHandler) authenticateRequest(ctx context.Context, req *http.Request
 	return nil, fmt.Errorf("missing proxy credentials")
 }
 
+// isNegotiateScheme reports whether the Proxy-Authorization header uses the
+// Negotiate or NTLM scheme.
+func isNegotiateScheme(header string) bool {
+	if header == "" {
+		return false
+	}
+	scheme := header
+	if i := strings.IndexByte(header, ' '); i >= 0 {
+		scheme = header[:i]
+	}
+	switch strings.ToLower(scheme) {
+	case "negotiate", "ntlm":
+		return true
+	default:
+		return false
+	}
+}
+
+// handleNegotiate drives the Negotiate authentication hook. It returns
+// handled=true when the request is fully handled here (challenge sent or hard
+// failure), in which case the caller must stop processing. When handled=false,
+// the returned *NegotiateResult (if non-nil with UserInfo) carries the
+// authenticated identity.
+func (h *HTTPHandler) handleNegotiate(ctx context.Context, conn net.Conn, req *http.Request, entry *accesslog.Entry) (bool, *NegotiateResult) {
+	result, err := h.negotiateAuth(ctx, req)
+	if err != nil {
+		entry.StatusCode = http.StatusProxyAuthRequired
+		entry.Error = err.Error()
+		h.sendNegotiateChallenge(conn, http.StatusProxyAuthRequired, map[string]string{
+			"Proxy-Authenticate": "Negotiate",
+		})
+		return true, nil
+	}
+
+	if result != nil && result.Challenge {
+		status := result.ChallengeStatus
+		if status == 0 {
+			status = http.StatusProxyAuthRequired
+		}
+		entry.StatusCode = status
+		h.sendNegotiateChallenge(conn, status, result.ChallengeHeaders)
+		return true, nil
+	}
+
+	return false, result
+}
+
+// sendNegotiateChallenge writes a proxy authentication challenge response with
+// the supplied headers (e.g. Proxy-Authenticate).
+func (h *HTTPHandler) sendNegotiateChallenge(conn net.Conn, status int, headers map[string]string) {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("HTTP/1.1 %d %s\r\n", status, http.StatusText(status)))
+	for k, v := range headers {
+		sb.WriteString(fmt.Sprintf("%s: %s\r\n", k, v))
+	}
+	// Keep the connection open so the client can continue the handshake.
+	sb.WriteString("Content-Length: 0\r\n")
+	sb.WriteString("\r\n")
+	if _, err := conn.Write([]byte(sb.String())); err != nil {
+		slog.Debug("failed to send negotiate challenge", "error", err)
+	}
+}
+
 func (h *HTTPHandler) sendProxyAuthRequired(conn net.Conn) {
-	response := "HTTP/1.1 407 Proxy Authentication Required\r\n" +
-		"Proxy-Authenticate: Basic realm=\"Bifrost\"\r\n" +
-		"Proxy-Authenticate: Bearer\r\n" +
-		"Connection: close\r\n\r\n"
-	if _, err := conn.Write([]byte(response)); err != nil {
+	var sb strings.Builder
+	sb.WriteString("HTTP/1.1 407 Proxy Authentication Required\r\n")
+	// Advertise Negotiate first when it is configured, so SPNEGO/Negotiate
+	// clients (which wait for a Negotiate challenge before sending a token)
+	// can authenticate even on the initial no-credentials request.
+	if h.negotiateAuth != nil {
+		sb.WriteString("Proxy-Authenticate: Negotiate\r\n")
+	}
+	sb.WriteString("Proxy-Authenticate: Basic realm=\"Bifrost\"\r\n")
+	sb.WriteString("Proxy-Authenticate: Bearer\r\n")
+	sb.WriteString("Connection: close\r\n\r\n")
+	if _, err := conn.Write([]byte(sb.String())); err != nil {
 		slog.Debug("failed to send proxy auth required", "error", err)
 	}
 }

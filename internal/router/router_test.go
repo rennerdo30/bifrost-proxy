@@ -44,6 +44,54 @@ func TestServerRouter(t *testing.T) {
 	}
 }
 
+// TestServerRouter_WeightedRouteConfig verifies that per-backend weights in the
+// route config are wired through LoadRoutes into the weighted load balancer and
+// influence backend selection.
+func TestServerRouter_WeightedRouteConfig(t *testing.T) {
+	mgr := backend.NewManager()
+	heavy := backend.NewDirectBackend(backend.DirectConfig{Name: "heavy"})
+	light := backend.NewDirectBackend(backend.DirectConfig{Name: "light"})
+	require.NoError(t, mgr.Add(heavy))
+	require.NoError(t, mgr.Add(light))
+	require.NoError(t, heavy.Start(context.Background()))
+	require.NoError(t, light.Start(context.Background()))
+
+	r := NewServerRouter(mgr)
+	routes := []config.RouteConfig{
+		{
+			Name:        "weighted",
+			Domains:     []string{"*"},
+			Backends:    []string{"heavy", "light"},
+			LoadBalance: "weighted",
+			Weights:     map[string]int{"heavy": 9, "light": 1},
+			Priority:    100,
+		},
+	}
+	require.NoError(t, r.LoadRoutes(routes))
+
+	// Confirm the route carries the weights and the route exists.
+	var found *Route
+	for _, rt := range r.Routes() {
+		if rt.Name == "weighted" {
+			found = rt
+		}
+	}
+	require.NotNil(t, found)
+	assert.Equal(t, 9, found.Weights["heavy"])
+	assert.Equal(t, 1, found.Weights["light"])
+
+	// Over many selections the heavy backend should dominate (9:1 ratio).
+	counts := map[string]int{}
+	for i := 0; i < 1000; i++ {
+		be := r.GetBackendForDomain("example.com", "1.2.3.4")
+		require.NotNil(t, be)
+		counts[be.Name()]++
+	}
+	assert.Greater(t, counts["heavy"], counts["light"])
+	// With a 9:1 weight the heavy backend should get the vast majority.
+	assert.Greater(t, counts["heavy"], 800)
+}
+
 func TestClientRouter(t *testing.T) {
 	r := NewClientRouter()
 

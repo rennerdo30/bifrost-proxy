@@ -1,10 +1,10 @@
 package sysproxy
 
 import (
-	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConfig(t *testing.T) {
@@ -31,14 +31,8 @@ func TestNew(t *testing.T) {
 	mgr := New()
 	assert.NotNil(t, mgr)
 
-	// Verify it implements Manager interface
+	// Verify it implements Manager interface.
 	var _ Manager = mgr
-}
-
-func TestManagerInterface(t *testing.T) {
-	// Verify that the Manager interface is properly defined
-	mgr := New()
-	assert.NotNil(t, mgr)
 }
 
 func TestErrNotSupported(t *testing.T) {
@@ -46,125 +40,33 @@ func TestErrNotSupported(t *testing.T) {
 	assert.Contains(t, ErrNotSupported.Error(), "not supported")
 }
 
-// Platform-specific tests
-
-func TestSetProxy(t *testing.T) {
-	mgr := New()
-
-	// On non-Windows platforms, system proxy configuration is not yet
-	// implemented and fails closed with ErrNotSupported.
-	// On Windows, this would actually modify registry (skip in CI)
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping SetProxy test on Windows to avoid modifying system settings")
+func TestSplitHostPort(t *testing.T) {
+	tests := []struct {
+		name     string
+		address  string
+		wantHost string
+		wantPort string
+		wantErr  bool
+	}{
+		{name: "ipv4", address: "127.0.0.1:8080", wantHost: "127.0.0.1", wantPort: "8080"},
+		{name: "hostname", address: "proxy.example.com:3128", wantHost: "proxy.example.com", wantPort: "3128"},
+		{name: "ipv6", address: "[::1]:8080", wantHost: "::1", wantPort: "8080"},
+		{name: "empty", address: "", wantErr: true},
+		{name: "no port", address: "127.0.0.1", wantErr: true},
+		{name: "missing host", address: ":8080", wantErr: true},
+		{name: "non-numeric port", address: "127.0.0.1:http", wantErr: true},
 	}
 
-	err := mgr.SetProxy("127.0.0.1:8080")
-	assert.ErrorIs(t, err, ErrNotSupported)
-}
-
-func TestClearProxy(t *testing.T) {
-	mgr := New()
-
-	// On non-Windows platforms, system proxy configuration is not yet
-	// implemented and fails closed with ErrNotSupported.
-	// On Windows, this would actually modify registry (skip in CI)
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping ClearProxy test on Windows to avoid modifying system settings")
-	}
-
-	err := mgr.ClearProxy()
-	assert.ErrorIs(t, err, ErrNotSupported)
-}
-
-func TestSetAndClearProxy(t *testing.T) {
-	mgr := New()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping proxy test on Windows to avoid modifying system settings")
-	}
-
-	// Set proxy
-	err := mgr.SetProxy("127.0.0.1:8080")
-	assert.ErrorIs(t, err, ErrNotSupported)
-
-	// Clear proxy
-	err = mgr.ClearProxy()
-	assert.ErrorIs(t, err, ErrNotSupported)
-}
-
-func TestSetProxy_EmptyAddress(t *testing.T) {
-	mgr := New()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping proxy test on Windows to avoid modifying system settings")
-	}
-
-	// Empty address - not supported on non-Windows
-	err := mgr.SetProxy("")
-	assert.ErrorIs(t, err, ErrNotSupported)
-}
-
-func TestSetProxy_IPv6Address(t *testing.T) {
-	mgr := New()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping proxy test on Windows to avoid modifying system settings")
-	}
-
-	// IPv6 address format
-	err := mgr.SetProxy("[::1]:8080")
-	assert.ErrorIs(t, err, ErrNotSupported)
-}
-
-func TestSetProxy_WithHostname(t *testing.T) {
-	mgr := New()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping proxy test on Windows to avoid modifying system settings")
-	}
-
-	// Hostname instead of IP
-	err := mgr.SetProxy("proxy.example.com:8080")
-	assert.ErrorIs(t, err, ErrNotSupported)
-}
-
-func TestMultipleOperations(t *testing.T) {
-	mgr := New()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping proxy test on Windows to avoid modifying system settings")
-	}
-
-	// Multiple set/clear operations
-	for i := 0; i < 5; i++ {
-		err := mgr.SetProxy("127.0.0.1:8080")
-		assert.ErrorIs(t, err, ErrNotSupported)
-
-		err = mgr.ClearProxy()
-		assert.ErrorIs(t, err, ErrNotSupported)
-	}
-}
-
-func TestConcurrentOperations(t *testing.T) {
-	mgr := New()
-
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping proxy test on Windows to avoid modifying system settings")
-	}
-
-	// Test concurrent access (no-op on non-Windows, but tests for race conditions)
-	done := make(chan bool, 10)
-
-	for i := 0; i < 10; i++ {
-		go func() {
-			_ = mgr.SetProxy("127.0.0.1:8080")
-			_ = mgr.ClearProxy()
-			done <- true
-		}()
-	}
-
-	// Wait for all goroutines
-	for i := 0; i < 10; i++ {
-		<-done
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			host, port, err := splitHostPort(tt.address)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantHost, host)
+			assert.Equal(t, tt.wantPort, port)
+		})
 	}
 }

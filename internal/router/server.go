@@ -46,6 +46,7 @@ func (r *ServerRouter) LoadRoutes(routes []config.RouteConfig) error {
 			Backend:     routeCfg.Backend,
 			Backends:    routeCfg.Backends,
 			LoadBalance: routeCfg.LoadBalance,
+			Weights:     cloneWeights(routeCfg.Weights),
 			Priority:    routeCfg.Priority,
 		}
 
@@ -66,6 +67,20 @@ func (r *ServerRouter) LoadRoutes(routes []config.RouteConfig) error {
 	}
 
 	return nil
+}
+
+// cloneWeights returns a copy of the per-backend weight map so the router does
+// not retain a reference into the caller's config slice. Returns nil for an
+// empty/absent map.
+func cloneWeights(weights map[string]int) map[string]int {
+	if len(weights) == 0 {
+		return nil
+	}
+	out := make(map[string]int, len(weights))
+	for k, v := range weights {
+		out[k] = v
+	}
+	return out
 }
 
 // GetBackendForDomain returns the appropriate backend for a domain.

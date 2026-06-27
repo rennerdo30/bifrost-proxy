@@ -47,6 +47,7 @@ type Tray struct {
 	onOpenUI     func()
 	onOpenQuick  func()
 	onQuit       func()
+	showQuickGUI bool
 	adapter      SystrayAdapter
 }
 
@@ -57,6 +58,11 @@ type Config struct {
 	OnOpenUI     func()
 	OnOpenQuick  func()
 	OnQuit       func()
+
+	// ShowQuickGUI controls whether the "Quick Access" menu entry is shown.
+	// When false the entry is omitted so the OnOpenQuick callback is never
+	// reachable from the tray.
+	ShowQuickGUI bool
 }
 
 // New creates a new system tray.
@@ -68,6 +74,7 @@ func New(cfg Config) *Tray {
 		onOpenUI:     cfg.OnOpenUI,
 		onOpenQuick:  cfg.OnOpenQuick,
 		onQuit:       cfg.OnQuit,
+		showQuickGUI: cfg.ShowQuickGUI,
 		adapter:      defaultAdapter,
 	}
 }
@@ -81,6 +88,7 @@ func NewWithAdapter(cfg Config, adapter SystrayAdapter) *Tray {
 		onOpenUI:     cfg.OnOpenUI,
 		onOpenQuick:  cfg.OnOpenQuick,
 		onQuit:       cfg.OnQuit,
+		showQuickGUI: cfg.ShowQuickGUI,
 		adapter:      adapter,
 	}
 }
@@ -118,7 +126,13 @@ func (t *Tray) onReady() {
 
 	t.adapter.AddSeparator()
 
-	mOpenQuick := t.adapter.AddMenuItem("Quick Access", "Open quick access popup")
+	// The Quick Access entry is only shown when ShowQuickGUI is configured. When
+	// hidden, quickClicked stays nil so its case in the select below never fires.
+	var quickClicked <-chan struct{}
+	if t.showQuickGUI {
+		mOpenQuick := t.adapter.AddMenuItem("Quick Access", "Open quick access popup")
+		quickClicked = mOpenQuick.Clicked()
+	}
 	mOpenUI := t.adapter.AddMenuItem("Open Dashboard", "Open web dashboard")
 
 	t.adapter.AddSeparator()
@@ -147,7 +161,7 @@ func (t *Tray) onReady() {
 				mStatus.SetTitle("Status: Disconnected")
 				t.SetStatus(StatusDisconnected)
 
-			case <-mOpenQuick.Clicked():
+			case <-quickClicked:
 				if t.onOpenQuick != nil {
 					t.onOpenQuick()
 				}

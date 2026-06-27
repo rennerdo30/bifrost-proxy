@@ -52,6 +52,7 @@ type VPNManager interface {
 	AddSplitTunnelIP(cidr string) error
 	RemoveSplitTunnelIP(cidr string) error
 	SetSplitTunnelMode(mode string) error
+	DNSCacheEntries() []vpn.DNSCacheEntry
 }
 
 // CacheManager defines the interface for cache management operations
@@ -1203,10 +1204,38 @@ func (a *API) handleVPNSplitRemoveIP(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
 }
 
+// DNSCacheEntryResponse is the JSON representation of a VPN DNS cache entry.
+type DNSCacheEntryResponse struct {
+	Domain    string   `json:"domain"`
+	Addresses []string `json:"addresses"`
+	TTLSecs   int64    `json:"ttl_seconds"`
+	Expires   string   `json:"expires"`
+	Created   string   `json:"created"`
+}
+
 func (a *API) handleVPNDNSCache(w http.ResponseWriter, r *http.Request) {
-	// DNS cache is internal to VPN manager
-	// Return empty for now - would need to expose from VPN manager
-	a.writeJSON(w, http.StatusOK, []interface{}{})
+	if a.vpnManager == nil {
+		a.writeJSON(w, http.StatusOK, []DNSCacheEntryResponse{})
+		return
+	}
+
+	entries := a.vpnManager.DNSCacheEntries()
+	resp := make([]DNSCacheEntryResponse, 0, len(entries))
+	for _, e := range entries {
+		addrs := make([]string, 0, len(e.Addresses))
+		for _, addr := range e.Addresses {
+			addrs = append(addrs, addr.String())
+		}
+		resp = append(resp, DNSCacheEntryResponse{
+			Domain:    e.Domain,
+			Addresses: addrs,
+			TTLSecs:   int64(e.TTL.Seconds()),
+			Expires:   e.Expires.Format(time.RFC3339),
+			Created:   e.Created.Format(time.RFC3339),
+		})
+	}
+
+	a.writeJSON(w, http.StatusOK, resp)
 }
 
 // Config handlers
