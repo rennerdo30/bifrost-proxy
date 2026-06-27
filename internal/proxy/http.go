@@ -4,6 +4,8 @@ package proxy
 import (
 	"bufio"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"log/slog"
@@ -70,6 +72,34 @@ func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
 	}
 }
 
+// tlsConnectionStater is implemented by TLS connections that can report
+// their handshake state (e.g. *tls.Conn).
+type tlsConnectionStater interface {
+	ConnectionState() tls.ConnectionState
+}
+
+// peerCertificate returns the leaf client certificate from a TLS-terminated
+// connection, or nil if the connection is not TLS or presented no client
+// certificate. It completes the TLS handshake if necessary so the peer
+// certificates are populated.
+func peerCertificate(conn net.Conn) *x509.Certificate {
+	tc, ok := conn.(tlsConnectionStater)
+	if !ok {
+		return nil
+	}
+	// Ensure the handshake has completed so PeerCertificates is populated.
+	if hc, ok := conn.(interface{ Handshake() error }); ok {
+		if err := hc.Handshake(); err != nil {
+			return nil
+		}
+	}
+	state := tc.ConnectionState()
+	if len(state.PeerCertificates) == 0 {
+		return nil
+	}
+	return state.PeerCertificates[0]
+}
+
 // ServeConn handles a client connection.
 func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
@@ -84,6 +114,13 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 	ctx = util.WithClientIP(ctx, clientIP)
 	startTime := time.Now()
 	ctx = util.WithStartTime(ctx, startTime)
+
+	// If the client connection is TLS-terminated and presented a client
+	// certificate, expose it on the context so the mTLS auth plugin can
+	// authenticate the request. We populate the canonical auth context key.
+	if cert := peerCertificate(conn); cert != nil {
+		ctx = context.WithValue(ctx, auth.ClientCertContextKey, cert)
+	}
 
 	// Read the first request
 	reader := bufio.NewReader(counting)
@@ -378,6 +415,14 @@ func (h *HTTPHandler) authenticateRequest(ctx context.Context, req *http.Request
 	// Try Bearer token
 	if token, ok := auth.ExtractProxyBearerToken(req); ok {
 		return h.authenticate(ctx, "", token)
+	}
+
+	// Fall back to client-certificate (mTLS) authentication if a peer
+	// certificate was presented on the TLS connection. The cert was placed
+	// on the context by ServeConn; the authenticator (mtls plugin) reads it
+	// from the context.
+	if ctx.Value(auth.ClientCertContextKey) != nil {
+		return h.authenticate(ctx, "", "")
 	}
 
 	return nil, fmt.Errorf("missing proxy credentials")
