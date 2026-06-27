@@ -45,6 +45,12 @@ type TCPState struct {
 	ClientNext  uint32
 	ServerNext  uint32
 	Established bool
+
+	// Reasm reorders out-of-order client segments into a gap-free byte stream
+	// before they are forwarded upstream. May be nil for connections that do
+	// not use sequence-aware forwarding (e.g. legacy/test paths), in which case
+	// callers fall back to direct in-order forwarding.
+	Reasm *TCPReassembler
 }
 
 // ConnState represents the state of a tracked connection.

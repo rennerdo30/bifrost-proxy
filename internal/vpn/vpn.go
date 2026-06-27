@@ -492,7 +492,12 @@ func (m *Manager) establishProxyConnection(packet *IPPacket) {
 		ServerISN:  serverISN,
 		ClientNext: clientNext,
 		ServerNext: serverISN + 1,
+		Reasm:      NewTCPReassembler(0, 0),
 	}
+	// Seed the reassembler with the first data sequence number (the byte
+	// immediately after the SYN), so out-of-order client data segments are
+	// reordered into a correct stream before being forwarded upstream.
+	tcpState.Reasm.Reset(clientNext)
 
 	trackedConn := &TrackedConnection{
 		Key: ConnKey{
@@ -525,18 +530,23 @@ func (m *Manager) establishProxyConnection(packet *IPPacket) {
 //
 // LIMITATION: this is a simplified userspace TCP shim, NOT a full TCP stack. It
 // reads proxy responses and frames them into TUN segments (see sendTCPData), and
-// forwards client payloads opportunistically (see forwardOnConnection), but it
-// does NOT implement:
-//   - in-order reassembly of out-of-order or overlapping client segments
-//   - retransmission / a real retransmit queue (lost segments are not resent)
-//   - receive-window / congestion control or proper RTO timers
-//   - SACK or duplicate-ACK handling
+// forwards client payloads through a bounded out-of-order reassembly buffer (see
+// forwardOnConnection and TCPReassembler) so that reordered, duplicate, or
+// overlapping client segments no longer corrupt the upstream byte stream.
 //
-// As a result, connections that experience reordering or loss (common with large
-// transfers) can stall or corrupt the byte stream. A correct implementation
-// requires a proper userspace TCP/IP stack (e.g. gVisor netstack). This is
-// deferred as a large piece of work; the limitation is documented here so callers
-// do not assume reliable large-transfer behavior.
+// It still does NOT implement:
+//   - a server-side retransmit queue for data we send toward the client (lost
+//     proxy->client segments are not resent by us)
+//   - receive-window / congestion control or proper RTO timers
+//   - SACK or duplicate-ACK driven fast retransmit
+//
+// Reassembly is bounded (see DefaultReasmMaxBytes / DefaultReasmMaxSegments):
+// once the buffer is full, further out-of-order client segments are dropped and
+// never ACKed, so the sender's own TCP retransmits them later. This is correct
+// (no byte is delivered out of order or duplicated) but not maximally efficient
+// under heavy loss. A maximally efficient / fully RFC-compliant implementation
+// (window management, RTO, SACK, our own retransmit queue) requires a proper
+// userspace TCP/IP stack (e.g. gVisor netstack) and remains deferred.
 //
 // In a full implementation, we would:
 // 1. Reassemble TCP segments from TUN
@@ -657,6 +667,22 @@ func (m *Manager) forwardOnConnection(conn *TrackedConnection, packet *IPPacket)
 		return
 	}
 
+	// Reorder out-of-order / duplicate client segments into a gap-free byte
+	// stream BEFORE updating client state, so the value we ACK reflects the
+	// cumulative in-order position rather than the highest sequence seen. Only
+	// data that is in-order (or has become in-order after filling a gap) is
+	// returned for forwarding; out-of-order segments are buffered until the gap
+	// is filled (bounded), and duplicate / already-consumed bytes are dropped.
+	// Because we only ACK in-order data, the sender retransmits anything we
+	// could not yet accept (dropped due to bounds, or sitting behind a gap).
+	data := packet.Payload
+	if len(packet.Payload) > 0 && conn.TCP != nil && conn.TCP.Reasm != nil {
+		data = conn.TCP.Reasm.Process(packet.SeqNum, packet.Payload)
+	}
+
+	// Update sequencing state (advances ClientNext to the reassembler's next
+	// expected sequence when reassembly is active) after the segment has been
+	// processed, then handle control flags.
 	m.updateTCPClientState(conn, packet)
 
 	if packet.IsFIN() {
@@ -670,7 +696,15 @@ func (m *Manager) forwardOnConnection(conn *TrackedConnection, packet *IPPacket)
 		return
 	}
 
-	n, err := conn.ProxyConn.Write(packet.Payload)
+	if len(data) == 0 {
+		// Nothing newly in-order to forward (future, duplicate, or fully
+		// consumed). Still ACK so the peer learns our cumulative position.
+		conn.LastActivity = time.Now()
+		m.sendTCPAck(conn)
+		return
+	}
+
+	n, err := conn.ProxyConn.Write(data)
 	if err != nil {
 		slog.Error("failed to forward on connection", "error", err)
 		m.connTracker.Remove(conn.Key)
@@ -693,9 +727,21 @@ func (m *Manager) updateTCPClientState(conn *TrackedConnection, packet *IPPacket
 	state.mu.Lock()
 	defer state.mu.Unlock()
 
-	next := advanceTCPSeq(packet.SeqNum, len(packet.Payload), packet.TCPFlags)
-	if state.ClientNext == 0 || tcpSeqAfter(next, state.ClientNext) {
-		state.ClientNext = next
+	// When sequence-aware reassembly is active, ClientNext (the value we ACK)
+	// must reflect the cumulative in-order position, NOT merely the highest
+	// sequence we have seen. Otherwise we would ACK out-of-order data we have
+	// buffered but not yet delivered upstream, defeating retransmission of gaps.
+	if state.Reasm != nil {
+		if reasmNext, ok := state.Reasm.NextSeq(); ok {
+			if state.ClientNext == 0 || tcpSeqAfter(reasmNext, state.ClientNext) {
+				state.ClientNext = reasmNext
+			}
+		}
+	} else {
+		next := advanceTCPSeq(packet.SeqNum, len(packet.Payload), packet.TCPFlags)
+		if state.ClientNext == 0 || tcpSeqAfter(next, state.ClientNext) {
+			state.ClientNext = next
+		}
 	}
 
 	if !state.Established && (packet.TCPFlags&TCPFlagACK != 0) {
