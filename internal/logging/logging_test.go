@@ -480,8 +480,8 @@ func TestRotatingWriter_RotatesOnSize(t *testing.T) {
 
 	line := []byte("0123456789012345678901234567890123456789\n") // 41 bytes
 	for i := 0; i < 6; i++ {
-		if _, err := w.Write(line); err != nil {
-			t.Fatalf("Write: %v", err)
+		if _, werr := w.Write(line); werr != nil {
+			t.Fatalf("Write: %v", werr)
 		}
 	}
 

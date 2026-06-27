@@ -14,6 +14,7 @@ import (
 	"github.com/jcmturner/gokrb5/v8/client"
 	"github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/credentials"
+	"github.com/jcmturner/gokrb5/v8/gssapi"
 	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/jcmturner/gokrb5/v8/spnego"
 
@@ -276,8 +277,10 @@ func (a *Authenticator) validateSPNEGOToken(token []byte) (*auth.UserInfo, error
 	}
 
 	// Verify the token against the keytab and establish the security context.
+	// On success gokrb5 returns gssapi.StatusComplete (a bit flag, not 0), so
+	// compare against the constant rather than zero.
 	ok, ctx, status := svc.AcceptSecContext(&st)
-	if !ok || status.Code != 0 {
+	if !ok || (status.Code != gssapi.StatusComplete && status.Code != gssapi.StatusContinueNeeded) {
 		return nil, auth.NewAuthError("kerberos", "spnego",
 			fmt.Errorf("SPNEGO token verification failed: %s", status.Message))
 	}
