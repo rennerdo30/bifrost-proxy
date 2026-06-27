@@ -248,6 +248,51 @@ web_ui:
 
 See `configs/server-config.openwrt.yaml` for a balanced configuration suitable for most OpenWrt devices.
 
+### UCI Configuration (`/etc/config/bifrost`)
+
+The init script can manage the YAML config from UCI. This is controlled by the
+`main` section:
+
+```
+config bifrost 'main'
+    option enabled '1'      # '0' keeps the service stopped
+    option managed '0'      # '1' generates config.yaml from UCI on start/reload
+    option config_file '/etc/bifrost/config.yaml'
+```
+
+There are two modes:
+
+- **Unmanaged (`managed '0'`, the default).** UCI does not touch
+  `config_file`. You edit `/etc/bifrost/config.yaml` directly and the init
+  script only reads `enabled` and `config_file`. Use this when you need
+  features that UCI cannot express (custom backends, routes, auth providers,
+  caching, TLS, rate limiting, mesh, ...).
+- **Managed (`managed '1'`).** On every `start`/`reload` the init script
+  regenerates `/etc/bifrost/config.yaml` from the UCI sections below. The
+  generated file carries a `DO NOT EDIT` header and is written with `0600`
+  permissions (it may contain an API token). A default `direct` backend and a
+  `*` catch-all route are always emitted so the proxy works out of the box.
+
+The following UCI options are mapped in managed mode:
+
+| UCI section.option | YAML path | Notes |
+|--------------------|-----------|-------|
+| `http.listen` | `server.http.listen` | Empty disables the HTTP listener |
+| `http.read_timeout` / `write_timeout` / `idle_timeout` | `server.http.*` | |
+| `http.max_connections` | `server.http.max_connections` | |
+| `socks5.listen` | `server.socks5.listen` | Empty disables the SOCKS5 listener |
+| `socks5.max_connections` | `server.socks5.max_connections` | |
+| `log.level` / `format` / `output` | `logging.*` | |
+| `access_log.enabled` / `format` / `output` | `access_log.*` | |
+| `metrics.enabled` / `listen` / `path` / `collection_interval` | `metrics.*` | |
+| `web_ui.enabled` / `listen` | `web_ui.*` | |
+| `api.enabled` / `listen` / `token` / `websocket_max_clients` | `api.*` | Empty `token` omits API auth |
+
+Anything not in the table requires unmanaged mode. After changing UCI options
+apply them with `/etc/init.d/bifrost reload` (or `restart`). If config
+generation fails for any reason the service refuses to start/reload rather than
+running with a stale or partial config.
+
 ### Configuration Options for Resource Tuning
 
 | Option | Default | OpenWrt Recommended | Effect |
