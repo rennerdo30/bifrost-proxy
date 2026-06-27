@@ -38,7 +38,8 @@ func newFramingNode(peerID, ip string) *framingNode {
 }
 
 // onData mirrors MeshNode.onP2PData's dispatch: switch on the marker byte,
-// strip it, and route to the protocol; otherwise treat as raw tunnel data.
+// strip it, and route to the protocol or broadcast; markerData payloads are
+// delivered (marker stripped) to the TUN sink. Unknown markers are dropped.
 func (n *framingNode) onData(fromPeerID string, data []byte) error {
 	if len(data) == 0 {
 		return nil
@@ -50,8 +51,12 @@ func (n *framingNode) onData(fromPeerID string, data []byte) error {
 	case markerBroadcast:
 		// Not exercised here.
 		return nil
+	case markerData:
+		// Strip the data marker, as handleDataFrame does.
+		n.tunSink = append(n.tunSink, data[1:])
+		return nil
 	default:
-		n.tunSink = append(n.tunSink, data)
+		// Unknown marker: dropped, matching MeshNode.onP2PData.
 		return nil
 	}
 }
@@ -104,13 +109,38 @@ func TestFraming_TwoNodesExchangeHelloAndRoute(t *testing.T) {
 	// not error and the route still exists.
 	require.NotNil(t, nodeA.router.GetRoute("peer-b"))
 
-	// Verify raw data (no marker) is delivered to the TUN sink, not the
-	// protocol. Use an IPv4-looking packet whose first byte (0x45) is neither
-	// marker.
+	// Verify raw data (framed with markerData) is delivered to the TUN sink,
+	// not the protocol. Use an IPv4-looking packet.
 	rawPacket := []byte{0x45, 0x00, 0x00, 0x14}
-	require.NoError(t, nodeB.onData("peer-a", rawPacket))
+	require.NoError(t, nodeB.onData("peer-a", frameData(rawPacket)))
 	require.Len(t, nodeB.tunSink, 1)
 	assert.Equal(t, rawPacket, nodeB.tunSink[0])
+}
+
+// TestFraming_UnicastFrameToMarkerPrefixedMAC verifies that a raw unicast
+// Ethernet frame whose destination MAC begins with the broadcast marker byte
+// (0x02 — the value GenerateRandomMAC always sets on the first octet) is
+// delivered as raw data, not misparsed as a broadcast control message. This is
+// the collision the markerData prefix exists to prevent.
+func TestFraming_UnicastFrameToMarkerPrefixedMAC(t *testing.T) {
+	node := newFramingNode("peer-a", "10.0.0.1")
+
+	// Build an Ethernet frame: dst MAC starts with 0x02 (== markerBroadcast),
+	// src MAC, and an EtherType. The raw frame's first byte is therefore 0x02.
+	dstMAC := []byte{0x02, 0xaa, 0xbb, 0xcc, 0xdd, 0xee}
+	srcMAC := []byte{0x02, 0x11, 0x22, 0x33, 0x44, 0x55}
+	ethFrame := make([]byte, 0, 16)
+	ethFrame = append(ethFrame, dstMAC...)
+	ethFrame = append(ethFrame, srcMAC...)
+	ethFrame = append(ethFrame, 0x08, 0x00) // IPv4 EtherType
+
+	// Without a marker the leading 0x02 would be classified as markerBroadcast.
+	// frameData prepends markerData (0x00) so it is unambiguously raw.
+	require.Equal(t, markerBroadcast, ethFrame[0], "test precondition: frame must start with the broadcast marker value")
+
+	require.NoError(t, node.onData("peer-b", frameData(ethFrame)))
+	require.Len(t, node.tunSink, 1, "frame must be delivered as raw data, not parsed as a broadcast")
+	assert.Equal(t, ethFrame, node.tunSink[0])
 }
 
 // TestFraming_RouteAnnouncePropagates verifies that a third destination learned

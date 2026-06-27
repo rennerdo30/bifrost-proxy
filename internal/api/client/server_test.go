@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 	"time"
@@ -895,6 +896,35 @@ func TestAPI_HandleVPNDNSCache(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, "[]", w.Body.String(), "nil VPN manager should yield an empty list")
+}
+
+func TestAPI_HandleVPNDNSCache_WithEntries(t *testing.T) {
+	mvpn := newMockVPNManager()
+	mvpn.dnsCacheEntries = []vpn.DNSCacheEntry{
+		{
+			Domain:    "example.com",
+			Addresses: []netip.Addr{netip.MustParseAddr("93.184.216.34")},
+			TTL:       60 * time.Second,
+			Expires:   time.Now().Add(60 * time.Second),
+			Created:   time.Now(),
+		},
+	}
+	api := New(Config{VPNManager: mvpn})
+	handler := api.Handler()
+
+	req := httptest.NewRequest("GET", "/api/v1/vpn/dns/cache", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var resp []DNSCacheEntryResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	require.Len(t, resp, 1)
+	assert.Equal(t, "example.com", resp[0].Domain)
+	assert.Equal(t, []string{"93.184.216.34"}, resp[0].Addresses)
+	assert.Equal(t, int64(60), resp[0].TTLSecs)
 }
 
 // ============================================================================
@@ -2556,6 +2586,7 @@ type mockVPNManager struct {
 	addIPErr         error
 	removeIPErr      error
 	setModeErr       error
+	dnsCacheEntries  []vpn.DNSCacheEntry
 }
 
 func (m *mockVPNManager) Status() vpn.VPNStats {
@@ -2641,6 +2672,10 @@ func (m *mockVPNManager) SetSplitTunnelMode(mode string) error {
 	}
 	m.splitTunnelRules.Mode = mode
 	return nil
+}
+
+func (m *mockVPNManager) DNSCacheEntries() []vpn.DNSCacheEntry {
+	return m.dnsCacheEntries
 }
 
 func newMockVPNManager() *mockVPNManager {
