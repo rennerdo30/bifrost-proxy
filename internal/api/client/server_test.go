@@ -2120,7 +2120,7 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-	assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
 	assert.Equal(t, "1; mode=block", w.Header().Get("X-XSS-Protection"))
 	assert.Equal(t, "strict-origin-when-cross-origin", w.Header().Get("Referrer-Policy"))
 	assert.NotEmpty(t, w.Header().Get("Content-Security-Policy"))
@@ -2135,7 +2135,7 @@ func TestAPISecurityHeadersMiddleware(t *testing.T) {
 	handler.ServeHTTP(w, req)
 
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-	assert.Equal(t, "DENY", w.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "SAMEORIGIN", w.Header().Get("X-Frame-Options"))
 }
 
 func TestCorsMiddleware_NonLocalOrigin(t *testing.T) {
