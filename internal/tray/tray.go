@@ -183,7 +183,7 @@ func (t *Tray) updateIcon() {
 	default:
 		icon = iconDisconnected
 	}
-	t.adapter.SetIcon(icon)
+	t.adapter.SetIcon(platformIcon(icon))
 }
 
 // Quit quits the system tray.
