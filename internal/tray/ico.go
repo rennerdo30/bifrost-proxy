@@ -54,9 +54,17 @@ func pngToICO(pngBytes []byte) ([]byte, error) {
 	// BITMAPINFOHEADER. biHeight is doubled because it covers both the XOR
 	// (color) bitmap and the AND (mask) bitmap stacked together.
 	var dib bytes.Buffer
-	writeU32 := func(v uint32) { _ = binary.Write(&dib, binary.LittleEndian, v) }
-	writeI32 := func(v int32) { _ = binary.Write(&dib, binary.LittleEndian, v) }
-	writeU16 := func(v uint16) { _ = binary.Write(&dib, binary.LittleEndian, v) }
+	writeU32 := func(v uint32) {
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], v)
+		dib.Write(b[:])
+	}
+	writeI32 := func(v int32) { writeU32(uint32(v)) }
+	writeU16 := func(v uint16) {
+		var b [2]byte
+		binary.LittleEndian.PutUint16(b[:], v)
+		dib.Write(b[:])
+	}
 
 	writeU32(bitmapInfoHeaderSize)
 	writeI32(int32(width))
@@ -99,8 +107,16 @@ func pngToICO(pngBytes []byte) ([]byte, error) {
 
 	// ICONDIR + ICONDIRENTRY + DIB payload.
 	var out bytes.Buffer
-	wU16 := func(v uint16) { _ = binary.Write(&out, binary.LittleEndian, v) }
-	wU32 := func(v uint32) { _ = binary.Write(&out, binary.LittleEndian, v) }
+	wU16 := func(v uint16) {
+		var b [2]byte
+		binary.LittleEndian.PutUint16(b[:], v)
+		out.Write(b[:])
+	}
+	wU32 := func(v uint32) {
+		var b [4]byte
+		binary.LittleEndian.PutUint32(b[:], v)
+		out.Write(b[:])
+	}
 
 	// ICONDIR.
 	wU16(0) // reserved

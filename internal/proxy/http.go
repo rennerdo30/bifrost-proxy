@@ -155,6 +155,11 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 
+	// http.ReadRequest on a raw net.Conn does not populate RemoteAddr; set it
+	// so request-scoped consumers (e.g. the Negotiate handler's per-client
+	// session key) can distinguish clients instead of all sharing "".
+	req.RemoteAddr = conn.RemoteAddr().String()
+
 	// Extract host
 	host := req.Host
 	if host == "" {
@@ -526,11 +531,18 @@ func (h *HTTPHandler) sendNegotiateChallenge(conn net.Conn, status int, headers 
 }
 
 func (h *HTTPHandler) sendProxyAuthRequired(conn net.Conn) {
-	response := "HTTP/1.1 407 Proxy Authentication Required\r\n" +
-		"Proxy-Authenticate: Basic realm=\"Bifrost\"\r\n" +
-		"Proxy-Authenticate: Bearer\r\n" +
-		"Connection: close\r\n\r\n"
-	if _, err := conn.Write([]byte(response)); err != nil {
+	var sb strings.Builder
+	sb.WriteString("HTTP/1.1 407 Proxy Authentication Required\r\n")
+	// Advertise Negotiate first when it is configured, so SPNEGO/Negotiate
+	// clients (which wait for a Negotiate challenge before sending a token)
+	// can authenticate even on the initial no-credentials request.
+	if h.negotiateAuth != nil {
+		sb.WriteString("Proxy-Authenticate: Negotiate\r\n")
+	}
+	sb.WriteString("Proxy-Authenticate: Basic realm=\"Bifrost\"\r\n")
+	sb.WriteString("Proxy-Authenticate: Bearer\r\n")
+	sb.WriteString("Connection: close\r\n\r\n")
+	if _, err := conn.Write([]byte(sb.String())); err != nil {
 		slog.Debug("failed to send proxy auth required", "error", err)
 	}
 }

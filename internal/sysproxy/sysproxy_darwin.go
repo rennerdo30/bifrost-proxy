@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // runner abstracts command execution so the logic can be unit tested without
@@ -24,6 +25,12 @@ func (execRunner) run(ctx context.Context, name string, args ...string) ([]byte,
 
 type darwinManager struct {
 	run runner
+
+	mu sync.Mutex
+	// configuredService is the network service SetProxy last configured, so
+	// ClearProxy can disable the proxy on the same service even if active-
+	// service detection would now resolve to a different one.
+	configuredService string
 }
 
 func newPlatformManager() Manager {
@@ -58,15 +65,26 @@ func (m *darwinManager) SetProxy(address string) error {
 			return err
 		}
 	}
+	m.mu.Lock()
+	m.configuredService = service
+	m.mu.Unlock()
 	return nil
 }
 
-// ClearProxy disables the HTTP, HTTPS and SOCKS proxies for the active network
-// service.
+// ClearProxy disables the HTTP, HTTPS and SOCKS proxies. It targets the service
+// SetProxy configured (so cleanup is reliable even if the active service has
+// since changed), falling back to active-service detection if none is recorded.
 func (m *darwinManager) ClearProxy() error {
-	service, err := m.activeNetworkService()
-	if err != nil {
-		return err
+	m.mu.Lock()
+	service := m.configuredService
+	m.mu.Unlock()
+
+	if service == "" {
+		var err error
+		service, err = m.activeNetworkService()
+		if err != nil {
+			return err
+		}
 	}
 
 	steps := [][]string{

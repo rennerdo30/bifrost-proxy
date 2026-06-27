@@ -52,6 +52,7 @@ func TestHTTPHandler_NegotiateChallenge(t *testing.T) {
 
 	resp, err := http.ReadResponse(bufio.NewReader(clientConn), &http.Request{Method: http.MethodConnect})
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusProxyAuthRequired, resp.StatusCode)
 	assert.Equal(t, "NTLM TlRMTVNTUAAC", resp.Header.Get("Proxy-Authenticate"))
 	clientConn.Close()
@@ -97,6 +98,7 @@ func TestHTTPHandler_NegotiateSuccess(t *testing.T) {
 
 	resp, err := http.ReadResponse(bufio.NewReader(clientConn), &http.Request{Method: http.MethodConnect})
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	clientConn.Close()
 }

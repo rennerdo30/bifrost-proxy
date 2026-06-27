@@ -9,8 +9,12 @@ import (
 )
 
 func TestNetworkConfig_AddressFamily(t *testing.T) {
-	assert.Equal(t, "tcp4", NetworkConfig{IPv6: false}.AddressFamily())
-	assert.Equal(t, "tcp", NetworkConfig{IPv6: true}.AddressFamily())
+	yes, no := true, false
+	// Default (unset) must be dual-stack so IPv6/dual-stack hosts keep working.
+	assert.Equal(t, "tcp", NetworkConfig{}.AddressFamily())
+	assert.Equal(t, "tcp", NetworkConfig{IPv6: &yes}.AddressFamily())
+	// Only an explicit ipv6:false restricts to IPv4.
+	assert.Equal(t, "tcp4", NetworkConfig{IPv6: &no}.AddressFamily())
 }
 
 func TestServerConfig_ParsesNetworkBlock(t *testing.T) {
@@ -28,7 +32,8 @@ network:
 	var cfg ServerConfig
 	require.NoError(t, yaml.Unmarshal([]byte(yamlData), &cfg))
 
-	assert.True(t, cfg.Network.IPv6)
+	require.NotNil(t, cfg.Network.IPv6)
+	assert.True(t, *cfg.Network.IPv6)
 	assert.True(t, cfg.Network.PreferIPv6)
 	assert.Equal(t, "45s", cfg.Network.KeepAlive.Duration().String())
 	assert.Equal(t, "10s", cfg.Network.DialTimeout.Duration().String())

@@ -13,12 +13,14 @@ package config
 // DialTimeout is surfaced for completeness but listener-specific timeouts
 // continue to be taken from the per-listener config.
 type NetworkConfig struct {
-	// IPv6 enables use of IPv6 addresses for outbound connections. When false,
-	// dials are restricted to IPv4 ("tcp4").
-	IPv6 bool `yaml:"ipv6" json:"ipv6"`
+	// IPv6 controls the outbound-dial address family. It is a pointer so that
+	// "unset" (the default) is distinguishable from an explicit value:
+	//   - unset (nil) or true -> dual-stack ("tcp", either family). This is the
+	//     historical default; leaving it unset must NOT restrict address family.
+	//   - explicit false      -> IPv4 only ("tcp4").
+	IPv6 *bool `yaml:"ipv6" json:"ipv6"`
 
 	// PreferIPv6 prefers IPv6 over IPv4 when a destination resolves to both.
-	// Only meaningful when IPv6 is true.
 	PreferIPv6 bool `yaml:"prefer_ipv6" json:"prefer_ipv6"`
 
 	// KeepAlive is the TCP keep-alive period applied to outbound dials.
@@ -34,12 +36,13 @@ type NetworkConfig struct {
 	MaxConnections int `yaml:"max_connections" json:"max_connections"`
 }
 
-// AddressFamily returns the network string ("tcp", "tcp4") to use for outbound
-// dials based on the IPv6 toggle. "tcp" lets the resolver use either family;
-// "tcp4" forces IPv4 only.
+// AddressFamily returns the network string ("tcp" or "tcp4") to use for
+// outbound dials. The default (IPv6 unset) is dual-stack "tcp" so IPv6-only
+// and dual-stack destinations keep working; only an explicit ipv6:false
+// restricts dials to IPv4.
 func (n NetworkConfig) AddressFamily() string {
-	if n.IPv6 {
-		return "tcp"
+	if n.IPv6 != nil && !*n.IPv6 {
+		return "tcp4"
 	}
-	return "tcp4"
+	return "tcp"
 }

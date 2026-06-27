@@ -237,6 +237,7 @@ func TestMTLSProxyEndToEnd(t *testing.T) {
 		br := bufio.NewReader(conn)
 		resp, rerr := http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
 		require.NoError(t, rerr)
+		defer resp.Body.Close()
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 	})
 

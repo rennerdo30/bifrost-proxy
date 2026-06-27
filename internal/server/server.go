@@ -221,8 +221,8 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		done:             make(chan struct{}),
 	}
 
-	if err := srv.setupHealthChecks(cfg); err != nil {
-		return nil, err
+	if hcErr := srv.setupHealthChecks(cfg); hcErr != nil {
+		return nil, hcErr
 	}
 
 	// Build the HTTP proxy listener TLS config (server cert + optional mTLS
