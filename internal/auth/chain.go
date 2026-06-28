@@ -66,10 +66,17 @@ func (c *ChainAuthenticator) Authenticate(ctx context.Context, username, passwor
 			userInfo.Metadata["auth_type"] = entry.auth.Type()
 			return userInfo, nil
 		}
+		// A provider that declined to decide (e.g. mTLS with no client cert
+		// presented and require_client_cert=false) must NOT be treated as a
+		// failure that masks later providers, nor as a success. Continue to the
+		// next provider without recording it as the last error.
+		if IsAuthSkip(err) {
+			continue
+		}
 		lastErr = err
 	}
 
-	// All authenticators failed
+	// All authenticators failed (or every one skipped).
 	if lastErr != nil {
 		return nil, lastErr
 	}

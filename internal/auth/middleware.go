@@ -16,8 +16,17 @@ type ContextKey string
 const (
 	// UserInfoContextKey is the context key for user information.
 	UserInfoContextKey ContextKey = "auth_user_info"
-	// ClientCertContextKey is the context key for client certificate.
+	// ClientCertContextKey is the context key for the verified leaf client
+	// certificate (*x509.Certificate).
 	ClientCertContextKey ContextKey = "auth_client_cert"
+	// ClientCertChainContextKey is the context key for the full client
+	// certificate chain as presented during the TLS handshake
+	// ([]*x509.Certificate, leaf first). When present, element 0 is the leaf
+	// and elements 1.. are intermediate CAs needed to build a path to a
+	// trusted root. Authenticators use this to populate
+	// x509.VerifyOptions.Intermediates so chains that rely on intermediates
+	// (not just a directly-issued leaf) verify correctly.
+	ClientCertChainContextKey ContextKey = "auth_client_cert_chain"
 )
 
 // Middleware provides HTTP authentication middleware.
