@@ -196,6 +196,12 @@ func (c *ClientConfig) Validate() error {
 	if c.Debug.MaxEntries < 0 {
 		return fmt.Errorf("debug max_entries must be non-negative")
 	}
+	// Upper sanity bound: max_entries sizes a ring buffer allocated up front.
+	// The value is operator config, not request data, but cap it to keep
+	// worst-case memory predictable and to reject obvious misconfiguration.
+	if c.Debug.MaxEntries > MaxRingBufferEntries {
+		return fmt.Errorf("debug max_entries must not exceed %d", MaxRingBufferEntries)
+	}
 
 	// Validate VPN config if enabled
 	if c.VPN.Enabled {
