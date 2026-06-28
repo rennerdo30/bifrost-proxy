@@ -313,7 +313,7 @@ func (h *HTTPHandler) handleConnect(ctx context.Context, conn net.Conn, req *htt
 	// Live HTTPS interception (MITM). Gated entirely behind a non-nil, in-scope
 	// interceptor: when MITM is disabled (h.mitm == nil) or the host is bypassed,
 	// shouldIntercept returns false and we fall through to the opaque tunnel,
-	// keeping behaviour byte-for-byte identical to a non-MITM build.
+	// keeping behavior byte-for-byte identical to a non-MITM build.
 	if h.mitm.shouldIntercept(host) {
 		if err := h.interceptConnect(ctx, conn, targetConn, host); err != nil {
 			// Interception failures are logged via the error callback by the

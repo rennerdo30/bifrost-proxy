@@ -108,6 +108,7 @@ func dialProxyConnect(t *testing.T, proxyAddr, target string) net.Conn {
 	br := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(br, &http.Request{Method: http.MethodConnect})
 	require.NoError(t, err)
+	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	// The CONNECT response carries no body; br should have nothing buffered for
 	// the subsequent TLS handshake in these tests.

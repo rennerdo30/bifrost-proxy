@@ -29,7 +29,7 @@ type InterceptLogger interface {
 // MITMInterceptor bundles everything the HTTP handler needs to perform live
 // HTTPS interception. It is injected (defaulting to nil) so that when MITM is
 // disabled the handler never touches the interception code path and CONNECT
-// tunnels stay byte-for-byte identical to today's opaque behaviour.
+// tunnels stay byte-for-byte identical to today's opaque behavior.
 //
 // SECURITY: a non-nil MITMInterceptor means the proxy will decrypt TLS for
 // in-scope hosts. Callers must only construct one when config MITM is enabled
@@ -95,7 +95,7 @@ func (h *HTTPHandler) interceptConnect(ctx context.Context, clientConn, targetCo
 		},
 	}
 	tlsClient := tls.Server(clientConn, clientTLSCfg)
-	if err := tlsClient.Handshake(); err != nil {
+	if err := tlsClient.HandshakeContext(ctx); err != nil {
 		return fmt.Errorf("mitm: client TLS handshake: %w", err)
 	}
 	defer tlsClient.Close()

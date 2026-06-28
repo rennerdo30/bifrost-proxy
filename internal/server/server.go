@@ -48,6 +48,7 @@ type Server struct {
 
 	httpTLSConfig    *tls.Config
 	negotiateHandler *negotiate.Handler
+	mitmInterceptor  *proxy.MITMInterceptor
 
 	httpListener   net.Listener
 	socks5Listener net.Listener
@@ -226,6 +227,10 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		return nil, hcErr
 	}
 
+	if mErr := srv.setupMITM(); mErr != nil {
+		return nil, mErr
+	}
+
 	// Build the HTTP proxy listener TLS config (server cert + optional mTLS
 	// client-cert verification). The client CA pool falls back to the mTLS auth
 	// provider's trust anchors when no explicit client_ca_file is set.
@@ -248,6 +253,33 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 	srv.negotiateHandler = negHandler
 
 	return srv, nil
+}
+
+// setupMITM constructs the HTTPS interception cert minter from config when MITM
+// is enabled, failing closed (returning an error at startup) if the CA material
+// cannot be loaded. When MITM is disabled the interceptor stays nil and CONNECT
+// tunnels remain opaque.
+func (s *Server) setupMITM() error {
+	if s == nil || !s.config.MITM.Enabled {
+		return nil
+	}
+	certPEM, keyPEM, err := s.config.MITM.LoadCA()
+	if err != nil {
+		return fmt.Errorf("mitm: load CA: %w", err)
+	}
+	minter, err := proxy.NewCertMinter(proxy.MITMConfig{
+		Enabled:        true,
+		CACertPEM:      certPEM,
+		CAKeyPEM:       keyPEM,
+		LeafTTL:        s.config.MITM.LeafTTL.Duration(),
+		MaxCachedCerts: s.config.MITM.MaxCachedCerts,
+	})
+	if err != nil {
+		return fmt.Errorf("mitm: %w", err)
+	}
+	s.mitmInterceptor = &proxy.MITMInterceptor{Minter: minter}
+	logging.Warn("HTTPS MITM interception is ENABLED — TLS to in-scope hosts will be decrypted")
+	return nil
 }
 
 func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
@@ -953,6 +985,7 @@ func (s *Server) serveHTTP(ctx context.Context) {
 		OnConnect:        s.onConnect,
 		OnError:          s.onError,
 		CacheInterceptor: s.cacheInterceptor,
+		MITM:             s.mitmInterceptor,
 	})
 
 	for {
