@@ -76,7 +76,7 @@ func newNotifyTestClient(t *testing.T, showNotifications bool) (*Client, *record
 func TestNotifySendsWhenEnabled(t *testing.T) {
 	client, rec := newNotifyTestClient(t, true)
 
-	client.notify("Bifrost", "Connected")
+	client.notify("Connected")
 
 	require.Len(t, rec.titles, 1)
 	assert.Equal(t, "Bifrost", rec.titles[0])
@@ -86,7 +86,7 @@ func TestNotifySendsWhenEnabled(t *testing.T) {
 func TestNotifySkippedWhenDisabled(t *testing.T) {
 	client, rec := newNotifyTestClient(t, false)
 
-	client.notify("Bifrost", "Connected")
+	client.notify("Connected")
 
 	assert.Empty(t, rec.titles, "notification should not be sent when disabled")
 }
@@ -102,5 +102,5 @@ func TestNotifyNoTrayIsNoop(t *testing.T) {
 	client.tray = nil
 
 	// Should not panic.
-	client.notify("Bifrost", "Connected")
+	client.notify("Connected")
 }

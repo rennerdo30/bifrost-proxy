@@ -194,7 +194,7 @@ func (m *Middleware) MultiAuthHandler(next http.Handler) http.Handler {
 
 		// Try client certificate first (if TLS)
 		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-			userInfo, err = m.tryClientCert(r.Context(), r.TLS.PeerCertificates[0])
+			userInfo, err = m.tryClientCert(r.Context(), r.TLS.PeerCertificates)
 			if err == nil && userInfo != nil {
 				ctx := m.setUserContext(r.Context(), userInfo, r.TLS.PeerCertificates[0])
 				r = r.WithContext(ctx)
@@ -262,7 +262,7 @@ func (m *Middleware) MultiProxyAuthHandler(next http.Handler) http.Handler {
 
 		// Try client certificate first (if TLS)
 		if r.TLS != nil && len(r.TLS.PeerCertificates) > 0 {
-			userInfo, err = m.tryClientCert(r.Context(), r.TLS.PeerCertificates[0])
+			userInfo, err = m.tryClientCert(r.Context(), r.TLS.PeerCertificates)
 			if err == nil && userInfo != nil {
 				ctx := m.setUserContext(r.Context(), userInfo, r.TLS.PeerCertificates[0])
 				r = r.WithContext(ctx)
@@ -327,11 +327,18 @@ func (m *Middleware) MultiProxyAuthHandler(next http.Handler) http.Handler {
 }
 
 // tryClientCert attempts to authenticate using a client certificate.
-func (m *Middleware) tryClientCert(ctx context.Context, cert *x509.Certificate) (*UserInfo, error) {
+func (m *Middleware) tryClientCert(ctx context.Context, certs []*x509.Certificate) (*UserInfo, error) {
+	if len(certs) == 0 {
+		return nil, ErrAuthMethodUnsupported
+	}
 	// Check if authenticator supports mTLS
 	if m.authenticator.Type() == "mtls" {
-		// Pass certificate via context
-		ctx = context.WithValue(ctx, ClientCertContextKey, cert)
+		// Pass the leaf and, when the client presented intermediates, the full
+		// chain so the authenticator can build a verification path to the CA.
+		ctx = context.WithValue(ctx, ClientCertContextKey, certs[0])
+		if len(certs) > 1 {
+			ctx = context.WithValue(ctx, ClientCertChainContextKey, certs)
+		}
 		return m.authenticator.Authenticate(ctx, "", "")
 	}
 	return nil, ErrAuthMethodUnsupported

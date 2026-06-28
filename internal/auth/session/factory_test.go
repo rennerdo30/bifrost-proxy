@@ -39,8 +39,8 @@ func TestBuildManager_Memory(t *testing.T) {
 		t.Fatalf("BuildManager: %v", err)
 	}
 	defer func() {
-		if err := mgr.Close(); err != nil {
-			t.Errorf("close: %v", err)
+		if cerr := mgr.Close(); cerr != nil {
+			t.Errorf("close: %v", cerr)
 		}
 	}()
 

@@ -994,6 +994,12 @@ func (s *Server) serveHTTP(ctx context.Context) {
 		OnError:          s.onError,
 		CacheInterceptor: s.cacheInterceptor,
 		MITM:             s.mitmInterceptor,
+		RecordMetrics: func(protocol, method, status string, duration time.Duration, sent, recv int64) {
+			s.metricsCollector.RecordRequest(protocol, method, status, duration)
+			s.metricsCollector.RecordRequestSize(protocol, recv)
+			s.metricsCollector.RecordResponseSize(protocol, sent)
+			s.metricsCollector.RecordBytes("", sent, recv)
+		},
 	})
 
 	for {
@@ -1392,8 +1398,10 @@ func withConnID(ctx context.Context, id string) context.Context {
 // connIDFromContext extracts the connection-tracker ID from the context, or ""
 // if absent.
 func connIDFromContext(ctx context.Context) string {
-	id, _ := ctx.Value(connIDContextKey).(string)
-	return id
+	if id, ok := ctx.Value(connIDContextKey).(string); ok {
+		return id
+	}
+	return ""
 }
 
 // extractPort extracts the port from a listen address (e.g., ":8080" -> "8080").

@@ -229,9 +229,9 @@ func (c *DirectConnection) SetOnData(fn func(peerID string, plaintext []byte)) {
 }
 
 // deliverDatagram routes a raw inbound datagram (read by the manager from the
-// shared socket) to this connection for decryption. Returns false if the
-// connection is shutting down.
-func (c *DirectConnection) deliverDatagram(data []byte) bool {
+// shared socket) to this connection for decryption. Datagrams are dropped if
+// the connection is shutting down or its inbound queue is full (backpressure).
+func (c *DirectConnection) deliverDatagram(data []byte) {
 	// Copy: the manager reuses its read buffer for the next datagram.
 	buf := make([]byte, len(data))
 	copy(buf, data)
@@ -240,22 +240,17 @@ func (c *DirectConnection) deliverDatagram(data []byte) bool {
 		// Still handshaking: route to the handshake channel.
 		select {
 		case c.handshakeInbound <- buf:
-			return true
 		case <-c.ctx.Done():
-			return false
 		default:
-			return true
 		}
+		return
 	}
 
 	select {
 	case c.inbound <- buf:
-		return true
 	case <-c.ctx.Done():
-		return false
 	default:
 		// Inbound queue full, drop datagram.
-		return true
 	}
 }
 

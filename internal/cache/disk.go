@@ -223,8 +223,8 @@ func (d *DiskStorage) Put(ctx context.Context, key string, entry *Entry) error {
 		return err
 	}
 	shardDir := filepath.Dir(dataPath)
-	if err := os.MkdirAll(shardDir, 0755); err != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
-		return fmt.Errorf("failed to create shard directory: %w", err)
+	if mkErr := os.MkdirAll(shardDir, 0755); mkErr != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
+		return fmt.Errorf("failed to create shard directory: %w", mkErr)
 	}
 
 	tempFile, err := os.CreateTemp(shardDir, ".cache-*")
