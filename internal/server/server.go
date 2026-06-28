@@ -667,6 +667,14 @@ func (s *Server) Stop(ctx context.Context) error {
 		s.rateLimiterUser.Close()
 	}
 
+	// Stop the Negotiate handler's challenge-cleanup goroutine to avoid a leak
+	// across server restarts.
+	if s.negotiateHandler != nil {
+		if err := s.negotiateHandler.Close(); err != nil {
+			logging.Warn("Error closing negotiate handler", "error", err)
+		}
+	}
+
 	logging.Info("Bifrost server stopped")
 	return nil
 }
@@ -1053,8 +1061,8 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	clientIP := tcpAddr.IP.String()
 	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
 
-	if s.rateLimiterIP != nil {
-		if !s.rateLimiterIP.Allow(clientIP) {
+	if limiter := s.snapshotRateLimiterIP(); limiter != nil {
+		if !limiter.Allow(clientIP) {
 			s.metricsCollector.RecordRateLimit("ip")
 			_, _ = conn.Write([]byte("HTTP/1.1 429 Too Many Requests\r\n\r\n")) //nolint:errcheck // Best effort error response
 			conn.Close()
@@ -1062,11 +1070,12 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 		}
 	}
 
-	// Track connection in API
-	var connID string
+	// Track connection in API. The connection ID is threaded into the context so
+	// the onConnect hook can populate the destination host/backend once known.
 	if s.api != nil && s.api.ConnectionTracker() != nil {
-		connID = s.api.ConnectionTracker().Add(clientIP, clientPort, "", "", "HTTP")
-		defer s.api.ConnectionTracker().Remove(connID)
+		connID := s.api.ConnectionTracker().Add(clientIP, clientPort, "", "", "HTTP")
+		defer s.closeTrackedConn(connID)
+		ctx = withConnID(ctx, connID)
 	}
 
 	// Track connection metrics
@@ -1164,19 +1173,20 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 	clientIP := tcpAddr.IP.String()
 	clientPort := fmt.Sprintf("%d", tcpAddr.Port)
 
-	if s.rateLimiterIP != nil {
-		if !s.rateLimiterIP.Allow(clientIP) {
+	if limiter := s.snapshotRateLimiterIP(); limiter != nil {
+		if !limiter.Allow(clientIP) {
 			s.metricsCollector.RecordRateLimit("ip")
 			conn.Close()
 			return
 		}
 	}
 
-	// Track connection in API
-	var connID string
+	// Track connection in API. The connection ID is threaded into the context so
+	// the onConnect hook can populate the destination host/backend once known.
 	if s.api != nil && s.api.ConnectionTracker() != nil {
-		connID = s.api.ConnectionTracker().Add(clientIP, clientPort, "", "", "SOCKS5")
-		defer s.api.ConnectionTracker().Remove(connID)
+		connID := s.api.ConnectionTracker().Add(clientIP, clientPort, "", "", "SOCKS5")
+		defer s.closeTrackedConn(connID)
+		ctx = withConnID(ctx, connID)
 	}
 
 	// Track connection metrics
@@ -1191,6 +1201,31 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 // getBackend returns a backend for a domain.
 func (s *Server) getBackend(domain, clientIP string) backend.Backend {
 	return s.router.GetBackendForDomain(domain, clientIP)
+}
+
+// snapshotAccessController returns the current access controller under a read
+// lock. ReloadConfig swaps s.accessController under s.mu.Lock(), so request-path
+// readers must take s.mu.RLock() to avoid a data race.
+func (s *Server) snapshotAccessController() *accesscontrol.Controller {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.accessController
+}
+
+// snapshotRateLimiterIP returns the current per-IP rate limiter under a read
+// lock. ReloadConfig may swap s.rateLimiterIP under s.mu.Lock().
+func (s *Server) snapshotRateLimiterIP() *ratelimit.KeyedLimiter {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rateLimiterIP
+}
+
+// snapshotRateLimiterUser returns the current per-user rate limiter under a read
+// lock. ReloadConfig may swap s.rateLimiterUser under s.mu.Lock().
+func (s *Server) snapshotRateLimiterUser() *ratelimit.KeyedLimiter {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.rateLimiterUser
 }
 
 // isAuthRequired checks if authentication is required based on config.
@@ -1209,10 +1244,11 @@ func (s *Server) isAuthRequired() bool {
 }
 
 func (s *Server) accessCheck(clientIP string) (bool, string) {
-	if s.accessController == nil {
+	ac := s.snapshotAccessController()
+	if ac == nil {
 		return true, ""
 	}
-	result := s.accessController.Check(clientIP)
+	result := ac.Check(clientIP)
 	if result.Action == accesscontrol.ActionDeny {
 		return false, string(result.Reason)
 	}
@@ -1220,7 +1256,8 @@ func (s *Server) accessCheck(clientIP string) (bool, string) {
 }
 
 func (s *Server) allowUser(username, clientIP string) bool {
-	if s.rateLimiterUser == nil {
+	limiter := s.snapshotRateLimiterUser()
+	if limiter == nil {
 		return true
 	}
 
@@ -1231,7 +1268,7 @@ func (s *Server) allowUser(username, clientIP string) bool {
 		key = "user:" + key
 	}
 
-	if !s.rateLimiterUser.Allow(key) {
+	if !limiter.Allow(key) {
 		s.metricsCollector.RecordRateLimit("user")
 		return false
 	}
@@ -1250,13 +1287,69 @@ func (s *Server) authenticateUser(ctx context.Context, username, password string
 	return user, nil
 }
 
-// onConnect is called when a connection is established.
+// onConnect is called when a connection is established. It populates the tracked
+// connection's destination host and backend (which are unknown at Add time) and
+// broadcasts a connection.new event so the dashboard can display the live
+// destination instead of an empty column.
 func (s *Server) onConnect(ctx context.Context, conn net.Conn, host string, be backend.Backend) {
+	backendName := ""
+	if be != nil {
+		backendName = be.Name()
+	}
+
 	logging.DebugContext(ctx, "Connection established",
 		"host", host,
-		"backend", be.Name(),
+		"backend", backendName,
 		"client", conn.RemoteAddr().String(),
 	)
+
+	connID := connIDFromContext(ctx)
+	if connID == "" || s.api == nil {
+		return
+	}
+	tracker := s.api.ConnectionTracker()
+	if tracker == nil {
+		return
+	}
+
+	updated, ok := tracker.SetDestination(connID, host, backendName)
+	if !ok {
+		return
+	}
+
+	if s.wsHub != nil {
+		s.wsHub.Broadcast(apiserver.EventConnectionNew, apiserver.ConnectionEvent{
+			Protocol: updated.Protocol,
+			Host:     updated.Host,
+			Backend:  updated.Backend,
+			ClientIP: updated.ClientIP,
+		})
+	}
+}
+
+// closeTrackedConn removes a connection from the tracker and broadcasts a
+// connection.close event so the dashboard can drop it from the live view.
+func (s *Server) closeTrackedConn(connID string) {
+	if s.api == nil {
+		return
+	}
+	tracker := s.api.ConnectionTracker()
+	if tracker == nil {
+		return
+	}
+
+	conn, ok := tracker.Get(connID)
+	tracker.Remove(connID)
+	if !ok || s.wsHub == nil {
+		return
+	}
+
+	s.wsHub.Broadcast(apiserver.EventConnectionClose, apiserver.ConnectionEvent{
+		Protocol: conn.Protocol,
+		Host:     conn.Host,
+		Backend:  conn.Backend,
+		ClientIP: conn.ClientIP,
+	})
 }
 
 // onError is called when an error occurs.
@@ -1282,6 +1375,25 @@ func (s *Server) Running() bool {
 
 func generateRequestID() string {
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// connIDContextKey is the context key under which the API connection-tracker ID
+// is stored so the onConnect hook can correlate a live connection with its
+// tracked record once the destination host/backend are known.
+type connIDContextKeyType struct{}
+
+var connIDContextKey connIDContextKeyType
+
+// withConnID returns a context carrying the connection-tracker ID.
+func withConnID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, connIDContextKey, id)
+}
+
+// connIDFromContext extracts the connection-tracker ID from the context, or ""
+// if absent.
+func connIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(connIDContextKey).(string)
+	return id
 }
 
 // extractPort extracts the port from a listen address (e.g., ":8080" -> "8080").
