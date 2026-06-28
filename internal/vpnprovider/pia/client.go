@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -58,6 +59,12 @@ type Client struct {
 	cache        *vpnprovider.ServerCache
 	regions      []Region // Raw region data for API calls
 	logger       *slog.Logger
+
+	// addKeyTransport, when non-nil, overrides the transport used for the
+	// /addKey TLS request. It is only set by tests so the CN-pinned dial path
+	// can be exercised against an httptest server; production builds the
+	// transport per-request from the region's WireGuard endpoint and CN.
+	addKeyTransport http.RoundTripper
 }
 
 // ClientOption is a functional option for configuring the Client.
@@ -81,6 +88,16 @@ func WithLogger(logger *slog.Logger) ClientOption {
 func WithCacheTTL(ttl time.Duration) ClientOption {
 	return func(c *Client) {
 		c.cache = vpnprovider.NewServerCache(ttl)
+	}
+}
+
+// WithAddKeyTransport overrides the HTTP transport used for the /addKey TLS
+// request. It exists for tests that need to target an httptest server instead of
+// dialing a live PIA WireGuard endpoint; production code leaves it unset and
+// builds a CN-pinned transport per request.
+func WithAddKeyTransport(rt http.RoundTripper) ClientOption {
+	return func(c *Client) {
+		c.addKeyTransport = rt
 	}
 }
 
@@ -265,14 +282,31 @@ func (c *Client) GenerateWireGuardConfig(ctx context.Context, server *vpnprovide
 }
 
 // registerWireGuardKey registers a WireGuard public key with a PIA server.
+//
+// PIA's /addKey endpoint is served from the WireGuard server IP on
+// DefaultWireGuardPort, but the certificate it presents is issued for the
+// server's common name (CN), not its IP. Dialing the IP with a default TLS
+// config therefore fails verification ("certificate is valid for <cn>, not
+// <ip>"). To verify correctly without InsecureSkipVerify we mirror PIA's
+// reference `--resolve <cn>:<port>:<ip>` behavior: the request Host is the CN
+// (so TLS validates against it) while a pinned DialContext forces the connection
+// to the server IP. See NewPortForwarder for the same pattern on the PF endpoint.
 func (c *Client) registerWireGuardKey(ctx context.Context, region *Region, publicKey, token string) (*WireGuardKeyResponse, error) {
 	serverIP := region.GetWireGuardEndpoint()
 	if serverIP == "" {
 		return nil, fmt.Errorf("no WireGuard server available for region %s", region.ID)
 	}
 
-	// Build the addKey URL - PIA requires HTTPS with the server's certificate
-	addKeyURL := fmt.Sprintf("https://%s:%s%s", serverIP, DefaultWireGuardPort, AddKeyPath)
+	cn := region.GetWireGuardCN()
+	if cn == "" {
+		// Without the CN we cannot verify the server certificate; fail closed
+		// rather than dialing the IP and disabling verification.
+		return nil, fmt.Errorf("no WireGuard certificate CN available for region %s", region.ID)
+	}
+
+	// Build the addKey URL using the CN as host so TLS verification targets the
+	// certificate's CN; the transport below rewrites the dial target to the IP.
+	addKeyURL := fmt.Sprintf("https://%s:%s%s", cn, DefaultWireGuardPort, AddKeyPath)
 
 	formData := url.Values{}
 	formData.Set("pt", token)
@@ -286,16 +320,9 @@ func (c *Client) registerWireGuardKey(ctx context.Context, region *Region, publi
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", UserAgent)
 
-	// Create a client that accepts the PIA server certificate
-	// PIA uses its own CA for WireGuard key registration endpoints.
-	// We use the PIA CA certificate for validation instead of InsecureSkipVerify.
-	tlsConfig := piaTLSConfig()
-
 	tlsClient := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: tlsConfig,
-		},
+		Timeout:   30 * time.Second,
+		Transport: c.addKeyRoundTripper(serverIP, cn),
 	}
 
 	resp, err := tlsClient.Do(req)
@@ -337,6 +364,30 @@ func (c *Client) registerWireGuardKey(ctx context.Context, region *Region, publi
 	)
 
 	return &keyResp, nil
+}
+
+// addKeyRoundTripper returns the transport used for the /addKey request. When a
+// test transport has been injected it is returned as-is; otherwise it builds a
+// CN-pinned transport that validates the PIA CA + the server CN while forcing the
+// connection to serverIP:DefaultWireGuardPort.
+func (c *Client) addKeyRoundTripper(serverIP, cn string) http.RoundTripper {
+	if c.addKeyTransport != nil {
+		return c.addKeyTransport
+	}
+
+	tlsCfg := piaTLSConfig()
+	// Validate the presented certificate against the WireGuard CN regardless of
+	// the dialed IP, matching PIA's `--resolve` behavior.
+	tlsCfg.ServerName = cn
+
+	target := net.JoinHostPort(serverIP, DefaultWireGuardPort)
+	return &http.Transport{
+		TLSClientConfig: tlsCfg,
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			d := &net.Dialer{Timeout: 15 * time.Second}
+			return d.DialContext(ctx, network, target)
+		},
+	}
 }
 
 // findRegion finds the raw region data for a server ID.
@@ -458,21 +509,31 @@ func (c *Client) ClearCache() {
 	c.cache.Clear()
 }
 
-// piaTLSConfig returns a TLS config that trusts the PIA CA certificate.
-// This avoids InsecureSkipVerify while still supporting PIA's self-signed endpoints.
-func piaTLSConfig() *tls.Config {
-	certPool := x509.NewCertPool()
-	if certPool.AppendCertsFromPEM([]byte(piaOpenVPNCA)) {
-		return &tls.Config{
-			RootCAs:    certPool,
-			MinVersion: tls.VersionTLS12,
-		}
+// piaCertPool is the certificate pool trusting the PIA CA. It is built once at
+// package initialization from the compile-time PIA CA constant; if that constant
+// ever fails to parse the package refuses to load (init panics) rather than
+// allowing a silent fail-open. Because the CA is a compile-time constant, a parse
+// failure can only be a build/source regression, never a runtime condition.
+var piaCertPool = mustParsePIACertPool()
+
+// mustParsePIACertPool builds the PIA CA pool, panicking if the embedded CA
+// cannot be parsed. Failing closed here guarantees TLS verification can never
+// silently degrade to InsecureSkipVerify.
+func mustParsePIACertPool() *x509.CertPool {
+	pool := x509.NewCertPool()
+	if !pool.AppendCertsFromPEM([]byte(piaOpenVPNCA)) {
+		panic("pia: embedded CA certificate failed to parse; refusing to start to avoid fail-open TLS")
 	}
-	// If CA parsing fails, fall back to InsecureSkipVerify
-	// This should not happen with a valid hardcoded cert
+	return pool
+}
+
+// piaTLSConfig returns a TLS config that trusts the PIA CA certificate.
+// It never falls back to InsecureSkipVerify: the CA pool is validated at init,
+// so a verification failure here means the endpoint is genuinely untrusted.
+func piaTLSConfig() *tls.Config {
 	return &tls.Config{
-		InsecureSkipVerify: true, //nolint:gosec // G402: Fallback if PIA CA cert fails to parse
-		MinVersion:         tls.VersionTLS12,
+		RootCAs:    piaCertPool,
+		MinVersion: tls.VersionTLS12,
 	}
 }
 
