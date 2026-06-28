@@ -111,7 +111,14 @@ type ConnectionConfig struct {
 	// RelayEnabled controls whether to use relay when direct fails (default: true).
 	RelayEnabled bool `yaml:"relay_enabled" json:"relay_enabled"`
 
-	// RelayViaPeers controls whether to relay through other peers (default: true).
+	// RelayViaPeers controls whether to relay through other peers.
+	//
+	// NOTE: multi-hop peer relaying is NOT yet engaged on the data plane.
+	// Connected peers are not wired into the relay router and intermediate
+	// nodes do not re-forward data-plane traffic on a destination's behalf.
+	// This option therefore defaults to false and Validate() rejects enabling
+	// it until the feature is implemented, to avoid advertising a relay path
+	// that silently drops traffic.
 	RelayViaPeers bool `yaml:"relay_via_peers" json:"relay_via_peers"`
 
 	// ConnectTimeout is the timeout for establishing connections (default: 30s).
@@ -162,9 +169,11 @@ func DefaultConfig() Config {
 			Servers: []TURNServer{},
 		},
 		Connection: ConnectionConfig{
-			DirectConnect:     true,
-			RelayEnabled:      true,
-			RelayViaPeers:     true,
+			DirectConnect: true,
+			RelayEnabled:  true,
+			// Peer relaying is not yet functional on the data plane; keep it
+			// off by default. See the RelayViaPeers field documentation.
+			RelayViaPeers:     false,
 			ConnectTimeout:    30 * time.Second,
 			KeepAliveInterval: 25 * time.Second,
 		},
@@ -230,6 +239,13 @@ func (c *Config) Validate() error {
 
 	if c.Connection.KeepAliveInterval <= 0 {
 		c.Connection.KeepAliveInterval = 25 * time.Second
+	}
+
+	// Peer relaying (multi-hop) is not yet implemented on the data plane.
+	// Reject enabling it rather than silently advertising a relay path that
+	// drops traffic.
+	if c.Connection.RelayViaPeers {
+		return errors.New("mesh: relay_via_peers is not yet supported (multi-hop peer relaying is unimplemented); set it to false")
 	}
 
 	return nil
