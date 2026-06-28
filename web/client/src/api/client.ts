@@ -394,7 +394,12 @@ export const api = {
     }),
   getConfigDefaults: () => fetchJSON<ClientConfig>('/config/defaults'),
   exportConfig: async (format: 'json' | 'yaml' = 'yaml') => {
-    const res = await fetch(`${API_BASE}/config/export?format=${format}`, { method: 'POST' })
+    // X-Requested-With is required by the server's csrfMiddleware for mutating
+    // (POST) requests; without it the export always 403s.
+    const res = await fetch(`${API_BASE}/config/export?format=${format}`, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+    })
     if (!res.ok) throw new APIError(res.status, 'Failed to export config')
     return res.blob()
   },
