@@ -3,6 +3,7 @@ package client
 import (
 	"embed"
 	"io/fs"
+	"log/slog"
 	"mime"
 	"net/http"
 	"path"
@@ -29,7 +30,9 @@ func init() {
 		".webp":        "image/webp",
 		".webmanifest": "application/manifest+json",
 	} {
-		_ = mime.AddExtensionType(ext, ct)
+		if err := mime.AddExtensionType(ext, ct); err != nil {
+			slog.Warn("register mime type", "ext", ext, "error", err)
+		}
 	}
 }
 

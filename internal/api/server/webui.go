@@ -3,6 +3,7 @@ package server
 import (
 	"embed"
 	"io/fs"
+	"log/slog"
 	"mime"
 	"net/http"
 	"path"
@@ -18,15 +19,17 @@ func init() {
 	// our X-Content-Type-Options: nosniff header. Symptom: fonts silently
 	// drop back to system serif. Register the right types up-front.
 	for ext, ct := range map[string]string{
-		".woff2": "font/woff2",
-		".woff":  "font/woff",
-		".ttf":   "font/ttf",
-		".otf":   "font/otf",
-		".ico":   "image/x-icon",
-		".webp":  "image/webp",
+		".woff2":       "font/woff2",
+		".woff":        "font/woff",
+		".ttf":         "font/ttf",
+		".otf":         "font/otf",
+		".ico":         "image/x-icon",
+		".webp":        "image/webp",
 		".webmanifest": "application/manifest+json",
 	} {
-		_ = mime.AddExtensionType(ext, ct)
+		if err := mime.AddExtensionType(ext, ct); err != nil {
+			slog.Warn("register mime type", "ext", ext, "error", err)
+		}
 	}
 }
 
