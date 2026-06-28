@@ -68,6 +68,8 @@ func TestNewStorage(t *testing.T) {
 		{"positive capacity", 100, 100},
 		{"zero capacity", 0, 1000},
 		{"negative capacity", -10, 1000},
+		{"at max capacity", MaxCapacity, MaxCapacity},
+		{"over max capacity clamps", MaxCapacity + 1, MaxCapacity},
 	}
 
 	for _, tt := range tests {
