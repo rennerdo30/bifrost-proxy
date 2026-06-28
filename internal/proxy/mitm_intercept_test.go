@@ -335,6 +335,34 @@ func TestFlattenHeaders(t *testing.T) {
 	assert.Equal(t, "x, y", got["B"])
 }
 
+func TestFlattenHeaders_RedactsSecrets(t *testing.T) {
+	h := http.Header{
+		"Authorization":       {"Bearer super-secret-token"},
+		"Proxy-Authorization": {"Basic dXNlcjpwYXNz"},
+		"Cookie":              {"session=abc123"},
+		"Set-Cookie":          {"session=abc123; HttpOnly"},
+		"X-Api-Key":           {"key-123"},
+		"X-Auth-Token":        {"tok-456"},
+		"Content-Type":        {"application/json"},
+		"Accept":              {"*/*"},
+	}
+	got := flattenHeaders(h)
+
+	for _, k := range []string{"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie", "X-Api-Key", "X-Auth-Token"} {
+		assert.Equal(t, redactedValue, got[k], "header %s must be redacted", k)
+	}
+	// Non-sensitive headers are preserved for debugging.
+	assert.Equal(t, "application/json", got["Content-Type"])
+	assert.Equal(t, "*/*", got["Accept"])
+
+	// No secret value should appear anywhere in the flattened output.
+	for _, secret := range []string{"super-secret-token", "dXNlcjpwYXNz", "abc123", "key-123", "tok-456"} {
+		for k, v := range got {
+			assert.NotContains(t, v, secret, "secret leaked via header %s", k)
+		}
+	}
+}
+
 func TestTruncateForLog(t *testing.T) {
 	small := []byte("abc")
 	assert.Equal(t, small, truncateForLog(small))

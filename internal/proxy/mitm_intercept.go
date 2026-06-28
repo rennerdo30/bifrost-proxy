@@ -227,14 +227,40 @@ func drainBody(body *io.ReadCloser) ([]byte, error) {
 	return data, nil
 }
 
+// redactedHeaders are never logged in clear text. The MITM logger sees fully
+// decrypted traffic, so emitting these would write credentials, bearer/API
+// tokens, or session cookies to the debug log. Keys are in http.Header
+// canonical form (http.CanonicalHeaderKey).
+var redactedHeaders = map[string]bool{
+	"Authorization":        true,
+	"Proxy-Authorization":  true,
+	"Cookie":               true,
+	"Set-Cookie":           true,
+	"Www-Authenticate":     true,
+	"Proxy-Authenticate":   true,
+	"X-Api-Key":            true,
+	"Api-Key":              true,
+	"X-Auth-Token":         true,
+	"X-Csrf-Token":         true,
+	"X-Amz-Security-Token": true,
+}
+
+const redactedValue = "[REDACTED]"
+
 // flattenHeaders converts an http.Header to a single-valued map for logging,
-// joining multi-value headers with ", ".
+// joining multi-value headers with ", ". Sensitive headers (credentials,
+// tokens, cookies) are redacted so secrets are never written to the debug log
+// even though the MITM data path has decrypted them.
 func flattenHeaders(h http.Header) map[string]string {
 	if len(h) == 0 {
 		return nil
 	}
 	out := make(map[string]string, len(h))
 	for k, v := range h {
+		if redactedHeaders[http.CanonicalHeaderKey(k)] {
+			out[k] = redactedValue
+			continue
+		}
 		out[k] = strings.Join(v, ", ")
 	}
 	return out
