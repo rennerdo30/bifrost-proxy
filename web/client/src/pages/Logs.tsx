@@ -103,6 +103,13 @@ export function Logs() {
 
   return (
     <div className="space-y-4">
+      {/* Page description: these are request/traffic debug logs derived from
+          captured proxy traffic, not application-level slog output. */}
+      <p className="text-sm text-bifrost-muted">
+        Request / traffic debug logs (source: traffic_debug). Only Info and Error
+        levels are available.
+      </p>
+
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="relative flex-1 min-w-[200px] max-w-md">
@@ -123,11 +130,11 @@ export function Logs() {
           onChange={(e) => setLevel(e.target.value)}
           className="input w-auto"
         >
+          {/* The backend derives only Info/Error levels from traffic_debug
+              entries, so Warn/Debug filters can never match. */}
           <option value="">All Levels</option>
-          <option value="error">Error</option>
-          <option value="warn">Warning</option>
           <option value="info">Info</option>
-          <option value="debug">Debug</option>
+          <option value="error">Error</option>
         </select>
 
         <button
@@ -226,16 +233,13 @@ export function Logs() {
       {/* Legend */}
       <div className="flex items-center gap-4 text-xs text-bifrost-muted">
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded bg-bifrost-error" /> Error
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded bg-bifrost-warning" /> Warning
-        </span>
-        <span className="flex items-center gap-1">
           <span className="w-2 h-2 rounded bg-bifrost-accent" /> Info
         </span>
         <span className="flex items-center gap-1">
-          <span className="w-2 h-2 rounded bg-bifrost-muted" /> Debug
+          <span className="w-2 h-2 rounded bg-bifrost-error" /> Error
+        </span>
+        <span className="ml-auto">
+          Request / traffic debug logs (source: traffic_debug)
         </span>
       </div>
     </div>

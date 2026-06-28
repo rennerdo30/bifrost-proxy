@@ -863,7 +863,37 @@ func TestMTLSAuthenticator_OptionalCert(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// No certificate in context - should succeed with anonymous
+	// No certificate in context and allow_anonymous is not set. The provider
+	// must NOT fabricate an anonymous success (which would let it bypass later
+	// providers in a chain); it must return ErrAuthSkip so the chain continues.
+	user, err := authenticator.Authenticate(context.Background(), "", "")
+	require.Error(t, err)
+	assert.Nil(t, user)
+	assert.True(t, auth.IsAuthSkip(err), "expected ErrAuthSkip, got %v", err)
+}
+
+func TestMTLSAuthenticator_OptionalCertAllowAnonymous(t *testing.T) {
+	ca := createTestCA(t)
+
+	tmpDir := t.TempDir()
+	caFile := filepath.Join(tmpDir, "ca.crt")
+	err := os.WriteFile(caFile, ca.certPEM, 0644)
+	require.NoError(t, err)
+
+	factory := auth.NewFactory()
+	authenticator, err := factory.Create(auth.ProviderConfig{
+		Name:    "mtls-test",
+		Type:    "mtls",
+		Enabled: true,
+		Config: map[string]any{
+			"ca_cert_file":        caFile,
+			"require_client_cert": false,
+			"allow_anonymous":     true, // explicit opt-in
+		},
+	})
+	require.NoError(t, err)
+
+	// No certificate in context but anonymous is explicitly allowed.
 	user, err := authenticator.Authenticate(context.Background(), "", "")
 	require.NoError(t, err)
 	assert.Equal(t, "anonymous", user.Username)
@@ -2012,4 +2042,108 @@ func TestMTLSAuthenticator_ConcurrentRevocationAccess(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-done
 	}
+}
+
+// ===================
+// Intermediate CA Chain Tests (Finding 3)
+// ===================
+
+// createIntermediateCA creates an intermediate CA certificate signed by the
+// given parent CA. The returned testCA can in turn sign leaf certificates.
+func createIntermediateCA(t *testing.T, parent *testCA, cn string) *testCA {
+	t.Helper()
+
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(time.Now().UnixNano()),
+		Subject:               pkix.Name{CommonName: cn},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth, x509.ExtKeyUsageServerAuth},
+		BasicConstraintsValid: true,
+		MaxPathLenZero:        true,
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, parent.cert, &key.PublicKey, parent.key)
+	require.NoError(t, err)
+
+	cert, err := x509.ParseCertificate(certDER)
+	require.NoError(t, err)
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	return &testCA{cert: cert, key: key, certPEM: certPEM}
+}
+
+func TestMTLSAuthenticator_IntermediateChain(t *testing.T) {
+	root := createTestCA(t)
+	intermediate := createIntermediateCA(t, root, "Test Intermediate CA")
+	// Leaf is issued by the intermediate, not directly by the trusted root.
+	leaf := createTestClientCert(t, intermediate, "chained-user", []string{"engineering"})
+
+	tmpDir := t.TempDir()
+	caFile := filepath.Join(tmpDir, "ca.crt")
+	// Only the root is trusted.
+	require.NoError(t, os.WriteFile(caFile, root.certPEM, 0644))
+
+	factory := auth.NewFactory()
+	authenticator, err := factory.Create(auth.ProviderConfig{
+		Name:    "mtls-test",
+		Type:    "mtls",
+		Enabled: true,
+		Config:  map[string]any{"ca_cert_file": caFile},
+	})
+	require.NoError(t, err)
+
+	// Without the intermediate, verification must fail (unknown authority).
+	ctxLeafOnly := context.WithValue(context.Background(), mtls.ClientCertContextKey, leaf.cert)
+	_, err = authenticator.Authenticate(ctxLeafOnly, "", "")
+	require.Error(t, err, "leaf issued by an intermediate should not verify against root alone")
+
+	// With the full chain (leaf + intermediate) supplied via context, the
+	// intermediate is used to build a path to the trusted root and it succeeds.
+	chain := []*x509.Certificate{leaf.cert, intermediate.cert}
+	ctxChain := context.WithValue(ctxLeafOnly, mtls.ClientCertChainContextKey, chain)
+	user, err := authenticator.Authenticate(ctxChain, "", "")
+	require.NoError(t, err)
+	assert.Equal(t, "chained-user", user.Username)
+}
+
+func TestMTLSAuthenticator_AuthenticateCertificateChain(t *testing.T) {
+	root := createTestCA(t)
+	intermediate := createIntermediateCA(t, root, "Test Intermediate CA")
+	leaf := createTestClientCert(t, intermediate, "direct-chain-user", nil)
+
+	tmpDir := t.TempDir()
+	caFile := filepath.Join(tmpDir, "ca.crt")
+	require.NoError(t, os.WriteFile(caFile, root.certPEM, 0644))
+
+	factory := auth.NewFactory()
+	authIface, err := factory.Create(auth.ProviderConfig{
+		Name:    "mtls-test",
+		Type:    "mtls",
+		Enabled: true,
+		Config:  map[string]any{"ca_cert_file": caFile},
+	})
+	require.NoError(t, err)
+
+	chainAuth, ok := authIface.(*mtls.Authenticator)
+	require.True(t, ok)
+
+	// Leaf alone fails.
+	_, err = chainAuth.AuthenticateCertificate(leaf.cert)
+	require.Error(t, err)
+
+	// Full chain succeeds.
+	user, err := chainAuth.AuthenticateCertificateChain([]*x509.Certificate{leaf.cert, intermediate.cert})
+	require.NoError(t, err)
+	assert.Equal(t, "direct-chain-user", user.Username)
+
+	// Empty chain is an error.
+	_, err = chainAuth.AuthenticateCertificateChain(nil)
+	require.Error(t, err)
 }

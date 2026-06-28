@@ -163,8 +163,32 @@ func (m *Manager) ShouldCache(req *http.Request) bool {
 	}
 
 	// Check if a rule matches
-	rule := m.rules.Match(req)
+	rule := m.snapshot().rules.Match(req)
 	return rule != nil && rule.Enabled
+}
+
+// managerSnapshot is an immutable view of the hot-reloadable manager state,
+// captured atomically under the read lock so request handling never reads
+// fields that Reload may concurrently swap.
+type managerSnapshot struct {
+	rules       *RuleSet
+	keyGen      *KeyGenerator
+	defaultTTL  time.Duration
+	maxFileSize int64
+}
+
+// snapshot returns the current hot-reloadable state under a read lock.
+// Callers must not mutate the returned KeyGenerator; use
+// KeyGenerator.GenerateKeyWithOptions for per-request options.
+func (m *Manager) snapshot() managerSnapshot {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return managerSnapshot{
+		rules:       m.rules,
+		keyGen:      m.keyGen,
+		defaultTTL:  m.defaultTTL,
+		maxFileSize: m.maxFileSize,
+	}
 }
 
 // Get retrieves a cached response for a request.
@@ -174,14 +198,14 @@ func (m *Manager) Get(ctx context.Context, req *http.Request) (*Entry, error) {
 		return nil, ErrNotFound
 	}
 
-	rule := m.rules.Match(req)
+	snap := m.snapshot()
+	rule := snap.rules.Match(req)
 	if rule == nil {
 		return nil, ErrNotFound
 	}
 
-	// Generate cache key
-	m.keyGen.IgnoreQuery = rule.IgnoreQuery
-	key := m.keyGen.GenerateKey(req)
+	// Generate cache key without mutating the shared key generator.
+	key := snap.keyGen.GenerateKeyWithOptions(req, rule.IgnoreQuery)
 
 	entry, err := m.storage.Get(ctx, key)
 	if err != nil {
@@ -218,7 +242,8 @@ func (m *Manager) Put(ctx context.Context, req *http.Request, resp *http.Respons
 	}()
 
 	// Find matching rule
-	rule := m.rules.Match(req)
+	snap := m.snapshot()
+	rule := snap.rules.Match(req)
 	if rule == nil {
 		return nil
 	}
@@ -239,10 +264,10 @@ func (m *Manager) Put(ctx context.Context, req *http.Request, resp *http.Respons
 	// Check content length
 	contentLength := resp.ContentLength
 	if contentLength > 0 {
-		if m.maxFileSize > 0 && contentLength > m.maxFileSize {
+		if snap.maxFileSize > 0 && contentLength > snap.maxFileSize {
 			slog.Debug("content too large for cache",
 				"content_length", contentLength,
-				"max_size", m.maxFileSize,
+				"max_size", snap.maxFileSize,
 			)
 			return nil
 		}
@@ -263,15 +288,14 @@ func (m *Manager) Put(ctx context.Context, req *http.Request, resp *http.Respons
 		}
 	}
 
-	// Generate cache key
-	m.keyGen.IgnoreQuery = rule.IgnoreQuery
-	key := m.keyGen.GenerateKey(req)
+	// Generate cache key without mutating the shared key generator.
+	key := snap.keyGen.GenerateKeyWithOptions(req, rule.IgnoreQuery)
 
 	// Build metadata
 	now := time.Now()
 	ttl := rule.TTL
 	if ttl == 0 {
-		ttl = m.defaultTTL
+		ttl = snap.defaultTTL
 	}
 
 	// Check for Cache-Control max-age if respecting it
@@ -365,9 +389,14 @@ func (m *Manager) Clear(ctx context.Context) error {
 func (m *Manager) Stats() CacheStats {
 	storageStats := m.storage.Stats()
 
+	m.mu.RLock()
+	rules := m.rules
+	cfg := m.config
+	m.mu.RUnlock()
+
 	return CacheStats{
 		Enabled:          m.IsEnabled(),
-		StorageType:      m.config.Storage.Type,
+		StorageType:      cfg.Storage.Type,
 		Entries:          storageStats.Entries,
 		TotalSize:        storageStats.TotalSize,
 		MaxSize:          storageStats.MaxSize,
@@ -376,14 +405,16 @@ func (m *Manager) Stats() CacheStats {
 		MissCount:        storageStats.MissCount,
 		HitRate:          storageStats.HitRate(),
 		EvictionCount:    storageStats.EvictionCount,
-		RulesCount:       len(m.rules.All()),
-		PresetsCount:     len(m.config.Presets),
-		CustomRulesCount: len(m.config.Rules),
+		RulesCount:       len(rules.All()),
+		PresetsCount:     len(cfg.Presets),
+		CustomRulesCount: len(cfg.Rules),
 	}
 }
 
-// Rules returns the rule set.
+// Rules returns the current rule set.
 func (m *Manager) Rules() *RuleSet {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.rules
 }
 
@@ -476,9 +507,10 @@ func (m *Manager) GetKeyGenerator() *KeyGenerator {
 
 // KeyFor generates a cache key for a request.
 func (m *Manager) KeyFor(req *http.Request) string {
-	rule := m.rules.Match(req)
-	if rule != nil {
-		m.keyGen.IgnoreQuery = rule.IgnoreQuery
+	snap := m.snapshot()
+	ignoreQuery := snap.keyGen.IgnoreQuery
+	if rule := snap.rules.Match(req); rule != nil {
+		ignoreQuery = rule.IgnoreQuery
 	}
-	return m.keyGen.GenerateKey(req)
+	return snap.keyGen.GenerateKeyWithOptions(req, ignoreQuery)
 }

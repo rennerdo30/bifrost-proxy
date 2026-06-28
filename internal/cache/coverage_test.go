@@ -472,7 +472,8 @@ func TestDiskStorage_GetMissingDataFile(t *testing.T) {
 	storage.Put(ctx, "missing-data", entry)
 
 	// Manually delete the data file to simulate corruption
-	dataPath := storage.dataFilePath("missing-data")
+	dataPath, pathErr := storage.dataFilePath("missing-data")
+	require.NoError(t, pathErr)
 	os.Remove(dataPath)
 
 	// Get should return ErrNotFound and clean up the index

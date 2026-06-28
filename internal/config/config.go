@@ -10,6 +10,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// MaxRingBufferEntries is an upper sanity bound on operator-configured ring
+// buffer sizes (e.g. debug.max_entries, api.request_log_size). These values
+// size buffers allocated up front; they are trusted operator config rather than
+// untrusted request input, but bounding them keeps worst-case memory
+// predictable and rejects obvious misconfiguration at load time.
+const MaxRingBufferEntries = 1_000_000
+
 // Load reads and parses a configuration file into the given struct.
 func Load(path string, v any) error {
 	data, err := os.ReadFile(path)

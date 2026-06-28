@@ -133,104 +133,6 @@ func TestController_IsAllowed(t *testing.T) {
 	assert.True(t, c.IsAllowed("192.168.1.2"))
 }
 
-func TestController_AddToWhitelist(t *testing.T) {
-	c, err := NewController(Config{})
-	require.NoError(t, err)
-
-	// Initially all IPs allowed
-	assert.True(t, c.IsAllowed("10.0.0.1"))
-
-	// Add to whitelist - now only whitelisted IPs allowed
-	err = c.AddToWhitelist("192.168.0.0/16")
-	require.NoError(t, err)
-
-	assert.True(t, c.IsAllowed("192.168.1.1"))
-	assert.False(t, c.IsAllowed("10.0.0.1"))
-}
-
-func TestController_AddToBlacklist(t *testing.T) {
-	c, err := NewController(Config{})
-	require.NoError(t, err)
-
-	// Initially all IPs allowed
-	assert.True(t, c.IsAllowed("10.0.0.1"))
-
-	// Add to blacklist
-	err = c.AddToBlacklist("10.0.0.1")
-	require.NoError(t, err)
-
-	assert.False(t, c.IsAllowed("10.0.0.1"))
-	assert.True(t, c.IsAllowed("10.0.0.2"))
-}
-
-func TestController_RemoveFromWhitelist(t *testing.T) {
-	c, err := NewController(Config{
-		Whitelist: []string{"192.168.0.0/16", "10.0.0.5"},
-	})
-	require.NoError(t, err)
-
-	// Removing a non-existent entry returns false.
-	require.False(t, c.RemoveFromWhitelist("172.16.0.0/12"))
-
-	// Removing an existing CIDR returns true and stops matching it.
-	require.True(t, c.RemoveFromWhitelist("192.168.0.0/16"))
-	require.False(t, c.IsAllowed("192.168.1.1"))
-	// The remaining whitelist entry still applies.
-	require.True(t, c.IsAllowed("10.0.0.5"))
-
-	// Removing the final whitelist entry disables whitelist enforcement.
-	require.True(t, c.RemoveFromWhitelist("10.0.0.5"))
-	require.Equal(t, 0, c.Stats()["whitelist_entries"])
-	require.True(t, c.IsAllowed("203.0.113.1"))
-}
-
-func TestController_RemoveFromBlacklist(t *testing.T) {
-	c, err := NewController(Config{
-		Blacklist: []string{"10.0.0.1", "192.168.0.0/16"},
-	})
-	require.NoError(t, err)
-
-	// Removing a non-existent entry returns false.
-	require.False(t, c.RemoveFromBlacklist("8.8.8.8"))
-
-	// Removing an existing IP returns true and allows it again.
-	require.True(t, c.RemoveFromBlacklist("10.0.0.1"))
-	require.True(t, c.IsAllowed("10.0.0.1"))
-	// The remaining blacklist entry still blocks.
-	require.False(t, c.IsAllowed("192.168.1.1"))
-
-	require.True(t, c.RemoveFromBlacklist("192.168.0.0/16"))
-	require.Equal(t, 0, c.Stats()["blacklist_entries"])
-}
-
-func TestController_ClearWhitelist(t *testing.T) {
-	c, err := NewController(Config{
-		Whitelist: []string{"192.168.0.0/16"},
-	})
-	require.NoError(t, err)
-
-	// Initially only whitelisted IPs allowed
-	assert.False(t, c.IsAllowed("10.0.0.1"))
-
-	// Clear whitelist - now all IPs allowed
-	c.ClearWhitelist()
-	assert.True(t, c.IsAllowed("10.0.0.1"))
-}
-
-func TestController_ClearBlacklist(t *testing.T) {
-	c, err := NewController(Config{
-		Blacklist: []string{"10.0.0.1"},
-	})
-	require.NoError(t, err)
-
-	// Initially blacklisted IP denied
-	assert.False(t, c.IsAllowed("10.0.0.1"))
-
-	// Clear blacklist - now allowed
-	c.ClearBlacklist()
-	assert.True(t, c.IsAllowed("10.0.0.1"))
-}
-
 func TestController_Stats(t *testing.T) {
 	c, err := NewController(Config{
 		Whitelist: []string{"192.168.0.0/16", "10.0.0.0/8"},
@@ -241,17 +143,6 @@ func TestController_Stats(t *testing.T) {
 	stats := c.Stats()
 	assert.Equal(t, 2, stats["whitelist_entries"])
 	assert.Equal(t, 1, stats["blacklist_entries"])
-}
-
-func TestIPMatcher_Clear(t *testing.T) {
-	m := NewIPMatcher()
-
-	require.NoError(t, m.Add("192.168.1.1"))
-	require.NoError(t, m.Add("10.0.0.0/8"))
-	assert.True(t, m.Match("192.168.1.1"))
-
-	m.Clear()
-	assert.False(t, m.Match("192.168.1.1"))
 }
 
 func TestIPMatcher_Count(t *testing.T) {

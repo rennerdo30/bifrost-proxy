@@ -71,6 +71,41 @@ func (t *ConnectionTracker) Remove(id string) {
 	t.mu.Unlock()
 }
 
+// Get returns a snapshot of the tracked connection and true when it exists.
+func (t *ConnectionTracker) Get(id string) (Connection, bool) {
+	t.mu.RLock()
+	tc, ok := t.connections[id]
+	t.mu.RUnlock()
+	if !ok {
+		return Connection{}, false
+	}
+	conn := tc.conn
+	conn.BytesSent = tc.bytesSent.Load()
+	conn.BytesRecv = tc.bytesRecv.Load()
+	return conn, true
+}
+
+// SetDestination sets the destination host and backend for a tracked
+// connection once they are known (after CONNECT / backend selection). It
+// returns a snapshot of the updated connection and true when the connection is
+// still tracked, or a zero Connection and false otherwise.
+func (t *ConnectionTracker) SetDestination(id, host, backend string) (Connection, bool) {
+	t.mu.Lock()
+	tc, ok := t.connections[id]
+	if !ok {
+		t.mu.Unlock()
+		return Connection{}, false
+	}
+	tc.conn.Host = host
+	tc.conn.Backend = backend
+	snapshot := tc.conn
+	t.mu.Unlock()
+
+	snapshot.BytesSent = tc.bytesSent.Load()
+	snapshot.BytesRecv = tc.bytesRecv.Load()
+	return snapshot, true
+}
+
 // UpdateBytes updates the byte counters for a connection.
 func (t *ConnectionTracker) UpdateBytes(id string, sent, recv int64) {
 	t.mu.RLock()

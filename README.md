@@ -22,7 +22,7 @@ Bifrost is a **production-grade proxy system** designed for high-performance tra
 ### 🚀 Management & Automation
 - **Auto-Updates**: Built-in GitHub-based update mechanism with channel support (stable/prerelease).
 - **Service Management**: Native system service installation for Windows (SCM), macOS (launchd), and Linux (systemd).
-- **System Proxy**: OS-level proxy configuration (Windows supported).
+- **System Proxy**: OS-level proxy configuration on Windows (registry/WinINET), macOS (`networksetup`), and Linux/GNOME (`gsettings`). On unsupported desktops it returns `ErrNotSupported` rather than silently succeeding.
 
 ### 🔍 Reliability & Observability
 - **Intelligent Routing**: Route traffic through different backends based on sophisticated domain patterns.
@@ -122,7 +122,7 @@ Explore our comprehensive guides for advanced setups:
 - ⚙️ [Configuration Guide](docs/src/content/docs/configuration.mdx)
 - 🔒 [Authentication Modes](docs/src/content/docs/authentication.mdx)
 - 🌐 [VPN & Split Tunneling](docs/src/content/docs/vpn-mode.mdx)
-- 📊 [API Reference](docs/src/content/docs/api.mdx)
+- 📊 [API Reference](docs/src/content/docs/api/index.mdx)
 
 ---
 

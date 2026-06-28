@@ -262,9 +262,18 @@ func TestLookupPeerByKey(t *testing.T) {
 	pm, err := NewP2PManager(config)
 	require.NoError(t, err)
 
-	// Currently returns empty string
+	// Unregistered key resolves to empty string.
 	peerID := pm.lookupPeerByKey([]byte{1, 2, 3})
 	assert.Empty(t, peerID)
+
+	// After registration the real peer ID is returned.
+	key, err := GenerateKeyPair()
+	require.NoError(t, err)
+	pm.RegisterPeerKey(key.PublicKey[:], "remote-peer")
+	assert.Equal(t, "remote-peer", pm.lookupPeerByKey(key.PublicKey[:]))
+
+	pm.UnregisterPeerKey(key.PublicKey[:])
+	assert.Empty(t, pm.lookupPeerByKey(key.PublicKey[:]))
 }
 
 // mockConnection implements P2PConnection for testing

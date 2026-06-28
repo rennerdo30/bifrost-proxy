@@ -32,6 +32,47 @@ func TestConnectionTracker_Remove(t *testing.T) {
 	assert.Equal(t, 0, ct.Count())
 }
 
+func TestConnectionTracker_SetDestination(t *testing.T) {
+	ct := NewConnectionTracker()
+
+	id := ct.Add("192.168.1.100", "12345", "", "", "HTTP")
+	ct.UpdateBytes(id, 10, 20)
+
+	snap, ok := ct.SetDestination(id, "example.com:443", "default")
+	require.True(t, ok)
+	assert.Equal(t, "example.com:443", snap.Host)
+	assert.Equal(t, "default", snap.Backend)
+	assert.Equal(t, int64(10), snap.BytesSent)
+	assert.Equal(t, int64(20), snap.BytesRecv)
+
+	// The change is persisted in the tracker.
+	got, ok := ct.Get(id)
+	require.True(t, ok)
+	assert.Equal(t, "example.com:443", got.Host)
+	assert.Equal(t, "default", got.Backend)
+
+	// Unknown ID returns false and a zero connection.
+	zero, ok := ct.SetDestination("missing", "h", "b")
+	assert.False(t, ok)
+	assert.Equal(t, Connection{}, zero)
+}
+
+func TestConnectionTracker_Get(t *testing.T) {
+	ct := NewConnectionTracker()
+
+	_, ok := ct.Get("missing")
+	assert.False(t, ok)
+
+	id := ct.Add("192.168.1.100", "12345", "example.com:443", "default", "HTTP")
+	ct.UpdateBytes(id, 5, 7)
+
+	got, ok := ct.Get(id)
+	require.True(t, ok)
+	assert.Equal(t, "192.168.1.100", got.ClientIP)
+	assert.Equal(t, int64(5), got.BytesSent)
+	assert.Equal(t, int64(7), got.BytesRecv)
+}
+
 func TestConnectionTracker_GetAll(t *testing.T) {
 	ct := NewConnectionTracker()
 

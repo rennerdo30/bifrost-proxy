@@ -647,6 +647,27 @@ func TestClientConfigValidation_NegativeMaxEntries(t *testing.T) {
 	assert.Contains(t, err.Error(), "max_entries must be non-negative")
 }
 
+func TestClientConfigValidation_MaxEntriesUpperBound(t *testing.T) {
+	cfg := ClientConfig{
+		Proxy: ClientProxySettings{
+			HTTP: ListenerConfig{Listen: "127.0.0.1:7380"},
+		},
+		Server: ServerConnection{
+			Address: "proxy.example.com:7080",
+		},
+		Debug: DebugConfig{
+			MaxEntries: MaxRingBufferEntries + 1,
+		},
+	}
+
+	err := cfg.Validate()
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must not exceed")
+
+	cfg.Debug.MaxEntries = MaxRingBufferEntries
+	assert.NoError(t, cfg.Validate())
+}
+
 func TestClientConfigValidation_RouteWithoutAction(t *testing.T) {
 	cfg := ClientConfig{
 		Proxy: ClientProxySettings{

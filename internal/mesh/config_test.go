@@ -39,7 +39,8 @@ func TestDefaultConfig(t *testing.T) {
 	// Connection defaults
 	assert.True(t, config.Connection.DirectConnect)
 	assert.True(t, config.Connection.RelayEnabled)
-	assert.True(t, config.Connection.RelayViaPeers)
+	// Peer relaying is not yet functional on the data plane; off by default.
+	assert.False(t, config.Connection.RelayViaPeers)
 	assert.Equal(t, 30*time.Second, config.Connection.ConnectTimeout)
 	assert.Equal(t, 25*time.Second, config.Connection.KeepAliveInterval)
 
@@ -193,6 +194,18 @@ func TestConfigValidate(t *testing.T) {
 		err := config.Validate()
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "discovery server is required")
+	})
+
+	t.Run("relay_via_peers rejected", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Enabled = true
+		config.NetworkID = "test-network"
+		config.Discovery.Server = "localhost:7080"
+		config.Connection.RelayViaPeers = true
+
+		err := config.Validate()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "relay_via_peers is not yet supported")
 	})
 
 	t.Run("heartbeat interval zero gets default", func(t *testing.T) {

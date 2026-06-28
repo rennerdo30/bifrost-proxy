@@ -11,7 +11,7 @@ import (
 // IPMatcher matches IP addresses against a list of IPs and CIDR ranges.
 type IPMatcher struct {
 	ips   map[string]bool
-	cidrs map[string]*net.IPNet // keyed by the canonical CIDR string for removal
+	cidrs map[string]*net.IPNet // keyed by the canonical CIDR string
 	mu    sync.RWMutex
 }
 
@@ -52,45 +52,6 @@ func (m *IPMatcher) Add(entry string) error {
 	return nil
 }
 
-// Remove removes an IP or CIDR range from the matcher.
-// It returns true if an entry was removed, false if no matching entry existed
-// or the entry was invalid.
-func (m *IPMatcher) Remove(entry string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	entry = strings.TrimSpace(entry)
-	if entry == "" {
-		return false
-	}
-
-	// CIDR removal
-	if strings.Contains(entry, "/") {
-		_, ipNet, err := net.ParseCIDR(entry)
-		if err != nil {
-			return false
-		}
-		key := ipNet.String()
-		if _, ok := m.cidrs[key]; ok {
-			delete(m.cidrs, key)
-			return true
-		}
-		return false
-	}
-
-	// IP removal
-	ip := net.ParseIP(entry)
-	if ip == nil {
-		return false
-	}
-	key := ip.String()
-	if m.ips[key] {
-		delete(m.ips, key)
-		return true
-	}
-	return false
-}
-
 // AddAll adds multiple entries.
 func (m *IPMatcher) AddAll(entries []string) error {
 	for _, entry := range entries {
@@ -124,14 +85,6 @@ func (m *IPMatcher) Match(ipStr string) bool {
 	}
 
 	return false
-}
-
-// Clear removes all entries.
-func (m *IPMatcher) Clear() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.ips = make(map[string]bool)
-	m.cidrs = make(map[string]*net.IPNet)
 }
 
 // Count returns the number of entries.

@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -31,6 +32,16 @@ type P2PManager struct {
 	connections map[string]P2PConnection
 	endpoints   map[string][]netip.AddrPort
 	callbacks   ManagerCallbacks
+
+	// pendingConns maps a remote endpoint to a DirectConnection that is still
+	// performing its handshake, so the manager can route handshake response
+	// datagrams to it before it is registered in connections.
+	pendingConns map[netip.AddrPort]*DirectConnection
+
+	// keyToPeer maps a base64-encoded remote public key to its peer ID. It is
+	// populated via RegisterPeerKey from discovery so that NAT-traversed inbound
+	// connections resolve to the real peer ID instead of a synthetic one.
+	keyToPeer map[string]string
 
 	conn   net.PacketConn
 	ctx    context.Context
@@ -131,6 +142,8 @@ func NewP2PManager(config ManagerConfig) (*P2PManager, error) {
 		localKeyPair: keyPair,
 		connections:  make(map[string]P2PConnection),
 		endpoints:    make(map[string][]netip.AddrPort),
+		pendingConns: make(map[netip.AddrPort]*DirectConnection),
+		keyToPeer:    make(map[string]string),
 		ctx:          ctx,
 		cancel:       cancel,
 	}
@@ -236,6 +249,9 @@ func (pm *P2PManager) Connect(ctx context.Context, peerID string, remotePublicKe
 			pm.connections[peerID] = conn
 			pm.mu.Unlock()
 
+			// Now that the connection is registered, drop its pending entry.
+			pm.finalizePending(conn)
+
 			if pm.callbacks.OnPeerConnected != nil {
 				pm.callbacks.OnPeerConnected(peerID, conn)
 			}
@@ -284,18 +300,58 @@ func (pm *P2PManager) tryDirectConnect(ctx context.Context, peerID string, remot
 			continue
 		}
 
+		// Deliver decrypted plaintext through the manager's OnData callback.
+		conn.SetOnData(pm.deliverPlaintext)
+
+		// Register as pending so the manager routes handshake datagrams to it.
+		pm.mu.Lock()
+		pm.pendingConns[endpoint] = conn
+		pm.mu.Unlock()
+
 		connectCtx, cancel := context.WithTimeout(ctx, pm.config.ConnectTimeout)
 		err = conn.Connect(connectCtx)
 		cancel()
 
 		if err == nil {
+			// Leave the connection registered as pending until the caller stores
+			// it in connections; this closes the race window where an inbound
+			// datagram arrives after the handshake but before registration. The
+			// caller removes the pending entry via finalizePending.
 			return conn, nil
 		}
+
+		pm.mu.Lock()
+		delete(pm.pendingConns, endpoint)
+		pm.mu.Unlock()
 
 		conn.Close()
 	}
 
 	return nil, ErrNoEndpoints
+}
+
+// finalizePending removes a successfully connected DirectConnection from the
+// pending set once it has been registered in connections, so inbound datagrams
+// are routed via the connections map going forward.
+func (pm *P2PManager) finalizePending(conn P2PConnection) {
+	dc, ok := conn.(*DirectConnection)
+	if !ok {
+		return
+	}
+	pm.mu.Lock()
+	delete(pm.pendingConns, dc.remoteAddr)
+	pm.mu.Unlock()
+}
+
+// deliverPlaintext forwards a decrypted payload to the OnData callback.
+func (pm *P2PManager) deliverPlaintext(peerID string, plaintext []byte) {
+	pm.mu.RLock()
+	cb := pm.callbacks.OnData
+	pm.mu.RUnlock()
+
+	if cb != nil {
+		cb(peerID, plaintext)
+	}
 }
 
 // tryRelayConnect attempts a relayed connection.
@@ -308,7 +364,18 @@ func (pm *P2PManager) tryRelayConnect(ctx context.Context, peerID string, remote
 		KeepAliveInterval: pm.config.KeepAliveInterval,
 	}
 
-	return pm.relayManager.CreateRelayedConnection(ctx, config)
+	conn, err := pm.relayManager.CreateRelayedConnection(ctx, config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wire decrypted plaintext from relayed connections through OnData so they
+	// surface inbound data the same way direct connections do.
+	if rc, ok := conn.(*RelayedConnection); ok {
+		rc.SetOnData(pm.deliverPlaintext)
+	}
+
+	return conn, nil
 }
 
 // Disconnect disconnects from a peer.
@@ -457,6 +524,10 @@ func (pm *P2PManager) receiveWorker() {
 				break
 			}
 		}
+		var conn P2PConnection
+		if foundPeerID != "" {
+			conn = pm.connections[foundPeerID]
+		}
 		pm.mu.RUnlock()
 
 		if foundPeerID == "" {
@@ -465,8 +536,31 @@ func (pm *P2PManager) receiveWorker() {
 			continue
 		}
 
-		// Dispatch to connection handler
-		pm.handleData(foundPeerID, buf[:n])
+		// Route the raw datagram into the owning connection so that connection's
+		// recvWorker (or handshake) decrypts it. This keeps the manager as the
+		// sole reader of the shared socket and avoids a dual-reader race.
+		if dc, ok := conn.(*DirectConnection); ok {
+			dc.deliverDatagram(buf[:n])
+			continue
+		}
+
+		// Connection not yet stored (e.g. a handshake response arriving while
+		// Connect() is still in flight). Route to any pending connection waiting
+		// on this endpoint.
+		pm.routePendingDatagram(fromAddr, buf[:n])
+	}
+}
+
+// routePendingDatagram delivers a datagram to a connection that is still
+// establishing (registered in pendingConns by endpoint) so its handshake can
+// proceed without reading the shared socket directly.
+func (pm *P2PManager) routePendingDatagram(from netip.AddrPort, data []byte) {
+	pm.mu.RLock()
+	dc := pm.pendingConns[from]
+	pm.mu.RUnlock()
+
+	if dc != nil {
+		dc.deliverDatagram(data)
 	}
 }
 
@@ -538,7 +632,7 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 	}
 
 	// Create incoming connection
-	conn := newIncomingConnection(config, pm.conn, from, crypto)
+	conn := newIncomingConnection(config, pm.conn, from, crypto, pm.deliverPlaintext)
 
 	// Store connection atomically - re-check under write lock to prevent race
 	pm.mu.Lock()
@@ -559,19 +653,44 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 	slog.Info("incoming connection established", "peer_id", peerID, "from", from.String())
 }
 
-// lookupPeerByKey looks up a peer ID by their public key.
-func (pm *P2PManager) lookupPeerByKey(_ []byte) string {
+// RegisterPeerKey associates a remote peer's public key with its peer ID so
+// that inbound NAT-traversed connections can be resolved to the real peer ID.
+// It is typically called from discovery as peers are learned.
+func (pm *P2PManager) RegisterPeerKey(publicKey []byte, peerID string) {
+	if len(publicKey) == 0 || peerID == "" {
+		return
+	}
+	key := base64.StdEncoding.EncodeToString(publicKey)
+	pm.mu.Lock()
+	pm.keyToPeer[key] = peerID
+	pm.mu.Unlock()
+}
+
+// UnregisterPeerKey removes a public-key-to-peer-ID mapping.
+func (pm *P2PManager) UnregisterPeerKey(publicKey []byte) {
+	if len(publicKey) == 0 {
+		return
+	}
+	key := base64.StdEncoding.EncodeToString(publicKey)
+	pm.mu.Lock()
+	delete(pm.keyToPeer, key)
+	pm.mu.Unlock()
+}
+
+// lookupPeerByKey looks up a peer ID by their public key, using the registry
+// populated from discovery via RegisterPeerKey.
+func (pm *P2PManager) lookupPeerByKey(publicKey []byte) string {
+	if len(publicKey) == 0 {
+		return ""
+	}
+	key := base64.StdEncoding.EncodeToString(publicKey)
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-
-	// Check known endpoints to find matching peer
-	// This would typically involve a separate registry mapping public keys to peer IDs
-	// For now, we rely on the connection being pre-registered
-	return ""
+	return pm.keyToPeer[key]
 }
 
 // newIncomingConnection creates a connection for an incoming request.
-func newIncomingConnection(config ConnectionConfig, conn net.PacketConn, remoteAddr netip.AddrPort, crypto *CryptoSession) *DirectConnection {
+func newIncomingConnection(config ConnectionConfig, conn net.PacketConn, remoteAddr netip.AddrPort, crypto *CryptoSession, onData func(peerID string, plaintext []byte)) *DirectConnection {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	localUDPAddr := conn.LocalAddr().(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
@@ -581,15 +700,18 @@ func newIncomingConnection(config ConnectionConfig, conn net.PacketConn, remoteA
 	)
 
 	dc := &DirectConnection{
-		config:     config,
-		conn:       conn,
-		remoteAddr: remoteAddr,
-		localAddr:  localAddr,
-		crypto:     crypto,
-		sendQueue:  make(chan []byte, 256),
-		recvQueue:  make(chan []byte, 256),
-		ctx:        ctx,
-		cancel:     cancel,
+		config:           config,
+		conn:             conn,
+		remoteAddr:       remoteAddr,
+		localAddr:        localAddr,
+		crypto:           crypto,
+		sendQueue:        make(chan []byte, 256),
+		recvQueue:        make(chan []byte, 256),
+		inbound:          make(chan []byte, 256),
+		handshakeInbound: make(chan []byte, 8),
+		onData:           onData,
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	dc.state.Store(int32(ConnectionStateConnected))
@@ -601,13 +723,6 @@ func newIncomingConnection(config ConnectionConfig, conn net.PacketConn, remoteA
 	go dc.keepAliveWorker()
 
 	return dc
-}
-
-// handleData handles incoming data for a peer.
-func (pm *P2PManager) handleData(peerID string, data []byte) {
-	if pm.callbacks.OnData != nil {
-		pm.callbacks.OnData(peerID, data)
-	}
 }
 
 // connectionMonitor monitors connection health.

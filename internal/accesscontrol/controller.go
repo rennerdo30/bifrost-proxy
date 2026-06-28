@@ -86,56 +86,11 @@ func (c *Controller) IsAllowed(ip string) bool {
 	return c.Check(ip).Action == ActionAllow
 }
 
-// AddToWhitelist adds an IP or CIDR to the whitelist.
-func (c *Controller) AddToWhitelist(entry string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.useWhitelist = true
-	return c.whitelist.Add(entry)
-}
-
-// AddToBlacklist adds an IP or CIDR to the blacklist.
-func (c *Controller) AddToBlacklist(entry string) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.blacklist.Add(entry)
-}
-
-// RemoveFromWhitelist removes an entry from the whitelist.
-// It returns true if the entry was present and removed. When the last whitelist
-// entry is removed, whitelist enforcement is disabled.
-func (c *Controller) RemoveFromWhitelist(entry string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	removed := c.whitelist.Remove(entry)
-	if c.whitelist.Count() == 0 {
-		c.useWhitelist = false
-	}
-	return removed
-}
-
-// RemoveFromBlacklist removes an entry from the blacklist.
-// It returns true if the entry was present and removed.
-func (c *Controller) RemoveFromBlacklist(entry string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.blacklist.Remove(entry)
-}
-
-// ClearWhitelist clears all whitelist entries.
-func (c *Controller) ClearWhitelist() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.whitelist.Clear()
-	c.useWhitelist = false
-}
-
-// ClearBlacklist clears all blacklist entries.
-func (c *Controller) ClearBlacklist() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.blacklist.Clear()
-}
+// Access control is config-only: the whitelist and blacklist are populated from
+// configuration at construction (NewController) and reloaded by recreating the
+// controller. There is intentionally no runtime add/remove/clear mutation API —
+// changes flow exclusively through config reload to keep the in-memory state a
+// faithful, auditable mirror of the configured policy.
 
 // Stats returns access control statistics.
 func (c *Controller) Stats() map[string]int {

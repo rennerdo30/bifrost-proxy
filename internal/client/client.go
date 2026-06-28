@@ -756,9 +756,11 @@ func (c *Client) startTray(ctx context.Context) {
 	t := tray.New(tray.Config{
 		OnConnect: func() {
 			c.setSystemProxyEnabled(true)
+			c.notify("Connected")
 		},
 		OnDisconnect: func() {
 			c.setSystemProxyEnabled(false)
+			c.notify("Disconnected")
 		},
 		OnOpenUI: func() {
 			c.openUI()
@@ -779,6 +781,26 @@ func (c *Client) startTray(ctx context.Context) {
 
 	go t.Run(ctx)
 }
+
+// notify shows a desktop notification via the tray, but only when the user has
+// enabled notifications in the tray settings. It is a no-op when notifications
+// are disabled or the tray is unavailable.
+func (c *Client) notify(message string) {
+	c.mu.RLock()
+	enabled := c.config.Tray.ShowNotifications
+	t := c.tray
+	c.mu.RUnlock()
+
+	if !enabled || t == nil {
+		return
+	}
+	if err := t.Notify(notifyTitle, message); err != nil {
+		logging.Warn("Failed to send desktop notification", "error", err)
+	}
+}
+
+// notifyTitle is the fixed title for desktop notifications.
+const notifyTitle = "Bifrost"
 
 func (c *Client) openUI() {
 	url := c.uiURL()

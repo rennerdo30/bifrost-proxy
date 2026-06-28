@@ -340,6 +340,11 @@ func (f *Factory) createNordVPN(cfg config.BackendConfig) (Backend, error) {
 		}
 	}
 
+	if v, ok := cfg.Config["leak_proof_routing"].(bool); ok {
+		nordCfg.LeakProofRouting = v
+	}
+
+	nordCfg.Network = f.network
 	return NewNordVPNBackend(nordCfg), nil
 }
 
@@ -388,6 +393,12 @@ func (f *Factory) createMullvad(cfg config.BackendConfig) (Backend, error) {
 			}
 		}
 	}
+
+	if v, ok := cfg.Config["leak_proof_routing"].(bool); ok {
+		mullvadCfg.LeakProofRouting = v
+	}
+
+	mullvadCfg.Network = f.network
 
 	// Create Mullvad client with account ID
 	client, err := mullvad.NewClient(mullvadCfg.AccountID)
@@ -454,6 +465,11 @@ func (f *Factory) createPIA(cfg config.BackendConfig) (Backend, error) {
 		}
 	}
 
+	if v, ok := cfg.Config["leak_proof_routing"].(bool); ok {
+		piaCfg.LeakProofRouting = v
+	}
+
+	piaCfg.Network = f.network
 	return NewPIABackend(piaCfg), nil
 }
 
@@ -520,6 +536,12 @@ func (f *Factory) createProtonVPN(cfg config.BackendConfig) (Backend, error) {
 			}
 		}
 	}
+
+	if v, ok := cfg.Config["leak_proof_routing"].(bool); ok {
+		protonCfg.LeakProofRouting = v
+	}
+
+	protonCfg.Network = f.network
 
 	// Validate protocol/auth-mode combinations.
 	protocol := protonCfg.Protocol

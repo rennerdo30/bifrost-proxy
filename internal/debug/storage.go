@@ -13,11 +13,24 @@ type Storage struct {
 	mu       sync.RWMutex
 }
 
+// MaxCapacity is an upper sanity bound on the ring buffer capacity to cap
+// worst-case memory use even from a misconfigured value.
+const MaxCapacity = 1_000_000
+
 // NewStorage creates a new storage with the given capacity.
+//
+// The capacity originates from operator configuration (DebugConfig.MaxEntries),
+// not from untrusted request data, so the single up-front allocation below is
+// bounded by trusted config. It is additionally clamped to [1, MaxCapacity] to
+// keep worst-case memory predictable even if config validation is bypassed.
 func NewStorage(capacity int) *Storage {
 	if capacity <= 0 {
 		capacity = 1000
 	}
+	if capacity > MaxCapacity {
+		capacity = MaxCapacity
+	}
+	// capacity is operator-config (not request-controlled) and clamped above.
 	return &Storage{
 		entries:  make([]Entry, capacity),
 		capacity: capacity,

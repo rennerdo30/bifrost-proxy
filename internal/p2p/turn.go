@@ -3,6 +3,7 @@ package p2p
 import (
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha1" //nolint:gosec // G505: SHA1 is required by RFC 5766 (TURN) for MESSAGE-INTEGRITY attribute
 	"encoding/binary"
 	"errors"
@@ -594,9 +595,12 @@ func resolveTURNServer(server string) (*net.UDPAddr, error) {
 }
 
 func generateTransactionID() []byte {
+	// RFC 5389 requires a cryptographically random 96-bit transaction ID.
 	id := make([]byte, 12)
-	for i := 0; i < 12; i++ {
-		id[i] = byte(time.Now().UnixNano() >> (i * 8))
+	if _, err := rand.Read(id); err != nil {
+		// crypto/rand should not fail; if it does, surface it loudly rather than
+		// silently emitting a predictable transaction ID.
+		panic(fmt.Sprintf("turn: failed to generate transaction ID: %v", err))
 	}
 	return id
 }

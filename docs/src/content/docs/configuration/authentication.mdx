@@ -14,7 +14,7 @@ Enterprise environments often require integration with existing identity infrast
 | Method | Use Case | Protocol |
 |--------|----------|----------|
 | **Kerberos** | Active Directory SSO, Unix realms | GSSAPI/SPNEGO |
-| **NTLM** | Legacy Windows authentication | HTTP Negotiate |
+| **NTLM** | _Not functional — fails closed (see below)_ | HTTP Negotiate |
 | **mTLS** | Certificate-based authentication | TLS 1.2/1.3 |
 | **SPNEGO** | HTTP Negotiate wrapper for Kerberos/NTLM | HTTP headers |
 
@@ -366,184 +366,23 @@ auth:
 
 ## NTLM Authentication
 
-NTLM (NT LAN Manager) is a legacy Windows authentication protocol. While Kerberos is preferred, NTLM serves as a fallback when Kerberos is unavailable.
-
-> **Security Note**: NTLM is considered legacy and has known security weaknesses. Use Kerberos when possible. NTLM should only be enabled for compatibility with older systems.
-
-### How NTLM Works
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Proxy as Bifrost Proxy
-    participant DC as Domain Controller
-
-    Client->>Proxy: Request (no auth)
-    Proxy-->>Client: 407 Proxy-Authenticate: NTLM
-
-    Note over Client,Proxy: Type 1 (Negotiate)
-    Client->>Proxy: Type 1 message (capabilities)
-    Proxy-->>Client: Type 2 message (challenge)
-
-    Note over Client,Proxy: Type 3 (Authenticate)
-    Client->>Proxy: Type 3 message (response + credentials)
-    Proxy->>DC: Validate credentials (optional)
-    Proxy-->>Client: 200 OK (authenticated)
-```
-
-### Configuration
-
-```yaml
-auth:
-  mode: ntlm
-  ntlm:
-    # Default Windows domain
-    domain: "EXAMPLE"
-
-    # Allowed domains (optional - allows all if empty)
-    allowed_domains:
-      - "EXAMPLE"
-      - "CORP"
-
-    # Username transformations
-    strip_domain: true           # Remove DOMAIN\ from username
-    username_to_lowercase: true  # Convert username to lowercase
-
-    # Challenge generation secret (auto-generated if not specified)
-    # server_challenge_secret: "${NTLM_SECRET}"
-```
-
-### Configuration Options
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `domain` | string | - | Default Windows domain |
-| `allowed_domains` | []string | - | Restrict to specific domains |
-| `strip_domain` | bool | `true` | Remove DOMAIN\ prefix |
-| `username_to_lowercase` | bool | `true` | Lowercase the username |
-| `server_challenge_secret` | string | auto | Secret for challenge generation |
-
-### Client Configuration
-
-NTLM authentication typically works automatically with Windows clients when the proxy is in the Intranet zone.
-
-#### Windows Automatic Authentication
-
-The proxy URL must be in the Intranet zone:
-1. Open Internet Options > Security > Local Intranet > Sites
-2. Add `proxy.example.com`
-3. Enable "Automatic logon only in Intranet zone"
-
-#### curl with NTLM
-
-```bash
-# Using NTLM explicitly
-curl --proxy-ntlm -U "DOMAIN\\user:password" \
-    -x http://proxy.example.com:7080 \
-    http://example.com
-
-# Using Negotiate (tries Kerberos first, falls back to NTLM)
-curl --negotiate -u : \
-    -x http://proxy.example.com:7080 \
-    http://example.com
-```
-
-#### Python with NTLM
-
-```python
-import requests
-from requests_ntlm import HttpNtlmAuth
-
-proxies = {
-    "http": "http://proxy.example.com:7080",
-}
-
-response = requests.get(
-    "http://example.com",
-    proxies=proxies,
-    auth=HttpNtlmAuth("DOMAIN\\user", "password")
-)
-```
-
-### Integration Example: Mixed Kerberos/NTLM Environment
-
-Support both Kerberos (preferred) and NTLM (fallback):
-
-```yaml
-auth:
-  mode: negotiate
-  negotiate:
-    # Try Kerberos first
-    prefer_kerberos: true
-    # Fall back to NTLM if Kerberos fails
-    allow_ntlm: true
-    # Challenge timeout for NTLM handshake
-    challenge_timeout: "5m"
-    realm: "Bifrost Proxy"
-
-    # Kerberos configuration
-    kerberos:
-      keytab_file: "/etc/bifrost/server.keytab"
-      service_principal: "HTTP/proxy.example.com"
-      realm: "EXAMPLE.COM"
-
-    # NTLM configuration
-    ntlm:
-      domain: "EXAMPLE"
-      allowed_domains:
-        - "EXAMPLE"
-```
-
-### Troubleshooting NTLM
-
-#### Error: "NTLM requires challenge-response authentication"
-
-**Cause**: Direct username/password authentication attempted instead of NTLM handshake.
-
-**Solution**: Use the Negotiate handler with NTLM support:
-
-```yaml
-auth:
-  mode: negotiate
-  negotiate:
-    allow_ntlm: true
-    ntlm:
-      domain: "EXAMPLE"
-```
-
-#### Error: "No challenge found for session"
-
-**Cause**: NTLM Type 3 message received without prior Type 1/Type 2 exchange.
-
-**Solutions**:
-1. Ensure client maintains connection during NTLM handshake
-2. Check for HTTP keep-alive issues
-3. Increase `challenge_timeout` if network is slow
-
-#### Error: "Domain not allowed"
-
-**Cause**: Client is authenticating from an unlisted domain.
-
-**Solution**: Add the domain to `allowed_domains`:
-
-```yaml
-ntlm:
-  allowed_domains:
-    - "EXAMPLE"
-    - "TRUSTEDPARTNER"
-```
-
-#### NTLM authentication loops (repeated 407s)
-
-**Causes**:
-1. Client not in Intranet zone
-2. Credential cache issues
-3. Proxy address mismatch
-
-**Solutions**:
-1. Add proxy to Intranet sites in Internet Options
-2. Clear Windows credential cache: `rundll32.exe keymgr.dll KRKeymgr`
-3. Verify proxy address matches client configuration exactly
+> **Not functional — unsupported, fails closed by design.**
+>
+> NTLM (NT LAN Manager) is a legacy Windows authentication protocol. Bifrost
+> ships an NTLM message parser but **cannot verify NTLM responses**: it has no
+> credential source (NT-hash/password store or domain-controller pass-through)
+> against which to recompute and constant-time-compare the client's Type 3
+> response. Accepting an unverified, attacker-supplied Type 3 message would be
+> an authentication bypass, so the plugin **rejects every login** with an
+> "NTLM response verification is not supported" error.
+>
+> There is **no working NTLM configuration**. The previously documented keys
+> (`server_challenge_secret`, `use_domain_controller`, `domain_controller`, and
+> the `negotiate` mode with `allow_ntlm`) either never existed or do not enable a
+> working flow. Do not rely on NTLM for access.
+>
+> **Use Kerberos, `native`, `ldap`, or `oauth` instead.** Kerberos is the
+> recommended replacement for Windows domain SSO.
 
 ---
 

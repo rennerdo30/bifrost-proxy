@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -170,7 +171,11 @@ func (d *DiskStorage) Get(ctx context.Context, key string) (*Entry, error) {
 	}
 
 	// Open data file
-	dataPath := d.dataFilePath(key)
+	dataPath, err := d.dataFilePath(key)
+	if err != nil {
+		d.stats.missCount.Add(1)
+		return nil, err
+	}
 	file, err := os.Open(dataPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -197,6 +202,9 @@ func (d *DiskStorage) Put(ctx context.Context, key string, entry *Entry) error {
 	if entry == nil || entry.Metadata == nil {
 		return ErrInvalidKey
 	}
+	if !IsPathSafeKey(key) {
+		return fmt.Errorf("%w: %q", ErrInvalidKey, truncateKey(key))
+	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -211,10 +219,13 @@ func (d *DiskStorage) Put(ctx context.Context, key string, entry *Entry) error {
 	}
 
 	// Create temp file for writing
-	dataPath := d.dataFilePath(key)
+	dataPath, err := d.dataFilePath(key)
+	if err != nil {
+		return err
+	}
 	shardDir := filepath.Dir(dataPath)
-	if err := os.MkdirAll(shardDir, 0755); err != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
-		return fmt.Errorf("failed to create shard directory: %w", err)
+	if mkErr := os.MkdirAll(shardDir, 0755); mkErr != nil { //nolint:gosec // G301: Cache directory permissions are appropriate
+		return fmt.Errorf("failed to create shard directory: %w", mkErr)
 	}
 
 	tempFile, err := os.CreateTemp(shardDir, ".cache-*")
@@ -350,8 +361,11 @@ func (d *DiskStorage) GetRange(ctx context.Context, key string, start, end int64
 		return nil, ErrNotFound
 	}
 
-	dataPath := d.dataFilePath(key)
+	dataPath, err := d.dataFilePath(key)
 	d.mu.RUnlock()
+	if err != nil {
+		return nil, err
+	}
 
 	file, err := os.Open(dataPath)
 	if err != nil {
@@ -470,15 +484,35 @@ func (d *DiskStorage) Stats() StorageStats {
 }
 
 // dataFilePath returns the path for a cache entry's data file.
-func (d *DiskStorage) dataFilePath(key string) string {
-	shard := d.shardForKey(key)
-	return filepath.Join(d.dataPath, shard, key+".dat")
+// It returns an error if the key is not a safe filesystem identifier.
+func (d *DiskStorage) dataFilePath(key string) (string, error) {
+	if !IsPathSafeKey(key) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidKey, truncateKey(key))
+	}
+	return d.safeChildPath(d.shardForKey(key), key+".dat")
 }
 
 // metaFilePath returns the path for a cache entry's metadata file.
-func (d *DiskStorage) metaFilePath(key string) string {
-	shard := d.shardForKey(key)
-	return filepath.Join(d.dataPath, shard, key+".meta")
+// It returns an error if the key is not a safe filesystem identifier.
+func (d *DiskStorage) metaFilePath(key string) (string, error) {
+	if !IsPathSafeKey(key) {
+		return "", fmt.Errorf("%w: %q", ErrInvalidKey, truncateKey(key))
+	}
+	return d.safeChildPath(d.shardForKey(key), key+".meta")
+}
+
+// safeChildPath joins the cache data dir with the given shard and file name and
+// verifies, via filepath.Clean, that the result stays inside the data dir. This
+// is a defense-in-depth path-traversal barrier on top of IsPathSafeKey (and the
+// form static analysis recognizes as sanitizing a path before it reaches a
+// filesystem sink such as os.Open/os.Remove).
+func (d *DiskStorage) safeChildPath(shard, name string) (string, error) {
+	p := filepath.Join(d.dataPath, shard, name)
+	base := filepath.Clean(d.dataPath)
+	if p != base && !strings.HasPrefix(p, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("%w: path escapes cache directory", ErrInvalidKey)
+	}
+	return p, nil
 }
 
 // shardForKey returns the shard directory for a key.
@@ -503,14 +537,33 @@ func (d *DiskStorage) removeEntry(key string) {
 	delete(d.index, key)
 	d.currentSize -= meta.Size
 
+	// Keys in the index are always validated on insertion (Put/loadIndex), so
+	// path construction here should never fail; guard defensively regardless.
+	dataPath, dataErr := d.dataFilePath(key)
+	if dataErr != nil {
+		slog.Warn("skipping removal of cache data file for invalid key",
+			"key", truncateKey(key),
+			"error", dataErr,
+		)
+		return
+	}
+	metaPath, metaErr := d.metaFilePath(key)
+	if metaErr != nil {
+		slog.Warn("skipping removal of cache metadata file for invalid key",
+			"key", truncateKey(key),
+			"error", metaErr,
+		)
+		return
+	}
+
 	// Remove files - log errors to help diagnose disk space leaks
-	if err := os.Remove(d.dataFilePath(key)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(dataPath); err != nil && !os.IsNotExist(err) {
 		slog.Warn("failed to remove cache data file",
 			"key", truncateKey(key),
 			"error", err,
 		)
 	}
-	if err := os.Remove(d.metaFilePath(key)); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(metaPath); err != nil && !os.IsNotExist(err) {
 		slog.Warn("failed to remove cache metadata file",
 			"key", truncateKey(key),
 			"error", err,
@@ -589,6 +642,17 @@ func (d *DiskStorage) loadIndex() error {
 			return nil // Skip invalid files
 		}
 
+		// Reject entries whose key is not a safe filesystem identifier. A
+		// tampered or corrupt meta file could otherwise inject an index entry
+		// whose key drives later path construction.
+		if !IsPathSafeKey(meta.Key) {
+			slog.Warn("skipping cache metadata with invalid key",
+				"path", path,
+				"key", truncateKey(meta.Key),
+			)
+			return nil
+		}
+
 		// Verify data file exists
 		dataPath := path[:len(path)-5] + ".dat"
 		dataInfo, err := os.Stat(dataPath)
@@ -646,7 +710,10 @@ func (d *DiskStorage) saveMetadata(key string, meta *Metadata) error {
 		return err
 	}
 
-	metaPath := d.metaFilePath(key)
+	metaPath, err := d.metaFilePath(key)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(metaPath, data, 0600) //nolint:gosec // G302: Cache file permissions are appropriate
 }
 

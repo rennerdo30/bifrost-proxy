@@ -76,10 +76,16 @@ type TLSConfig struct {
 
 // BackendConfig describes a backend configuration.
 type BackendConfig struct {
-	Name        string             `yaml:"name" json:"name"`
-	Type        string             `yaml:"type" json:"type"` // direct, wireguard, openvpn, http_proxy, socks5_proxy
-	Enabled     bool               `yaml:"enabled" json:"enabled"`
-	Priority    int                `yaml:"priority" json:"priority"`
+	Name     string `yaml:"name" json:"name"`
+	Type     string `yaml:"type" json:"type"` // direct, wireguard, openvpn, http_proxy, socks5_proxy
+	Enabled  bool   `yaml:"enabled" json:"enabled"`
+	Priority int    `yaml:"priority" json:"priority"`
+	// Weight is the default relative weight for this backend in "weighted"
+	// load-balancing routes. It seeds RouteConfig.Weights for any weighted
+	// route that lists this backend without an explicit per-route weight
+	// (see ServerConfig.seedRouteWeights). Values <= 0 are treated as unset
+	// (the balancer then defaults the backend to a weight of 1). Explicit
+	// per-route weights override this.
 	Weight      int                `yaml:"weight" json:"weight"`
 	Config      map[string]any     `yaml:"config,omitempty" json:"config,omitempty"`
 	HealthCheck *HealthCheckConfig `yaml:"health_check,omitempty" json:"health_check,omitempty"`
@@ -414,6 +420,18 @@ func (c *ServerConfig) Validate() error {
 		}
 	}
 
+	c.seedRouteWeights()
+
+	if c.API.RequestLogSize < 0 {
+		return fmt.Errorf("api request_log_size must be non-negative")
+	}
+	// Upper sanity bound: request_log_size sizes a ring buffer allocated up
+	// front. The value is operator config, not request data, but cap it to keep
+	// worst-case memory predictable and to reject obvious misconfiguration.
+	if c.API.RequestLogSize > MaxRingBufferEntries {
+		return fmt.Errorf("api request_log_size must not exceed %d", MaxRingBufferEntries)
+	}
+
 	if err := c.Auth.Validate(); err != nil {
 		return err
 	}
@@ -427,6 +445,44 @@ func (c *ServerConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// seedRouteWeights propagates per-backend BackendConfig.Weight values into the
+// "weighted" load-balancing routes that do not already specify an explicit
+// weight for a backend. Without this, BackendConfig.Weight would be a silent
+// no-op: the weighted balancer only consults RouteConfig.Weights. A backend
+// weight <= 0 is treated as unset (the balancer defaults missing entries to 1).
+// Explicit per-route weights always win over the backend-level default.
+func (c *ServerConfig) seedRouteWeights() {
+	backendWeights := make(map[string]int, len(c.Backends))
+	for _, b := range c.Backends {
+		if b.Weight > 0 {
+			backendWeights[b.Name] = b.Weight
+		}
+	}
+	if len(backendWeights) == 0 {
+		return
+	}
+
+	for i := range c.Routes {
+		r := &c.Routes[i]
+		if r.LoadBalance != "weighted" || len(r.Backends) == 0 {
+			continue
+		}
+		for _, name := range r.Backends {
+			w, ok := backendWeights[name]
+			if !ok {
+				continue
+			}
+			if _, set := r.Weights[name]; set {
+				continue // explicit per-route weight wins
+			}
+			if r.Weights == nil {
+				r.Weights = make(map[string]int)
+			}
+			r.Weights[name] = w
+		}
+	}
 }
 
 // Validate rejects the legacy auth configuration shapes (auth.mode and

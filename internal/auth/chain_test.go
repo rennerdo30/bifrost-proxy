@@ -89,6 +89,60 @@ func TestChainAuthenticator_Authenticate_FirstMatch(t *testing.T) {
 	}
 }
 
+// skipAuthenticator is a stub that always declines to decide (ErrAuthSkip),
+// mimicking e.g. an mTLS provider with no client certificate presented and
+// require_client_cert=false / allow_anonymous unset.
+type skipAuthenticator struct{}
+
+func (skipAuthenticator) Authenticate(_ context.Context, _, _ string) (*auth.UserInfo, error) {
+	return nil, auth.ErrAuthSkip
+}
+func (skipAuthenticator) Name() string { return "skip" }
+func (skipAuthenticator) Type() string { return "skip" }
+
+func TestChainAuthenticator_Authenticate_SkipContinues(t *testing.T) {
+	chain := auth.NewChainAuthenticator()
+
+	// A skip provider placed first must NOT short-circuit the chain.
+	chain.AddAuthenticator("skip", 1, skipAuthenticator{})
+
+	hash, _ := auth.HashPassword("password1")
+	native := createNativeAuthenticator(t, []map[string]any{
+		{"username": "user1", "password_hash": hash},
+	})
+	chain.AddAuthenticator("native", 2, native)
+
+	user, err := chain.Authenticate(context.Background(), "user1", "password1")
+	if err != nil {
+		t.Fatalf("expected chain to continue past skip provider: %v", err)
+	}
+	if user.Username != "user1" {
+		t.Errorf("expected user1, got %s", user.Username)
+	}
+	if user.Metadata["auth_provider"] != "native" {
+		t.Errorf("expected native to authenticate, got %s", user.Metadata["auth_provider"])
+	}
+}
+
+func TestChainAuthenticator_Authenticate_AllSkip(t *testing.T) {
+	chain := auth.NewChainAuthenticator()
+	chain.AddAuthenticator("skip1", 1, skipAuthenticator{})
+	chain.AddAuthenticator("skip2", 2, skipAuthenticator{})
+
+	// When every provider skips, the chain must deny (never grant access),
+	// returning ErrInvalidCredentials rather than the skip sentinel.
+	_, err := chain.Authenticate(context.Background(), "user", "password")
+	if err == nil {
+		t.Fatal("expected error when all providers skip")
+	}
+	if auth.IsAuthSkip(err) {
+		t.Errorf("chain must not surface ErrAuthSkip to callers, got %v", err)
+	}
+	if !auth.IsInvalidCredentials(err) {
+		t.Errorf("expected ErrInvalidCredentials, got %v", err)
+	}
+}
+
 func TestChainAuthenticator_Authenticate_NoMatch(t *testing.T) {
 	chain := auth.NewChainAuthenticator()
 
