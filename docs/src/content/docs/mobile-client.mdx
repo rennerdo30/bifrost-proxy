@@ -5,7 +5,18 @@ description: "Documentation for Mobile Client"
 
 # Mobile Client
 
-The Bifrost Mobile Client is a cross-platform application built with React Native and Expo, providing VPN management on iOS and Android devices.
+The Bifrost Mobile Client is a cross-platform application built with React Native and Expo, providing VPN **management** on iOS and Android devices.
+
+> **Important — the mobile app is a remote control, not an on-device tunnel.**
+> The Expo app manages a Bifrost **client running elsewhere on your network**
+> over the REST API (see [Connecting to Client](#connecting-to-client)). It does
+> **not** establish an encrypted tunnel on the phone itself. The native
+> `PacketTunnelProvider` (iOS) and `BifrostVpnService` (Android) files in the
+> repository are **non-functional placeholders**: they are unbuildable
+> skeletons and the current on-device path would forward raw packets without a
+> WireGuard/Noise handshake (i.e. **cleartext, not secure**). For that reason the
+> native VPN path is gated off and must not be relied on for confidentiality.
+> A real on-device WireGuard tunnel is planned future work.
 
 ## Features
 
@@ -194,6 +205,11 @@ Detailed connection statistics:
 │  🏠 Home │ 📡 Servers │ 📊 Stats │ ⚙️ │
 └─────────────────────────────────────┘
 ```
+
+> **Note:** Protocol/encryption/IP fields above describe the connection of the
+> **remote Bifrost client** the app controls (reported over the REST API). They
+> do **not** indicate an encrypted tunnel running on the phone itself — see the
+> warning at the top of this page.
 
 ### Settings Screen
 

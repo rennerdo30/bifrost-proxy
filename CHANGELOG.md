@@ -51,7 +51,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - New `service` command to manage Bifrost as a system service
   - Native support for systemd (Linux), launchd (macOS), and Windows Service (SCM)
 - **System Proxy Support**
-  - OS-level proxy configuration (implemented for Windows)
+  - OS-level proxy configuration on Windows (registry/WinINET), macOS
+    (`networksetup`), and Linux/GNOME (`gsettings`); unsupported desktops
+    return `ErrNotSupported` instead of silently succeeding
   - Toggle system proxy via Web UI and Quick Settings
 - **Configuration Preservation**
   - AST-based YAML updates to maintain comments and formatting
@@ -71,6 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Authentication system refactored to plugin architecture
 - Auth providers now registered via `auth.RegisterPlugin()`
 - Enhanced VPNStatus API response with connection details
+- System proxy support extended beyond Windows to macOS (`networksetup`) and
+  Linux/GNOME (`gsettings`); unsupported desktops now return `ErrNotSupported`
+  instead of reporting a successful no-op
 
 ## [1.0.0] - 2026-01-16
 
