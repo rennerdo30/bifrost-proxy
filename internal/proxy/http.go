@@ -49,6 +49,9 @@ type HTTPHandler struct {
 	onConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	onError          func(ctx context.Context, conn net.Conn, host string, err error)
 	cacheInterceptor *cache.Interceptor
+	// mitm enables live HTTPS interception when non-nil. It defaults to nil
+	// (OFF): when nil, CONNECT requests use the opaque tunnel path unchanged.
+	mitm *MITMInterceptor
 }
 
 // HTTPHandlerConfig configures the HTTP handler.
@@ -68,6 +71,10 @@ type HTTPHandlerConfig struct {
 	OnConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	OnError          func(ctx context.Context, conn net.Conn, host string, err error)
 	CacheInterceptor *cache.Interceptor
+	// MITM enables live HTTPS interception. Leave nil (default) to keep CONNECT
+	// tunnels opaque. Construct one only when config MITM is enabled and a CA
+	// has been loaded.
+	MITM *MITMInterceptor
 }
 
 // NewHTTPHandler creates a new HTTP proxy handler.
@@ -92,6 +99,7 @@ func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
 		onConnect:        cfg.OnConnect,
 		onError:          cfg.OnError,
 		cacheInterceptor: cfg.CacheInterceptor,
+		mitm:             cfg.MITM,
 	}
 }
 
@@ -302,7 +310,21 @@ func (h *HTTPHandler) handleConnect(ctx context.Context, conn net.Conn, req *htt
 		h.onConnect(ctx, conn, host, be)
 	}
 
-	// Start bidirectional copy
+	// Live HTTPS interception (MITM). Gated entirely behind a non-nil, in-scope
+	// interceptor: when MITM is disabled (h.mitm == nil) or the host is bypassed,
+	// shouldIntercept returns false and we fall through to the opaque tunnel,
+	// keeping behavior byte-for-byte identical to a non-MITM build.
+	if h.mitm.shouldIntercept(host) {
+		if err := h.interceptConnect(ctx, conn, targetConn, host); err != nil {
+			// Interception failures are logged via the error callback by the
+			// caller; the tunnel is already half-consumed (TLS terminated) so we
+			// cannot safely fall back to an opaque copy here.
+			return err
+		}
+		return nil
+	}
+
+	// Start bidirectional copy (opaque tunnel; MITM disabled or bypassed).
 	CopyBidirectional(ctx, conn, targetConn)
 	return nil
 }

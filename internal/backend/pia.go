@@ -2,6 +2,7 @@ package backend
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,6 +13,25 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider/pia"
 )
+
+// portForwardRunner drives the PIA port-forwarding lifecycle against a tunnel
+// gateway. It is satisfied by *pia.PortForwarder; the indirection exists so the
+// backend wiring can be unit-tested with a fake (no live PIA gateway).
+type portForwardRunner interface {
+	// Run acquires a forwarded port, delivers it once on portCh, then keeps it
+	// alive until ctx is canceled. It blocks until ctx is done and returns the
+	// terminal error.
+	Run(ctx context.Context, params pia.PortForwardParams, portCh chan<- int) error
+}
+
+// portForwarderFactory builds a portForwardRunner for the given params. The
+// default implementation returns a real *pia.PortForwarder; tests override it.
+type portForwarderFactory func(params pia.PortForwardParams, logger *slog.Logger) portForwardRunner
+
+// defaultPortForwarderFactory wires the production PIA port forwarder.
+func defaultPortForwarderFactory(params pia.PortForwardParams, logger *slog.Logger) portForwardRunner {
+	return pia.NewPortForwarder(params, logger)
+}
 
 // PIABackend provides connections through Private Internet Access VPN.
 type PIABackend struct {
@@ -28,6 +48,18 @@ type PIABackend struct {
 	stopChan       chan struct{}
 	refreshTicker  *time.Ticker
 	logger         *slog.Logger
+
+	// Port forwarding lifecycle (only active when config.PortForwarding is set).
+	newPortForwarder portForwarderFactory
+	forwardedPort    atomic.Int64
+	pfMu             sync.Mutex // guards pfCancel/pfDone
+	pfCancel         context.CancelFunc
+	pfDone           chan struct{}
+
+	// gateway/gatewayHostname carry the in-tunnel port-forwarding parameters
+	// surfaced by the most recently built WireGuard delegate. Guarded by mu.
+	gateway         string
+	gatewayHostname string
 }
 
 type piaStats struct {
@@ -69,11 +101,12 @@ func NewPIABackend(cfg PIAConfig) *PIABackend {
 	}
 
 	return &PIABackend{
-		name:     cfg.Name,
-		config:   cfg,
-		client:   pia.NewClient(cfg.Username, cfg.Password),
-		stopChan: make(chan struct{}),
-		logger:   slog.Default(),
+		name:             cfg.Name,
+		config:           cfg,
+		client:           pia.NewClient(cfg.Username, cfg.Password),
+		stopChan:         make(chan struct{}),
+		logger:           slog.Default(),
+		newPortForwarder: defaultPortForwarderFactory,
 	}
 }
 
@@ -180,6 +213,23 @@ func (b *PIABackend) Start(ctx context.Context) error {
 	b.startTime = time.Now()
 	b.healthy.Store(true)
 
+	// Start port forwarding if enabled. Fail closed: if it cannot be set up
+	// (missing gateway/token) we tear down the partially started backend and
+	// return an error rather than silently claiming success.
+	if b.config.PortForwarding {
+		gw := gatewayInfo{ip: b.gateway, hostname: b.gatewayHostname}
+		if err := b.startPortForwarding(gw); err != nil {
+			b.logger.Error("PIA port forwarding could not be started", "error", err)
+			if stopErr := b.delegate.Stop(ctx); stopErr != nil {
+				b.logger.Warn("failed to stop delegate after port-forwarding failure", "error", stopErr)
+			}
+			b.client.InvalidateToken()
+			b.running = false
+			b.healthy.Store(false)
+			return NewBackendError(b.name, "start port forwarding", err)
+		}
+	}
+
 	// Start server refresh goroutine if auto_select is enabled
 	if b.config.AutoSelect && b.config.RefreshInterval > 0 {
 		b.refreshTicker = time.NewTicker(b.config.RefreshInterval)
@@ -207,22 +257,32 @@ func (b *PIABackend) selectServer(ctx context.Context) (*vpnprovider.Server, err
 	return b.client.SelectServer(ctx, criteria)
 }
 
+// gatewayInfo carries the in-tunnel port-forwarding parameters surfaced by a
+// built delegate. Both fields are empty for protocols that do not expose them.
+type gatewayInfo struct {
+	ip       string
+	hostname string
+}
+
 func (b *PIABackend) createDelegate(ctx context.Context, server *vpnprovider.Server, creds vpnprovider.Credentials) error {
-	delegate, err := b.buildDelegate(ctx, server, creds)
+	delegate, gw, err := b.buildDelegate(ctx, server, creds)
 	if err != nil {
 		return err
 	}
 	b.delegate = delegate
+	b.gateway = gw.ip
+	b.gatewayHostname = gw.hostname
 	return nil
 }
 
-// buildDelegate constructs (but does not start) a delegate backend.
-func (b *PIABackend) buildDelegate(ctx context.Context, server *vpnprovider.Server, creds vpnprovider.Credentials) (Backend, error) {
+// buildDelegate constructs (but does not start) a delegate backend and returns
+// the in-tunnel gateway parameters it surfaced (empty for OpenVPN).
+func (b *PIABackend) buildDelegate(ctx context.Context, server *vpnprovider.Server, creds vpnprovider.Credentials) (Backend, gatewayInfo, error) {
 	switch b.config.Protocol {
 	case "wireguard":
 		wgConfig, err := b.client.GenerateWireGuardConfig(ctx, server, creds)
 		if err != nil {
-			return nil, fmt.Errorf("generate WireGuard config: %w", err)
+			return nil, gatewayInfo{}, fmt.Errorf("generate WireGuard config: %w", err)
 		}
 
 		cfg := WireGuardConfig{
@@ -238,12 +298,15 @@ func (b *PIABackend) buildDelegate(ctx context.Context, server *vpnprovider.Serv
 				PresharedKey:        wgConfig.Peer.PresharedKey,
 			},
 		}
-		return NewWireGuardBackend(cfg), nil
+		// Surface the in-tunnel gateway parameters so port forwarding can target
+		// the gateway once the tunnel is up. Only WireGuard exposes these today.
+		gw := gatewayInfo{ip: wgConfig.Gateway, hostname: wgConfig.GatewayHostname}
+		return NewWireGuardBackend(cfg), gw, nil
 
 	case "openvpn":
 		ovpnConfig, err := b.client.GenerateOpenVPNConfig(ctx, server, creds)
 		if err != nil {
-			return nil, fmt.Errorf("generate OpenVPN config: %w", err)
+			return nil, gatewayInfo{}, fmt.Errorf("generate OpenVPN config: %w", err)
 		}
 
 		cfg := OpenVPNConfig{
@@ -252,10 +315,12 @@ func (b *PIABackend) buildDelegate(ctx context.Context, server *vpnprovider.Serv
 			Username:      ovpnConfig.Username,
 			Password:      ovpnConfig.Password,
 		}
-		return NewOpenVPNBackend(cfg), nil
+		// OpenVPN config generation does not surface the in-tunnel gateway, so
+		// port forwarding cannot be driven for this protocol.
+		return NewOpenVPNBackend(cfg), gatewayInfo{}, nil
 
 	default:
-		return nil, fmt.Errorf("unsupported protocol: %s", b.config.Protocol)
+		return nil, gatewayInfo{}, fmt.Errorf("unsupported protocol: %s", b.config.Protocol)
 	}
 }
 
@@ -319,7 +384,7 @@ func (b *PIABackend) swapDelegate(ctx context.Context, server *vpnprovider.Serve
 		Password: b.config.Password,
 	}
 
-	newDelegate, err := b.buildDelegate(ctx, server, creds)
+	newDelegate, gw, err := b.buildDelegate(ctx, server, creds)
 	if err != nil {
 		return fmt.Errorf("build delegate: %w", err)
 	}
@@ -337,11 +402,25 @@ func (b *PIABackend) swapDelegate(ctx context.Context, server *vpnprovider.Serve
 	oldDelegate := b.delegate
 	b.delegate = newDelegate
 	b.selectedServer = server
+	b.gateway = gw.ip
+	b.gatewayHostname = gw.hostname
 	b.mu.Unlock()
 
 	if oldDelegate != nil {
 		if err := oldDelegate.Stop(ctx); err != nil {
 			b.logger.Warn("failed to stop old delegate after swap", "error", err)
+		}
+	}
+
+	// The forwarded port is bound to the old gateway; rebind against the new
+	// tunnel so port forwarding follows the server switch.
+	if b.config.PortForwarding {
+		b.stopPortForwarding()
+		if err := b.startPortForwarding(gw); err != nil {
+			b.logger.Error("failed to restart PIA port forwarding after server switch",
+				"server", server.Hostname,
+				"error", err,
+			)
 		}
 	}
 
@@ -362,6 +441,10 @@ func (b *PIABackend) Stop(ctx context.Context) error {
 	if b.refreshTicker != nil {
 		b.refreshTicker.Stop()
 	}
+
+	// Stop port forwarding (cancels the renewal loop and waits for it to exit).
+	b.stopPortForwarding()
+	b.forwardedPort.Store(0)
 
 	if b.delegate != nil {
 		if err := b.delegate.Stop(ctx); err != nil {
@@ -433,4 +516,95 @@ func (b *PIABackend) SelectedServer() *vpnprovider.Server {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.selectedServer
+}
+
+// ForwardedPort returns the port granted by PIA port forwarding, or 0 if port
+// forwarding is disabled or a port has not yet been granted.
+func (b *PIABackend) ForwardedPort() int {
+	return int(b.forwardedPort.Load())
+}
+
+// startPortForwarding validates the tunnel gateway parameters, obtains a PIA
+// token, and launches the port-forwarding lifecycle in a managed goroutine. It
+// fails closed: a missing gateway or token returns an error (and does not start
+// any goroutine) rather than silently claiming success. The Acquire/renew round
+// trips themselves run asynchronously; the granted port is published via
+// ForwardedPort once it is delivered.
+//
+// gw carries the gateway parameters from the active delegate. The caller is
+// responsible for ensuring it reflects the current tunnel.
+func (b *PIABackend) startPortForwarding(gw gatewayInfo) error {
+	if gw.ip == "" || gw.hostname == "" {
+		// Fail closed: without the in-tunnel gateway we cannot bind a port.
+		return fmt.Errorf("%w (protocol %q does not surface a tunnel gateway)",
+			pia.ErrPortForwardingNotAvailable, b.config.Protocol)
+	}
+
+	// Obtain a valid token up front so a credential/auth failure is surfaced
+	// synchronously rather than buried in the background loop.
+	token, err := b.client.Authenticate(context.Background())
+	if err != nil {
+		return fmt.Errorf("obtain token for port forwarding: %w", err)
+	}
+
+	params := pia.PortForwardParams{
+		GatewayIP: gw.ip,
+		Hostname:  gw.hostname,
+		Token:     token.Value,
+	}
+	if err := params.Validate(); err != nil {
+		return err
+	}
+
+	runner := b.newPortForwarder(params, b.logger)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	portCh := make(chan int, 1)
+
+	b.pfMu.Lock()
+	b.pfCancel = cancel
+	b.pfDone = done
+	b.pfMu.Unlock()
+
+	go func() {
+		defer close(done)
+		if runErr := runner.Run(ctx, params, portCh); runErr != nil && !errors.Is(runErr, context.Canceled) {
+			b.logger.Error("PIA port forwarding stopped", "name", b.name, "error", runErr)
+			b.recordError(runErr)
+		}
+	}()
+
+	// Publish the granted port asynchronously so Start does not block on the
+	// live getSignature/bindPort round trip.
+	go func() {
+		select {
+		case port := <-portCh:
+			b.forwardedPort.Store(int64(port))
+			b.logger.Info("PIA port forwarding active", "name", b.name, "port", port)
+		case <-done:
+			// Run exited before delivering a port (e.g. Acquire failed).
+		}
+	}()
+
+	return nil
+}
+
+// stopPortForwarding cancels the running port-forwarding lifecycle (if any) and
+// waits for the goroutine to exit. It is safe to call when port forwarding is
+// not running.
+func (b *PIABackend) stopPortForwarding() {
+	b.pfMu.Lock()
+	cancel := b.pfCancel
+	done := b.pfDone
+	b.pfCancel = nil
+	b.pfDone = nil
+	b.pfMu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
 }
