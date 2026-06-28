@@ -49,6 +49,7 @@ type Tray struct {
 	onQuit       func()
 	showQuickGUI bool
 	adapter      SystrayAdapter
+	notifier     Notifier
 }
 
 // Config holds tray configuration.
@@ -76,6 +77,7 @@ func New(cfg Config) *Tray {
 		onQuit:       cfg.OnQuit,
 		showQuickGUI: cfg.ShowQuickGUI,
 		adapter:      defaultAdapter,
+		notifier:     defaultNotifier,
 	}
 }
 
@@ -90,7 +92,23 @@ func NewWithAdapter(cfg Config, adapter SystrayAdapter) *Tray {
 		onQuit:       cfg.OnQuit,
 		showQuickGUI: cfg.ShowQuickGUI,
 		adapter:      adapter,
+		notifier:     defaultNotifier,
 	}
+}
+
+// SetNotifier overrides the desktop notifier (primarily for testing).
+func (t *Tray) SetNotifier(n Notifier) {
+	t.notifier = n
+}
+
+// Notify shows a desktop notification with the given title and message.
+// It returns an error if the underlying notifier fails. A nil notifier is a
+// no-op so the tray can be used without notification support.
+func (t *Tray) Notify(title, message string) error {
+	if t.notifier == nil {
+		return nil
+	}
+	return t.notifier.Notify(title, message)
 }
 
 // Run starts the system tray (blocks).
