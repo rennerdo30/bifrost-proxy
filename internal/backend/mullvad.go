@@ -52,6 +52,17 @@ type MullvadConfig struct {
 	MaxLoad         int           `yaml:"max_load,omitempty"`         // Max server load percentage (0-100)
 	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"` // How often to check for better servers
 	Features        []string      `yaml:"features,omitempty"`         // Required features
+
+	// LeakProofRouting requests Linux policy-routing based egress isolation on
+	// OpenVPN delegates so traffic cannot leak outside the tunnel. It requires
+	// root, is Linux-only, and is OFF by default. WireGuard delegates use a
+	// userspace netstack and are unaffected.
+	LeakProofRouting bool `yaml:"leak_proof_routing,omitempty"`
+
+	// Network carries process-wide outbound tuning (keep-alive, dial timeout,
+	// prefer-IPv6) threaded onto OpenVPN delegates. WireGuard delegates dial
+	// through a userspace netstack and ignore it.
+	Network NetworkTuning `yaml:"-"`
 }
 
 // NewMullvadBackend creates a new Mullvad backend.
@@ -233,10 +244,12 @@ func (b *MullvadBackend) buildDelegate(ctx context.Context, server *vpnprovider.
 		}
 
 		cfg := OpenVPNConfig{
-			Name:          b.name + "-ovpn",
-			ConfigContent: ovpnConfig.ConfigContent,
-			Username:      ovpnConfig.Username,
-			Password:      ovpnConfig.Password,
+			Name:             b.name + "-ovpn",
+			ConfigContent:    ovpnConfig.ConfigContent,
+			Username:         ovpnConfig.Username,
+			Password:         ovpnConfig.Password,
+			LeakProofRouting: b.config.LeakProofRouting,
+			Network:          b.config.Network,
 		}
 		return NewOpenVPNBackend(cfg), nil
 
