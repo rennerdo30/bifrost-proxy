@@ -50,15 +50,25 @@ func StaticHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		urlPath := strings.TrimPrefix(r.URL.Path, "/")
 
-		// Serve index.html for root and non-file paths (SPA support)
-		if urlPath == "" || !strings.Contains(urlPath, ".") {
+		// SPA support: navigation routes (no file extension) render index.html.
+		// Concrete asset requests (with an extension: .js/.css/.woff2/...) must
+		// NOT fall back to index.html — serving HTML for an asset together with
+		// our X-Content-Type-Options: nosniff header makes the browser reject
+		// it, so e.g. fonts silently drop to a system serif behind reverse
+		// proxies. Missing assets return a clean 404 instead.
+		isAsset := strings.Contains(path.Base(urlPath), ".")
+		if urlPath == "" || !isAsset {
 			urlPath = "index.html"
 		}
 
 		// Read and serve the file directly to avoid redirect issues
 		content, err := fs.ReadFile(subFS, urlPath)
 		if err != nil {
-			// Try index.html as fallback for SPA routing
+			if isAsset {
+				http.NotFound(w, r)
+				return
+			}
+			// Navigation route: fall back to index.html for client-side routing.
 			content, err = fs.ReadFile(subFS, "index.html")
 			if err != nil {
 				http.NotFound(w, r)
