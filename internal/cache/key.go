@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 )
@@ -36,7 +37,17 @@ func DefaultKeyGenerator() *KeyGenerator {
 
 // GenerateKey creates a cache key from an HTTP request.
 // The key is a SHA256 hash of the relevant request components.
+// It honors the generator's IgnoreQuery field.
 func (kg *KeyGenerator) GenerateKey(req *http.Request) string {
+	return kg.GenerateKeyWithOptions(req, kg.IgnoreQuery)
+}
+
+// GenerateKeyWithOptions creates a cache key from an HTTP request using the
+// supplied ignoreQuery value instead of the generator's IgnoreQuery field.
+//
+// This method does not mutate the KeyGenerator, so a single shared generator
+// can be used concurrently across requests with per-request ignoreQuery values.
+func (kg *KeyGenerator) GenerateKeyWithOptions(req *http.Request, ignoreQuery bool) string {
 	h := sha256.New()
 
 	// Method
@@ -60,7 +71,7 @@ func (kg *KeyGenerator) GenerateKey(req *http.Request) string {
 	h.Write([]byte{0})
 
 	// Query string (if not ignored)
-	if !kg.IgnoreQuery && req.URL != nil && req.URL.RawQuery != "" {
+	if !ignoreQuery && req.URL != nil && req.URL.RawQuery != "" {
 		if kg.SortQueryParams {
 			// Sort query params for consistent keys
 			h.Write([]byte(kg.sortedQuery(req.URL.Query())))
@@ -144,6 +155,30 @@ func GenerateSimpleKey(method, host, path string) string {
 	h.Write([]byte{0})
 	h.Write([]byte(path))
 	return hex.EncodeToString(h.Sum(nil))
+}
+
+// IsPathSafeKey reports whether a cache key is safe to use as a single path
+// component when constructing filesystem paths for on-disk storage.
+//
+// It rejects keys that are empty, equal to "." or "..", or that contain any
+// path separator (forward slash, backslash, or the OS separator), a NUL byte,
+// or other control characters. This explicitly closes path-traversal /
+// path-injection vectors at the point where a key is turned into a file path.
+func IsPathSafeKey(key string) bool {
+	if key == "" || key == "." || key == ".." {
+		return false
+	}
+	for i := 0; i < len(key); i++ {
+		c := key[i]
+		if c == '/' || c == '\\' || c == os.PathSeparator {
+			return false
+		}
+		// Reject NUL and other control characters.
+		if c < 0x20 || c == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // KeyPrefix returns the first n characters of a key for sharding.
