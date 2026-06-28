@@ -139,14 +139,28 @@ func TestStaticHandler_SPAFallback(t *testing.T) {
 func TestStaticHandler_NonExistentFile(t *testing.T) {
 	handler := StaticHandler()
 
-	// Request for a file that doesn't exist but has an extension
-	// Should try to serve it, fail, then fall back to index.html
+	// A missing file WITH an extension is a concrete asset request. It must
+	// return 404 and NOT fall back to index.html: serving HTML for an asset
+	// (with nosniff) makes browsers reject it, which is how fonts/scripts
+	// silently break behind reverse proxies ("weird font").
 	req := httptest.NewRequest("GET", "/nonexistent-file.png", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	// Falls back to index.html for SPA routing
-	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.NotContains(t, w.Header().Get("Content-Type"), "text/html")
+}
+
+func TestStaticHandler_MissingFontReturns404(t *testing.T) {
+	handler := StaticHandler()
+
+	// Regression: a missing .woff2 must 404, never be served as index.html.
+	req := httptest.NewRequest("GET", "/assets/missing-font.woff2", nil)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.NotContains(t, w.Header().Get("Content-Type"), "text/html")
 }
 
 func TestStaticHandler_ContentTypeHeaders(t *testing.T) {
