@@ -11,18 +11,6 @@ import (
 	"time"
 )
 
-// logConnSetDeadlineError logs SetDeadline errors appropriately based on error type.
-func logConnSetDeadlineError(context string, err error) {
-	if err == nil {
-		return
-	}
-	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
-		slog.Debug("failed to set deadline", "context", context, "error", err)
-	} else {
-		slog.Warn("failed to set deadline", "context", context, "error", err)
-	}
-}
-
 // ConnectionType represents the type of P2P connection.
 type ConnectionType int
 
@@ -169,6 +157,13 @@ func DefaultConnectionConfig() ConnectionConfig {
 }
 
 // DirectConnection implements P2PConnection for direct connections.
+//
+// The manager owns the shared UDP socket and is the sole reader of it. Inbound
+// datagrams destined for this connection are pushed by the manager into the
+// inbound channel (raw ciphertext); recvWorker decrypts them, filters
+// keep-alive traffic, and delivers plaintext via the onData callback (and the
+// recvQueue for callers that prefer the Receive() API). The connection never
+// reads from the socket directly, eliminating the dual-reader race.
 type DirectConnection struct {
 	config     ConnectionConfig
 	conn       net.PacketConn
@@ -181,6 +176,18 @@ type DirectConnection struct {
 
 	sendQueue chan []byte
 	recvQueue chan []byte
+
+	// inbound carries raw ciphertext datagrams routed by the manager's
+	// receiveWorker once the connection is established.
+	inbound chan []byte
+
+	// handshakeInbound carries raw datagrams during the handshake phase, fed by
+	// the manager so the connection does not read from the shared socket.
+	handshakeInbound chan []byte
+
+	// onData, when set, receives decrypted plaintext payloads. Keep-alive
+	// (PING/PONG) traffic is filtered out before this is invoked.
+	onData func(peerID string, plaintext []byte)
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -198,19 +205,53 @@ func NewDirectConnection(config ConnectionConfig, conn net.PacketConn, remoteAdd
 	)
 
 	dc := &DirectConnection{
-		config:     config,
-		conn:       conn,
-		remoteAddr: remoteAddr,
-		localAddr:  localAddr,
-		sendQueue:  make(chan []byte, 256),
-		recvQueue:  make(chan []byte, 256),
-		ctx:        ctx,
-		cancel:     cancel,
+		config:           config,
+		conn:             conn,
+		remoteAddr:       remoteAddr,
+		localAddr:        localAddr,
+		sendQueue:        make(chan []byte, 256),
+		recvQueue:        make(chan []byte, 256),
+		inbound:          make(chan []byte, 256),
+		handshakeInbound: make(chan []byte, 8),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 
 	dc.state.Store(int32(ConnectionStateNew))
 
 	return dc, nil
+}
+
+// SetOnData sets the callback invoked with decrypted plaintext payloads.
+// It must be set before the connection is started.
+func (c *DirectConnection) SetOnData(fn func(peerID string, plaintext []byte)) {
+	c.onData = fn
+}
+
+// deliverDatagram routes a raw inbound datagram (read by the manager from the
+// shared socket) to this connection for decryption. Datagrams are dropped if
+// the connection is shutting down or its inbound queue is full (backpressure).
+func (c *DirectConnection) deliverDatagram(data []byte) {
+	// Copy: the manager reuses its read buffer for the next datagram.
+	buf := make([]byte, len(data))
+	copy(buf, data)
+
+	if c.State() != ConnectionStateConnected {
+		// Still handshaking: route to the handshake channel.
+		select {
+		case c.handshakeInbound <- buf:
+		case <-c.ctx.Done():
+		default:
+		}
+		return
+	}
+
+	select {
+	case c.inbound <- buf:
+	case <-c.ctx.Done():
+	default:
+		// Inbound queue full, drop datagram.
+	}
 }
 
 // Connect establishes the connection with the peer.
@@ -243,19 +284,15 @@ func (c *DirectConnection) Connect(ctx context.Context) error {
 }
 
 // performHandshake performs the Noise Protocol handshake.
+//
+// The manager is the sole reader of the shared socket, so handshake response
+// datagrams arrive via handshakeInbound rather than a direct ReadFrom. Outbound
+// writes still go through the shared socket.
 func (c *DirectConnection) performHandshake(ctx context.Context) error {
 	deadline := time.Now().Add(c.config.ConnectTimeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
 		deadline = d
 	}
-	if err := c.conn.SetDeadline(deadline); err != nil {
-		logConnSetDeadlineError("handshake deadline", err)
-	}
-	defer func() {
-		if err := c.conn.SetDeadline(time.Time{}); err != nil {
-			logConnSetDeadlineError("clear handshake deadline", err)
-		}
-	}()
 
 	// Send handshake initiation
 	initMsg, err := c.crypto.CreateHandshakeInit(c.config.RemotePublicKey)
@@ -268,21 +305,14 @@ func (c *DirectConnection) performHandshake(ctx context.Context) error {
 		return writeErr
 	}
 
-	// Wait for handshake response
-	buf := make([]byte, 4096)
-	n, from, err := c.conn.ReadFrom(buf)
+	// Wait for handshake response (routed by the manager).
+	respData, err := c.waitHandshakeDatagram(ctx, deadline)
 	if err != nil {
 		return err
 	}
 
-	// Verify it's from the expected peer
-	fromUDP := from.(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
-	if !fromUDP.IP.Equal(c.remoteAddr.Addr().AsSlice()) {
-		return ErrHandshakeFailed
-	}
-
 	// Process handshake response
-	if processErr := c.crypto.ProcessHandshakeResponse(buf[:n]); processErr != nil {
+	if processErr := c.crypto.ProcessHandshakeResponse(respData); processErr != nil {
 		return processErr
 	}
 
@@ -293,18 +323,36 @@ func (c *DirectConnection) performHandshake(ctx context.Context) error {
 		return pingWriteErr
 	}
 
-	n, _, err = c.conn.ReadFrom(buf)
+	pongData, err := c.waitHandshakeDatagram(ctx, deadline)
 	if err != nil {
 		return err
 	}
 
-	if _, decryptErr := c.crypto.Decrypt(buf[:n]); decryptErr != nil {
+	if _, decryptErr := c.crypto.Decrypt(pongData); decryptErr != nil {
 		return decryptErr
 	}
 
 	c.latency.Store(time.Since(start).Nanoseconds())
 
 	return nil
+}
+
+// waitHandshakeDatagram waits for the next datagram routed to this connection
+// during the handshake phase, honoring the context and deadline.
+func (c *DirectConnection) waitHandshakeDatagram(ctx context.Context, deadline time.Time) ([]byte, error) {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+
+	select {
+	case data := <-c.handshakeInbound:
+		return data, nil
+	case <-timer.C:
+		return nil, ErrConnectionTimeout
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-c.ctx.Done():
+		return nil, ErrConnectionClosed
+	}
 }
 
 // sendWorker handles outgoing messages.
@@ -322,11 +370,13 @@ func (c *DirectConnection) sendWorker() {
 				continue
 			}
 
-			// Encrypt and send
+			// Encrypt and send.
+			//
+			// The socket is shared and owned by the manager; do not set write
+			// deadlines here. A per-connection write deadline races with the
+			// manager's read deadline on the same socket, and a zero WriteTimeout
+			// would make every UDP write time out immediately.
 			encrypted := c.crypto.Encrypt(data)
-			if err := c.conn.SetWriteDeadline(time.Now().Add(c.config.WriteTimeout)); err != nil {
-				logConnSetDeadlineError("send worker write deadline", err)
-			}
 			if _, err := c.conn.WriteTo(encrypted, remoteAddr); err != nil {
 				slog.Debug("failed to write to connection", "error", err)
 			}
@@ -334,65 +384,53 @@ func (c *DirectConnection) sendWorker() {
 	}
 }
 
-// recvWorker handles incoming messages.
+// recvWorker decrypts inbound datagrams routed by the manager.
+//
+// It does not read from the shared socket directly. Datagrams arrive via the
+// inbound channel (raw ciphertext), are decrypted, and keep-alive (PING/PONG)
+// traffic is filtered out. Decrypted application payloads are delivered through
+// the onData callback (if set) and queued for the Receive() API.
 func (c *DirectConnection) recvWorker() {
 	defer c.wg.Done()
 
-	buf := make([]byte, 65536)
+	remoteAddr := net.UDPAddrFromAddrPort(c.remoteAddr)
 
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
-		default:
-		}
-
-		if c.State() != ConnectionStateConnected {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		if err := c.conn.SetReadDeadline(time.Now().Add(c.config.ReadTimeout)); err != nil {
-			logConnSetDeadlineError("recv worker read deadline", err)
-		}
-		n, from, err := c.conn.ReadFrom(buf)
-		if err != nil {
-			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		case data := <-c.inbound:
+			// Decrypt
+			decrypted, err := c.crypto.Decrypt(data)
+			if err != nil {
 				continue
 			}
-			continue
-		}
 
-		// Verify source
-		fromUDP := from.(*net.UDPAddr) //nolint:errcheck // Type is always *net.UDPAddr for UDP connections
-		if !fromUDP.IP.Equal(c.remoteAddr.Addr().AsSlice()) {
-			continue
-		}
-
-		// Decrypt
-		decrypted, err := c.crypto.Decrypt(buf[:n])
-		if err != nil {
-			continue
-		}
-
-		// Handle keep-alive
-		if len(decrypted) == 4 && string(decrypted) == "PING" {
-			pong := c.crypto.Encrypt([]byte("PONG"))
-			if _, err := c.conn.WriteTo(pong, from); err != nil {
-				slog.Debug("failed to send pong", "error", err)
+			// Handle keep-alive: respond to PING, swallow PONG. Never surface
+			// these to the application layer.
+			if len(decrypted) == 4 && string(decrypted) == "PING" {
+				pong := c.crypto.Encrypt([]byte("PONG"))
+				if _, writeErr := c.conn.WriteTo(pong, remoteAddr); writeErr != nil {
+					slog.Debug("failed to send pong", "error", writeErr)
+				}
+				continue
 			}
-			continue
-		}
 
-		if len(decrypted) == 4 && string(decrypted) == "PONG" {
-			continue
-		}
+			if len(decrypted) == 4 && string(decrypted) == "PONG" {
+				continue
+			}
 
-		// Queue for receive
-		select {
-		case c.recvQueue <- decrypted:
-		default:
-			// Queue full, drop packet
+			// Deliver decrypted application payload.
+			if c.onData != nil {
+				c.onData(c.config.PeerID, decrypted)
+			}
+
+			// Also queue for callers using the Receive() API.
+			select {
+			case c.recvQueue <- decrypted:
+			default:
+				// Queue full, drop packet.
+			}
 		}
 	}
 }
@@ -518,9 +556,19 @@ type RelayedConnection struct {
 	sendQueue chan []byte
 	recvQueue chan []byte
 
+	// onData, when set, receives decrypted plaintext payloads so relayed
+	// traffic surfaces through the same mechanism as direct connections.
+	onData func(peerID string, plaintext []byte)
+
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+}
+
+// SetOnData sets the callback invoked with decrypted plaintext payloads.
+// It must be set before the connection is started.
+func (c *RelayedConnection) SetOnData(fn func(peerID string, plaintext []byte)) {
+	c.onData = fn
 }
 
 // NewRelayedConnection creates a new relayed P2P connection.
@@ -617,6 +665,17 @@ func (c *RelayedConnection) recvWorker() {
 		decrypted, err := c.crypto.Decrypt(buf[:n])
 		if err != nil {
 			continue
+		}
+
+		// Filter keep-alive traffic so it does not reach the application layer.
+		if len(decrypted) == 4 && (string(decrypted) == "PING" || string(decrypted) == "PONG") {
+			continue
+		}
+
+		// Deliver decrypted application payload through the unified callback so
+		// relayed connections surface inbound data the same way direct ones do.
+		if c.onData != nil {
+			c.onData(c.config.PeerID, decrypted)
 		}
 
 		select {

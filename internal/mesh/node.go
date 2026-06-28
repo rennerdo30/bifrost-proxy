@@ -541,15 +541,33 @@ func (n *MeshNode) applyAssignedVirtualIP() error {
 	}
 
 	// Recreate the device with the assigned address.
+	//
+	// The replacement device reuses the same interface name, so the old device
+	// MUST be closed first. Creating a second device with an in-use name fails
+	// on Linux (TUNSETIFF EBUSY) and is unreliable on other platforms. If
+	// creating the replacement fails, roll back by recreating the original
+	// (placeholder) device so the node is left in a usable state.
 	oldDevice := n.device
+	if oldDevice != nil {
+		oldDevice.Close()
+	}
+
 	deviceCfg := n.config.Device.ToDeviceConfig(fmt.Sprintf("%s/%d", assigned.String(), prefix.Bits()))
 	dev, err := device.Create(deviceCfg)
 	if err != nil {
+		// Roll back to the original placeholder address so the node keeps a
+		// working device rather than none.
+		rollbackCfg := n.config.Device.ToDeviceConfig(fmt.Sprintf("%s/%d", n.localIP.String(), prefix.Bits()))
+		if rollbackDev, rollbackErr := device.Create(rollbackCfg); rollbackErr == nil {
+			n.mu.Lock()
+			n.device = rollbackDev
+			n.mu.Unlock()
+		} else {
+			slog.Error("failed to roll back device after failed IP reassignment",
+				"error", rollbackErr,
+			)
+		}
 		return fmt.Errorf("failed to recreate device with assigned IP: %w", err)
-	}
-
-	if oldDevice != nil {
-		oldDevice.Close()
 	}
 
 	n.mu.Lock()
@@ -853,6 +871,13 @@ func (n *MeshNode) onPeerDiscovered(info PeerInfo) {
 		return
 	}
 
+	// Register the public-key-to-peer-ID mapping so that NAT-traversed inbound
+	// connections from this peer resolve to its real peer ID (and trigger route
+	// installation) instead of a synthetic incoming-<addr> ID.
+	if n.p2pManager != nil {
+		n.p2pManager.RegisterPeerKey(pubKey, info.ID)
+	}
+
 	// Convert endpoints to netip.AddrPort
 	endpoints := make([]netip.AddrPort, 0, len(info.Endpoints))
 	for _, ep := range info.Endpoints {
@@ -937,16 +962,11 @@ func (n *MeshNode) onPeerConnected(peerID string, conn p2p.P2PConnection) {
 		n.protocol.NotifyPeerConnected(peerID, peer.VirtualIP, conn.Latency())
 	}
 
-	// Add as potential relay (feature planned for future release)
-	// When RelayViaPeers is enabled, connected peers can act as relays
-	// for other peers that cannot establish direct connections.
-	if n.config.Connection.RelayViaPeers {
-		// Currently logs relay capability; full relay implementation
-		// will be added in a future version
-		slog.Debug("Peer relay enabled, peer available as relay candidate",
-			"peer", peerID,
-			"stats", n.p2pManager.GetStats())
-	}
+	// Peer relaying (multi-hop) is not yet engaged on the data plane; see the
+	// RelayViaPeers field documentation in config.go. Config validation rejects
+	// enabling it, so connected peers are not registered as relay candidates
+	// here. When the feature is implemented, wire connected peers into the
+	// relay router at this point.
 }
 
 // onPeerDisconnected is called when a P2P connection is lost.

@@ -103,13 +103,23 @@ func TestGenerateTransactionID(t *testing.T) {
 	id1 := generateTransactionID()
 	assert.Len(t, id1, 12)
 
-	// Wait a tiny bit and generate another
-	time.Sleep(time.Nanosecond)
 	id2 := generateTransactionID()
 	assert.Len(t, id2, 12)
 
-	// Should be different (time-based)
+	// IDs are cryptographically random and must differ.
 	assert.NotEqual(t, id1, id2)
+
+	// Generate many and ensure full 96-bit randomness yields no collisions and
+	// the values are not all derived from a low-entropy source.
+	seen := make(map[string]struct{}, 1000)
+	for i := 0; i < 1000; i++ {
+		id := generateTransactionID()
+		assert.Len(t, id, 12)
+		key := string(id)
+		_, dup := seen[key]
+		assert.False(t, dup, "transaction IDs must be unique")
+		seen[key] = struct{}{}
+	}
 }
 
 func TestBuildXORPeerAddress(t *testing.T) {

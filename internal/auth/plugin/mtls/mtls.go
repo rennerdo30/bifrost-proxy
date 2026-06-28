@@ -27,6 +27,14 @@ import (
 // a silent mismatch where the certificate was never found.
 const ClientCertContextKey = auth.ClientCertContextKey
 
+// ClientCertChainContextKey is the canonical context key used to pass the full
+// client certificate chain (leaf first, followed by any intermediates) from the
+// TLS-terminating layer into this authenticator. It is an alias of
+// auth.ClientCertChainContextKey. When present, the intermediates are added to
+// the verification pool so chains that depend on intermediate CAs verify
+// correctly instead of failing as "unknown authority".
+const ClientCertChainContextKey = auth.ClientCertChainContextKey
+
 func init() {
 	auth.RegisterPlugin("mtls", &plugin{})
 }
@@ -108,6 +116,11 @@ func (p *plugin) ConfigSchema() string {
       "description": "Whether client certificate is required",
       "default": true
     },
+    "allow_anonymous": {
+      "type": "boolean",
+      "description": "When require_client_cert is false, allow requests without a client certificate to authenticate as the anonymous user. When false (default), a request without a client certificate is skipped so that other providers in an auth chain can handle it instead of being bypassed.",
+      "default": false
+    },
     "subject_mapping": {
       "type": "object",
       "description": "Mapping from certificate fields to user info",
@@ -157,6 +170,7 @@ type mtlsConfig struct {
 	CACertFile        string
 	CACertPEM         string
 	RequireClientCert bool
+	AllowAnonymous    bool
 	SubjectMapping    subjectMapping
 	AllowedSubjects   []*regexp.Regexp
 	AllowedIssuers    []*regexp.Regexp
@@ -201,6 +215,10 @@ func parseConfig(config map[string]any) (*mtlsConfig, error) {
 
 	if requireClientCert, ok := config["require_client_cert"].(bool); ok {
 		cfg.RequireClientCert = requireClientCert
+	}
+
+	if allowAnonymous, ok := config["allow_anonymous"].(bool); ok {
+		cfg.AllowAnonymous = allowAnonymous
 	}
 
 	if verifyTime, ok := config["verify_time"].(bool); ok {
@@ -271,32 +289,100 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 		if a.config.RequireClientCert {
 			return nil, auth.NewAuthError("mtls", "authenticate", auth.ErrAuthRequired)
 		}
-		// No cert but not required - allow anonymous
-		return &auth.UserInfo{
-			Username: "anonymous",
-			Metadata: map[string]string{
-				"auth_type": "mtls",
-				"cert_auth": "none",
-			},
-		}, nil
+		// No client certificate was presented and one is not required.
+		//
+		// Only grant the anonymous identity when explicitly opted in via
+		// allow_anonymous. Otherwise return ErrAuthSkip so that, in a chain
+		// context, the next provider gets a chance to authenticate the request.
+		// Returning anonymous success here would let an mTLS provider placed
+		// early in the chain bypass stricter providers behind it.
+		if a.config.AllowAnonymous {
+			return &auth.UserInfo{
+				Username: "anonymous",
+				Metadata: map[string]string{
+					"auth_type": "mtls",
+					"cert_auth": "none",
+				},
+			}, nil
+		}
+		return nil, auth.ErrAuthSkip
 	}
 
+	// Build the set of intermediate CAs from the presented chain, if any, so
+	// certificates issued through intermediates verify against the trusted root.
+	intermediates := intermediatesFromContext(ctx, cert)
+
 	// Validate the certificate
-	return a.validateCertificate(cert)
+	return a.validateCertificate(cert, intermediates)
+}
+
+// intermediatesFromContext extracts intermediate CAs from the full client
+// certificate chain stored in the context (leaf first). It skips the leaf
+// (element 0, which equals cert) and returns a pool of the remaining
+// certificates, or nil when no intermediates are available.
+func intermediatesFromContext(ctx context.Context, leaf *x509.Certificate) *x509.CertPool {
+	chain, ok := ctx.Value(ClientCertChainContextKey).([]*x509.Certificate)
+	if !ok || len(chain) <= 1 {
+		return nil
+	}
+
+	pool := x509.NewCertPool()
+	added := false
+	for i, c := range chain {
+		if c == nil {
+			continue
+		}
+		// Skip the leaf: element 0, or any element equal to the leaf we verify.
+		if i == 0 || c.Equal(leaf) {
+			continue
+		}
+		pool.AddCert(c)
+		added = true
+	}
+	if !added {
+		return nil
+	}
+	return pool
 }
 
 // AuthenticateCertificate validates a client certificate directly.
 func (a *Authenticator) AuthenticateCertificate(cert *x509.Certificate) (*auth.UserInfo, error) {
-	return a.validateCertificate(cert)
+	return a.validateCertificate(cert, nil)
+}
+
+// AuthenticateCertificateChain validates a client certificate using the supplied
+// chain (leaf first, intermediates after) so that certificates issued through
+// intermediate CAs can be verified against the trusted roots.
+func (a *Authenticator) AuthenticateCertificateChain(chain []*x509.Certificate) (*auth.UserInfo, error) {
+	if len(chain) == 0 || chain[0] == nil {
+		return nil, auth.NewAuthError("mtls", "authenticate", auth.ErrAuthRequired)
+	}
+	leaf := chain[0]
+	var intermediates *x509.CertPool
+	if len(chain) > 1 {
+		intermediates = x509.NewCertPool()
+		for _, c := range chain[1:] {
+			if c != nil {
+				intermediates.AddCert(c)
+			}
+		}
+	}
+	return a.validateCertificate(leaf, intermediates)
 }
 
 // validateCertificate validates a client certificate and extracts user info.
-func (a *Authenticator) validateCertificate(cert *x509.Certificate) (*auth.UserInfo, error) {
+// intermediates, when non-nil, supplies intermediate CAs used to build a path
+// from the leaf to a trusted root.
+func (a *Authenticator) validateCertificate(cert *x509.Certificate, intermediates *x509.CertPool) (*auth.UserInfo, error) {
 	// Verify the certificate chain
 	opts := x509.VerifyOptions{
 		Roots: a.caPool,
 		// Verify for client authentication, not server authentication
 		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	if intermediates != nil {
+		opts.Intermediates = intermediates
 	}
 
 	if a.config.VerifyTime {

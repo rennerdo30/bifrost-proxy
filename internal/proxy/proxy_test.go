@@ -1136,8 +1136,8 @@ func TestPeerCertificate_NonTLS(t *testing.T) {
 	defer c1.Close()
 	defer c2.Close()
 
-	if cert := peerCertificate(c1); cert != nil {
-		t.Fatalf("expected nil cert for non-TLS conn, got %v", cert)
+	if chain := peerCertificateChain(c1); chain != nil {
+		t.Fatalf("expected nil chain for non-TLS conn, got %v", chain)
 	}
 }
 
@@ -1198,9 +1198,9 @@ func TestPeerCertificate_TLSWithClientCert(t *testing.T) {
 		_ = clientTLS.Handshake()
 	}()
 
-	got := peerCertificate(serverTLS)
-	require.NotNil(t, got)
-	assert.Equal(t, "client-user", got.Subject.CommonName)
+	got := peerCertificateChain(serverTLS)
+	require.NotEmpty(t, got)
+	assert.Equal(t, "client-user", got[0].Subject.CommonName)
 
 	_ = serverTLS.Close()
 	_ = clientTLS.Close()

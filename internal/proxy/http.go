@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -51,7 +52,8 @@ type HTTPHandler struct {
 	cacheInterceptor *cache.Interceptor
 	// mitm enables live HTTPS interception when non-nil. It defaults to nil
 	// (OFF): when nil, CONNECT requests use the opaque tunnel path unchanged.
-	mitm *MITMInterceptor
+	mitm          *MITMInterceptor
+	recordMetrics func(protocol, method, status string, duration time.Duration, sent, recv int64)
 }
 
 // HTTPHandlerConfig configures the HTTP handler.
@@ -75,6 +77,11 @@ type HTTPHandlerConfig struct {
 	// tunnels opaque. Construct one only when config MITM is enabled and a CA
 	// has been loaded.
 	MITM *MITMInterceptor
+	// RecordMetrics, when set, receives per-request metrics after each request
+	// completes (protocol, method, status, duration, bytes sent/received). It
+	// lets the server feed Prometheus counters without the proxy importing the
+	// metrics package. Leave nil to record nothing.
+	RecordMetrics func(protocol, method, status string, duration time.Duration, sent, recv int64)
 }
 
 // NewHTTPHandler creates a new HTTP proxy handler.
@@ -100,6 +107,7 @@ func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
 		onError:          cfg.OnError,
 		cacheInterceptor: cfg.CacheInterceptor,
 		mitm:             cfg.MITM,
+		recordMetrics:    cfg.RecordMetrics,
 	}
 }
 
@@ -109,11 +117,11 @@ type tlsConnectionStater interface {
 	ConnectionState() tls.ConnectionState
 }
 
-// peerCertificate returns the leaf client certificate from a TLS-terminated
-// connection, or nil if the connection is not TLS or presented no client
-// certificate. It completes the TLS handshake if necessary so the peer
-// certificates are populated.
-func peerCertificate(conn net.Conn) *x509.Certificate {
+// peerCertificateChain returns the client certificate chain (leaf first,
+// intermediates following) from a TLS-terminated connection, or nil if the
+// connection is not TLS or presented no client certificate. It completes the
+// TLS handshake if necessary so the peer certificates are populated.
+func peerCertificateChain(conn net.Conn) []*x509.Certificate {
 	tc, ok := conn.(tlsConnectionStater)
 	if !ok {
 		return nil
@@ -128,7 +136,7 @@ func peerCertificate(conn net.Conn) *x509.Certificate {
 	if len(state.PeerCertificates) == 0 {
 		return nil
 	}
-	return state.PeerCertificates[0]
+	return state.PeerCertificates
 }
 
 // ServeConn handles a client connection.
@@ -147,10 +155,14 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 	ctx = util.WithStartTime(ctx, startTime)
 
 	// If the client connection is TLS-terminated and presented a client
-	// certificate, expose it on the context so the mTLS auth plugin can
-	// authenticate the request. We populate the canonical auth context key.
-	if cert := peerCertificate(conn); cert != nil {
-		ctx = context.WithValue(ctx, auth.ClientCertContextKey, cert)
+	// certificate, expose the leaf (and full chain, when intermediates were
+	// presented) on the context so the mTLS auth plugin can authenticate the
+	// request and build a verification path through intermediate CAs.
+	if chain := peerCertificateChain(conn); len(chain) > 0 {
+		ctx = context.WithValue(ctx, auth.ClientCertContextKey, chain[0])
+		if len(chain) > 1 {
+			ctx = context.WithValue(ctx, auth.ClientCertChainContextKey, chain)
+		}
 	}
 
 	// Read the first request
@@ -203,6 +215,9 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 		}
 		if h.accessLogger != nil {
 			_ = h.accessLogger.Log(*entry) //nolint:errcheck // Best effort access logging
+		}
+		if h.recordMetrics != nil {
+			h.recordMetrics("http", entry.Method, strconv.Itoa(entry.StatusCode), entry.Duration, entry.BytesSent, entry.BytesReceived)
 		}
 	}()
 
