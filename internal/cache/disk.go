@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -488,8 +489,7 @@ func (d *DiskStorage) dataFilePath(key string) (string, error) {
 	if !IsPathSafeKey(key) {
 		return "", fmt.Errorf("%w: %q", ErrInvalidKey, truncateKey(key))
 	}
-	shard := d.shardForKey(key)
-	return filepath.Join(d.dataPath, shard, key+".dat"), nil
+	return d.safeChildPath(d.shardForKey(key), key+".dat")
 }
 
 // metaFilePath returns the path for a cache entry's metadata file.
@@ -498,8 +498,21 @@ func (d *DiskStorage) metaFilePath(key string) (string, error) {
 	if !IsPathSafeKey(key) {
 		return "", fmt.Errorf("%w: %q", ErrInvalidKey, truncateKey(key))
 	}
-	shard := d.shardForKey(key)
-	return filepath.Join(d.dataPath, shard, key+".meta"), nil
+	return d.safeChildPath(d.shardForKey(key), key+".meta")
+}
+
+// safeChildPath joins the cache data dir with the given shard and file name and
+// verifies, via filepath.Clean, that the result stays inside the data dir. This
+// is a defense-in-depth path-traversal barrier on top of IsPathSafeKey (and the
+// form static analysis recognizes as sanitizing a path before it reaches a
+// filesystem sink such as os.Open/os.Remove).
+func (d *DiskStorage) safeChildPath(shard, name string) (string, error) {
+	p := filepath.Join(d.dataPath, shard, name)
+	base := filepath.Clean(d.dataPath)
+	if p != base && !strings.HasPrefix(p, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("%w: path escapes cache directory", ErrInvalidKey)
+	}
+	return p, nil
 }
 
 // shardForKey returns the shard directory for a key.
