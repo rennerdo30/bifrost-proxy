@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { GeneratorForm } from '../components/ConfigGenerator/GeneratorForm'
 import { YamlPreview } from '../components/ConfigGenerator/YamlPreview'
 
