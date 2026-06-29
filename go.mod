@@ -3,7 +3,7 @@ module github.com/rennerdo30/bifrost-proxy
 go 1.25.5
 
 require (
-	fyne.io/systray v1.12.1
+	fyne.io/systray v1.12.2
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-ldap/ldap/v3 v3.4.13
 	github.com/jcmturner/gokrb5/v8 v8.4.4
