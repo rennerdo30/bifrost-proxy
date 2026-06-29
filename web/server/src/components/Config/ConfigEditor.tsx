@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import type { ServerConfig } from '../../api/types'
 import { deepEqual } from '../../utils/deepEqual'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
