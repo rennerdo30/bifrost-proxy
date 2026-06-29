@@ -68,7 +68,7 @@ jobs:
         run: make test-integration
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           file: ./coverage.out
           fail_ci_if_error: false
