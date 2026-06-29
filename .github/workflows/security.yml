@@ -80,6 +80,6 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@v4
+        uses: actions/dependency-review-action@v5
         # Repository-level dependency graph can be disabled; keep signal without failing the whole workflow.
         continue-on-error: true
