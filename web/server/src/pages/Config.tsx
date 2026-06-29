@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import yaml from 'js-yaml'
+import * as yaml from 'js-yaml'
 import { api } from '../api/client'
 import { ConfigEditor } from '../components/Config/ConfigEditor'
 import { useToast } from '../components/Toast'
