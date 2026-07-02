@@ -114,7 +114,11 @@ func (p *plugin) ConfigSchema() string {
     },
     "public_key_pem": {
       "type": "string",
-      "description": "Static PEM-encoded public key"
+      "description": "Static PEM-encoded public key (for RSA/EC algorithms)"
+    },
+    "hmac_secret": {
+      "type": "string",
+      "description": "Symmetric secret for HMAC algorithms (HS256/HS384/HS512); required if any HS* algorithm is listed"
     },
     "issuer": {
       "type": "string",
@@ -171,6 +175,11 @@ type jwtConfig struct {
 	EmailClaim          string
 	LeewaySeconds       int64
 	JWKSRefreshInterval time.Duration
+	// HMACSecret is the symmetric key used to verify HS256/HS384/HS512 tokens.
+	// It is only consulted for HMAC algorithms; asymmetric algorithms continue to
+	// use the JWKS / static public key. Keeping it separate prevents any
+	// algorithm-confusion between HMAC and RSA/EC key material.
+	HMACSecret []byte
 }
 
 // parseConfig parses the configuration map.
@@ -196,8 +205,12 @@ func parseConfig(config map[string]any) (*jwtConfig, error) {
 		cfg.PublicKeyPEM = publicKeyPEM
 	}
 
-	if cfg.JWKSURL == "" && cfg.PublicKeyPEM == "" {
-		return nil, fmt.Errorf("jwt auth config: either 'jwks_url' or 'public_key_pem' is required")
+	if secret, ok := config["hmac_secret"].(string); ok && secret != "" {
+		cfg.HMACSecret = []byte(secret)
+	}
+
+	if cfg.JWKSURL == "" && cfg.PublicKeyPEM == "" && len(cfg.HMACSecret) == 0 {
+		return nil, fmt.Errorf("jwt auth config: one of 'jwks_url', 'public_key_pem', or 'hmac_secret' is required")
 	}
 
 	if issuer, ok := config["issuer"].(string); ok {
@@ -217,6 +230,17 @@ func parseConfig(config map[string]any) (*jwtConfig, error) {
 		}
 	} else if algorithms, ok := config["algorithms"].([]string); ok {
 		cfg.Algorithms = algorithms
+	}
+
+	// HMAC algorithms require a symmetric key. Reject the configuration at parse
+	// time (fail closed) if an HMAC algorithm is allowed but no 'hmac_secret' was
+	// supplied — otherwise HMAC verification would always fail at runtime with an
+	// opaque "invalid key type for HMAC" error.
+	for _, alg := range cfg.Algorithms {
+		if isHMACAlg(alg) && len(cfg.HMACSecret) == 0 {
+			return nil, fmt.Errorf("jwt auth config: 'hmac_secret' is required when an HMAC "+
+				"algorithm (%s) is listed in 'algorithms'", alg)
+		}
 	}
 
 	if usernameClaim, ok := config["username_claim"].(string); ok && usernameClaim != "" {
@@ -371,10 +395,21 @@ func (a *Authenticator) validateToken(tokenString string) (map[string]any, error
 		return nil, fmt.Errorf("invalid payload JSON: %w", claimsErr)
 	}
 
-	// Get the signing key
-	key, err := a.getSigningKey(header.Kid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get signing key: %w", err)
+	// Get the signing key. HMAC algorithms use the configured symmetric secret;
+	// asymmetric algorithms use the JWKS / static public key. They are never
+	// interchanged, so a token cannot force RS<->HS key confusion.
+	var key any
+	if isHMACAlg(header.Alg) {
+		if len(a.config.HMACSecret) == 0 {
+			return nil, fmt.Errorf("no HMAC secret configured")
+		}
+		key = a.config.HMACSecret
+	} else {
+		signingKey, keyErr := a.getSigningKey(header.Kid)
+		if keyErr != nil {
+			return nil, fmt.Errorf("failed to get signing key: %w", keyErr)
+		}
+		key = signingKey
 	}
 
 	// Verify signature
@@ -811,6 +846,16 @@ func getHashFunc(alg string) (func() hash.Hash, crypto.Hash) {
 		return crypto.SHA512.New, crypto.SHA512
 	default:
 		return nil, 0
+	}
+}
+
+// isHMACAlg reports whether alg is one of the supported HMAC algorithms.
+func isHMACAlg(alg string) bool {
+	switch alg {
+	case "HS256", "HS384", "HS512":
+		return true
+	default:
+		return false
 	}
 }
 

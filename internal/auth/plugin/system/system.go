@@ -31,8 +31,11 @@ func (p *plugin) Type() string {
 }
 
 // Description returns a human-readable description.
+//
+// The description is explicit that Linux requires the cgo/libpam build (the
+// default build fails closed on Linux); macOS authenticates via dscl.
 func (p *plugin) Description() string {
-	return "System/PAM authentication (Unix/macOS)"
+	return "System/PAM authentication (macOS via dscl; on Linux requires building with CGO_ENABLED=1 -tags pam, otherwise PAM is unavailable and it fails closed)"
 }
 
 // Create creates a new SystemAuthenticator from the configuration.
@@ -40,6 +43,15 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 	cfg, err := parseConfig(config)
 	if err != nil {
 		return nil, err
+	}
+
+	// Be explicit at construction time when this build cannot actually
+	// authenticate on Linux (the default/Docker build compiles the fail-closed
+	// PAM stub), so operators are not misled into believing it works.
+	if runtime.GOOS == "linux" && !pamCompiled {
+		slog.Warn("system auth plugin created on Linux without the PAM backend: " +
+			"all authentication will fail closed. Rebuild with CGO_ENABLED=1 -tags pam " +
+			"(and libpam headers) to enable PAM-based system authentication.")
 	}
 
 	allowedUsers := make(map[string]bool)
