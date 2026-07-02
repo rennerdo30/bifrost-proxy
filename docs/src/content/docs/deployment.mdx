@@ -252,6 +252,23 @@ sudo systemctl stop bifrost-server
 
 ### Log Rotation
 
+Bifrost has **built-in size-based rotation** for file outputs. Set `max_size_mb`
+and `max_backups` in the `logging` section:
+
+```yaml
+logging:
+  level: info
+  format: json
+  output: "/var/log/bifrost/server.log"
+  max_size_mb: 100    # Rotate when the file exceeds 100 MB (<= 0 disables rotation)
+  max_backups: 14     # Keep 14 rotated files (<= 0 keeps all)
+```
+
+Rotated files are renamed with a timestamp suffix (e.g. `server.log.2026-07-02T10-30-00`).
+
+Alternatively, if you prefer external rotation, disable the built-in rotation
+(leave `max_size_mb` unset or `0`) and use `logrotate` with `copytruncate` (the
+process keeps the same file handle, so a plain rename would not be picked up).
 Create `/etc/logrotate.d/bifrost`:
 
 ```
@@ -262,11 +279,8 @@ Create `/etc/logrotate.d/bifrost`:
     compress
     delaycompress
     notifempty
+    copytruncate
     create 0640 bifrost bifrost
-    sharedscripts
-    postrotate
-        systemctl reload bifrost-server >/dev/null 2>&1 || true
-    endscript
 }
 ```
 
@@ -363,7 +377,7 @@ sudo launchctl load /Library/LaunchDaemons/com.bifrost.client.plist
 ## Windows
 
 > **Note:** Authentication Limitation
-> System authentication (`auth.mode: system`) is **not supported on Windows**.
+> System authentication (an `auth.providers[]` entry with `type: system`) is **not supported on Windows**.
 > Use `native`, `ldap`, or `oauth` authentication instead.
 > See the [Authentication Guide](authentication.md#system-authentication) for details.
 

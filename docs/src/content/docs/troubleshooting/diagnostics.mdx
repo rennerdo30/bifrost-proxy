@@ -295,23 +295,23 @@ curl -s http://localhost:7090/metrics | grep bifrost_connections_active
 # Request rate
 curl -s http://localhost:7090/metrics | grep bifrost_requests_total
 
-# Error rate
-curl -s http://localhost:7090/metrics | grep bifrost_connections_errors_total
+# Requests by status (compute error rate from 5xx statuses)
+curl -s http://localhost:7090/metrics | grep bifrost_requests_total
 
 # Backend health
-curl -s http://localhost:7090/metrics | grep bifrost_backend_healthy
+curl -s http://localhost:7090/metrics | grep bifrost_backend_health
 
 # Backend latency
 curl -s http://localhost:7090/metrics | grep bifrost_backend_latency_seconds
 
-# Memory usage
-curl -s http://localhost:7090/metrics | grep bifrost_memory_bytes
+# Memory usage (from the process collector)
+curl -s http://localhost:7090/metrics | grep process_resident_memory_bytes
 
 # Goroutine count
 curl -s http://localhost:7090/metrics | grep bifrost_goroutines
 
-# Cache statistics
-curl -s http://localhost:7090/metrics | grep bifrost_cache
+# Cache statistics (via the REST API — cache metrics are not exported to Prometheus)
+curl -s http://localhost:7082/api/v1/cache/stats
 ```
 
 ### Prometheus Queries
@@ -320,8 +320,8 @@ curl -s http://localhost:7090/metrics | grep bifrost_cache
 # Request rate per second
 rate(bifrost_requests_total[5m])
 
-# Error rate percentage
-rate(bifrost_connections_errors_total[5m]) / rate(bifrost_connections_total[5m]) * 100
+# Error rate percentage (share of requests with a 5xx status)
+sum(rate(bifrost_requests_total{status=~"5.."}[5m])) / sum(rate(bifrost_requests_total[5m])) * 100
 
 # Average request duration
 rate(bifrost_request_duration_seconds_sum[5m]) / rate(bifrost_request_duration_seconds_count[5m])
@@ -330,10 +330,10 @@ rate(bifrost_request_duration_seconds_sum[5m]) / rate(bifrost_request_duration_s
 histogram_quantile(0.95, rate(bifrost_request_duration_seconds_bucket[5m]))
 
 # Unhealthy backends
-bifrost_backend_healthy == 0
+bifrost_backend_health == 0
 
-# Backend latency comparison
-bifrost_backend_latency_seconds{quantile="0.99"}
+# P99 backend health-check latency
+histogram_quantile(0.99, rate(bifrost_backend_latency_seconds_bucket[5m]))
 ```
 
 ---

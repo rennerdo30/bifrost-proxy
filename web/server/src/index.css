@@ -1,16 +1,28 @@
-@reference "tailwindcss";
+@import "tailwindcss";
 @config "../tailwind.config.js";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+
+/*
+ * Tailwind v4 theme tokens. These emit `--font-sans`/`--font-mono` CSS
+ * variables and wire them to `--default-font-family` so Preflight applies
+ * Inter to <html>/<body> (mirrors `fontFamily.sans`/`mono` in
+ * tailwind.config.js, which the legacy `@config` bridge does not surface
+ * as `--font-*` variables on its own).
+ */
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Monaco, monospace;
+  --default-font-family: var(--font-sans);
+  --default-mono-font-family: var(--font-mono);
+}
 
 @layer base {
   html {
     @apply scroll-smooth;
+    font-family: var(--font-sans);
   }
 
   body {
-    @apply min-h-screen;
+    @apply min-h-screen font-sans;
   }
 
   ::-webkit-scrollbar {

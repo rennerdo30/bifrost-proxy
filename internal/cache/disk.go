@@ -50,11 +50,21 @@ type DiskStorage struct {
 		evictionCount atomic.Int64
 	}
 
+	// metrics records Prometheus metrics; may be nil if unset.
+	metrics *Metrics
+
 	// stopCh signals background goroutines to stop.
 	stopCh chan struct{}
 
 	// closed indicates if the storage has been stopped.
 	closed bool
+}
+
+// attachMetrics wires a Prometheus metrics recorder into the storage.
+func (d *DiskStorage) attachMetrics(metrics *Metrics) {
+	d.mu.Lock()
+	d.metrics = metrics
+	d.mu.Unlock()
 }
 
 // NewDiskStorage creates a new disk storage.
@@ -597,6 +607,7 @@ func (d *DiskStorage) evictOne() bool {
 
 	d.removeEntry(victimKey)
 	d.stats.evictionCount.Add(1)
+	d.metrics.RecordEviction("disk", EvictionReasonSize)
 	return true
 }
 
@@ -748,6 +759,7 @@ func (d *DiskStorage) cleanupExpired() {
 
 	for _, key := range expired {
 		d.removeEntry(key)
+		d.metrics.RecordEviction("disk", EvictionReasonTTL)
 	}
 
 	if len(expired) > 0 {

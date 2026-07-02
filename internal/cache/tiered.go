@@ -46,6 +46,12 @@ func NewTieredStorage(tieredCfg *TieredConfig, memoryCfg *MemoryConfig, diskCfg 
 	}, nil
 }
 
+// attachMetrics wires a Prometheus metrics recorder into both tiers.
+func (t *TieredStorage) attachMetrics(metrics *Metrics) {
+	t.memory.attachMetrics(metrics)
+	t.disk.attachMetrics(metrics)
+}
+
 // Start initializes both storage backends.
 func (t *TieredStorage) Start(ctx context.Context) error {
 	t.mu.Lock()
