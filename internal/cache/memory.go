@@ -40,8 +40,18 @@ type MemoryStorage struct {
 		evictionCount atomic.Int64
 	}
 
+	// metrics records Prometheus metrics; may be nil if unset.
+	metrics *Metrics
+
 	// closed indicates if the storage has been stopped
 	closed bool
+}
+
+// attachMetrics wires a Prometheus metrics recorder into the storage.
+func (m *MemoryStorage) attachMetrics(metrics *Metrics) {
+	m.mu.Lock()
+	m.metrics = metrics
+	m.mu.Unlock()
 }
 
 // memoryEntry wraps an entry in the LRU list.
@@ -439,6 +449,7 @@ func (m *MemoryStorage) evictOne() bool {
 
 	m.removeElement(victim)
 	m.stats.evictionCount.Add(1)
+	m.metrics.RecordEviction("memory", EvictionReasonSize)
 	return true
 }
 
@@ -484,6 +495,7 @@ func (m *MemoryStorage) CleanupExpired() int {
 
 	for _, elem := range expired {
 		m.removeElement(elem)
+		m.metrics.RecordEviction("memory", EvictionReasonTTL)
 	}
 
 	if len(expired) > 0 {

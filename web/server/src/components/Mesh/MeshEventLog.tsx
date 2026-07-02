@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import type { MeshPeerEvent } from '../../api/types'
-import { BASE_PATH } from '../../api/client'
+import { BASE_PATH, getApiToken } from '../../api/client'
 
 interface MeshEventLogProps {
   networkId: string | null
@@ -90,9 +90,13 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
       return
     }
 
-    // Connect to WebSocket for events
+    // Connect to WebSocket for events. Browsers cannot set the Authorization
+    // header on a WS handshake, so when an API token is configured we pass it
+    // via the ?token= query parameter the server auth middleware accepts.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/api/v1/mesh/networks/${encodeURIComponent(networkId)}/events`
+    const token = getApiToken()
+    const query = token ? `?token=${encodeURIComponent(token)}` : ''
+    const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/api/v1/mesh/networks/${encodeURIComponent(networkId)}/events${query}`
 
     try {
       const ws = new WebSocket(wsUrl)

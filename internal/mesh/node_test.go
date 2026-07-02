@@ -10,6 +10,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestIsPeerAllowed(t *testing.T) {
+	t.Run("empty allowlist allows all", func(t *testing.T) {
+		n := &MeshNode{config: Config{}}
+		assert.True(t, n.isPeerAllowed("anykey=="))
+	})
+
+	t.Run("only listed keys allowed", func(t *testing.T) {
+		n := &MeshNode{config: Config{
+			Security: SecurityConfig{AllowedPeers: []string{"good1", "good2"}},
+		}}
+		assert.True(t, n.isPeerAllowed("good1"))
+		assert.True(t, n.isPeerAllowed("good2"))
+		assert.False(t, n.isPeerAllowed("evil"))
+		assert.False(t, n.isPeerAllowed(""))
+	})
+}
+
 func TestNewMeshNode(t *testing.T) {
 	t.Run("valid config", func(t *testing.T) {
 		config := DefaultConfig()

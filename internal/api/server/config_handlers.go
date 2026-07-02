@@ -40,10 +40,16 @@ type ValidationError struct {
 	Message string `json:"message"`
 }
 
-// Hot-reloadable sections
+// hotReloadableSections lists the config sections that Server.ReloadConfig can
+// apply to the running server without a restart. Keep this in sync with the
+// sections actually handled in (*server.Server).ReloadConfig — currently
+// routes, rate_limit (incl. bandwidth), access_control, and cache (rules only).
+// Everything else genuinely requires a restart, so it must NOT be listed here.
 var hotReloadableSections = map[string]bool{
-	"routes":     true,
-	"rate_limit": true,
+	"routes":         true,
+	"rate_limit":     true,
+	"access_control": true,
+	"cache":          true,
 }
 
 // handleGetConfigMeta returns metadata about config sections.
@@ -53,13 +59,19 @@ func (a *API) handleGetConfigMeta(w http.ResponseWriter, r *http.Request) {
 		{Section: "backends", HotReloadable: false, Description: "Backend connection configurations"},
 		{Section: "routes", HotReloadable: true, Description: "Routing rules"},
 		{Section: "auth", HotReloadable: false, Description: "Authentication settings"},
-		{Section: "rate_limit", HotReloadable: true, Description: "Rate limiting configuration"},
+		{Section: "rate_limit", HotReloadable: true, Description: "Rate limiting and bandwidth configuration"},
+		{Section: "access_control", HotReloadable: true, Description: "IP whitelist/blacklist rules"},
 		{Section: "access_log", HotReloadable: false, Description: "Access logging settings"},
 		{Section: "metrics", HotReloadable: false, Description: "Prometheus metrics settings"},
 		{Section: "logging", HotReloadable: false, Description: "Application logging"},
 		{Section: "web_ui", HotReloadable: false, Description: "Web UI settings"},
 		{Section: "api", HotReloadable: false, Description: "API settings"},
 		{Section: "health_check", HotReloadable: false, Description: "Health check defaults"},
+		{Section: "auto_update", HotReloadable: false, Description: "Automatic update settings"},
+		{Section: "cache", HotReloadable: true, Description: "Response cache rules (storage changes require restart)"},
+		{Section: "network", HotReloadable: false, Description: "Network dial/keepalive/connection settings"},
+		{Section: "session", HotReloadable: false, Description: "Session store settings"},
+		{Section: "mitm", HotReloadable: false, Description: "MITM inspection settings"},
 	}
 	a.writeJSON(w, http.StatusOK, meta)
 }
@@ -219,6 +231,9 @@ func detectChangedSections(current, new *config.ServerConfig) []string {
 	if !reflect.DeepEqual(current.RateLimit, new.RateLimit) {
 		changed = append(changed, "rate_limit")
 	}
+	if !reflect.DeepEqual(current.AccessControl, new.AccessControl) {
+		changed = append(changed, "access_control")
+	}
 	if !reflect.DeepEqual(current.AccessLog, new.AccessLog) {
 		changed = append(changed, "access_log")
 	}
@@ -233,6 +248,24 @@ func detectChangedSections(current, new *config.ServerConfig) []string {
 	}
 	if !reflect.DeepEqual(current.API, new.API) {
 		changed = append(changed, "api")
+	}
+	if !reflect.DeepEqual(current.HealthCheck, new.HealthCheck) {
+		changed = append(changed, "health_check")
+	}
+	if !reflect.DeepEqual(current.AutoUpdate, new.AutoUpdate) {
+		changed = append(changed, "auto_update")
+	}
+	if !reflect.DeepEqual(current.Cache, new.Cache) {
+		changed = append(changed, "cache")
+	}
+	if !reflect.DeepEqual(current.Network, new.Network) {
+		changed = append(changed, "network")
+	}
+	if !reflect.DeepEqual(current.Session, new.Session) {
+		changed = append(changed, "session")
+	}
+	if !reflect.DeepEqual(current.MITM, new.MITM) {
+		changed = append(changed, "mitm")
 	}
 
 	return changed

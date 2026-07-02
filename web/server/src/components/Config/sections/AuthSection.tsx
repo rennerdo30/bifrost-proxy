@@ -3,6 +3,7 @@ import { Section } from '../Section'
 import { NativeUsersForm } from '../auth-forms/NativeUsersForm'
 import { ApiKeysForm } from '../auth-forms/ApiKeysForm'
 import { AuthProviderConfigForm } from '../auth-forms/AuthProviderConfigForm'
+import { NegotiateForm } from '../auth-forms/NegotiateForm'
 import type { AuthConfig, AuthProvider, AuthProviderConfig, AuthProviderType } from '../../../api/types'
 
 interface AuthSectionProps {
@@ -14,20 +15,38 @@ interface AuthTypeOption {
   value: AuthProviderType
   label: string
   description: string
+  // warning marks provider types that are known not to authenticate in the
+  // default/Docker server build so operators are not misled into relying on
+  // them. The type is still selectable (it may work in a custom build).
+  warning?: string
 }
 
 // All registered auth plugin types (see internal/auth/plugin).
 const authTypes: AuthTypeOption[] = [
   { value: 'none', label: 'None', description: 'Allow all requests (no authentication)' },
   { value: 'native', label: 'Native', description: 'Built-in user database with bcrypt passwords' },
-  { value: 'system', label: 'System (PAM)', description: 'Authenticate against OS users via PAM' },
+  {
+    value: 'system',
+    label: 'System (PAM)',
+    description: 'Authenticate against OS users via PAM',
+    warning:
+      'PAM is compiled out of the default and Docker builds and fails closed (rejects all logins). It only works in a build made with the "pam" tag on Linux with cgo enabled.',
+  },
   { value: 'ldap', label: 'LDAP', description: 'Authenticate against LDAP/Active Directory' },
   { value: 'oauth', label: 'OAuth/OIDC', description: 'Authenticate via OAuth 2.0 / OpenID Connect' },
   { value: 'jwt', label: 'JWT', description: 'Verify JWT bearer tokens via JWKS or a static key' },
   { value: 'apikey', label: 'API Key', description: 'Authenticate via API keys in a request header' },
   { value: 'mtls', label: 'mTLS', description: 'Authenticate via client TLS certificates' },
   { value: 'kerberos', label: 'Kerberos (SPNEGO)', description: 'Negotiate authentication via Kerberos' },
-  { value: 'ntlm', label: 'NTLM', description: 'Negotiate authentication via NTLM' },
+  {
+    value: 'ntlm',
+    label: 'NTLM',
+    description: 'Negotiate authentication via NTLM',
+    warning:
+      'NTLM Type 3 validation is not implemented on the server and fails closed (rejects every client). Selecting it will block all requests routed through it.',
+  },
+  { value: 'hotp', label: 'HOTP (counter-based OTP)', description: 'One-time passwords using an HMAC counter' },
+  { value: 'totp', label: 'TOTP (time-based OTP)', description: 'One-time passwords using a time counter (authenticator apps)' },
 ]
 
 // Sensible starting config map per plugin type. Empty maps are fine for
@@ -42,9 +61,23 @@ function getDefaultProviderConfig(type: AuthProviderType): AuthProviderConfig {
       return { user_filter: '(uid=%s)' }
     case 'oauth':
       return { scopes: ['openid', 'profile', 'email'] }
+    case 'totp':
+      return { issuer: 'Bifrost Proxy', digits: 6, period: 30, algorithm: 'SHA1', skew: 1 }
+    case 'hotp':
+      return { digits: 6, algorithm: 'SHA1', look_ahead: 10 }
     default:
       return {}
   }
+}
+
+function AuthTypeWarning({ type }: { type: AuthProviderType }) {
+  const warning = authTypes.find((t) => t.value === type)?.warning
+  if (!warning) return null
+  return (
+    <div className="mt-3 p-3 bg-bifrost-warning/10 border border-bifrost-warning/30 rounded-lg text-xs text-bifrost-warning">
+      <strong>Not functional in this build:</strong> {warning}
+    </div>
+  )
 }
 
 function ProviderConfigEditor({
@@ -273,6 +306,8 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     </div>
                   </div>
 
+                  <AuthTypeWarning type={provider.type} />
+
                   <ProviderConfigEditor
                     type={provider.type}
                     config={provider.config || {}}
@@ -318,6 +353,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                 </p>
               </div>
             </div>
+            <AuthTypeWarning type={newProviderType} />
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setShowAddForm(false)} className="btn btn-ghost">
                 Cancel
@@ -343,6 +379,14 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
           Providers are tried in priority order (lowest first). Authentication succeeds when any enabled provider accepts
           the credentials.
         </p>
+
+        <div className="pt-4 border-t border-bifrost-border">
+          <NegotiateForm
+            config={config.negotiate}
+            providers={providers}
+            onChange={(negotiate) => onChange({ ...config, negotiate })}
+          />
+        </div>
       </div>
     </Section>
   )

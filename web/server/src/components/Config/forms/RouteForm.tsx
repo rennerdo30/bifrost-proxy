@@ -59,13 +59,39 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
     // Clean up based on mode
     if (useMultipleBackends) {
       delete savedRoute.backend
+      // Weights only apply to the "weighted" strategy; drop them otherwise and
+      // prune entries for backends no longer selected.
+      if (savedRoute.load_balance === 'weighted' && savedRoute.weights) {
+        const pruned: Record<string, number> = {}
+        for (const b of savedRoute.backends || []) {
+          if (savedRoute.weights[b] !== undefined) pruned[b] = savedRoute.weights[b]
+        }
+        savedRoute.weights = Object.keys(pruned).length > 0 ? pruned : undefined
+        if (!savedRoute.weights) delete savedRoute.weights
+      } else {
+        delete savedRoute.weights
+      }
     } else {
       delete savedRoute.backends
       delete savedRoute.load_balance
+      delete savedRoute.weights
     }
 
     onSave(savedRoute)
   }, [form, useMultipleBackends, onSave])
+
+  const setWeight = useCallback((backendName: string, value: string) => {
+    setForm((prev) => {
+      const next = { ...(prev.weights || {}) }
+      const parsed = parseInt(value, 10)
+      if (value === '' || Number.isNaN(parsed)) {
+        delete next[backendName]
+      } else {
+        next[backendName] = parsed
+      }
+      return { ...prev, weights: next }
+    })
+  }, [])
 
   const updateForm = useCallback((field: string, value: unknown) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -204,6 +230,31 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
                   ))}
                 </select>
               </div>
+
+              {form.load_balance === 'weighted' && (form.backends?.length ?? 0) > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Backend Weights</label>
+                  <div className="space-y-2">
+                    {form.backends!.map((b) => (
+                      <div key={b} className="flex items-center gap-3">
+                        <span className="text-sm text-gray-300 w-40 truncate">{b}</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={form.weights?.[b] ?? ''}
+                          onChange={(e) => setWeight(b, e.target.value)}
+                          placeholder="1"
+                          aria-label={`Weight for ${b}`}
+                          className="input max-w-[8rem]"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-bifrost-muted mt-1">
+                    Relative weights for the weighted strategy. Backends left blank default to 1.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

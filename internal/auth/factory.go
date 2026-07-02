@@ -3,6 +3,7 @@ package auth
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // ProviderConfig represents a single authentication provider configuration.
@@ -39,7 +40,8 @@ func (f *Factory) Create(cfg ProviderConfig) (Authenticator, error) {
 
 	plugin, ok := GetPlugin(cfg.Type)
 	if !ok {
-		return nil, fmt.Errorf("unknown auth plugin type: %s (available: %v)", cfg.Type, ListPlugins())
+		return nil, fmt.Errorf("unknown auth plugin type: %s (available: %v)%s",
+			cfg.Type, ListPlugins(), guidanceForUnknownType(cfg.Type))
 	}
 
 	// Validate the configuration
@@ -108,6 +110,25 @@ func (f *Factory) CreateChain(providers []ProviderConfig) (Authenticator, error)
 	return chain, nil
 }
 
+// guidanceForUnknownType returns extra, actionable guidance appended to
+// "unknown type" errors for names that are commonly misconfigured as auth
+// providers but are not (and are not intended to be) registered plugins.
+//
+// In particular, "negotiate" (SPNEGO/Kerberos/NTLM single sign-on) is HTTP
+// middleware configured via the top-level `auth.negotiate.*` section, not an
+// auth provider, so a provider entry of type "negotiate" can never work. We
+// reject it clearly and point operators at the correct configuration.
+func guidanceForUnknownType(t string) string {
+	switch strings.ToLower(strings.TrimSpace(t)) {
+	case "negotiate", "spnego":
+		return "; 'negotiate' is not an auth provider — it is SPNEGO/Negotiate " +
+			"middleware configured via the top-level 'auth.negotiate.*' section, " +
+			"not under 'auth.providers'"
+	default:
+		return ""
+	}
+}
+
 // ValidateProviders validates a list of provider configurations without creating authenticators.
 func (f *Factory) ValidateProviders(providers []ProviderConfig) error {
 	names := make(map[string]bool)
@@ -129,7 +150,8 @@ func (f *Factory) ValidateProviders(providers []ProviderConfig) error {
 
 		plugin, ok := GetPlugin(cfg.Type)
 		if !ok {
-			return fmt.Errorf("provider %q: unknown type %q (available: %v)", cfg.Name, cfg.Type, ListPlugins())
+			return fmt.Errorf("provider %q: unknown type %q (available: %v)%s",
+				cfg.Name, cfg.Type, ListPlugins(), guidanceForUnknownType(cfg.Type))
 		}
 
 		// Validate config

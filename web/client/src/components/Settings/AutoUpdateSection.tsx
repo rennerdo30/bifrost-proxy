@@ -18,6 +18,13 @@ export function AutoUpdateSection() {
       defaultOpen={false}
     >
       <div className="space-y-4">
+        {/* The client daemon does not yet run a background update checker, so
+            these values are persisted but currently have no runtime effect.
+            Keep this notice honest until the daemon wires up the updater. */}
+        <div className="rounded-md border border-bifrost-warning/30 bg-bifrost-warning/10 px-3 py-2 text-sm text-bifrost-warning">
+          Automatic update checks are not yet performed by the client daemon.
+          These settings are saved but currently have no runtime effect.
+        </div>
         <FormToggle
           label="Enable Auto-Update"
           description="Automatically check for and install updates"

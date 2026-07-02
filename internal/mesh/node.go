@@ -871,6 +871,15 @@ func (n *MeshNode) onPeerDiscovered(info PeerInfo) {
 		return
 	}
 
+	// Enforce the peer allowlist (fail closed). When AllowedPeers is configured,
+	// only peers whose public key appears in the list are registered and
+	// connected; all others are ignored. Combined with the P2P manager rejecting
+	// unregistered inbound keys, this prevents unauthorized peers from joining.
+	if !n.isPeerAllowed(info.PublicKey) {
+		slog.Warn("ignoring peer not in allowed_peers list", "peer_id", info.ID)
+		return
+	}
+
 	// Register the public-key-to-peer-ID mapping so that NAT-traversed inbound
 	// connections from this peer resolve to its real peer ID (and trigger route
 	// installation) instead of a synthetic incoming-<addr> ID.
@@ -915,6 +924,24 @@ func (n *MeshNode) onPeerDiscovered(info PeerInfo) {
 			"connection_type", conn.Type().String(),
 		)
 	}()
+}
+
+// isPeerAllowed reports whether a peer with the given base64-encoded public key
+// is permitted to join. When Security.AllowedPeers is empty the allowlist is not
+// enforced (any discovered peer is allowed); otherwise only public keys present
+// in the list are permitted. The comparison is on the exact base64 encoding as
+// distributed via discovery.
+func (n *MeshNode) isPeerAllowed(publicKey string) bool {
+	allowed := n.config.Security.AllowedPeers
+	if len(allowed) == 0 {
+		return true
+	}
+	for _, k := range allowed {
+		if k == publicKey {
+			return true
+		}
+	}
+	return false
 }
 
 // onPeerLeft is called when a peer leaves the network.

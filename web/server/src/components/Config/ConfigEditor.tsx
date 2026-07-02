@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import * as yaml from 'js-yaml'
-import type { ServerConfig } from '../../api/types'
+import type { ServerConfig, ConfigValidateResponse } from '../../api/types'
 import { deepEqual } from '../../utils/deepEqual'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
 import { ServerSection } from './sections/ServerSection'
@@ -17,13 +17,16 @@ import { APISection } from './sections/APISection'
 import { HealthCheckSection } from './sections/HealthCheckSection'
 import { AutoUpdateSection } from './sections/AutoUpdateSection'
 import { CacheSection } from './sections/CacheSection'
+import { NetworkSection } from './sections/NetworkSection'
+import { SessionSection } from './sections/SessionSection'
+import { MITMSection } from './sections/MITMSection'
 
 interface ConfigEditorProps {
   config: ServerConfig | undefined
   isLoading: boolean
   onSave: (config: ServerConfig, backup: boolean) => Promise<void>
   onReload: () => Promise<void>
-  onValidate?: (config: ServerConfig) => Promise<{ valid: boolean; errors?: string[] }>
+  onValidate?: (config: ServerConfig) => Promise<ConfigValidateResponse>
 }
 
 // Default config values for initialization
@@ -399,6 +402,24 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
           <CacheSection
             config={currentConfig.cache || defaultCache}
             onChange={(cache) => updateConfig({ cache })}
+          />
+
+          {/* Network */}
+          <NetworkSection
+            config={currentConfig.network}
+            onChange={(network) => updateConfig({ network })}
+          />
+
+          {/* Session Storage */}
+          <SessionSection
+            config={currentConfig.session}
+            onChange={(session) => updateConfig({ session })}
+          />
+
+          {/* HTTPS Interception (MITM) */}
+          <MITMSection
+            config={currentConfig.mitm}
+            onChange={(mitm) => updateConfig({ mitm })}
           />
         </>
       )}

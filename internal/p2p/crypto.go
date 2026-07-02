@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"sync"
 	"sync/atomic"
 
 	"golang.org/x/crypto/chacha20poly1305"
@@ -84,6 +85,21 @@ func PublicKeyFromPrivate(privateKey []byte) ([]byte, error) {
 	return public[:], nil
 }
 
+// ephemeralPubSize is the size of the ephemeral X25519 public key each side
+// contributes in its handshake message (in the slot previously used for a raw
+// random value). The ephemeral-ephemeral X25519 result is mixed into the KDF
+// salt so that:
+//   - session keys are unique per handshake (per reconnect), which prevents
+//     ChaCha20-Poly1305 nonce reuse even though the counter restarts at 0 and
+//     the static X25519 shared secret is deterministic; and
+//   - the session gains forward secrecy: the ephemeral private keys are
+//     discarded after the handshake, so a later compromise of a static private
+//     key does not reveal past session keys.
+//
+// Authentication is still provided by the static-static X25519 shared secret,
+// which is used as the HKDF input keying material.
+const ephemeralPubSize = PublicKeySize
+
 // CryptoSession manages an encrypted session with a peer.
 type CryptoSession struct {
 	localPrivate [PrivateKeySize]byte
@@ -91,11 +107,18 @@ type CryptoSession struct {
 	remotePublic [PublicKeySize]byte
 	sharedSecret [32]byte
 
+	// localEphemeral is this side's per-session ephemeral key pair; its private
+	// half is discarded (dropped with the session) after the handshake.
+	localEphemeral *KeyPair
+	// ephemeralShared is the ephemeral-ephemeral X25519 result, identical on
+	// both peers and used as the KDF salt to make each session's keys unique.
+	ephemeralShared [32]byte
+
 	sendCipher cipher.AEAD
 	recvCipher cipher.AEAD
 
 	sendNonce atomic.Uint64
-	recvNonce atomic.Uint64
+	replay    replayFilter
 
 	handshakeComplete atomic.Bool
 }
@@ -138,29 +161,36 @@ func (cs *CryptoSession) CreateHandshakeInit(remotePublicKey []byte) ([]byte, er
 
 	copy(cs.remotePublic[:], remotePublicKey)
 
-	// Compute shared secret using X25519
+	// Compute the static-static shared secret using X25519. This authenticates
+	// the peer (only a holder of the peer's static private key can derive it)
+	// and is used as the HKDF input keying material.
 	sharedSecret, err := curve25519.X25519(cs.localPrivate[:], cs.remotePublic[:])
 	if err != nil {
 		return nil, err
 	}
 	copy(cs.sharedSecret[:], sharedSecret)
 
-	// Build init message: type (1) + local public key (32) + random (32)
-	msg := make([]byte, 1+PublicKeySize+32)
-	msg[0] = msgTypeHandshakeInit
-	copy(msg[1:33], cs.localPublic[:])
-
-	// Add random bytes for freshness
-	if _, err := rand.Read(msg[33:65]); err != nil {
+	// Generate a per-session ephemeral key pair. Its public half is sent in the
+	// handshake; the ephemeral-ephemeral X25519 result becomes the KDF salt,
+	// giving per-session keys and forward secrecy.
+	eph, err := GenerateKeyPair()
+	if err != nil {
 		return nil, err
 	}
+	cs.localEphemeral = eph
+
+	// Build init message: type (1) + local public key (32) + ephemeral pub (32)
+	msg := make([]byte, 1+PublicKeySize+ephemeralPubSize)
+	msg[0] = msgTypeHandshakeInit
+	copy(msg[1:33], cs.localPublic[:])
+	copy(msg[33:65], eph.PublicKey[:])
 
 	return msg, nil
 }
 
 // ProcessHandshakeInit processes a handshake initiation message.
 func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
-	if len(msg) < 1+PublicKeySize {
+	if len(msg) < 1+PublicKeySize+ephemeralPubSize {
 		return nil, ErrHandshakeFailed
 	}
 
@@ -168,15 +198,28 @@ func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
 		return nil, ErrHandshakeFailed
 	}
 
-	// Extract remote public key
+	// Extract remote static public key and the initiator's ephemeral public key.
 	copy(cs.remotePublic[:], msg[1:33])
+	var remoteEphemeral [ephemeralPubSize]byte
+	copy(remoteEphemeral[:], msg[33:65])
 
-	// Compute shared secret using X25519
+	// Compute the static-static shared secret (authentication + HKDF IKM).
 	sharedSecret, err := curve25519.X25519(cs.localPrivate[:], cs.remotePublic[:])
 	if err != nil {
 		return nil, err
 	}
 	copy(cs.sharedSecret[:], sharedSecret)
+
+	// Generate this side's ephemeral key pair and compute the ephemeral-ephemeral
+	// shared secret used as the KDF salt.
+	eph, err := GenerateKeyPair()
+	if err != nil {
+		return nil, err
+	}
+	cs.localEphemeral = eph
+	if err := cs.computeEphemeralShared(remoteEphemeral[:]); err != nil {
+		return nil, err
+	}
 
 	// Initialize ciphers
 	if err := cs.initializeCiphers(); err != nil {
@@ -185,21 +228,18 @@ func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
 
 	cs.handshakeComplete.Store(true)
 
-	// Build response: type (1) + local public key (32) + random (32)
-	response := make([]byte, 1+PublicKeySize+32)
+	// Build response: type (1) + local public key (32) + ephemeral pub (32)
+	response := make([]byte, 1+PublicKeySize+ephemeralPubSize)
 	response[0] = msgTypeHandshakeResponse
 	copy(response[1:33], cs.localPublic[:])
-
-	if _, err := rand.Read(response[33:65]); err != nil {
-		return nil, err
-	}
+	copy(response[33:65], eph.PublicKey[:])
 
 	return response, nil
 }
 
 // ProcessHandshakeResponse processes a handshake response message.
 func (cs *CryptoSession) ProcessHandshakeResponse(msg []byte) error {
-	if len(msg) < 1+PublicKeySize {
+	if len(msg) < 1+PublicKeySize+ephemeralPubSize {
 		return ErrHandshakeFailed
 	}
 
@@ -215,6 +255,16 @@ func (cs *CryptoSession) ProcessHandshakeResponse(msg []byte) error {
 		return ErrHandshakeFailed
 	}
 
+	if cs.localEphemeral == nil {
+		return ErrHandshakeFailed
+	}
+
+	// Compute the ephemeral-ephemeral shared secret (KDF salt) from the
+	// responder's ephemeral public key.
+	if err := cs.computeEphemeralShared(msg[33:65]); err != nil {
+		return err
+	}
+
 	// Initialize ciphers
 	if err := cs.initializeCiphers(); err != nil {
 		return err
@@ -225,14 +275,37 @@ func (cs *CryptoSession) ProcessHandshakeResponse(msg []byte) error {
 	return nil
 }
 
+// computeEphemeralShared derives the ephemeral-ephemeral X25519 shared secret
+// from the local ephemeral private key and the peer's ephemeral public key and
+// stores it as the KDF salt. Both peers compute the identical value (DH is
+// commutative). X25519 rejects low-order points by returning an error, in which
+// case the handshake fails closed.
+func (cs *CryptoSession) computeEphemeralShared(remoteEphemeralPub []byte) error {
+	if cs.localEphemeral == nil {
+		return ErrHandshakeNotComplete
+	}
+	shared, err := curve25519.X25519(cs.localEphemeral.PrivateKey[:], remoteEphemeralPub)
+	if err != nil {
+		return err
+	}
+	copy(cs.ephemeralShared[:], shared)
+	return nil
+}
+
 // initializeCiphers initializes the send and receive ciphers.
 func (cs *CryptoSession) initializeCiphers() error {
-	// Derive separate keys for send and receive
-	// Use simple key derivation: send_key = H(shared || "send"), recv_key = H(shared || "recv")
-	// In production, use proper KDF like HKDF
+	// Derive separate keys for send and receive using HKDF. The input keying
+	// material is the deterministic static-static X25519 secret (which
+	// authenticates the peer); the salt is the per-session ephemeral-ephemeral
+	// X25519 secret. Because the salt changes every handshake, the derived keys
+	// are unique per session, so the nonce counter (which restarts at 0 each
+	// session) never reuses a (key, nonce) pair — essential for
+	// ChaCha20-Poly1305. Because the ephemeral private keys are discarded after
+	// the handshake, the session also has forward secrecy.
+	salt := cs.ephemeralShared[:]
 
-	sendKey := deriveKey(cs.sharedSecret[:], []byte("send"))
-	recvKey := deriveKey(cs.sharedSecret[:], []byte("recv"))
+	sendKey := deriveKey(cs.sharedSecret[:], salt, []byte("send"))
+	recvKey := deriveKey(cs.sharedSecret[:], salt, []byte("recv"))
 
 	// Determine direction based on public key comparison
 	// Higher public key sends with sendKey, receives with recvKey
@@ -298,32 +371,115 @@ func (cs *CryptoSession) Decrypt(msg []byte) ([]byte, error) {
 		return nil, ErrAuthenticationFailed
 	}
 
-	// Verify nonce is not replayed (simplified check)
+	// Reject replays. The frame is only checked after successful AEAD
+	// authentication, so the nonce is guaranteed authentic at this point. The
+	// sliding-window filter accepts each authentic nonce at most once and
+	// rejects anything older than the window, defeating replay of previously
+	// captured frames.
 	nonceVal := binary.LittleEndian.Uint64(nonce)
-	lastNonce := cs.recvNonce.Load()
-	if nonceVal <= lastNonce && lastNonce > 0 {
-		// Allow some out-of-order delivery within a window
-		if lastNonce-nonceVal > 1024 {
-			return nil, ErrInvalidNonce
-		}
+	if !cs.replay.accept(nonceVal) {
+		return nil, ErrInvalidNonce
 	}
-	cs.recvNonce.Store(nonceVal)
 
 	return plaintext, nil
 }
 
-// deriveKey derives a key from shared secret and label using HKDF.
-func deriveKey(sharedSecret, label []byte) []byte {
-	kdf := hkdf.New(sha256.New, sharedSecret, nil, label)
+// deriveKey derives a key from shared secret, salt and label using HKDF. The
+// salt binds the derived key to per-session handshake randomness so that keys
+// are unique per session even when sharedSecret is deterministic.
+func deriveKey(sharedSecret, salt, label []byte) []byte {
+	kdf := hkdf.New(sha256.New, sharedSecret, salt, label)
 	key := make([]byte, 32)
 	if _, err := io.ReadFull(kdf, key); err != nil {
 		// HKDF with valid params should never fail; fall back to SHA-256
 		h := sha256.New()
 		h.Write(sharedSecret)
+		h.Write(salt)
 		h.Write(label)
 		return h.Sum(nil)
 	}
 	return key
+}
+
+// Replay-window sizing. The window is a bitmap of recently accepted nonces; any
+// authenticated nonce older than replayWindowBits behind the highest accepted
+// nonce is rejected, as is any nonce already recorded in the window.
+const (
+	replayBlockBits  = 64
+	replayBlocks     = 32
+	replayWindowBits = replayBlockBits * replayBlocks // 2048 (bitmap capacity)
+	// replayWindow is the usable window. Per RFC 6479, one block is reserved as
+	// a guard: without it, a nonce exactly replayWindowBits behind `last` maps
+	// to the same block index as `last` (they are replayBlocks apart), so the
+	// oldest in-window block would alias the newest and a replay could slip
+	// through at the block boundary. Reserving a block keeps every in-window
+	// nonce's block index distinct from the current block.
+	replayWindow = replayWindowBits - replayBlockBits // 1984
+)
+
+// replayFilter is a sliding-window anti-replay filter over strictly increasing
+// per-session nonces. A single monotonic counter with a 1024-slot tolerance is
+// insufficient (it accepts exact replays and drags backwards); this bitmap
+// records each accepted nonce so a given nonce is accepted at most once.
+type replayFilter struct {
+	mu      sync.Mutex
+	last    uint64
+	seenAny bool
+	bitmap  [replayBlocks]uint64
+}
+
+// accept reports whether nonce is fresh (not previously seen and within the
+// window) and records it. It returns false for replays and out-of-window
+// nonces, in which case the frame must be dropped.
+func (r *replayFilter) accept(nonce uint64) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if !r.seenAny {
+		r.seenAny = true
+		r.last = nonce
+		r.setBit(nonce)
+		return true
+	}
+
+	if nonce > r.last {
+		// Advance the window, clearing bits for the blocks we skip past.
+		curBlock := r.last / replayBlockBits
+		newBlock := nonce / replayBlockBits
+		diff := newBlock - curBlock
+		if diff >= replayBlocks {
+			for i := range r.bitmap {
+				r.bitmap[i] = 0
+			}
+		} else {
+			for i := uint64(1); i <= diff; i++ {
+				r.bitmap[(curBlock+i)%replayBlocks] = 0
+			}
+		}
+		r.last = nonce
+		r.setBit(nonce)
+		return true
+	}
+
+	// nonce <= last: reject if too old or already seen.
+	if r.last-nonce >= replayWindow {
+		return false
+	}
+	if r.testBit(nonce) {
+		return false
+	}
+	r.setBit(nonce)
+	return true
+}
+
+func (r *replayFilter) setBit(nonce uint64) {
+	block := (nonce / replayBlockBits) % replayBlocks
+	r.bitmap[block] |= 1 << (nonce % replayBlockBits)
+}
+
+func (r *replayFilter) testBit(nonce uint64) bool {
+	block := (nonce / replayBlockBits) % replayBlocks
+	return r.bitmap[block]&(1<<(nonce%replayBlockBits)) != 0
 }
 
 // compareKeys compares two public keys.
@@ -411,9 +567,10 @@ func (h *NoiseHandshake) Split() (cipher.AEAD, cipher.AEAD, error) {
 	var sharedSecret [32]byte
 	copy(sharedSecret[:], sharedSecretBytes)
 
-	// Derive keys
-	sendKey := deriveKey(sharedSecret[:], []byte("send"))
-	recvKey := deriveKey(sharedSecret[:], []byte("recv"))
+	// Derive keys. The ephemeral X25519 exchange already yields a fresh shared
+	// secret per handshake, so no additional salt is required here.
+	sendKey := deriveKey(sharedSecret[:], nil, []byte("send"))
+	recvKey := deriveKey(sharedSecret[:], nil, []byte("recv"))
 
 	if h.initiator {
 		sendKey, recvKey = recvKey, sendKey

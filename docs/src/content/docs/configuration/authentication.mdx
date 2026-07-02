@@ -47,9 +47,13 @@ graph TB
     Browser -->|Client Cert| MTLSAuth
 
     KerbAuth -->|Validate| KDC
-    NTLMAuth -->|Validate| DC
+    NTLMAuth -.->|Always rejected: no verification| Reject[Fails closed]
     MTLSAuth -->|Verify| CA
 ```
+
+> The NTLM path is shown for completeness only. Bifrost cannot verify NTLM
+> responses, so the NTLM plugin rejects every login (it never contacts a Domain
+> Controller). See the [NTLM section](#ntlm-authentication).
 
 ## Kerberos Authentication
 
@@ -153,37 +157,47 @@ Create or update `/etc/krb5.conf`:
 
 ```yaml
 auth:
-  mode: kerberos
-  kerberos:
-    # Keytab containing service principal key
-    keytab_file: "/etc/bifrost/server.keytab"
-    # Or provide base64-encoded keytab inline
-    # keytab_base64: "BQIAAABTAAIADEVYQU1QTEUuQ09NAAR..."
+  providers:
+    - name: kerberos
+      type: kerberos
+      enabled: true
+      priority: 1
+      config:
+        # Keytab containing service principal key
+        keytab_file: "/etc/bifrost/server.keytab"
+        # Or provide base64-encoded keytab inline
+        # keytab_base64: "BQIAAABTAAIADEVYQU1QTEUuQ09NAAR..."
 
-    # Service principal name
-    service_principal: "HTTP/proxy.example.com"
+        # Service principal name
+        service_principal: "HTTP/proxy.example.com"
 
-    # Kerberos realm
-    realm: "EXAMPLE.COM"
+        # Kerberos realm
+        realm: "EXAMPLE.COM"
 
-    # Path to krb5.conf (optional, defaults to /etc/krb5.conf)
-    krb5_config_file: "/etc/krb5.conf"
+        # Path to krb5.conf (optional, defaults to /etc/krb5.conf)
+        krb5_config_file: "/etc/krb5.conf"
 
-    # Or provide krb5.conf inline
-    # krb5_config: |
-    #   [libdefaults]
-    #   default_realm = EXAMPLE.COM
-    #   ...
+        # Or provide krb5.conf inline
+        # krb5_config: |
+        #   [libdefaults]
+        #   default_realm = EXAMPLE.COM
+        #   ...
 
-    # Override KDC servers (optional)
-    kdc_servers:
-      - "kdc1.example.com:88"
-      - "kdc2.example.com:88"
+        # Override KDC servers (optional)
+        kdc_servers:
+          - "kdc1.example.com:88"
+          - "kdc2.example.com:88"
 
-    # Username transformations
-    strip_realm: true           # Remove @REALM from username
-    username_to_lowercase: true # Convert username to lowercase
+        # Username transformations
+        strip_realm: true           # Remove @REALM from username
+        username_to_lowercase: true # Convert username to lowercase
 ```
+
+> **HTTP SSO requires the Negotiate middleware.** A bare `kerberos` provider
+> validates username/password credentials. For transparent browser SSO over the
+> HTTP proxy (SPNEGO/`Negotiate` handshake), also enable `auth.negotiate` and
+> point `kerberos_provider` at this provider — see [SPNEGO Authentication](#spnego-authentication)
+> below.
 
 ### Configuration Options
 
@@ -269,16 +283,26 @@ server:
     listen: ":7180"
 
 auth:
-  mode: kerberos
-  kerberos:
-    keytab_file: "/etc/bifrost/proxy.keytab"
-    service_principal: "HTTP/proxy.corp.example.com"
-    realm: "CORP.EXAMPLE.COM"
-    kdc_servers:
-      - "dc1.corp.example.com:88"
-      - "dc2.corp.example.com:88"
-    strip_realm: true
-    username_to_lowercase: true
+  providers:
+    - name: kerberos
+      type: kerberos
+      enabled: true
+      priority: 1
+      config:
+        keytab_file: "/etc/bifrost/proxy.keytab"
+        service_principal: "HTTP/proxy.corp.example.com"
+        realm: "CORP.EXAMPLE.COM"
+        kdc_servers:
+          - "dc1.corp.example.com:88"
+          - "dc2.corp.example.com:88"
+        strip_realm: true
+        username_to_lowercase: true
+  # Enable transparent browser SSO (SPNEGO) over the HTTP proxy.
+  negotiate:
+    enabled: true
+    kerberos_provider: kerberos
+    prefer_kerberos: true
+    allow_ntlm: false
 
 # Route authenticated users through VPN
 backends:
@@ -349,17 +373,24 @@ klist -k -t /etc/bifrost/server.keytab
 
 **Cause**: Using Kerberos plugin without the Negotiate handler.
 
-**Solution**: Use SPNEGO mode which wraps Kerberos for HTTP:
+**Solution**: Enable the Negotiate middleware, which wraps a `kerberos`
+provider for HTTP SPNEGO:
 
 ```yaml
 auth:
-  mode: negotiate
+  providers:
+    - name: kerberos
+      type: kerberos
+      enabled: true
+      priority: 1
+      config:
+        keytab_file: "/etc/bifrost/server.keytab"
+        service_principal: "HTTP/proxy.example.com"
   negotiate:
+    enabled: true
+    kerberos_provider: kerberos
     prefer_kerberos: true
     allow_ntlm: false
-    kerberos:
-      keytab_file: "/etc/bifrost/server.keytab"
-      service_principal: "HTTP/proxy.example.com"
 ```
 
 ---
@@ -493,38 +524,42 @@ server:
       client_ca_file: "/etc/bifrost/ca.crt"
 
 auth:
-  mode: mtls
-  mtls:
-    # CA certificate for verifying client certs
-    ca_cert_file: "/etc/bifrost/ca.crt"
-    # Or provide CA cert inline
-    # ca_cert_pem: |
-    #   -----BEGIN CERTIFICATE-----
-    #   ...
-    #   -----END CERTIFICATE-----
+  providers:
+    - name: mtls
+      type: mtls
+      enabled: true
+      priority: 1
+      config:
+        # CA certificate for verifying client certs
+        ca_cert_file: "/etc/bifrost/ca.crt"
+        # Or provide CA cert inline
+        # ca_cert_pem: |
+        #   -----BEGIN CERTIFICATE-----
+        #   ...
+        #   -----END CERTIFICATE-----
 
-    # Require a valid client certificate
-    require_client_cert: true
+        # Require a valid client certificate
+        require_client_cert: true
 
-    # Verify certificate time validity
-    verify_time: true
+        # Verify certificate time validity
+        verify_time: true
 
-    # Map certificate fields to user identity
-    subject_mapping:
-      username_field: "CN"       # Common Name
-      groups_field: "OU"         # Organizational Unit
-      email_field: "emailAddress"
+        # Map certificate fields to user identity
+        subject_mapping:
+          username_field: "CN"       # Common Name
+          groups_field: "OU"         # Organizational Unit
+          email_field: "emailAddress"
 
-    # Restrict allowed certificates (regex patterns)
-    allowed_subjects:
-      - "^CN=.*,OU=Engineering,.*$"
-      - "^CN=.*,OU=Operations,.*$"
+        # Restrict allowed certificates (regex patterns)
+        allowed_subjects:
+          - "^CN=.*,OU=Engineering,.*$"
+          - "^CN=.*,OU=Operations,.*$"
 
-    allowed_issuers:
-      - "^.*CN=Bifrost CA.*$"
+        allowed_issuers:
+          - "^.*CN=Bifrost CA.*$"
 
-    # Certificate revocation list
-    crl_file: "/etc/bifrost/crl.pem"
+        # Certificate revocation list
+        crl_file: "/etc/bifrost/crl.pem"
 ```
 
 ### Configuration Options
@@ -609,29 +644,33 @@ server:
       client_ca_file: "/etc/bifrost/dod-ca-bundle.crt"
 
 auth:
-  mode: mtls
-  mtls:
-    ca_cert_file: "/etc/bifrost/dod-ca-bundle.crt"
-    require_client_cert: true
-    verify_time: true
+  providers:
+    - name: mtls
+      type: mtls
+      enabled: true
+      priority: 1
+      config:
+        ca_cert_file: "/etc/bifrost/dod-ca-bundle.crt"
+        require_client_cert: true
+        verify_time: true
 
-    subject_mapping:
-      # PIV certificates typically use UID for identifier
-      username_field: "UID"
-      groups_field: "OU"
-      email_field: "emailAddress"
+        subject_mapping:
+          # PIV certificates typically use UID for identifier
+          username_field: "UID"
+          groups_field: "OU"
+          email_field: "emailAddress"
 
-    # Only allow PIV authentication certificates
-    allowed_subjects:
-      - ".*OU=People.*"
-      - ".*OU=Contractors.*"
+        # Only allow PIV authentication certificates
+        allowed_subjects:
+          - ".*OU=People.*"
+          - ".*OU=Contractors.*"
 
-    # Require DoD CA chain
-    allowed_issuers:
-      - ".*CN=DoD Root CA.*"
+        # Require DoD CA chain
+        allowed_issuers:
+          - ".*CN=DoD Root CA.*"
 
-    # Use DISA CRL
-    crl_file: "/etc/bifrost/dod-crl.pem"
+        # Use DISA CRL
+        crl_file: "/etc/bifrost/dod-crl.pem"
 
 access_control:
   default: deny
@@ -718,47 +757,58 @@ sequenceDiagram
 
 ### Configuration
 
-SPNEGO is configured through the `negotiate` auth mode, which combines Kerberos and NTLM:
+SPNEGO is enabled through the `auth.negotiate` middleware block. Unlike the
+plugin providers, `negotiate` is HTTP middleware that drives the multi-step
+`Negotiate` challenge/response handshake. It does **not** embed credential
+config directly — instead it references auth providers by name via
+`kerberos_provider` (and, optionally, `ntlm_provider`) that must be declared in
+`auth.providers[]`:
 
 ```yaml
 auth:
-  mode: negotiate
+  providers:
+    - name: kerberos
+      type: kerberos
+      enabled: true
+      priority: 1
+      config:
+        keytab_file: "/etc/bifrost/server.keytab"
+        service_principal: "HTTP/proxy.example.com"
+        realm: "EXAMPLE.COM"
+
   negotiate:
+    # Turn on the Negotiate handshake on the HTTP proxy listener
+    enabled: true
+
+    # Provider (type: kerberos) that validates SPNEGO tokens
+    kerberos_provider: kerberos
+
     # Prefer Kerberos over NTLM
     prefer_kerberos: true
 
-    # Allow NTLM fallback
-    allow_ntlm: true
-
-    # How long to wait for NTLM handshake completion
-    challenge_timeout: "5m"
+    # NTLM fallback is non-functional (see the NTLM section) — leave disabled
+    allow_ntlm: false
 
     # Realm shown in authentication prompts
     realm: "Bifrost Proxy"
-
-    # Kerberos settings (used when prefer_kerberos is true)
-    kerberos:
-      keytab_file: "/etc/bifrost/server.keytab"
-      service_principal: "HTTP/proxy.example.com"
-      realm: "EXAMPLE.COM"
-
-    # NTLM settings (used when allow_ntlm is true)
-    ntlm:
-      domain: "EXAMPLE"
-      allowed_domains:
-        - "EXAMPLE"
 ```
 
 ### Configuration Options
 
+The following keys live under `auth.negotiate`:
+
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `prefer_kerberos` | bool | `true` | Try Kerberos before NTLM |
-| `allow_ntlm` | bool | `true` | Enable NTLM fallback |
-| `challenge_timeout` | duration | `5m` | NTLM challenge state timeout |
-| `realm` | string | `"Bifrost Proxy"` | Authentication realm for prompts |
-| `kerberos` | object | - | Kerberos configuration (see above) |
-| `ntlm` | object | - | NTLM configuration (see above) |
+| `enabled` | bool | `false` | Enable the Negotiate handshake on the HTTP proxy listener |
+| `kerberos_provider` | string | - | Name of a `type: kerberos` provider that validates SPNEGO tokens |
+| `ntlm_provider` | string | - | Name of a `type: ntlm` provider (NTLM is non-functional; see below) |
+| `prefer_kerberos` | bool | `false` | Try Kerberos before NTLM |
+| `allow_ntlm` | bool | `false` | Enable NTLM fallback (requires `ntlm_provider`; NTLM always fails closed) |
+| `realm` | string | - | Authentication realm advertised in the challenge |
+
+> **NTLM does not work.** `allow_ntlm: true` requires an `ntlm_provider`, and the
+> NTLM plugin rejects every login (see the [NTLM section](#ntlm-authentication)).
+> Keep `allow_ntlm: false` and use Kerberos for Windows domain SSO.
 
 ### Token Detection
 
@@ -781,30 +831,28 @@ server:
     write_timeout: "60s"
 
 auth:
-  mode: negotiate
+  providers:
+    - name: kerberos
+      type: kerberos
+      enabled: true
+      priority: 1
+      config:
+        keytab_file: "/etc/bifrost/proxy.keytab"
+        service_principal: "HTTP/proxy.corp.example.com"
+        realm: "CORP.EXAMPLE.COM"
+        kdc_servers:
+          - "dc1.corp.example.com:88"
+          - "dc2.corp.example.com:88"
+        strip_realm: true
+        username_to_lowercase: true
+
   negotiate:
+    enabled: true
+    kerberos_provider: kerberos
     prefer_kerberos: true
-    allow_ntlm: true
-    challenge_timeout: "5m"
+    # NTLM is non-functional; keep it disabled and rely on Kerberos.
+    allow_ntlm: false
     realm: "Corporate Proxy"
-
-    kerberos:
-      keytab_file: "/etc/bifrost/proxy.keytab"
-      service_principal: "HTTP/proxy.corp.example.com"
-      realm: "CORP.EXAMPLE.COM"
-      kdc_servers:
-        - "dc1.corp.example.com:88"
-        - "dc2.corp.example.com:88"
-      strip_realm: true
-      username_to_lowercase: true
-
-    ntlm:
-      domain: "CORP"
-      allowed_domains:
-        - "CORP"
-        - "SUBSIDIARY"
-      strip_domain: true
-      username_to_lowercase: true
 
 backends:
   - name: direct
@@ -885,37 +933,47 @@ access_log:
 
 **Cause**: Using SPNEGO with Kerberos but no keytab configured.
 
-**Solution**: Add complete Kerberos configuration:
+**Solution**: Declare a `kerberos` provider and reference it from `negotiate`:
 
 ```yaml
-negotiate:
-  kerberos:
-    keytab_file: "/etc/bifrost/server.keytab"
-    service_principal: "HTTP/proxy.example.com"
+auth:
+  providers:
+    - name: kerberos
+      type: kerberos
+      enabled: true
+      priority: 1
+      config:
+        keytab_file: "/etc/bifrost/server.keytab"
+        service_principal: "HTTP/proxy.example.com"
+  negotiate:
+    enabled: true
+    kerberos_provider: kerberos
 ```
 
 #### Error: "NTLM authenticator not configured"
 
-**Cause**: NTLM fallback enabled but NTLM not configured.
+**Cause**: `allow_ntlm: true` was set without an `ntlm_provider`.
 
-**Solution**: Either disable NTLM or add configuration:
+**Solution**: Disable NTLM. NTLM is non-functional (it rejects every login), so
+Kerberos is the only working Negotiate mechanism:
 
 ```yaml
-negotiate:
-  allow_ntlm: false  # Disable NTLM
-  # OR configure NTLM:
-  ntlm:
-    domain: "EXAMPLE"
+auth:
+  negotiate:
+    enabled: true
+    kerberos_provider: kerberos
+    allow_ntlm: false  # NTLM is non-functional — keep disabled
 ```
 
 #### Authentication works for Kerberos but not NTLM
 
-**Cause**: NTLM handshake state not persisted across connections.
+**Cause**: NTLM is non-functional by design — the NTLM plugin cannot verify
+responses and rejects every login (see the [NTLM section](#ntlm-authentication)).
+NTLM will never succeed regardless of client or handshake state.
 
-**Solutions**:
-1. Ensure HTTP keep-alive is enabled
-2. Check `challenge_timeout` is sufficient
-3. Verify load balancer session persistence if applicable
+**Solution**: Use Kerberos for Windows domain SSO. Ensure clients can obtain a
+Kerberos ticket (`klist`/`kinit`) and that the proxy is in the browser's trusted
+Negotiate URIs.
 
 ---
 

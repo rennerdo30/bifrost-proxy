@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { api, LogEntry, BASE_PATH } from '../api/client'
+import { api, LogEntry, logStreamUrl } from '../api/client'
 
 export function Logs() {
   const [filter, setFilter] = useState('')
@@ -21,7 +21,7 @@ export function Logs() {
   // Start/stop SSE streaming
   useEffect(() => {
     if (streaming) {
-      const es = new EventSource(`${BASE_PATH}/api/v1/logs/stream`)
+      const es = new EventSource(logStreamUrl())
       eventSourceRef.current = es
 
       es.onmessage = (event) => {

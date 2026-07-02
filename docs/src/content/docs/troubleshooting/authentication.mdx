@@ -64,7 +64,7 @@ The stored password hash doesn't match the provided password.
 
 ```bash
 # Verify hash format (should be bcrypt)
-grep -A5 "native:" config.yaml | grep password_hash
+grep password_hash config.yaml
 ```
 
 **Solution:**
@@ -86,11 +86,15 @@ Update configuration:
 
 ```yaml
 auth:
-  mode: native
-  native:
-    users:
-      - username: myuser
-        password_hash: "$2a$12$correcthashhere..."
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: myuser
+            password_hash: "$2a$12$correcthashhere..."
 ```
 
 ### Cause 3: Special Characters in Password
@@ -132,11 +136,15 @@ Verify user exists in configuration:
 
 ```yaml
 auth:
-  mode: native
-  native:
-    users:
-      - username: myuser  # Case-sensitive!
-        password_hash: "$2a$12$..."
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: myuser  # Case-sensitive!
+            password_hash: "$2a$12$..."
 ```
 
 ### Account Disabled
@@ -181,11 +189,15 @@ telnet ldap.example.com 389
 
 ```yaml
 auth:
-  mode: ldap
-  ldap:
-    url: "ldap://ldap.example.com:389"  # Standard LDAP
-    # or
-    url: "ldaps://ldap.example.com:636"  # LDAP over TLS
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        url: "ldap://ldap.example.com:389"  # Standard LDAP
+        # or
+        url: "ldaps://ldap.example.com:636"  # LDAP over TLS
 ```
 
 ### Bind Failed
@@ -205,10 +217,14 @@ Verify bind DN and password:
 
 ```yaml
 auth:
-  mode: ldap
-  ldap:
-    bind_dn: "cn=service,dc=example,dc=com"
-    bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        bind_dn: "cn=service,dc=example,dc=com"
+        bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
 ```
 
 ### User Not Found in LDAP
@@ -228,16 +244,20 @@ Adjust user filter to match your LDAP schema:
 
 ```yaml
 auth:
-  mode: ldap
-  ldap:
-    # For Unix-style LDAP
-    user_filter: "(uid=%s)"
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        # For Unix-style LDAP
+        user_filter: "(uid=%s)"
 
-    # For Active Directory
-    user_filter: "(sAMAccountName=%s)"
+        # For Active Directory
+        user_filter: "(sAMAccountName=%s)"
 
-    # For email-based lookup
-    user_filter: "(mail=%s)"
+        # For email-based lookup
+        user_filter: "(mail=%s)"
 ```
 
 ### Group Membership Check Failing
@@ -257,16 +277,20 @@ Adjust group filter or remove group requirement:
 
 ```yaml
 auth:
-  mode: ldap
-  ldap:
-    # For groupOfNames (member DN)
-    group_filter: "(member=uid=%s,ou=users,dc=example,dc=com)"
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        # For groupOfNames (member DN)
+        group_filter: "(member=uid=%s,ou=users,dc=example,dc=com)"
 
-    # For posixGroup (member UID)
-    group_filter: "(memberUid=%s)"
+        # For posixGroup (member UID)
+        group_filter: "(memberUid=%s)"
 
-    # Require specific group
-    require_group: "cn=proxy-users,ou=groups,dc=example,dc=com"
+        # Require specific group
+        require_group: "cn=proxy-users,ou=groups,dc=example,dc=com"
 ```
 
 ### LDAP TLS Issues
@@ -287,13 +311,16 @@ openssl s_client -connect ldap.example.com:636 -showcerts
 
 ```yaml
 auth:
-  mode: ldap
-  ldap:
-    url: "ldaps://ldap.example.com:636"
-    tls: true
-    ca_cert: "/path/to/ca.crt"  # Custom CA if needed
-    # For testing only:
-    insecure_skip_verify: true  # Never use in production!
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        url: "ldaps://ldap.example.com:636"
+        tls: true
+        # For testing only (trusts any server certificate):
+        insecure_skip_verify: true  # Never use in production!
 ```
 
 ---
@@ -311,24 +338,47 @@ System authentication only works on Linux and macOS. Use an alternative:
 ```yaml
 # For Windows, use native authentication instead:
 auth:
-  mode: native
-  native:
-    users:
-      - username: admin
-        password_hash: "$2a$12$..."
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            password_hash: "$2a$12$..."
 
 # Or LDAP for Active Directory:
 auth:
-  mode: ldap
-  ldap:
-    url: "ldap://your-dc.domain.com:389"
-    base_dn: "dc=domain,dc=com"
-    user_filter: "(sAMAccountName=%s)"
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        url: "ldap://your-dc.domain.com:389"
+        base_dn: "dc=domain,dc=com"
+        user_filter: "(sAMAccountName=%s)"
+```
+
+### Every login rejected / "PAM password validation is not compiled in" (Linux)
+
+**Symptoms:** All system-auth logins fail and the log shows
+`system auth: PAM password validation is not compiled in on Linux; failing closed`.
+
+**Cause:** The default (and Docker) binaries are built without the `pam` build
+tag and with cgo disabled, so Linux system auth fails closed.
+
+**Solution:** Rebuild with the PAM backend enabled:
+
+```bash
+# Requires libpam headers (libpam0g-dev / pam-devel)
+CGO_ENABLED=1 go build -tags pam -o bifrost-server ./cmd/server
 ```
 
 ### Permission Denied (Linux)
 
-**Symptoms:** PAM authentication fails with permission errors.
+**Symptoms:** A PAM-enabled build fails with permission errors.
 
 **Solution:**
 
@@ -352,14 +402,18 @@ Check allowed users/groups configuration:
 
 ```yaml
 auth:
-  mode: system
-  system:
-    allowed_users:
-      - alice
-      - bob
-    allowed_groups:
-      - admin
-      - proxy-users
+  providers:
+    - name: system
+      type: system
+      enabled: true
+      priority: 1
+      config:
+        allowed_users:
+          - alice
+          - bob
+        allowed_groups:
+          - admin
+          - proxy-users
 ```
 
 ---
@@ -386,10 +440,14 @@ Verify credentials with your OAuth provider:
 
 ```yaml
 auth:
-  mode: oauth
-  oauth:
-    client_id: "${OAUTH_CLIENT_ID}"
-    client_secret: "${OAUTH_CLIENT_SECRET}"
+  providers:
+    - name: oauth
+      type: oauth
+      enabled: true
+      priority: 1
+      config:
+        client_id: "${OAUTH_CLIENT_ID}"
+        client_secret: "${OAUTH_CLIENT_SECRET}"
 ```
 
 ### Redirect URI Mismatch
@@ -402,9 +460,13 @@ Ensure redirect URL exactly matches what's registered with the provider:
 
 ```yaml
 auth:
-  mode: oauth
-  oauth:
-    redirect_url: "http://localhost:7081/callback"  # Must match provider config
+  providers:
+    - name: oauth
+      type: oauth
+      enabled: true
+      priority: 1
+      config:
+        redirect_url: "http://localhost:7081/callback"  # Must match provider config
 ```
 
 ### Token Validation Failed
@@ -424,9 +486,13 @@ Verify issuer and audience settings:
 
 ```yaml
 auth:
-  mode: oauth
-  oauth:
-    issuer_url: "https://auth.example.com"  # Must match token's 'iss' claim
+  providers:
+    - name: oauth
+      type: oauth
+      enabled: true
+      priority: 1
+      config:
+        issuer_url: "https://auth.example.com"  # Must match token's 'iss' claim
 ```
 
 ---
@@ -450,17 +516,25 @@ echo "your.jwt.token" | cut -d. -f2 | base64 -d | jq
 1. **Using JWKS (recommended):**
    ```yaml
    auth:
-     mode: jwt
-     jwt:
-       jwks_url: "https://auth.example.com/.well-known/jwks.json"
+     providers:
+       - name: jwt
+         type: jwt
+         enabled: true
+         priority: 1
+         config:
+           jwks_url: "https://auth.example.com/.well-known/jwks.json"
    ```
 
 2. **Using static key:**
    ```yaml
    auth:
-     mode: jwt
-     jwt:
-       signing_key: "${JWT_SIGNING_KEY}"
+     providers:
+       - name: jwt
+         type: jwt
+         enabled: true
+         priority: 1
+         config:
+           signing_key: "${JWT_SIGNING_KEY}"
    ```
 
 ### Token Expired
@@ -487,11 +561,15 @@ Specify allowed algorithms:
 
 ```yaml
 auth:
-  mode: jwt
-  jwt:
-    allowed_algorithms:
-      - RS256
-      - ES256
+  providers:
+    - name: jwt
+      type: jwt
+      enabled: true
+      priority: 1
+      config:
+        allowed_algorithms:
+          - RS256
+          - ES256
 ```
 
 ---
@@ -513,12 +591,16 @@ auth:
 2. Update configuration:
    ```yaml
    auth:
-     mode: apikey
-     apikey:
-       header: "X-API-Key"
-       keys:
-         - name: "service-a"
-           key_hash: "$2a$10$correcthash..."
+     providers:
+       - name: apikey
+         type: apikey
+         enabled: true
+         priority: 1
+         config:
+           header: "X-API-Key"
+           keys:
+             - name: "service-a"
+               key_hash: "$2a$10$correcthash..."
    ```
 
 ### Wrong Header Name
@@ -531,9 +613,13 @@ Ensure header name matches configuration:
 
 ```yaml
 auth:
-  mode: apikey
-  apikey:
-    header: "X-API-Key"  # Client must use this exact header
+  providers:
+    - name: apikey
+      type: apikey
+      enabled: true
+      priority: 1
+      config:
+        header: "X-API-Key"  # Client must use this exact header
 ```
 
 ```bash
@@ -568,10 +654,14 @@ curl -H "X-API-Key: your-api-key" http://localhost:7080/...
 2. Verify secret format (must be Base32):
    ```yaml
    auth:
-     mode: totp
-     totp:
-       secrets:
-         user1: "JBSWY3DPEHPK3PXP"  # Base32 encoded
+     providers:
+       - name: totp
+         type: totp
+         enabled: true
+         priority: 1
+         config:
+           secrets:
+             user1: "JBSWY3DPEHPK3PXP"  # Base32 encoded
    ```
 
 ### Time Drift
@@ -604,9 +694,13 @@ Specify the CA certificate:
 
 ```yaml
 auth:
-  mode: mtls
-  mtls:
-    ca_cert: "/path/to/ca.crt"
+  providers:
+    - name: mtls
+      type: mtls
+      enabled: true
+      priority: 1
+      config:
+        ca_cert: "/path/to/ca.crt"
 ```
 
 ### Certificate Expired
@@ -634,11 +728,15 @@ Update allowed CNs:
 
 ```yaml
 auth:
-  mode: mtls
-  mtls:
-    allowed_cns:
-      - "client1.example.com"
-      - "*.internal.example.com"  # Wildcard
+  providers:
+    - name: mtls
+      type: mtls
+      enabled: true
+      priority: 1
+      config:
+        allowed_cns:
+          - "client1.example.com"
+          - "*.internal.example.com"  # Wildcard
 ```
 
 ---
@@ -655,14 +753,18 @@ Check primary authentication configuration:
 
 ```yaml
 auth:
-  mode: mfa_wrapper
-  mfa_wrapper:
-    primary:
-      mode: native
-      native:
-        users:
-          - username: admin
-            password_hash: "$2a$12$..."
+  providers:
+    - name: mfa
+      type: mfa_wrapper
+      enabled: true
+      priority: 1
+      config:
+        primary:
+          mode: native
+          config:
+            users:
+              - username: admin
+                password_hash: "$2a$12$..."
 ```
 
 ### OTP Not Provided

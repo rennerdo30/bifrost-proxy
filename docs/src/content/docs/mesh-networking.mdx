@@ -418,10 +418,14 @@ flowchart LR
 connection:
   direct_connect: true      # Try direct first
   relay_enabled: true       # Enable TURN relay
-  relay_via_peers: true     # Enable peer relaying
+  relay_via_peers: false    # Multi-hop peer relaying is NOT implemented; setting true is rejected at startup
   connect_timeout: 30s
   keep_alive_interval: 25s
 ```
+
+> **Note:** `relay_via_peers` (multi-hop relaying through other mesh peers) is
+> not yet implemented on the data plane. The server rejects the config at
+> startup if it is set to `true`. Leave it `false`.
 
 ## Encryption
 
@@ -576,7 +580,7 @@ mesh:
   connection:
     direct_connect: true
     relay_enabled: true
-    relay_via_peers: true
+    relay_via_peers: false  # Not implemented; must be false (true is rejected at startup)
     connect_timeout: 30s
     keep_alive_interval: 25s
 

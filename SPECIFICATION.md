@@ -956,7 +956,7 @@ The server supports modular authentication via a list of provider plugins under
 |------|-------------|----------|
 | `none` | No authentication required | Development, trusted networks |
 | `native` | Server-managed users/passwords | Simple deployments |
-| `system` | OS user authentication (PAM/Windows) | Single-server with OS users |
+| `system` | OS user authentication (Linux PAM / macOS Directory Services; **not Windows**, and PAM requires a non-default build tag) | Single-server with OS users |
 | `ldap` | LDAP/Active Directory | Enterprise environments |
 | `oauth` | OAuth 2.0 / OpenID Connect | SSO integration |
 | `apikey`, `jwt`, `mtls`, `totp`, `hotp`, `kerberos`, `ntlm` | See Section 17 | Various |
@@ -1260,7 +1260,18 @@ type Plugin interface {
 | `hotp` | Counter-based OTP | YubiKey |
 | `mtls` | Client certificate auth | Smart cards, certificates |
 | `kerberos` | Kerberos/SPNEGO | Enterprise SSO |
-| `ntlm` | NTLM authentication | Windows domain fallback |
+| `ntlm` | **Non-functional — fails closed** | Rejects every login; use Kerberos instead |
+
+> [!WARNING]
+> The `ntlm` plugin cannot verify NTLM responses (Bifrost has no credential
+> source to recompute the Type 3 response against), so it **rejects every
+> authentication attempt** to avoid an auth bypass. It is retained only so a
+> misconfiguration does not silently fall through to another provider. Use
+> `kerberos` (SPNEGO) for Windows domain SSO.
+>
+> **`negotiate` is HTTP middleware, not a provider.** SPNEGO/`Negotiate` browser
+> SSO is enabled via the `auth.negotiate` block (which references a `kerberos`
+> provider by name), not via a `type: negotiate` entry in `auth.providers[]`.
 
 ### 17.3 MFA Wrapper
 

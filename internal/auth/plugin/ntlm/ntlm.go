@@ -53,13 +53,27 @@ func (p *plugin) Type() string {
 }
 
 // Description returns a human-readable description.
+//
+// The description is deliberately explicit that this plugin fails closed: it has
+// no credential source (NT-hash store or domain-controller pass-through) to
+// verify NTLMv2 responses, so it rejects every authentication attempt and must
+// not be presented as a working authentication backend.
 func (p *plugin) Description() string {
-	return "NTLM/Negotiate authentication for Windows domain integration"
+	return "NTLM authentication (NON-FUNCTIONAL: fails closed — no credential source to verify responses; every login is rejected)"
 }
 
 // Create creates a new NTLM authenticator from the configuration.
+//
+// NOTE: the returned authenticator always fails closed (see
+// ErrVerificationUnsupported). We log a clear warning at construction time so
+// operators are not misled into believing NTLM is a working authentication path.
 func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 	cfg := parseConfig(config)
+
+	slog.Warn("NTLM auth plugin created but will reject all authentication: " +
+		"no credential source (NT-hash store or domain-controller pass-through) " +
+		"is available to verify client responses, so the plugin fails closed. " +
+		"Use kerberos or the negotiate middleware for Windows-domain SSO.")
 
 	authenticator := &Authenticator{
 		config:     cfg,

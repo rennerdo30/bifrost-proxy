@@ -2,16 +2,33 @@ package mullvad
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
+
+// testCACertPEM is a real (self-signed) CA certificate used purely for tests so
+// that emitted OpenVPN config can be PEM-decoded and x509-parsed. It is not used
+// to connect to any real server.
+const testCACertPEM = `-----BEGIN CERTIFICATE-----
+MIIBUzCB+6ADAgECAgEBMAoGCCqGSM49BAMCMBIxEDAOBgNVBAMTB1Rlc3QgQ0Ew
+HhcNMjYwNjI3MTIzNTI0WhcNMzYwNjI0MTIzNTI0WjASMRAwDgYDVQQDEwdUZXN0
+IENBMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEUzndd0wJKtQO8Q/l4p+0Z/5K
+mS+AtgAehJjRYxWTlgpPogetBPYUlIHG9rmhJFkzVWPZ/i8bTDTtCY6dFx/PtaNC
+MEAwDgYDVR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFKYF
+7ig5A/ISFTZATfLnyWTTcfUUMAoGCCqGSM49BAMCA0cAMEQCIExEnID/hMLz2uhy
+S3vk1kV7KCOQGo8kaZuf/FMb5i01AiBM7NIPGiss4EsEm98gobuEpZGmhAwwWKS4
+PuVu76HIBw==
+-----END CERTIFICATE-----`
 
 func TestNewClient(t *testing.T) {
 	tests := []struct {
@@ -453,7 +470,10 @@ func TestGenerateOpenVPNConfig(t *testing.T) {
 		},
 	}
 
-	config := generateOpenVPNConfig(server, "1234567890123456")
+	config, err := generateOpenVPNConfig(server, vpnprovider.Credentials{CACert: testCACertPEM})
+	if err != nil {
+		t.Fatalf("generateOpenVPNConfig() error = %v", err)
+	}
 
 	// Check essential parts are present
 	if config == "" {
@@ -477,6 +497,42 @@ func TestGenerateOpenVPNConfig(t *testing.T) {
 		if !contains(config, part) {
 			t.Errorf("Config missing expected part: %q", part)
 		}
+	}
+
+	// The embedded CA must be genuinely parseable, not a corrupted blob.
+	start := strings.Index(config, "-----BEGIN CERTIFICATE-----")
+	end := strings.Index(config, "-----END CERTIFICATE-----")
+	if start < 0 || end <= start {
+		t.Fatal("generateOpenVPNConfig() did not emit a CA certificate block")
+	}
+	certPEM := config[start : end+len("-----END CERTIFICATE-----")]
+	block, _ := pem.Decode([]byte(certPEM))
+	if block == nil {
+		t.Fatal("emitted CA is not valid PEM")
+	}
+	if _, err := x509.ParseCertificate(block.Bytes); err != nil {
+		t.Fatalf("emitted CA is not a valid x509 certificate: %v", err)
+	}
+}
+
+func TestGenerateOpenVPNConfigFailsClosedWithoutCA(t *testing.T) {
+	server := &vpnprovider.Server{
+		Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+			UDPPort:  1194,
+			TCPPort:  443,
+		},
+	}
+
+	// No CA supplied: must fail closed rather than emit a broken/insecure config.
+	if _, err := generateOpenVPNConfig(server, vpnprovider.Credentials{}); err == nil {
+		t.Error("generateOpenVPNConfig() without CA expected error, got nil")
+	}
+
+	// Malformed CA supplied: must also fail closed.
+	if _, err := generateOpenVPNConfig(server, vpnprovider.Credentials{CACert: "not a valid pem"}); err == nil {
+		t.Error("generateOpenVPNConfig() with malformed CA expected error, got nil")
 	}
 }
 
@@ -928,7 +984,7 @@ func TestGenerateOpenVPNConfigMethod(t *testing.T) {
 		},
 	}
 
-	config, err := client.GenerateOpenVPNConfig(ctx, ovpnServer, vpnprovider.Credentials{})
+	config, err := client.GenerateOpenVPNConfig(ctx, ovpnServer, vpnprovider.Credentials{CACert: testCACertPEM})
 	if err != nil {
 		t.Fatalf("GenerateOpenVPNConfig() error = %v", err)
 	}
@@ -987,6 +1043,7 @@ func TestGenerateOpenVPNConfigMethodWithCustomCredentials(t *testing.T) {
 	// Use custom credentials
 	creds := vpnprovider.Credentials{
 		AccountID: "9999888877776666",
+		CACert:    testCACertPEM,
 	}
 
 	config, err := client.GenerateOpenVPNConfig(ctx, ovpnServer, creds)

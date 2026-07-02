@@ -90,11 +90,26 @@ export interface RequestLogStats {
 // Configuration Types (Full Structure)
 // ============================================
 
+// Client certificate verification mode for listener mTLS. Values match the
+// server's TLSConfig.ClientAuth (internal/config/server.go).
+export type ClientAuthMode =
+  | ''
+  | 'request'
+  | 'require_any'
+  | 'verify_if_given'
+  | 'require'
+
 // TLS Configuration
 export interface TLSConfig {
   enabled: boolean
   cert_file: string
   key_file: string
+  // client_auth controls whether/how the listener requests and verifies
+  // client certificates for mutual TLS. Empty means no client cert requested.
+  client_auth?: ClientAuthMode
+  // client_ca_file is the PEM file of CA certs used to verify client
+  // certificates. If empty, the configured mTLS auth provider's pool is used.
+  client_ca_file?: string
 }
 
 // Listener Configuration
@@ -121,6 +136,12 @@ export interface HealthCheckConfig {
   timeout: string
   target?: string
   path?: string
+  // healthy_threshold is the number of consecutive successful checks required
+  // before a backend is marked healthy (de-bouncing). <= 0 / omitted means 1.
+  healthy_threshold?: number
+  // unhealthy_threshold is the number of consecutive failed checks required
+  // before a backend is marked unhealthy. <= 0 / omitted means 1.
+  unhealthy_threshold?: number
 }
 
 // Backend Configuration
@@ -293,6 +314,10 @@ export interface RouteConfig {
   backends?: string[]
   priority: number
   load_balance?: 'round_robin' | 'least_conn' | 'ip_hash' | 'weighted'
+  // weights maps a backend name (from backends) to its relative weight for the
+  // "weighted" load-balancing strategy. Backends without an entry default to a
+  // weight of 1. Ignored for other strategies.
+  weights?: Record<string, number>
 }
 
 // Native User
@@ -348,6 +373,8 @@ export type AuthProviderType =
   | 'mtls'
   | 'kerberos'
   | 'ntlm'
+  | 'hotp'
+  | 'totp'
 
 // Plugin-specific configuration is an untyped map matching the server's
 // AuthProvider.Config (map[string]any). The server rejects the legacy
@@ -364,12 +391,34 @@ export interface AuthProvider {
   config?: AuthProviderConfig
 }
 
+// Negotiate (SPNEGO/Kerberos/NTLM) middleware configuration. Matches the
+// server's NegotiateConfig (internal/config/server.go). This is HTTP
+// middleware, not a chain provider: it drives the challenge/response handshake
+// and delegates credential validation to the referenced kerberos/ntlm
+// providers.
+export interface NegotiateConfig {
+  enabled: boolean
+  // kerberos_provider is the name of an auth provider (type "kerberos") whose
+  // authenticator validates SPNEGO/Kerberos tokens. Required when enabled.
+  kerberos_provider?: string
+  // ntlm_provider is the name of an auth provider (type "ntlm"). Required only
+  // when allow_ntlm is true.
+  ntlm_provider?: string
+  // prefer_kerberos tries Kerberos before NTLM (default true).
+  prefer_kerberos?: boolean
+  // allow_ntlm enables NTLM fallback when Kerberos is unavailable/fails.
+  allow_ntlm?: boolean
+  // realm advertised in the authentication challenge.
+  realm?: string
+}
+
 // Auth Configuration
 // Only the multi-provider format is supported by the server. The legacy
 // single-mode fields (`mode`, `native`, ...) are intentionally omitted so
 // the UI never emits a server-rejected payload.
 export interface AuthConfig {
   providers?: AuthProvider[]
+  negotiate?: NegotiateConfig
 }
 
 // Bandwidth Configuration
@@ -490,6 +539,62 @@ export interface AccessControlConfig {
   blacklist: string[]
 }
 
+// Network Configuration
+// Network-level tuning for outbound (backend) dials. Matches the server's
+// NetworkConfig (internal/config/network.go).
+export interface NetworkConfig {
+  // ipv6 controls the outbound-dial address family. null/undefined or true
+  // means dual-stack (the default); explicit false restricts dials to IPv4.
+  ipv6?: boolean | null
+  prefer_ipv6?: boolean
+  // keepalive is the TCP keep-alive period applied to outbound dials
+  // (Go duration string, e.g. "30s").
+  keepalive?: string
+  // dial_timeout is the default timeout for establishing outbound connections.
+  dial_timeout?: string
+  // max_connections is a process-wide ceiling on concurrent proxied
+  // connections across all listeners (0 = unlimited).
+  max_connections?: number
+}
+
+// Redis Session Store Configuration
+export interface RedisSessionConfig {
+  addr: string
+  password?: string
+  db?: number
+  key_prefix?: string
+  op_timeout?: string
+}
+
+// Session Configuration
+// Selects and configures session storage for authenticated Web UI / API
+// sessions. Matches the server's SessionConfig (internal/config/session.go).
+export interface SessionConfig {
+  // store selects the backend: "memory" (default) or "redis".
+  store: 'memory' | 'redis'
+  // duration is the default session lifetime (Go duration string).
+  duration?: string
+  max_sessions_per_user?: number
+  cleanup_interval?: string
+  // redis holds connection settings used when store == "redis".
+  redis?: RedisSessionConfig
+}
+
+// MITM (HTTPS interception) Configuration
+// Opt-in HTTPS interception for traffic debugging, DISABLED by default.
+// Matches the server's MITMConfig (internal/config/mitm.go).
+export interface MITMConfig {
+  enabled: boolean
+  // ca_cert_file / ca_key_file point at the PEM signing CA cert and key. Both
+  // are required when enabled.
+  ca_cert_file?: string
+  ca_key_file?: string
+  // leaf_ttl is the validity period of minted leaf certificates (default 24h).
+  leaf_ttl?: string
+  // max_cached_certs bounds the in-memory leaf certificate cache (0 = default).
+  max_cached_certs?: number
+}
+
 // Full Server Configuration
 export interface ServerConfig {
   server: ServerSettings
@@ -506,6 +611,9 @@ export interface ServerConfig {
   health_check?: HealthCheckConfig
   auto_update: AutoUpdateConfig
   cache: CacheConfig
+  network?: NetworkConfig
+  session?: SessionConfig
+  mitm?: MITMConfig
 }
 
 // Config metadata
@@ -529,6 +637,21 @@ export interface ConfigSaveResponse {
   backup_path?: string
   requires_restart: boolean
   changed_sections?: string[]
+}
+
+// A single validation error returned by /config/validate. Matches the server's
+// ValidationError (internal/api/server/config_handlers.go).
+export interface ConfigValidationError {
+  section?: string
+  field?: string
+  message: string
+}
+
+// Response shape of /config/validate.
+export interface ConfigValidateResponse {
+  valid: boolean
+  message?: string
+  errors?: ConfigValidationError[]
 }
 
 // Connection tracking

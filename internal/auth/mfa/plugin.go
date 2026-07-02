@@ -77,34 +77,60 @@ func (p *plugin) ValidateConfig(config map[string]any) error {
 }
 
 // DefaultConfig returns the default configuration.
+//
+// The wrapper is created from inline 'primary' and 'secondary' authenticator
+// blocks (each with its own 'mode' and 'config'); referencing pre-registered
+// providers by name is not supported by Create(), so the default template only
+// advertises the inline format.
 func (p *plugin) DefaultConfig() map[string]any {
 	return map[string]any{
-		"primary_provider": "ldap-main",
-		"mfa_type":         "totp",
-		"mfa_required":     "always",
-		"password_format":  "concatenated",
-		"mfa_code_length":  6,
+		"primary": map[string]any{
+			"mode": "ldap",
+			"config": map[string]any{
+				"url":     "ldap://ldap.example.com:389",
+				"base_dn": "ou=users,dc=example,dc=com",
+			},
+		},
+		"secondary": map[string]any{
+			"mode": "totp",
+			"config": map[string]any{
+				"secrets": map[string]any{},
+			},
+		},
+		"mfa_required":    "always",
+		"password_format": "separated",
+		"separator":       ":",
+		"mfa_code_length": 6,
 	}
 }
 
 // ConfigSchema returns the JSON schema for configuration.
+//
+// It describes the inline block format accepted by Create(): a required
+// 'primary' authenticator block and a required 'secondary' (MFA) authenticator
+// block, each carrying its own plugin 'mode' and 'config'.
 func (p *plugin) ConfigSchema() string {
 	return `{
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "properties": {
-    "primary_provider": {
-      "type": "string",
-      "description": "Name of the primary authentication provider"
+    "primary": {
+      "type": "object",
+      "description": "Primary (first-factor) authenticator, e.g. native/ldap/oauth",
+      "properties": {
+        "mode": {"type": "string", "description": "Primary plugin type (e.g. ldap, native)"},
+        "config": {"type": "object", "description": "Plugin-specific configuration for the primary authenticator"}
+      },
+      "required": ["mode"]
     },
-    "mfa_type": {
-      "type": "string",
-      "description": "Type of MFA provider (totp, hotp)",
-      "enum": ["totp", "hotp"]
-    },
-    "mfa_provider": {
-      "type": "string",
-      "description": "Name of the MFA provider (if different from mfa_type)"
+    "secondary": {
+      "type": "object",
+      "description": "Secondary (MFA) authenticator",
+      "properties": {
+        "mode": {"type": "string", "description": "MFA plugin type", "enum": ["totp", "hotp"]},
+        "config": {"type": "object", "description": "Plugin-specific configuration for the MFA authenticator"}
+      },
+      "required": ["mode"]
     },
     "mfa_required": {
       "type": "string",
@@ -115,6 +141,11 @@ func (p *plugin) ConfigSchema() string {
     "mfa_groups": {
       "type": "array",
       "description": "Groups that require MFA (for group_based mode)",
+      "items": {"type": "string"}
+    },
+    "mfa_users": {
+      "type": "array",
+      "description": "Users that require MFA (for per_user mode)",
       "items": {"type": "string"}
     },
     "password_format": {
@@ -134,7 +165,7 @@ func (p *plugin) ConfigSchema() string {
       "default": 6
     }
   },
-  "required": ["primary_provider"]
+  "required": ["primary", "secondary"]
 }`
 }
 

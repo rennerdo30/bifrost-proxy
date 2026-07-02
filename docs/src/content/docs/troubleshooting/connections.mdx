@@ -297,11 +297,15 @@ Verify authentication configuration:
 
 ```yaml
 auth:
-  mode: native
-  native:
-    users:
-      - username: myuser
-        password_hash: "$2a$12$..."  # bcrypt hash
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: myuser
+            password_hash: "$2a$12$..."  # bcrypt hash
 ```
 
 Generate password hash:

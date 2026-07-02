@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
+	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 )
@@ -365,12 +366,21 @@ func TestHasRestartRequiredChanges(t *testing.T) {
 }
 
 func TestHotReloadableSections(t *testing.T) {
-	// Verify the map is properly configured
+	// Verify the map is properly configured. These sections are applied by
+	// (*server.Server).ReloadConfig without a restart.
 	assert.True(t, hotReloadableSections["routes"])
 	assert.True(t, hotReloadableSections["rate_limit"])
+	assert.True(t, hotReloadableSections["access_control"])
+	assert.True(t, hotReloadableSections["cache"])
+	// These genuinely require a restart.
 	assert.False(t, hotReloadableSections["server"])
 	assert.False(t, hotReloadableSections["backends"])
 	assert.False(t, hotReloadableSections["auth"])
+	assert.False(t, hotReloadableSections["network"])
+	assert.False(t, hotReloadableSections["session"])
+	assert.False(t, hotReloadableSections["mitm"])
+	assert.False(t, hotReloadableSections["health_check"])
+	assert.False(t, hotReloadableSections["auto_update"])
 }
 
 func TestConfigMeta_Struct(t *testing.T) {
@@ -585,6 +595,99 @@ func TestDetectChangedSections_AllFields(t *testing.T) {
 	assert.Contains(t, changed, "logging")
 	assert.Contains(t, changed, "web_ui")
 	assert.Contains(t, changed, "api")
+}
+
+// TestDetectChangedSections_AccessControlAndCache guards the HIGH-severity
+// regression where access_control and cache changes were saved to disk but
+// never detected — so they reported requires_restart=false yet were never
+// hot-reloaded.
+func TestDetectChangedSections_AccessControlAndCache(t *testing.T) {
+	current := &config.ServerConfig{}
+	newCfg := &config.ServerConfig{
+		AccessControl: config.AccessControlConfig{Blacklist: []string{"10.0.0.0/8"}},
+		Cache:         cache.Config{Enabled: true},
+	}
+
+	changed := detectChangedSections(current, newCfg)
+	assert.Contains(t, changed, "access_control")
+	assert.Contains(t, changed, "cache")
+	// Both are hot-reloadable, so an access_control/cache-only save must not
+	// falsely require a restart.
+	assert.False(t, hasRestartRequiredChanges(changed))
+}
+
+// TestDetectChangedSections_RestartRequiredSections verifies that sections the
+// running server cannot hot-apply are detected and honestly reported as
+// requiring a restart (previously they were silently omitted entirely).
+func TestDetectChangedSections_RestartRequiredSections(t *testing.T) {
+	ipv6 := false
+	current := &config.ServerConfig{}
+	newCfg := &config.ServerConfig{
+		HealthCheck: config.HealthCheckConfig{Type: "http"},
+		AutoUpdate:  config.AutoUpdateConfig{Enabled: true},
+		Network:     config.NetworkConfig{IPv6: &ipv6},
+		Session:     config.SessionConfig{Store: "redis"},
+		MITM:        config.MITMConfig{Enabled: true},
+	}
+
+	changed := detectChangedSections(current, newCfg)
+	assert.Contains(t, changed, "health_check")
+	assert.Contains(t, changed, "auto_update")
+	assert.Contains(t, changed, "network")
+	assert.Contains(t, changed, "session")
+	assert.Contains(t, changed, "mitm")
+	assert.True(t, hasRestartRequiredChanges(changed),
+		"restart-required sections must report requires_restart=true")
+}
+
+// TestHandleSaveConfig_AccessControlHotReloads asserts the end-to-end save path
+// auto-reloads when only access_control changes and reports requires_restart=false.
+func TestHandleSaveConfig_AccessControlHotReloads(t *testing.T) {
+	mgr := backend.NewManager()
+	reloadCalled := false
+
+	cfg := Config{
+		Backends: mgr,
+		SaveConfig: func(_ *config.ServerConfig) error {
+			return nil
+		},
+		GetFullConfig: func() *config.ServerConfig {
+			return &config.ServerConfig{
+				Server: config.ServerSettings{
+					HTTP: config.ListenerConfig{Listen: "0.0.0.0:7080"},
+				},
+				Backends: []config.BackendConfig{
+					{Name: "default", Type: "direct", Enabled: true},
+				},
+			}
+		},
+		ReloadConfig: func() error {
+			reloadCalled = true
+			return nil
+		},
+	}
+
+	api := New(cfg)
+
+	body := strings.NewReader(`{
+		"config": {
+			"server": {"http": {"listen": "0.0.0.0:7080"}},
+			"backends": [{"name": "default", "type": "direct", "enabled": true}],
+			"access_control": {"blacklist": ["10.0.0.0/8"]}
+		},
+		"create_backup": false
+	}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("PUT", "/api/v1/config", body)
+	api.handleSaveConfig(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp ConfigSaveResponse
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Contains(t, resp.ChangedSections, "access_control")
+	assert.False(t, resp.RequiresRestart, "access_control is hot-reloadable")
+	assert.True(t, reloadCalled, "access_control-only save must auto-reload")
 }
 
 func TestHandleGetConfigTimestamp(t *testing.T) {

@@ -3,12 +3,15 @@ package protonvpn
 import (
 	"context"
 	"crypto/rand"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"log/slog"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -254,6 +257,26 @@ func TestSelectServer(t *testing.T) {
 	assert.Equal(t, "de-1", selected.ID)
 }
 
+// testCACertPEM is a real (self-signed) CA certificate used purely for tests so
+// that emitted OpenVPN config can be PEM-decoded and x509-parsed. It is not used
+// to connect to any real server.
+const testCACertPEM = `-----BEGIN CERTIFICATE-----
+MIIBUzCB+6ADAgECAgEBMAoGCCqGSM49BAMCMBIxEDAOBgNVBAMTB1Rlc3QgQ0Ew
+HhcNMjYwNjI3MTIzNTI0WhcNMzYwNjI0MTIzNTI0WjASMRAwDgYDVQQDEwdUZXN0
+IENBMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEUzndd0wJKtQO8Q/l4p+0Z/5K
+mS+AtgAehJjRYxWTlgpPogetBPYUlIHG9rmhJFkzVWPZ/i8bTDTtCY6dFx/PtaNC
+MEAwDgYDVR0PAQH/BAQDAgIEMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFKYF
+7ig5A/ISFTZATfLnyWTTcfUUMAoGCCqGSM49BAMCA0cAMEQCIExEnID/hMLz2uhy
+S3vk1kV7KCOQGo8kaZuf/FMb5i01AiBM7NIPGiss4EsEm98gobuEpZGmhAwwWKS4
+PuVu76HIBw==
+-----END CERTIFICATE-----`
+
+// testTLSAuthKey is an arbitrary OpenVPN static key block for tests.
+const testTLSAuthKey = `-----BEGIN OpenVPN Static key V1-----
+e685bdaf659a25a200e2b9e39e51ff03
+0fc72cf1ce07232bd8b2be5e6c670143
+-----END OpenVPN Static key V1-----`
+
 func TestGenerateOpenVPNConfig(t *testing.T) {
 	mockServers := LogicalServerResponse{
 		Code: 1000,
@@ -281,23 +304,83 @@ func TestGenerateOpenVPNConfig(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, servers)
 
-	// Generate config using client's manual credentials
-	config, err := client.GenerateOpenVPNConfig(ctx, &servers[0], vpnprovider.Credentials{})
+	// Generate config using client's manual credentials. The operator supplies
+	// the CA certificate (and optional tls-auth key) via configuration.
+	config, err := client.GenerateOpenVPNConfig(ctx, &servers[0], vpnprovider.Credentials{
+		CACert:     testCACertPEM,
+		TLSAuthKey: testTLSAuthKey,
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "openvpn_user+suffix", config.Username)
 	assert.Equal(t, "openvpn_pass", config.Password)
 	assert.Contains(t, config.ConfigContent, "client")
 	assert.Contains(t, config.ConfigContent, "test.protonvpn.net")
 	assert.Contains(t, config.ConfigContent, "BEGIN CERTIFICATE")
+	assert.Contains(t, config.ConfigContent, "BEGIN OpenVPN Static key V1")
+	// The generated config must NOT run host resolv-conf scripts.
+	assert.NotContains(t, config.ConfigContent, "script-security")
+	assert.NotContains(t, config.ConfigContent, "update-resolv-conf")
 
-	// Generate config with explicit credentials
+	// The embedded CA must be genuinely parseable: extract it and x509-parse it.
+	start := strings.Index(config.ConfigContent, "-----BEGIN CERTIFICATE-----")
+	end := strings.Index(config.ConfigContent, "-----END CERTIFICATE-----")
+	require.GreaterOrEqual(t, start, 0)
+	require.Greater(t, end, start)
+	certPEM := config.ConfigContent[start : end+len("-----END CERTIFICATE-----")]
+	block, _ := pem.Decode([]byte(certPEM))
+	require.NotNil(t, block, "emitted CA must be valid PEM")
+	_, parseErr := x509.ParseCertificate(block.Bytes)
+	require.NoError(t, parseErr, "emitted CA must be a valid x509 certificate")
+
+	// Generate config with explicit credentials.
 	config, err = client.GenerateOpenVPNConfig(ctx, &servers[0], vpnprovider.Credentials{
 		Username: "explicit_user",
 		Password: "explicit_pass",
+		CACert:   testCACertPEM,
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "explicit_user", config.Username)
 	assert.Equal(t, "explicit_pass", config.Password)
+}
+
+func TestGenerateOpenVPNConfigFailsClosedWithoutCA(t *testing.T) {
+	mockServers := LogicalServerResponse{
+		Code: 1000,
+		LogicalServers: []LogicalServer{
+			{
+				ID: "test-1", Name: "US#1", Domain: "test.protonvpn.net",
+				ExitCountry: "US", Tier: 0, Status: 1,
+				Servers: []Server{{ID: "s1", EntryIP: "1.1.1.1", Status: 1}},
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode(mockServers)
+	}))
+	defer server.Close()
+
+	client := NewClient(
+		WithBaseURL(server.URL),
+		WithManualCredentials("openvpn_user", "openvpn_pass", TierFree),
+	)
+
+	ctx := context.Background()
+	servers, err := client.FetchServers(ctx)
+	require.NoError(t, err)
+	require.NotEmpty(t, servers)
+
+	// No CA supplied: must fail closed rather than emit a broken/insecure config.
+	_, err = client.GenerateOpenVPNConfig(ctx, &servers[0], vpnprovider.Credentials{})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrConfigGenerationFailed)
+
+	// Malformed CA supplied: must also fail closed.
+	_, err = client.GenerateOpenVPNConfig(ctx, &servers[0], vpnprovider.Credentials{
+		CACert: "not a valid pem",
+	})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrConfigGenerationFailed)
 }
 
 func TestGenerateOpenVPNConfigNoCredentials(t *testing.T) {
