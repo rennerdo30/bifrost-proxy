@@ -290,13 +290,13 @@ auth:
       priority: 1
       config:
         primary:
-          type: native
+          mode: native
           config:
             users:
               - username: admin
                 password_hash: "$2a$12$..."
         secondary:
-          type: totp
+          mode: totp
           config:
             secrets:
               admin: "BASE32SECRET"

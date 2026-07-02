@@ -113,8 +113,8 @@ func TestReplayRejected(t *testing.T) {
 	old := initiator.Encrypt([]byte("old")) // nonce 1
 	for i := 0; i < replayWindowBits+10; i++ {
 		f := initiator.Encrypt([]byte("advance"))
-		_, err := responder.Decrypt(f)
-		require.NoError(t, err)
+		_, derr := responder.Decrypt(f)
+		require.NoError(t, derr)
 	}
 	_, err = responder.Decrypt(old)
 	assert.Equal(t, ErrInvalidNonce, err, "frame older than the window must be rejected")

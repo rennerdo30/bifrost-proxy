@@ -202,6 +202,10 @@ func New(cfg *config.ServerConfig) (*Server, error) {
 		if err != nil {
 			return nil, fmt.Errorf("create cache manager: %w", err)
 		}
+		// Register cache metrics on the Prometheus registry and attach them so
+		// the cache_* series (hits/misses/evictions/size/entries) are actually
+		// recorded and exported instead of remaining permanently zero.
+		cacheManager.SetMetrics(cache.NewMetrics(m.Registry()))
 		cacheInterceptor = cache.NewInterceptor(cacheManager)
 	}
 

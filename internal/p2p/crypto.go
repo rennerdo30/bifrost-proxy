@@ -407,7 +407,14 @@ func deriveKey(sharedSecret, salt, label []byte) []byte {
 const (
 	replayBlockBits  = 64
 	replayBlocks     = 32
-	replayWindowBits = replayBlockBits * replayBlocks // 2048
+	replayWindowBits = replayBlockBits * replayBlocks // 2048 (bitmap capacity)
+	// replayWindow is the usable window. Per RFC 6479, one block is reserved as
+	// a guard: without it, a nonce exactly replayWindowBits behind `last` maps
+	// to the same block index as `last` (they are replayBlocks apart), so the
+	// oldest in-window block would alias the newest and a replay could slip
+	// through at the block boundary. Reserving a block keeps every in-window
+	// nonce's block index distinct from the current block.
+	replayWindow = replayWindowBits - replayBlockBits // 1984
 )
 
 // replayFilter is a sliding-window anti-replay filter over strictly increasing
@@ -455,7 +462,7 @@ func (r *replayFilter) accept(nonce uint64) bool {
 	}
 
 	// nonce <= last: reject if too old or already seen.
-	if r.last-nonce >= replayWindowBits {
+	if r.last-nonce >= replayWindow {
 		return false
 	}
 	if r.testBit(nonce) {

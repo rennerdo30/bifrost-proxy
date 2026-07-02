@@ -450,7 +450,7 @@ auth:
       config:
         # Primary authentication (username/password)
         primary:
-          type: native
+          mode: native
           config:
             users:
               - username: admin
@@ -460,7 +460,7 @@ auth:
 
         # Secondary authentication (OTP)
         secondary:
-          type: totp
+          mode: totp
           config:
             issuer: "Bifrost"
             secrets:
