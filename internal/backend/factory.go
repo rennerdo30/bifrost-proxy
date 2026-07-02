@@ -394,8 +394,24 @@ func (f *Factory) createMullvad(cfg config.BackendConfig) (Backend, error) {
 		}
 	}
 
+	// OpenVPN TLS material.
+	if v, ok := cfg.Config["ca_cert"].(string); ok {
+		mullvadCfg.CACert = v
+	}
+	if v, ok := cfg.Config["tls_auth_key"].(string); ok {
+		mullvadCfg.TLSAuthKey = v
+	}
+
 	if v, ok := cfg.Config["leak_proof_routing"].(bool); ok {
 		mullvadCfg.LeakProofRouting = v
+	}
+
+	// Mullvad OpenVPN requires a CA certificate; without it config generation
+	// fails closed. Surface this at construction time so a misconfigured backend
+	// is rejected early rather than at first dial. (WireGuard is the default and
+	// needs no CA.)
+	if mullvadCfg.Protocol == "openvpn" && mullvadCfg.CACert == "" {
+		return nil, fmt.Errorf("mullvad openvpn backend requires 'ca_cert' (PEM CA certificate) config")
 	}
 
 	mullvadCfg.Network = f.network
@@ -537,6 +553,14 @@ func (f *Factory) createProtonVPN(cfg config.BackendConfig) (Backend, error) {
 		}
 	}
 
+	// OpenVPN TLS material.
+	if v, ok := cfg.Config["ca_cert"].(string); ok {
+		protonCfg.CACert = v
+	}
+	if v, ok := cfg.Config["tls_auth_key"].(string); ok {
+		protonCfg.TLSAuthKey = v
+	}
+
 	if v, ok := cfg.Config["leak_proof_routing"].(bool); ok {
 		protonCfg.LeakProofRouting = v
 	}
@@ -556,6 +580,13 @@ func (f *Factory) createProtonVPN(cfg config.BackendConfig) (Backend, error) {
 		}
 		if protocol == "wireguard" {
 			return nil, fmt.Errorf("protonvpn wireguard backend requires auth_mode='api'")
+		}
+		// ProtonVPN OpenVPN requires a CA certificate; without it config
+		// generation fails closed. Surface this at construction time so a
+		// misconfigured backend is rejected early rather than at first dial. No
+		// CA is embedded in the binary.
+		if protocol == "openvpn" && protonCfg.CACert == "" {
+			return nil, fmt.Errorf("protonvpn openvpn backend requires 'ca_cert' (PEM CA certificate) config")
 		}
 	case "api":
 		if protonCfg.Username == "" || protonCfg.Password == "" {
