@@ -22,6 +22,35 @@ function routesToYaml(routes: Route[]): string {
 }
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
 
+// Browser-side API token used to authenticate against the client daemon when
+// `api.token` is configured. Stored in localStorage so it survives reloads and
+// is sent as `Authorization: Bearer <token>` on every request (see fetchJSON).
+const TOKEN_STORAGE_KEY = 'bifrost_client_api_token'
+
+export function getApiToken(): string | null {
+  try {
+    return localStorage.getItem(TOKEN_STORAGE_KEY)
+  } catch {
+    return null
+  }
+}
+
+export function setApiToken(token: string) {
+  try {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token)
+  } catch {
+    // Ignore storage failures (e.g. private mode); token simply won't persist.
+  }
+}
+
+export function clearApiToken() {
+  try {
+    localStorage.removeItem(TOKEN_STORAGE_KEY)
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
 class APIError extends Error {
   constructor(
     public status: number,
@@ -32,14 +61,24 @@ class APIError extends Error {
   }
 }
 
+// Notify the UI that a request was rejected with 401 so it can prompt the
+// operator for an API token instead of leaving the dashboard silently broken.
+function notifyUnauthorized() {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('bifrost:unauthorized'))
+  }
+}
+
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController()
   const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT)
 
-  // Add CSRF protection and content type headers
+  // Add CSRF protection, content type, and (when set) the API token.
+  const token = getApiToken()
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     'X-Requested-With': 'XMLHttpRequest', // CSRF protection
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options?.headers,
   }
 
@@ -52,6 +91,7 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
     clearTimeout(timeoutId)
 
     if (!res.ok) {
+      if (res.status === 401) notifyUnauthorized()
       const text = await res.text().catch(() => '')
       throw new APIError(res.status, text || `Request failed with status ${res.status}`)
     }
@@ -67,6 +107,15 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
 }
 
 export { APIError }
+
+// Build the URL for the log SSE stream. EventSource cannot send custom headers,
+// so when a token is configured we pass it via the server-supported `?token=`
+// query-parameter fallback (see authMiddleware in internal/api/client/server.go).
+export function logStreamUrl(): string {
+  const base = `${BASE_PATH}/api/v1/logs/stream`
+  const token = getApiToken()
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base
+}
 
 // VPN Types
 export interface VPNStatus {
@@ -395,12 +444,21 @@ export const api = {
   getConfigDefaults: () => fetchJSON<ClientConfig>('/config/defaults'),
   exportConfig: async (format: 'json' | 'yaml' = 'yaml') => {
     // X-Requested-With is required by the server's csrfMiddleware for mutating
-    // (POST) requests; without it the export always 403s.
+    // (POST) requests; without it the export always 403s. The Authorization
+    // header is required when `api.token` is configured, otherwise the export
+    // 401s like every other call.
+    const token = getApiToken()
     const res = await fetch(`${API_BASE}/config/export?format=${format}`, {
       method: 'POST',
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      headers: {
+        'X-Requested-With': 'XMLHttpRequest',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
     })
-    if (!res.ok) throw new APIError(res.status, 'Failed to export config')
+    if (!res.ok) {
+      if (res.status === 401) notifyUnauthorized()
+      throw new APIError(res.status, 'Failed to export config')
+    }
     return res.blob()
   },
   importConfig: (config: string, format: 'json' | 'yaml' = 'yaml') =>
