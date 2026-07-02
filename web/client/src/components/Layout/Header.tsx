@@ -1,5 +1,6 @@
 import { useStatus, useVersion } from '../../hooks/useStatus'
 import { useQueryClient } from '@tanstack/react-query'
+import { ApiTokenDialog } from './ApiTokenDialog'
 
 export function Header() {
   const { data: status } = useStatus()
@@ -35,6 +36,8 @@ export function Header() {
               <span className={`w-2 h-2 rounded-full mr-2 ${isConnected ? 'bg-bifrost-success' : 'bg-bifrost-error'}`} />
               {isConnected ? 'Server Connected' : 'Server Disconnected'}
             </div>
+
+            <ApiTokenDialog />
 
             <button
               onClick={handleRefresh}
