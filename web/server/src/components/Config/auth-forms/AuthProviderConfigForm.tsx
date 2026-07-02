@@ -87,6 +87,20 @@ const FIELD_SCHEMAS: Record<string, FieldSchema[]> = {
     { key: 'username_to_lowercase', label: 'Lowercase Username', kind: 'bool' },
     { key: 'server_challenge_secret', label: 'Server Challenge Secret', kind: 'password', help: 'Optional deterministic challenge secret' },
   ],
+  totp: [
+    { key: 'issuer', label: 'Issuer', kind: 'text', placeholder: 'Bifrost Proxy', help: 'Name shown in authenticator apps' },
+    { key: 'digits', label: 'Digits', kind: 'number', placeholder: '6', help: '6 or 8' },
+    { key: 'period', label: 'Period (seconds)', kind: 'number', placeholder: '30' },
+    { key: 'algorithm', label: 'Algorithm', kind: 'text', placeholder: 'SHA1', help: 'SHA1, SHA256, or SHA512' },
+    { key: 'skew', label: 'Clock Skew', kind: 'number', placeholder: '1', help: 'Number of periods to allow for clock drift' },
+    { key: 'secrets_file', label: 'Secrets File', kind: 'text', placeholder: '/etc/bifrost/totp-secrets.yaml', help: 'YAML file of per-user secrets' },
+  ],
+  hotp: [
+    { key: 'digits', label: 'Digits', kind: 'number', placeholder: '6', help: '6 or 8' },
+    { key: 'algorithm', label: 'Algorithm', kind: 'text', placeholder: 'SHA1', help: 'SHA1, SHA256, or SHA512' },
+    { key: 'look_ahead', label: 'Look-Ahead Window', kind: 'number', placeholder: '10', help: 'Counters to look ahead for resync' },
+    { key: 'secrets_file', label: 'Secrets File', kind: 'text', placeholder: '/etc/bifrost/hotp-secrets.yaml', help: 'YAML file of per-user secrets' },
+  ],
 }
 
 function toStringList(value: unknown): string {

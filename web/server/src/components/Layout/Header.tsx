@@ -1,4 +1,5 @@
 import { useVersion, useHealth } from '../../hooks/useStats'
+import { ApiTokenButton } from './ApiTokenButton'
 
 export function Header() {
   const { data: version } = useVersion()
@@ -53,6 +54,9 @@ export function Header() {
                 v{version.version}
               </span>
             )}
+
+            {/* API Token */}
+            <ApiTokenButton />
 
             {/* GitHub Repository Link */}
             <a

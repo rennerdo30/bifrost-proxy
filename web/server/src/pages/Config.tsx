@@ -5,7 +5,7 @@ import { api } from '../api/client'
 import { ConfigEditor } from '../components/Config/ConfigEditor'
 import { useToast } from '../components/Toast'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
-import type { ServerConfig } from '../api/types'
+import type { ServerConfig, ConfigValidateResponse } from '../api/types'
 
 // Sections definition for sidebar navigation
 const sections = [
@@ -23,6 +23,9 @@ const sections = [
   { id: 'section-health-checks', label: 'Health Check', keywords: ['health', 'check', 'tcp', 'ping'] },
   { id: 'section-auto-update', label: 'Auto Update', keywords: ['update', 'auto', 'channel'] },
   { id: 'section-cache', label: 'Cache', keywords: ['cache', 'memory', 'disk', 'ttl', 'evict'] },
+  { id: 'section-network', label: 'Network', keywords: ['network', 'ipv6', 'keepalive', 'dial', 'connections'] },
+  { id: 'section-session-storage', label: 'Session', keywords: ['session', 'redis', 'store', 'duration'] },
+  { id: 'section-https-interception-(mitm)', label: 'MITM', keywords: ['mitm', 'https', 'interception', 'ca', 'debug'] },
 ]
 
 // Hot-reloadable section IDs (these don't require restart)
@@ -148,11 +151,16 @@ export function Config() {
     await reloadMutation.mutateAsync()
   }
 
-  const handleValidate = useCallback(async (config: ServerConfig) => {
+  const handleValidate = useCallback(async (config: ServerConfig): Promise<ConfigValidateResponse> => {
     try {
       const result = await api.validateConfig(config)
       if (!result.valid && result.errors) {
-        result.errors.forEach((err) => showToast(`Validation: ${err}`, 'error'))
+        // The server returns structured {section, field, message} errors; format
+        // them into a readable string rather than rendering "[object Object]".
+        result.errors.forEach((err) => {
+          const prefix = err.section && err.section !== 'general' ? `${err.section}: ` : ''
+          showToast(`Validation: ${prefix}${err.message}`, 'error')
+        })
       }
       return result
     } catch {

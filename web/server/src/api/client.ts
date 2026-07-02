@@ -11,6 +11,7 @@ import type {
   ConfigMeta,
   ConfigSaveRequest,
   ConfigSaveResponse,
+  ConfigValidateResponse,
   ConnectionsResponse,
   ClientsResponse,
   AddBackendResponse,
@@ -137,7 +138,7 @@ export const api = {
       body: JSON.stringify(request),
     }),
   validateConfig: (config: ServerConfig) =>
-    fetchJSON<{ valid: boolean; errors?: string[] }>('/config/validate', {
+    fetchJSON<ConfigValidateResponse>('/config/validate', {
       method: 'POST',
       body: JSON.stringify(config),
     }),
