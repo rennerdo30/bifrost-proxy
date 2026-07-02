@@ -33,6 +33,9 @@ type Manager struct {
 	// maxFileSize is the maximum file size to cache.
 	maxFileSize int64
 
+	// metrics records Prometheus metrics; may be nil if unset.
+	metrics *Metrics
+
 	// running indicates if the manager is started.
 	running bool
 }
@@ -173,6 +176,7 @@ func (m *Manager) ShouldCache(req *http.Request) bool {
 type managerSnapshot struct {
 	rules       *RuleSet
 	keyGen      *KeyGenerator
+	metrics     *Metrics
 	defaultTTL  time.Duration
 	maxFileSize int64
 }
@@ -186,8 +190,52 @@ func (m *Manager) snapshot() managerSnapshot {
 	return managerSnapshot{
 		rules:       m.rules,
 		keyGen:      m.keyGen,
+		metrics:     m.metrics,
 		defaultTTL:  m.defaultTTL,
 		maxFileSize: m.maxFileSize,
+	}
+}
+
+// SetMetrics attaches a Prometheus metrics recorder to the manager and its
+// storage backend. It should be called once during startup, before the manager
+// begins serving traffic. Passing a nil recorder disables metrics recording.
+func (m *Manager) SetMetrics(metrics *Metrics) {
+	m.mu.Lock()
+	m.metrics = metrics
+	if sink, ok := m.storage.(metricsSink); ok {
+		sink.attachMetrics(metrics)
+	}
+	m.mu.Unlock()
+
+	m.SyncMetrics()
+}
+
+// SyncMetrics refreshes the gauge-style cache metrics (storage size/usage and
+// active rule/preset counts) from the current state. It is a no-op when no
+// metrics recorder is attached. Safe to call periodically.
+func (m *Manager) SyncMetrics() {
+	m.mu.RLock()
+	metrics := m.metrics
+	rules := m.rules
+	cfg := m.config
+	storage := m.storage
+	m.mu.RUnlock()
+
+	if metrics == nil {
+		return
+	}
+
+	metrics.UpdateRuleMetrics(len(rules.All()), len(cfg.Presets))
+
+	switch s := storage.(type) {
+	case *TieredStorage:
+		ms := s.MemoryStats()
+		metrics.UpdateStorageMetrics("memory", ms.Entries, ms.TotalSize, ms.MaxSize)
+		ds := s.DiskStats()
+		metrics.UpdateStorageMetrics("disk", ds.Entries, ds.TotalSize, ds.MaxSize)
+	default:
+		st := storage.Stats()
+		metrics.UpdateStorageMetrics(cfg.Storage.Type, st.Entries, st.TotalSize, st.MaxSize)
 	}
 }
 
@@ -198,9 +246,12 @@ func (m *Manager) Get(ctx context.Context, req *http.Request) (*Entry, error) {
 		return nil, ErrNotFound
 	}
 
+	start := time.Now()
+
 	snap := m.snapshot()
 	rule := snap.rules.Match(req)
 	if rule == nil {
+		snap.metrics.RecordMiss(req.Host, MissReasonNoRule)
 		return nil, ErrNotFound
 	}
 
@@ -209,14 +260,19 @@ func (m *Manager) Get(ctx context.Context, req *http.Request) (*Entry, error) {
 
 	entry, err := m.storage.Get(ctx, key)
 	if err != nil {
+		snap.metrics.RecordMiss(req.Host, MissReasonNotFound)
 		return nil, err
 	}
 
 	// Check if still fresh
 	if entry.Metadata.IsExpired() {
 		_ = m.storage.Delete(ctx, key) //nolint:errcheck // Best effort cleanup of expired entry
+		snap.metrics.RecordMiss(req.Host, MissReasonExpired)
 		return nil, ErrNotFound
 	}
+
+	snap.metrics.RecordHit(req.Host, entry.Metadata.ContentLength)
+	snap.metrics.ObserveOperation("get", time.Since(start).Seconds())
 
 	slog.Debug("cache hit",
 		"key", truncateKey(key),
@@ -232,6 +288,8 @@ func (m *Manager) Put(ctx context.Context, req *http.Request, resp *http.Respons
 	if !m.IsEnabled() {
 		return nil
 	}
+
+	start := time.Now()
 
 	// Ensure body is closed if we return early without passing it to storage
 	bodyConsumed := false
@@ -364,6 +422,10 @@ func (m *Manager) Put(ctx context.Context, req *http.Request, resp *http.Respons
 		return err
 	}
 
+	snap.metrics.RecordCachedBytes(contentLength)
+	snap.metrics.ObserveOperation("put", time.Since(start).Seconds())
+	m.SyncMetrics()
+
 	slog.Debug("cached response",
 		"key", truncateKey(key),
 		"host", req.Host,
@@ -458,6 +520,10 @@ func (m *Manager) Reload(cfg *Config) error {
 	m.config = cfg
 	m.defaultTTL = cfg.DefaultTTL.Duration()
 	m.maxFileSize = cfg.MaxFileSize.Int64()
+
+	// Refresh rule gauges under the lock; UpdateRuleMetrics only touches
+	// Prometheus gauges and does not re-enter the manager lock.
+	m.metrics.UpdateRuleMetrics(len(rules.All()), len(cfg.Presets))
 
 	slog.Info("cache rules reloaded", "rules_count", len(rules.All()))
 	return nil
