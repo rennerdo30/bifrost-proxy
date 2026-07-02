@@ -129,9 +129,15 @@ auth:
 
 | Platform | Support | Method |
 |----------|---------|--------|
-| Linux    | ✅ Supported | PAM via `su` command |
+| Linux    | ⚠️ Requires custom build | PAM (only in `CGO_ENABLED=1 -tags pam` builds; the default/Docker build fails closed) |
 | macOS    | ✅ Supported | Directory Services (`dscl`) |
 | Windows  | ❌ Not Supported | Use native/ldap/oauth instead |
+
+> **Warning:** The default (and Docker) binaries are built **without** the `pam`
+> tag and with cgo disabled, so Linux system authentication **fails closed** —
+> every login is rejected. To enable it, build from source with
+> `CGO_ENABLED=1 go build -tags pam ./...` (requires libpam headers, e.g.
+> `libpam0g-dev` / `pam-devel`). macOS does not need a special build.
 
 ### System Authentication Configuration
 
@@ -143,7 +149,10 @@ auth:
 
 ### Requirements
 
-- **Linux**: Requires that the Bifrost process can execute `su` (typically needs to run as root or with appropriate privileges)
+- **Linux**: Requires a binary built with `CGO_ENABLED=1 -tags pam` and the PAM
+  development headers. The process must be able to authenticate against the
+  configured PAM service (often needs root or a suitable `/etc/pam.d` entry).
+  Without the `pam` build tag the plugin fails closed.
 - **macOS**: Requires access to Directory Services via `dscl`
 
 ## OAuth/OIDC Authentication
@@ -385,13 +394,18 @@ auth:
       enabled: true
       priority: 1
       config:
-        keytab: "/etc/krb5.keytab"
-        service_principal: "HTTP/proxy.example.com@EXAMPLE.COM"
+        keytab_file: "/etc/krb5.keytab"
+        service_principal: "HTTP/proxy.example.com"
         realm: "EXAMPLE.COM"
-        # Optional: allowed principals
-        allowed_principals:
-          - "*@EXAMPLE.COM"
+        strip_realm: true
+        username_to_lowercase: true
 ```
+
+> **HTTP browser SSO requires the Negotiate middleware.** A bare `kerberos`
+> provider validates username/password credentials. For transparent SPNEGO SSO
+> over the HTTP proxy, also enable the `auth.negotiate` block and point
+> `kerberos_provider` at this provider (see the
+> [Advanced Authentication guide](/configuration/authentication#spnego-authentication)).
 
 ### Kerberos Setup
 

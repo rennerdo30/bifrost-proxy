@@ -25,10 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - HOTP counter-based OTP (`hotp`) - YubiKey compatible
   - mTLS certificate authentication (`mtls`) - client certificates, smart cards
   - Kerberos/SPNEGO authentication (`kerberos`) - enterprise SSO
-  - NTLM authentication (`ntlm`) - Windows domain fallback
+  - NTLM message parser (`ntlm`) - **non-functional; fails closed** (cannot verify responses, so it rejects every login — use Kerberos for Windows domain SSO)
   - MFA wrapper for two-factor auth (`mfa_wrapper`) - combine primary auth + OTP
 - Session management with memory and Redis stores
-- Negotiate handler for HTTP SPNEGO/NTLM handshakes
+- Negotiate handler for HTTP SPNEGO handshakes (enabled via `auth.negotiate`; Kerberos only — the NTLM path always fails closed)
 - Desktop client application (Wails-based)
   - Cross-platform support: Windows, macOS, Linux
   - Native system tray integration

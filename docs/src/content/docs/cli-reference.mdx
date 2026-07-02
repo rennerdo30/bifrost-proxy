@@ -427,8 +427,13 @@ api:
   token: "${BIFROST_API_TOKEN}"
 
 auth:
-  ldap:
-    bind_password: "${LDAP_BIND_PASSWORD}"
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        bind_password: "${LDAP_BIND_PASSWORD}"
 ```
 
 ```bash

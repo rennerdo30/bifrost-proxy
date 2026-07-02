@@ -100,24 +100,32 @@ python3 -c "import bcrypt; print(bcrypt.hashpw(b'your-password', bcrypt.gensalt(
 
 ```yaml
 auth:
-  mode: native
-  native:
-    users:
-      - username: admin
-        password_hash: "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.gS6T9I2P9z8K2G"
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            password_hash: "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.gS6T9I2P9z8K2G"
 ```
 
 ### LDAP Security
 
 ```yaml
 auth:
-  mode: ldap
-  ldap:
-    url: "ldaps://ldap.example.com:636"  # Use LDAPS
-    tls: true
-    insecure_skip_verify: false  # Always verify in production
-    bind_dn: "cn=bifrost-svc,ou=services,dc=example,dc=com"
-    bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        url: "ldaps://ldap.example.com:636"  # Use LDAPS
+        tls: true
+        insecure_skip_verify: false  # Always verify in production
+        bind_dn: "cn=bifrost-svc,ou=services,dc=example,dc=com"
+        bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
 ```
 
 > **Tip:** LDAP Best Practices
@@ -130,15 +138,19 @@ auth:
 
 ```yaml
 auth:
-  mode: oauth
-  oauth:
-    client_id: "${OAUTH_CLIENT_ID}"
-    client_secret: "${OAUTH_CLIENT_SECRET}"  # Never commit to git
-    issuer_url: "https://auth.example.com"
-    redirect_url: "https://bifrost.example.com/callback"
-    scopes:
-      - openid
-      - profile
+  providers:
+    - name: oauth
+      type: oauth
+      enabled: true
+      priority: 1
+      config:
+        client_id: "${OAUTH_CLIENT_ID}"
+        client_secret: "${OAUTH_CLIENT_SECRET}"  # Never commit to git
+        issuer_url: "https://auth.example.com"
+        redirect_url: "https://bifrost.example.com/callback"
+        scopes:
+          - openid
+          - profile
 ```
 
 ---
@@ -265,8 +277,13 @@ Never commit secrets to version control. Use environment variables:
 ```yaml
 # config.yaml
 auth:
-  ldap:
-    bind_password: "${LDAP_PASSWORD}"
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        bind_password: "${LDAP_PASSWORD}"
 
 api:
   token: "${API_TOKEN}"
