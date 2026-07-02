@@ -99,10 +99,20 @@ func TestMFAWrapperPlugin_DefaultConfig(t *testing.T) {
 
 	defaults := plugin.DefaultConfig()
 	assert.NotNil(t, defaults)
-	assert.Equal(t, "ldap-main", defaults["primary_provider"])
-	assert.Equal(t, "totp", defaults["mfa_type"])
+	// The default template must advertise the inline block format that Create()
+	// actually supports (primary/secondary with a mode), not the by-name format
+	// that Create() rejects.
+	primary, ok := defaults["primary"].(map[string]any)
+	require.True(t, ok, "default config should contain an inline 'primary' block")
+	assert.Equal(t, "ldap", primary["mode"])
+	secondary, ok := defaults["secondary"].(map[string]any)
+	require.True(t, ok, "default config should contain an inline 'secondary' block")
+	assert.Equal(t, "totp", secondary["mode"])
 	assert.Equal(t, "always", defaults["mfa_required"])
-	assert.Equal(t, "concatenated", defaults["password_format"])
+
+	// The advertised default must itself validate (no by-name format that
+	// Create() would reject).
+	assert.NoError(t, plugin.ValidateConfig(defaults))
 }
 
 func TestMFAWrapperPlugin_ConfigSchema(t *testing.T) {
@@ -111,10 +121,12 @@ func TestMFAWrapperPlugin_ConfigSchema(t *testing.T) {
 
 	schema := plugin.ConfigSchema()
 	assert.NotEmpty(t, schema)
-	assert.Contains(t, schema, "primary_provider")
-	assert.Contains(t, schema, "mfa_type")
+	assert.Contains(t, schema, "primary")
+	assert.Contains(t, schema, "secondary")
 	assert.Contains(t, schema, "mfa_required")
 	assert.Contains(t, schema, "password_format")
+	// The rejected by-name field must no longer be advertised.
+	assert.NotContains(t, schema, "primary_provider")
 }
 
 func TestMFAWrapperPlugin_ValidateConfig_InlineProviders(t *testing.T) {

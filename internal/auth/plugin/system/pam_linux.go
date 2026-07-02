@@ -61,6 +61,10 @@ import (
 	"unsafe"
 )
 
+// pamCompiled reports whether the real libpam-backed Linux backend was compiled
+// in. In this (real PAM) build it was. See pam_stub.go for the fail-closed value.
+const pamCompiled = true
+
 // validateLinux authenticates username/password against PAM using the
 // configured service. It returns true only when both pam_authenticate and
 // pam_acct_mgmt succeed. Any error path fails closed.

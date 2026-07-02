@@ -186,7 +186,7 @@ func TestPlugin_ValidateConfig(t *testing.T) {
 			name:    "empty config",
 			config:  map[string]any{},
 			wantErr: true,
-			errMsg:  "either 'jwks_url' or 'public_key_pem' is required",
+			errMsg:  "one of 'jwks_url', 'public_key_pem', or 'hmac_secret' is required",
 		},
 		{
 			name: "valid jwks_url",
@@ -262,11 +262,32 @@ func TestParseConfig(t *testing.T) {
 		{
 			name: "custom algorithms as []any",
 			config: map[string]any{
-				"jwks_url":   "https://example.com/jwks",
-				"algorithms": []any{"RS256", "RS384", "HS256"},
+				"jwks_url":    "https://example.com/jwks",
+				"algorithms":  []any{"RS256", "RS384", "HS256"},
+				"hmac_secret": "shared-secret-value",
 			},
 			verify: func(t *testing.T, cfg *jwtConfig) {
 				assert.Equal(t, []string{"RS256", "RS384", "HS256"}, cfg.Algorithms)
+				assert.Equal(t, []byte("shared-secret-value"), cfg.HMACSecret)
+			},
+		},
+		{
+			name: "HMAC algorithm without secret is rejected",
+			config: map[string]any{
+				"jwks_url":   "https://example.com/jwks",
+				"algorithms": []any{"RS256", "HS256"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "hmac_secret alone satisfies key requirement",
+			config: map[string]any{
+				"algorithms":  []any{"HS512"},
+				"hmac_secret": "another-secret",
+			},
+			verify: func(t *testing.T, cfg *jwtConfig) {
+				assert.Equal(t, []string{"HS512"}, cfg.Algorithms)
+				assert.Equal(t, []byte("another-secret"), cfg.HMACSecret)
 			},
 		},
 		{
@@ -1701,10 +1722,9 @@ func TestAuthenticator_FullFlow_WithHMAC(t *testing.T) {
 			GroupsClaim:   "groups",
 			EmailClaim:    "email",
 			LeewaySeconds: 60,
+			HMACSecret:    secret,
 		},
-		keys: map[string]any{
-			"static": secret,
-		},
+		keys: map[string]any{},
 	}
 
 	header := map[string]any{"alg": "HS256", "typ": "JWT"}
@@ -1717,6 +1737,44 @@ func TestAuthenticator_FullFlow_WithHMAC(t *testing.T) {
 	user, err := a.Authenticate(context.Background(), "", token)
 	require.NoError(t, err)
 	assert.Equal(t, "hmac-user", user.Username)
+}
+
+// TestAuthenticator_HMAC_NoSecretConfigured verifies that an HMAC token is
+// rejected (fail closed) when no symmetric secret is configured on the
+// authenticator, rather than falling through to an asymmetric key.
+func TestAuthenticator_HMAC_NoSecretConfigured(t *testing.T) {
+	secret := []byte("my-super-secret-key-at-least-32-bytes-long")
+
+	a := &Authenticator{
+		config: &jwtConfig{
+			Algorithms:    []string{"HS256"},
+			UsernameClaim: "sub",
+			LeewaySeconds: 60,
+		},
+		keys: map[string]any{},
+	}
+
+	header := map[string]any{"alg": "HS256", "typ": "JWT"}
+	claims := map[string]any{
+		"sub": "hmac-user",
+		"exp": float64(time.Now().Add(time.Hour).Unix()),
+	}
+	token := createHMACJWT(t, header, claims, secret)
+
+	_, err := a.Authenticate(context.Background(), "", token)
+	require.Error(t, err)
+}
+
+// TestPlugin_Create_HMACRequiresSecret verifies the plugin rejects a config that
+// lists an HMAC algorithm without providing hmac_secret.
+func TestPlugin_Create_HMACRequiresSecret(t *testing.T) {
+	p := &plugin{}
+	_, err := p.Create(map[string]any{
+		"jwks_url":   "https://example.com/jwks",
+		"algorithms": []any{"HS256"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "hmac_secret")
 }
 
 // ============================================================
