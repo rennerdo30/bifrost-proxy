@@ -39,60 +39,68 @@ scrape_configs:
 
 ### Available Metrics
 
+These are the exact series exported by the server (see
+`internal/metrics/prometheus.go`). In addition, the standard `go_*` and
+`process_*` collectors are registered automatically.
+
 #### Connection Metrics
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `bifrost_connections_total` | Counter | Total connections handled |
-| `bifrost_connections_active` | Gauge | Current active connections |
-| `bifrost_connections_errors_total` | Counter | Total connection errors |
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `bifrost_connections_total` | Counter | `protocol`, `backend` | Total connections handled |
+| `bifrost_connections_active` | Gauge | `protocol`, `backend` | Current active connections |
+| `bifrost_connection_duration_seconds` | Histogram | `protocol`, `backend` | Connection duration |
 
 #### Request Metrics
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `bifrost_requests_total` | Counter | `method`, `backend`, `status` | Total requests |
-| `bifrost_request_duration_seconds` | Histogram | `method`, `backend` | Request duration |
-| `bifrost_request_size_bytes` | Histogram | `direction` | Request/response size |
+| `bifrost_requests_total` | Counter | `protocol`, `method`, `status` | Total requests |
+| `bifrost_request_duration_seconds` | Histogram | `protocol`, `method` | Request duration |
+| `bifrost_request_size_bytes` | Histogram | `protocol` | Request body size |
+| `bifrost_response_size_bytes` | Histogram | `protocol` | Response body size |
 
 #### Backend Metrics
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `bifrost_backend_connections_total` | Counter | `backend` | Connections per backend |
-| `bifrost_backend_connections_active` | Gauge | `backend` | Active connections per backend |
-| `bifrost_backend_healthy` | Gauge | `backend` | Backend health (1=healthy, 0=unhealthy) |
-| `bifrost_backend_latency_seconds` | Histogram | `backend` | Backend response latency |
+| `bifrost_backend_health` | Gauge | `backend`, `type` | Backend health (1=healthy, 0=unhealthy) |
+| `bifrost_backend_connections` | Gauge | `backend` | Active connections per backend |
+| `bifrost_backend_latency_seconds` | Histogram | `backend` | Backend health-check latency |
+| `bifrost_backend_errors_total` | Counter | `backend`, `error_type` | Total backend errors |
 
 #### Traffic Metrics
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `bifrost_bytes_total` | Counter | `direction`, `backend` | Total bytes transferred |
-| `bifrost_bandwidth_bytes_per_second` | Gauge | `direction` | Current bandwidth usage |
+| `bifrost_bytes_sent_total` | Counter | `backend` | Total bytes sent |
+| `bifrost_bytes_received_total` | Counter | `backend` | Total bytes received |
 
-#### Cache Metrics
+#### Rate Limiting Metrics
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `bifrost_cache_hits_total` | Counter | `domain` | Total cache hits |
-| `bifrost_cache_misses_total` | Counter | `domain`, `reason` | Total cache misses |
-| `bifrost_cache_bytes_served_total` | Counter | `source` | Bytes served (cache vs origin) |
-| `bifrost_cache_storage_size_bytes` | Gauge | `tier` | Current storage size |
-| `bifrost_cache_storage_entries` | Gauge | `tier` | Current entry count |
-| `bifrost_cache_storage_usage_percent` | Gauge | `tier` | Storage usage percentage |
-| `bifrost_cache_evictions_total` | Counter | `tier`, `reason` | Cache evictions |
-| `bifrost_cache_operation_duration_seconds` | Histogram | `operation` | Cache operation latency |
-| `bifrost_cache_active_rules` | Gauge | | Number of active cache rules |
-| `bifrost_cache_active_presets` | Gauge | | Number of enabled presets |
+| `bifrost_rate_limit_hits_total` | Counter | `type` | Total rate limit hits |
+
+#### Auth Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `bifrost_auth_attempts_total` | Counter | `method` | Total authentication attempts |
+| `bifrost_auth_failures_total` | Counter | `method`, `reason` | Total authentication failures |
 
 #### System Metrics
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `bifrost_uptime_seconds` | Gauge | Server uptime |
+| `bifrost_uptime_seconds` | Gauge | Server uptime in seconds |
 | `bifrost_goroutines` | Gauge | Number of goroutines |
-| `bifrost_memory_bytes` | Gauge | Memory usage |
+
+> **Note:** There is no `bifrost_memory_bytes` gauge — use the standard
+> `process_resident_memory_bytes` (from the process collector) for memory usage.
+> Prometheus-format cache metrics (`bifrost_cache_*`) are **not** exported; cache
+> statistics are available through the REST API (`/api/v1/cache/stats`) and the
+> Web UI instead.
 
 ### Example Queries
 
@@ -103,27 +111,23 @@ rate(bifrost_requests_total[5m])
 # Average request duration
 rate(bifrost_request_duration_seconds_sum[5m]) / rate(bifrost_request_duration_seconds_count[5m])
 
-# Error rate
-rate(bifrost_connections_errors_total[5m]) / rate(bifrost_connections_total[5m])
+# Error rate (share of requests with a 5xx status)
+sum(rate(bifrost_requests_total{status=~"5.."}[5m])) / sum(rate(bifrost_requests_total[5m]))
 
 # Active connections by backend
-bifrost_backend_connections_active
+bifrost_backend_connections
 
-# Bandwidth usage (MB/s)
-rate(bifrost_bytes_total[5m]) / 1024 / 1024
+# Throughput (MB/s) sent to backends
+rate(bifrost_bytes_sent_total[5m]) / 1024 / 1024
 
 # Unhealthy backends
-bifrost_backend_healthy == 0
+bifrost_backend_health == 0
 
-# Cache hit rate
-bifrost_cache_hits_total / (bifrost_cache_hits_total + bifrost_cache_misses_total)
+# Backend error rate
+sum(rate(bifrost_backend_errors_total[5m])) by (backend)
 
-# Cache storage usage
-bifrost_cache_storage_usage_percent{tier="memory"}
-bifrost_cache_storage_usage_percent{tier="disk"}
-
-# Bytes saved by cache (vs fetching from origin)
-rate(bifrost_cache_bytes_served_total{source="cache"}[1h])
+# Resident memory (from the process collector)
+process_resident_memory_bytes
 ```
 
 ---
@@ -171,7 +175,7 @@ Access Grafana at `http://localhost:3000` (default: admin/admin).
   "type": "graph",
   "targets": [{
     "expr": "rate(bifrost_requests_total[5m])",
-    "legendFormat": "{{method}} - {{backend}}"
+    "legendFormat": "{{protocol}} {{method}} - {{status}}"
   }]
 }
 ```
@@ -183,7 +187,7 @@ Access Grafana at `http://localhost:3000` (default: admin/admin).
   "title": "Backend Health",
   "type": "table",
   "targets": [{
-    "expr": "bifrost_backend_healthy",
+    "expr": "bifrost_backend_health",
     "format": "table",
     "instant": true
   }]
@@ -290,9 +294,9 @@ Create `alerts.yml`:
 groups:
   - name: bifrost
     rules:
-      # High error rate
+      # High error rate (share of requests returning a 5xx status)
       - alert: BifrostHighErrorRate
-        expr: rate(bifrost_connections_errors_total[5m]) / rate(bifrost_connections_total[5m]) > 0.05
+        expr: sum(rate(bifrost_requests_total{status=~"5.."}[5m])) / sum(rate(bifrost_requests_total[5m])) > 0.05
         for: 5m
         labels:
           severity: warning
@@ -302,7 +306,7 @@ groups:
 
       # Backend down
       - alert: BifrostBackendDown
-        expr: bifrost_backend_healthy == 0
+        expr: bifrost_backend_health == 0
         for: 1m
         labels:
           severity: critical

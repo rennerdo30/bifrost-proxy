@@ -56,11 +56,15 @@ routes:
     priority: 1
 
 auth:
-  mode: native
-  native:
-    users:
-      - username: admin
-        password_hash: "$2a$10$..."
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            password_hash: "$2a$10$..."
 
 rate_limit:
   enabled: true
@@ -176,8 +180,13 @@ server:
   http:
     listen: ":${HTTP_PORT:-8080}"  # With default
 auth:
-  native:
-    users:
-      - username: admin
-        password_hash: "${ADMIN_PASSWORD_HASH}"
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            password_hash: "${ADMIN_PASSWORD_HASH}"
 ```

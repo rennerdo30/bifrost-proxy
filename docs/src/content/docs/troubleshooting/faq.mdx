@@ -93,11 +93,15 @@ Use the `${VAR_NAME}` syntax:
 
 ```yaml
 auth:
-  mode: native
-  native:
-    users:
-      - username: admin
-        password_hash: "${ADMIN_PASSWORD_HASH}"
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            password_hash: "${ADMIN_PASSWORD_HASH}"
 ```
 
 ### What config changes require a restart?
@@ -279,20 +283,24 @@ System authentication uses PAM (Linux) or Directory Services (macOS). Windows is
 
 ```yaml
 auth:
-  mode: mfa_wrapper
-  mfa_wrapper:
-    primary:
-      mode: native
-      native:
-        users:
-          - username: admin
-            password_hash: "$2a$12$..."
-    secondary:
-      mode: totp
-      totp:
-        secrets:
-          admin: "BASE32SECRET"
-    otp_separator: ":"  # Use password:123456
+  providers:
+    - name: mfa
+      type: mfa_wrapper
+      enabled: true
+      priority: 1
+      config:
+        primary:
+          type: native
+          config:
+            users:
+              - username: admin
+                password_hash: "$2a$12$..."
+        secondary:
+          type: totp
+          config:
+            secrets:
+              admin: "BASE32SECRET"
+        otp_separator: ":"  # Use password:123456
 ```
 
 ---
