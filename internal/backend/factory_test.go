@@ -639,6 +639,7 @@ func TestFactory_Create_ProtonVPN(t *testing.T) {
 			"refresh_interval": "20m",
 			"secure_core":      true,
 			"features":         []any{"secure_core", "tor"},
+			"ca_cert":          nordTestCAPEM(t),
 		},
 	}
 
@@ -646,6 +647,43 @@ func TestFactory_Create_ProtonVPN(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test-protonvpn", backend.Name())
 	assert.Equal(t, "protonvpn", backend.Type())
+}
+
+func TestFactory_Create_ProtonVPN_OpenVPNRequiresCA(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-protonvpn",
+		Type:    "protonvpn",
+		Enabled: true,
+		Config: map[string]any{
+			"username": "proton_openvpn_user",
+			"password": "proton_openvpn_pass",
+			"protocol": "openvpn",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ca_cert")
+}
+
+func TestFactory_Create_Mullvad_OpenVPNRequiresCA(t *testing.T) {
+	f := NewFactory()
+
+	cfg := config.BackendConfig{
+		Name:    "test-mullvad",
+		Type:    "mullvad",
+		Enabled: true,
+		Config: map[string]any{
+			"account_id": "1234567890123456",
+			"protocol":   "openvpn",
+		},
+	}
+
+	_, err := f.Create(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ca_cert")
 }
 
 func TestFactory_Create_ProtonVPN_MissingUsername(t *testing.T) {
