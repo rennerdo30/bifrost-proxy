@@ -118,13 +118,18 @@ func (c *Collector) collect() {
 	}
 }
 
-// RecordConnection records a new connection.
-func (c *Collector) RecordConnection(protocol, backend string) func(duration time.Duration) {
-	c.metrics.ConnectionsTotal.WithLabelValues(protocol, backend).Inc()
-	c.metrics.ConnectionsActive.WithLabelValues(protocol, backend).Inc()
+// RecordConnection records a new connection. The selected backend is not known
+// when a connection is accepted (routing happens per-request), so the active
+// gauge is tracked at protocol scope (empty backend label) while it is
+// in-flight. The returned done callback receives the resolved backend name once
+// routing has completed and records the per-backend total and duration; pass an
+// empty backend when the connection failed before a backend was selected.
+func (c *Collector) RecordConnection(protocol string) func(backend string, duration time.Duration) {
+	c.metrics.ConnectionsActive.WithLabelValues(protocol, "").Inc()
 
-	return func(duration time.Duration) {
-		c.metrics.ConnectionsActive.WithLabelValues(protocol, backend).Dec()
+	return func(backend string, duration time.Duration) {
+		c.metrics.ConnectionsActive.WithLabelValues(protocol, "").Dec()
+		c.metrics.ConnectionsTotal.WithLabelValues(protocol, backend).Inc()
 		c.metrics.ConnectionDuration.WithLabelValues(protocol, backend).Observe(duration.Seconds())
 	}
 }
