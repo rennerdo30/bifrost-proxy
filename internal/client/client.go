@@ -21,6 +21,7 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
 	"github.com/rennerdo30/bifrost-proxy/internal/sysproxy"
 	"github.com/rennerdo30/bifrost-proxy/internal/tray"
+	"github.com/rennerdo30/bifrost-proxy/internal/updater"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
@@ -36,6 +37,7 @@ type Client struct {
 	meshManager     apiclient.MeshManager
 	sysProxyManager sysproxy.Manager
 	tray            *tray.Tray
+	updater         *updater.Updater
 
 	httpListener   net.Listener
 	socks5Listener net.Listener
@@ -177,7 +179,8 @@ func (c *Client) Start(ctx context.Context) error {
 			ConfigGetter: func() interface{} {
 				return c.config
 			},
-			ConfigUpdater: c.updateConfig,
+			ConfigUpdater:  c.updateConfig,
+			ConfigReloader: c.reloadConfig,
 			SettingsGetter: func() *apiclient.QuickSettings {
 				return c.getQuickSettings()
 			},
@@ -253,11 +256,134 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 	}
 
+	// Start the auto-update background checker if enabled. Failure to
+	// initialize is logged but non-fatal so the proxy remains usable.
+	if c.config.AutoUpdate.Enabled {
+		c.startUpdater(ctx)
+	}
+
+	// Start the server health monitor if a health check is configured. This
+	// gives the previously-inert server.health_check block a runtime effect:
+	// it periodically probes server reachability and logs status transitions.
+	c.startHealthMonitor(ctx)
+
 	// Apply tray-driven startup behavior (auto-connect, start minimized).
 	c.applyStartupBehavior()
 
 	logging.Info("Bifrost client started")
 	return nil
+}
+
+// startUpdater constructs the auto-updater from the client's AutoUpdate config
+// and starts the periodic background checker. It is only called when
+// AutoUpdate.Enabled is true. Any initialization error is logged and the client
+// continues without automatic updates.
+func (c *Client) startUpdater(ctx context.Context) {
+	interval := c.config.AutoUpdate.CheckInterval.Duration()
+	if interval <= 0 {
+		interval = 24 * time.Hour
+	}
+	channel := c.config.AutoUpdate.Channel
+	if channel == "" {
+		channel = string(updater.ChannelStable)
+	}
+
+	u, err := updater.New(updater.Config{
+		Enabled:       true,
+		CheckInterval: interval,
+		Channel:       updater.Channel(channel),
+		GitHubOwner:   "rennerdo30",
+		GitHubRepo:    "bifrost-proxy",
+	}, updater.BinaryTypeClient, nil)
+	if err != nil {
+		logging.Error("Failed to initialize auto-updater", "error", err)
+		return
+	}
+
+	c.mu.Lock()
+	c.updater = u
+	c.mu.Unlock()
+
+	u.StartBackgroundChecker(ctx)
+	logging.Info("Auto-update background checker started", "channel", channel, "check_interval", interval)
+}
+
+// startHealthMonitor launches a goroutine that periodically probes the
+// configured Bifrost server for reachability. It consumes the previously-dead
+// server.health_check config block. Transitions between reachable/unreachable
+// are logged and, when a tray is present, reflected in the tray status.
+func (c *Client) startHealthMonitor(ctx context.Context) {
+	hc := c.config.Server.HealthCheck
+	if hc == nil {
+		return
+	}
+
+	address := c.config.Server.Address
+	if address == "" {
+		logging.Warn("Server health check configured but no server address is set; health monitor disabled")
+		return
+	}
+
+	interval := hc.Interval.Duration()
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	timeout := hc.Timeout.Duration()
+	if timeout <= 0 {
+		timeout = 5 * time.Second
+	}
+
+	c.wg.Add(1)
+	go func() {
+		defer c.wg.Done()
+
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		// first forces an initial status log on the first tick.
+		first := true
+		lastHealthy := false
+
+		for {
+			select {
+			case <-c.done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				checkCtx, cancel := context.WithTimeout(ctx, timeout)
+				healthy := c.serverConn.IsConnected(checkCtx)
+				cancel()
+
+				if !first && healthy == lastHealthy {
+					continue
+				}
+				first = false
+				lastHealthy = healthy
+
+				if healthy {
+					logging.Info("Server health check: reachable", "address", address)
+					if t := c.currentTray(); t != nil {
+						t.SetStatus(tray.StatusConnected)
+					}
+				} else {
+					logging.Warn("Server health check: unreachable", "address", address)
+					if t := c.currentTray(); t != nil {
+						t.SetStatus(tray.StatusWarning)
+					}
+				}
+			}
+		}
+	}()
+
+	logging.Info("Server health monitor started", "address", address, "interval", interval)
+}
+
+// currentTray returns the tray under lock, or nil when no tray is running.
+func (c *Client) currentTray() *tray.Tray {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tray
 }
 
 // applyStartupBehavior applies the persisted tray settings that affect launch:
@@ -327,6 +453,14 @@ func (c *Client) Stop(ctx context.Context) error {
 		if err := c.meshManager.Stop(); err != nil {
 			logging.Error("Failed to stop mesh networking", "error", err)
 		}
+	}
+
+	// Stop the auto-update background checker
+	c.mu.Lock()
+	u := c.updater
+	c.mu.Unlock()
+	if u != nil {
+		u.StopBackgroundChecker()
 	}
 
 	// Disable System Proxy if it was enabled
@@ -573,6 +707,12 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 		if retryCount, ok := server["retry_count"].(float64); ok {
 			c.config.Server.RetryCount = int(retryCount)
 		}
+		if retryDelay, ok := server["retry_delay"].(string); ok {
+			c.config.Server.RetryDelay = config.Duration(parseDuration(retryDelay))
+		}
+		// Hot-apply the connection parameters so address/protocol/credential/
+		// timeout/retry changes take effect on the next dial without a restart.
+		c.applyServerConn()
 	}
 
 	if proxy, ok := updates["proxy"].(map[string]interface{}); ok {
@@ -743,6 +883,68 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 		logging.Info("Configuration saved", "path", c.configPath)
 	}
 
+	return nil
+}
+
+// applyServerConn pushes the current in-memory server settings into the live
+// ServerConnection so they take effect on the next dial. Callers must hold
+// c.mu (updateConfig and reloadConfig both do).
+func (c *Client) applyServerConn() {
+	c.serverConn.Reconfigure(ServerConnectionConfig{
+		Address:    c.config.Server.Address,
+		Protocol:   c.config.Server.Protocol,
+		Username:   c.config.Server.Username,
+		Password:   c.config.Server.Password,
+		Timeout:    c.config.Server.Timeout.Duration(),
+		RetryCount: c.config.Server.RetryCount,
+		RetryDelay: c.config.Server.RetryDelay.Duration(),
+	})
+}
+
+// reloadConfig reloads the client configuration from disk and hot-applies the
+// settings that are safe to change on a running client. It backs the API's
+// "Reload" action (previously unwired, which made that button always return
+// HTTP 503).
+//
+// Hot-applied on reload: routing rules, logging, and the server connection
+// parameters (address/protocol/credentials/timeouts). Settings that require
+// recreating listeners, the API server, the tray, VPN, or mesh (see
+// restartRequiredFields in the client API) are loaded into the in-memory config
+// but only take full effect after a restart; the debug logger is likewise
+// created once at startup and is not re-created here.
+func (c *Client) reloadConfig() error {
+	c.mu.RLock()
+	path := c.configPath
+	c.mu.RUnlock()
+
+	if path == "" {
+		return fmt.Errorf("no config file path set; cannot reload")
+	}
+
+	newCfg := config.DefaultClientConfig()
+	if err := config.LoadAndValidate(path, &newCfg); err != nil {
+		return fmt.Errorf("reload config: %w", err)
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Hot-apply routing rules.
+	if err := c.router.LoadRoutes(newCfg.Routes); err != nil {
+		return fmt.Errorf("reload routes: %w", err)
+	}
+
+	// Hot-apply logging configuration.
+	if err := logging.Setup(newCfg.Logging); err != nil {
+		return fmt.Errorf("reload logging: %w", err)
+	}
+
+	// Replace the in-memory config in place so the API getters observe the new
+	// values, then push the server connection parameters into the live dialer.
+	*c.config = newCfg
+	c.applyServerConn()
+
+	logging.Info("Configuration reloaded from disk", "path", path)
 	return nil
 }
 

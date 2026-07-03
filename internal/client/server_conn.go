@@ -8,11 +8,13 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 )
 
 // ServerConnection manages the connection to the Bifrost server.
 type ServerConnection struct {
+	mu     sync.RWMutex
 	config ServerConnectionConfig
 	dialer *net.Dialer
 }
@@ -28,8 +30,8 @@ type ServerConnectionConfig struct {
 	RetryDelay time.Duration
 }
 
-// NewServerConnection creates a new server connection.
-func NewServerConnection(cfg ServerConnectionConfig) *ServerConnection {
+// applyServerConnDefaults fills in default values for unset fields.
+func applyServerConnDefaults(cfg ServerConnectionConfig) ServerConnectionConfig {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 30 * time.Second
 	}
@@ -42,6 +44,12 @@ func NewServerConnection(cfg ServerConnectionConfig) *ServerConnection {
 	if cfg.Protocol == "" {
 		cfg.Protocol = "http"
 	}
+	return cfg
+}
+
+// NewServerConnection creates a new server connection.
+func NewServerConnection(cfg ServerConnectionConfig) *ServerConnection {
+	cfg = applyServerConnDefaults(cfg)
 
 	return &ServerConnection{
 		config: cfg,
@@ -52,16 +60,41 @@ func NewServerConnection(cfg ServerConnectionConfig) *ServerConnection {
 	}
 }
 
+// Reconfigure atomically replaces the server connection settings. Existing,
+// in-flight connections keep the settings they were created with; new dials use
+// the updated values. This makes server address/protocol/credential/timeout
+// changes hot-applicable without recreating the client or its listeners.
+func (s *ServerConnection) Reconfigure(cfg ServerConnectionConfig) {
+	cfg = applyServerConnDefaults(cfg)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.config = cfg
+	s.dialer = &net.Dialer{
+		Timeout:   cfg.Timeout,
+		KeepAlive: 30 * time.Second,
+	}
+}
+
+// snapshot returns the current config and dialer under a read lock so callers
+// operate on a consistent view even while Reconfigure runs concurrently.
+func (s *ServerConnection) snapshot() (ServerConnectionConfig, *net.Dialer) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config, s.dialer
+}
+
 // Connect establishes a connection to the target through the server.
 func (s *ServerConnection) Connect(ctx context.Context, target string) (net.Conn, error) {
+	cfg, _ := s.snapshot()
 	var lastErr error
 
-	for attempt := 0; attempt <= s.config.RetryCount; attempt++ {
+	for attempt := 0; attempt <= cfg.RetryCount; attempt++ {
 		if attempt > 0 {
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
-			case <-time.After(s.config.RetryDelay):
+			case <-time.After(cfg.RetryDelay):
 			}
 		}
 
@@ -72,24 +105,26 @@ func (s *ServerConnection) Connect(ctx context.Context, target string) (net.Conn
 		lastErr = err
 	}
 
-	return nil, fmt.Errorf("failed after %d attempts: %w", s.config.RetryCount+1, lastErr)
+	return nil, fmt.Errorf("failed after %d attempts: %w", cfg.RetryCount+1, lastErr)
 }
 
 func (s *ServerConnection) connect(ctx context.Context, target string) (net.Conn, error) {
-	switch s.config.Protocol {
+	cfg, _ := s.snapshot()
+	switch cfg.Protocol {
 	case "http":
 		return s.connectHTTP(ctx, target)
 	case "socks5":
 		return s.connectSOCKS5(ctx, target)
 	default:
-		return nil, fmt.Errorf("unsupported protocol: %s", s.config.Protocol)
+		return nil, fmt.Errorf("unsupported protocol: %s", cfg.Protocol)
 	}
 }
 
 // connectHTTP connects through HTTP CONNECT.
 func (s *ServerConnection) connectHTTP(ctx context.Context, target string) (net.Conn, error) {
+	cfg, dialer := s.snapshot()
 	// Connect to server
-	conn, err := s.dialer.DialContext(ctx, "tcp", s.config.Address)
+	conn, err := dialer.DialContext(ctx, "tcp", cfg.Address)
 	if err != nil {
 		return nil, fmt.Errorf("dial server: %w", err)
 	}
@@ -106,9 +141,9 @@ func (s *ServerConnection) connectHTTP(ctx context.Context, target string) (net.
 	}
 
 	// Add authentication
-	if s.config.Username != "" {
+	if cfg.Username != "" {
 		auth := base64.StdEncoding.EncodeToString(
-			[]byte(s.config.Username + ":" + s.config.Password),
+			[]byte(cfg.Username + ":" + cfg.Password),
 		)
 		req.Header.Set("Proxy-Authorization", "Basic "+auth)
 	}
@@ -137,15 +172,16 @@ func (s *ServerConnection) connectHTTP(ctx context.Context, target string) (net.
 
 // connectSOCKS5 connects through SOCKS5.
 func (s *ServerConnection) connectSOCKS5(ctx context.Context, target string) (net.Conn, error) {
+	cfg, dialer := s.snapshot()
 	// Connect to server
-	conn, err := s.dialer.DialContext(ctx, "tcp", s.config.Address)
+	conn, err := dialer.DialContext(ctx, "tcp", cfg.Address)
 	if err != nil {
 		return nil, fmt.Errorf("dial server: %w", err)
 	}
 
 	// SOCKS5 handshake
 	var authMethods []byte
-	if s.config.Username != "" {
+	if cfg.Username != "" {
 		authMethods = []byte{0x00, 0x02} // No auth, Username/password
 	} else {
 		authMethods = []byte{0x00} // No auth only
@@ -171,7 +207,7 @@ func (s *ServerConnection) connectSOCKS5(ctx context.Context, target string) (ne
 	}
 
 	// Handle auth
-	if response[1] == 0x02 && s.config.Username != "" {
+	if response[1] == 0x02 && cfg.Username != "" {
 		if err := s.socks5Auth(conn); err != nil {
 			conn.Close()
 			return nil, err
@@ -191,13 +227,14 @@ func (s *ServerConnection) connectSOCKS5(ctx context.Context, target string) (ne
 }
 
 func (s *ServerConnection) socks5Auth(conn net.Conn) error {
+	cfg, _ := s.snapshot()
 	// Username/password auth
-	auth := make([]byte, 3+len(s.config.Username)+len(s.config.Password))
+	auth := make([]byte, 3+len(cfg.Username)+len(cfg.Password))
 	auth[0] = 0x01 // Version
-	auth[1] = byte(len(s.config.Username))
-	copy(auth[2:], s.config.Username)
-	auth[2+len(s.config.Username)] = byte(len(s.config.Password))
-	copy(auth[3+len(s.config.Username):], s.config.Password)
+	auth[1] = byte(len(cfg.Username))
+	copy(auth[2:], cfg.Username)
+	auth[2+len(cfg.Username)] = byte(len(cfg.Password))
+	copy(auth[3+len(cfg.Username):], cfg.Password)
 
 	if _, err := conn.Write(auth); err != nil {
 		return fmt.Errorf("write auth: %w", err)
@@ -281,7 +318,8 @@ func (s *ServerConnection) socks5Connect(conn net.Conn, target string) error {
 
 // IsConnected checks if the server is reachable.
 func (s *ServerConnection) IsConnected(ctx context.Context) bool {
-	conn, err := s.dialer.DialContext(ctx, "tcp", s.config.Address)
+	cfg, dialer := s.snapshot()
+	conn, err := dialer.DialContext(ctx, "tcp", cfg.Address)
 	if err != nil {
 		return false
 	}
