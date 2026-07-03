@@ -224,20 +224,35 @@ iptables -A INPUT -p tcp --dport 8080 -j DROP
 
 ### IP Access Control
 
-Configure allowed/denied IP ranges:
+Restrict which client IPs may use the proxy with two CIDR lists,
+`whitelist` and `blacklist`:
 
 ```yaml
 access_control:
-  enabled: true
-  default_action: deny
-  rules:
-    - cidr: "10.0.0.0/8"
-      action: allow
-    - cidr: "192.168.0.0/16"
-      action: allow
-    - cidr: "0.0.0.0/0"
-      action: deny
+  # If non-empty, ONLY IPs matching one of these CIDRs are allowed.
+  # Leave empty to allow all IPs that are not blacklisted.
+  whitelist:
+    - "10.0.0.0/8"
+    - "192.168.0.0/16"
+  # IPs matching any of these CIDRs are always denied.
+  blacklist:
+    - "203.0.113.0/24"
 ```
+
+Evaluation order:
+
+1. The **blacklist** is checked first — a match is always denied
+   (blacklist takes precedence over the whitelist).
+2. If the **whitelist** is non-empty, the IP must match an entry in it;
+   otherwise the request is denied.
+3. If the whitelist is empty, any IP not on the blacklist is allowed.
+
+Both lists accept individual addresses (e.g. `192.168.1.10`) as well as
+CIDR ranges. Access control is enforced only when at least one list is
+non-empty, and changes are hot-reloaded.
+
+There is no `enabled`, `default_action`, or `rules` key — the presence of
+entries in the lists is what activates enforcement.
 
 ---
 

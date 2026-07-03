@@ -325,11 +325,13 @@ routes:
     backend: direct
     priority: 1
 
+# IP-based access control (whitelist/blacklist of CIDRs).
+# Note: Bifrost does not support group- or route-scoped authorization
+# rules. Authentication is allow-or-deny per request; access_control
+# only filters by source IP.
 access_control:
-  default: deny
-  rules:
-    - groups: ["Domain Users"]
-      action: allow
+  whitelist:
+    - "10.0.0.0/8"
 ```
 
 ### Troubleshooting Kerberos
@@ -672,15 +674,14 @@ auth:
         # Use DISA CRL
         crl_file: "/etc/bifrost/dod-crl.pem"
 
+# IP-based access control (whitelist/blacklist of CIDRs).
+# Note: Bifrost does not support group- or route-scoped authorization
+# rules. Authentication is allow-or-deny per request; access_control
+# only filters by source IP.
 access_control:
-  default: deny
-  rules:
-    - groups: ["People"]
-      action: allow
-      routes: ["*"]
-    - groups: ["Contractors"]
-      action: allow
-      routes: ["*.contractor-apps.mil"]
+  whitelist:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
 ```
 
 ### Troubleshooting mTLS
@@ -878,22 +879,16 @@ routes:
     backend: direct
     priority: 1
 
+# IP-based access control (whitelist/blacklist of CIDRs).
+# Note: Bifrost does not support group-, user-, or route-scoped
+# authorization rules. Authentication is allow-or-deny per request;
+# access_control only filters by source IP.
 access_control:
-  default: deny
-  rules:
-    # Allow all authenticated users to internal resources
-    - authenticated: true
-      action: allow
-      routes: ["*.internal.corp"]
-
-    # Allow specific groups full access
-    - groups: ["IT-Staff", "Network-Admins"]
-      action: allow
-
-    # Allow domain users limited access
-    - groups: ["Domain Users"]
-      action: allow
-      routes: ["*.corp.example.com"]
+  whitelist:
+    - "10.0.0.0/8"
+    - "192.168.0.0/16"
+  blacklist:
+    - "10.6.6.0/24"
 
 logging:
   level: info

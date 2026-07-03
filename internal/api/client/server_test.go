@@ -2123,6 +2123,44 @@ func TestCheckRestartRequired(t *testing.T) {
 			},
 			expectRestart: true,
 		},
+		{
+			name: "tray.enabled - requires restart",
+			updates: map[string]interface{}{
+				"tray": map[string]interface{}{
+					"enabled": true,
+				},
+			},
+			expectRestart: true,
+		},
+		{
+			name: "server.health_check - requires restart",
+			updates: map[string]interface{}{
+				"server": map[string]interface{}{
+					"health_check": map[string]interface{}{
+						"interval": "30s",
+					},
+				},
+			},
+			expectRestart: true,
+		},
+		{
+			name: "server.address - hot-applied, no restart",
+			updates: map[string]interface{}{
+				"server": map[string]interface{}{
+					"address": "127.0.0.1:9090",
+				},
+			},
+			expectRestart: false,
+		},
+		{
+			name: "tray.show_notifications - hot-applied, no restart",
+			updates: map[string]interface{}{
+				"tray": map[string]interface{}{
+					"show_notifications": true,
+				},
+			},
+			expectRestart: false,
+		},
 	}
 
 	for _, tt := range tests {

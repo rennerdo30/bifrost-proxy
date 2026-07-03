@@ -287,13 +287,13 @@ func TestCollectorRecordConnection(t *testing.T) {
 	c := NewCollector(m, nil)
 
 	// Record connection start
-	done := c.RecordConnection("http", "backend1")
+	done := c.RecordConnection("http")
 
 	// Simulate some work
 	time.Sleep(10 * time.Millisecond)
 
 	// Record connection end
-	done(10 * time.Millisecond)
+	done("backend1", 10*time.Millisecond)
 
 	// Should not panic
 }
@@ -732,14 +732,40 @@ func TestCollectorRecordConnectionVerifyMetrics(t *testing.T) {
 	m := New()
 	c := NewCollector(m, nil)
 
-	// Record connection start
-	done := c.RecordConnection("socks5", "test-backend")
+	// Record connection start. The backend is not yet known, so the active gauge
+	// is tracked at protocol scope with an empty backend label.
+	done := c.RecordConnection("socks5")
 
-	// Gather metrics and verify active connections increased
+	// Gather metrics and verify active connections increased at protocol scope.
 	families, err := m.registry.Gather()
 	require.NoError(t, err)
 
 	activeConnFound := false
+
+	for _, f := range families {
+		if f.GetName() == "bifrost_connections_active" {
+			for _, metric := range f.GetMetric() {
+				labels := make(map[string]string)
+				for _, label := range metric.GetLabel() {
+					labels[label.GetName()] = label.GetValue()
+				}
+				if labels["protocol"] == "socks5" && labels["backend"] == "" {
+					assert.Equal(t, float64(1), metric.GetGauge().GetValue(), "active connections should be 1")
+					activeConnFound = true
+				}
+			}
+		}
+	}
+
+	assert.True(t, activeConnFound, "active connections metric should be found")
+
+	// Record connection end with the resolved backend name.
+	done("test-backend", 50*time.Millisecond)
+
+	// Verify active connections decreased and the per-backend total was recorded.
+	families, err = m.registry.Gather()
+	require.NoError(t, err)
+
 	totalConnFound := false
 
 	for _, f := range families {
@@ -750,9 +776,8 @@ func TestCollectorRecordConnectionVerifyMetrics(t *testing.T) {
 				for _, label := range metric.GetLabel() {
 					labels[label.GetName()] = label.GetValue()
 				}
-				if labels["protocol"] == "socks5" && labels["backend"] == "test-backend" {
-					assert.Equal(t, float64(1), metric.GetGauge().GetValue(), "active connections should be 1")
-					activeConnFound = true
+				if labels["protocol"] == "socks5" && labels["backend"] == "" {
+					assert.Equal(t, float64(0), metric.GetGauge().GetValue(), "active connections should be 0 after done")
 				}
 			}
 		case "bifrost_connections_total":
@@ -769,29 +794,7 @@ func TestCollectorRecordConnectionVerifyMetrics(t *testing.T) {
 		}
 	}
 
-	assert.True(t, activeConnFound, "active connections metric should be found")
 	assert.True(t, totalConnFound, "total connections metric should be found")
-
-	// Record connection end
-	done(50 * time.Millisecond)
-
-	// Verify active connections decreased
-	families, err = m.registry.Gather()
-	require.NoError(t, err)
-
-	for _, f := range families {
-		if f.GetName() == "bifrost_connections_active" {
-			for _, metric := range f.GetMetric() {
-				labels := make(map[string]string)
-				for _, label := range metric.GetLabel() {
-					labels[label.GetName()] = label.GetValue()
-				}
-				if labels["protocol"] == "socks5" && labels["backend"] == "test-backend" {
-					assert.Equal(t, float64(0), metric.GetGauge().GetValue(), "active connections should be 0 after done")
-				}
-			}
-		}
-	}
 }
 
 // TestCollectorRecordRequestVerifyMetrics verifies actual metric values for request recording.

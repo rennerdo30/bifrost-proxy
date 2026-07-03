@@ -40,8 +40,12 @@ func (p *plugin) Type() string {
 }
 
 // Description returns a human-readable description.
+//
+// HMAC algorithms (HS256/HS384/HS512) are supported only when an 'hmac_secret'
+// is configured; listing an HS* algorithm without a secret is rejected at config
+// time so it fails closed rather than silently rejecting every token at runtime.
 func (p *plugin) Description() string {
-	return "JWT token authentication with JWKS and static key support"
+	return "JWT token authentication with JWKS, static public key (RSA/EC), and HMAC (requires hmac_secret) support"
 }
 
 // Create creates a new JWT authenticator from the configuration.

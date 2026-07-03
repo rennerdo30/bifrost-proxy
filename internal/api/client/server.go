@@ -114,6 +114,13 @@ type ConfigValidationResult struct {
 }
 
 // restartRequiredFields contains field paths that require client restart when changed.
+//
+// Server connection parameters (server.address/protocol/credentials/timeouts)
+// are intentionally absent: the client hot-applies them to the live
+// ServerConnection, so they take effect without a restart. Tray options and the
+// server health-check block, by contrast, are only consumed at startup, so
+// changing them is honestly reported as restart-required rather than silently
+// ignored.
 var restartRequiredFields = []string{
 	"proxy.http.listen",
 	"proxy.socks5.listen",
@@ -123,6 +130,11 @@ var restartRequiredFields = []string{
 	"vpn.tun",
 	"mesh.enabled",
 	"mesh.device",
+	"server.health_check",
+	"tray.enabled",
+	"tray.show_quick_gui",
+	"tray.start_minimized",
+	"tray.auto_connect",
 }
 
 // API provides the REST API for Bifrost client.
