@@ -112,7 +112,7 @@ therefore cannot be "finished" purely in-repo. None is a silent fail-open.
   WireGuard implementation is future work.
 - **Userspace TCP proxy in VPN mode** performs bounded out-of-order segment
   reassembly (`internal/vpn/tcpreasm.go`, wired at `internal/vpn/vpn.go`): early
-  segments are buffered (default caps 256 KiB / 16 segments per connection) and
+  segments are buffered (default caps 256 KiB / 1024 segments per connection) and
   drained once the gap fills. It does **not** implement a full TCP receive
   window, SACK, or congestion control — acceptable for the current scope and
   flagged for future hardening.

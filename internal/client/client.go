@@ -294,7 +294,7 @@ func (c *Client) startUpdater(ctx context.Context) {
 		Channel:       updater.Channel(channel),
 		GitHubOwner:   "rennerdo30",
 		GitHubRepo:    "bifrost-proxy",
-	}, updater.BinaryTypeClient, nil)
+	}, updater.BinaryTypeClient, updateNotifier{c})
 	if err != nil {
 		logging.Error("Failed to initialize auto-updater", "error", err)
 		return
@@ -361,16 +361,14 @@ func (c *Client) startHealthMonitor(ctx context.Context) {
 				first = false
 				lastHealthy = healthy
 
+				// Log reachability transitions only. The tray status reflects the
+				// user's connect/disconnect (system-proxy) state and must not be
+				// overwritten here — a background probe forcing "Connected" would
+				// mislead after the user has disconnected.
 				if healthy {
 					logging.Info("Server health check: reachable", "address", address)
-					if t := c.currentTray(); t != nil {
-						t.SetStatus(tray.StatusConnected)
-					}
 				} else {
 					logging.Warn("Server health check: unreachable", "address", address)
-					if t := c.currentTray(); t != nil {
-						t.SetStatus(tray.StatusWarning)
-					}
 				}
 			}
 		}
@@ -380,10 +378,18 @@ func (c *Client) startHealthMonitor(ctx context.Context) {
 }
 
 // currentTray returns the tray under lock, or nil when no tray is running.
-func (c *Client) currentTray() *tray.Tray {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.tray
+// updateNotifier surfaces an available update from the background checker via an
+// info-level log and a desktop notification, so enabling auto-update has a
+// visible effect instead of only writing debug logs.
+type updateNotifier struct{ c *Client }
+
+func (n updateNotifier) NotifyUpdateAvailable(info updater.UpdateInfo) {
+	logging.Info("Update available",
+		"new_version", info.NewVersion,
+		"current_version", info.CurrentVersion,
+		"url", info.ReleaseURL,
+	)
+	n.c.notify(fmt.Sprintf("Bifrost update available: %s (current %s)", info.NewVersion, info.CurrentVersion))
 }
 
 // applyStartupBehavior applies the persisted tray settings that affect launch:
