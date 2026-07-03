@@ -242,11 +242,13 @@ access_log:
   format: "json"              # json, apache
   output: "stdout"            # stdout or a file path
 
-# Logging (no built-in rotation; rotate externally with logrotate)
+# Logging (built-in size-based rotation for file outputs)
 logging:
   level: "info"               # debug, info, warn, error
   format: "json"              # json, text
   output: "stdout"            # stdout, stderr, or a file path
+  max_size_mb: 0              # Rotate a file output at this size in MB (<= 0 disables rotation)
+  max_backups: 0              # Rotated files to retain (<= 0 keeps all)
 
 # Metrics, Web UI, and REST API
 metrics:
