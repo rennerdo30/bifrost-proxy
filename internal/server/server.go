@@ -16,6 +16,7 @@ import (
 	apiserver "github.com/rennerdo30/bifrost-proxy/internal/api/server"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth/negotiate"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth/session"
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
@@ -56,6 +57,7 @@ type Server struct {
 	apiServer      *http.Server
 	wsHub          *apiserver.WebSocketHub
 	api            *apiserver.API
+	sessionManager *session.Manager
 
 	running bool
 	mu      sync.RWMutex
@@ -360,6 +362,37 @@ func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
 	return nil
 }
 
+// buildSessionManager constructs a session.Manager for the API's token-exchange
+// login/cookie flow from the server's session configuration. For the Redis store
+// it connects and PINGs the server (via session.NewStore), returning an error so
+// a misconfigured backend fails closed at startup rather than at first login.
+func buildSessionManager(cfg config.SessionConfig) (*session.Manager, error) {
+	opts := session.StoreOptions{
+		Type:            cfg.StoreType(),
+		CleanupInterval: cfg.CleanupInterval.Duration(),
+		Redis: session.RedisStoreOptions{
+			Addr:      cfg.Redis.Addr,
+			Password:  cfg.Redis.Password,
+			DB:        cfg.Redis.DB,
+			KeyPrefix: cfg.Redis.KeyPrefix,
+			OpTimeout: cfg.Redis.OpTimeout.Duration(),
+		},
+	}
+
+	mcfg := session.DefaultManagerConfig()
+	if d := cfg.Duration.Duration(); d > 0 {
+		mcfg.SessionDuration = d
+	}
+	mcfg.MaxSessionsPerUser = cfg.MaxSessionsPerUser
+	// The dashboard is commonly served over plain HTTP on localhost or behind a
+	// TLS-terminating reverse proxy, so Secure cookies would silently break the
+	// flow. HttpOnly + SameSite=Strict (set by the manager) still protect the
+	// cookie; operators terminating TLS can rely on the proxy to enforce HTTPS.
+	mcfg.SecureCookies = false
+
+	return session.BuildManager(opts, mcfg)
+}
+
 func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 	factory := auth.NewFactory()
 
@@ -468,6 +501,19 @@ func (s *Server) Start(ctx context.Context) error {
 		httpPort := extractPort(s.config.Server.HTTP.Listen, "8080")
 		socks5Port := extractPort(s.config.Server.SOCKS5.Listen, "1080")
 
+		// Build the session manager used by the API's token-exchange login/cookie
+		// flow. Sessions only gate the API when it is token-protected, so the
+		// manager is built only when a token is configured. NewStore connects to
+		// (and PINGs) Redis when the Redis store is selected, so a misconfigured
+		// backend fails closed here at startup instead of at first login.
+		if s.config.API.Token != "" {
+			sm, smErr := buildSessionManager(s.config.Session)
+			if smErr != nil {
+				return fmt.Errorf("build session manager: %w", smErr)
+			}
+			s.sessionManager = sm
+		}
+
 		// Create API
 		s.api = apiserver.New(apiserver.Config{
 			Backends:         s.backends,
@@ -483,6 +529,7 @@ func (s *Server) Start(ctx context.Context) error {
 			SOCKS5Port:       socks5Port,
 			EnableRequestLog: s.config.API.EnableRequestLog,
 			RequestLogSize:   s.config.API.RequestLogSize,
+			SessionManager:   s.sessionManager,
 		})
 
 		// Create WebSocket hub with configurable max clients (default 100, for low-power devices use 5-10)
@@ -669,6 +716,14 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	if s.rateLimiterUser != nil {
 		s.rateLimiterUser.Close()
+	}
+
+	// Close the API session manager (releases the memory-store reaper goroutine
+	// or the Redis client) to avoid a leak across server restarts.
+	if s.sessionManager != nil {
+		if err := s.sessionManager.Close(); err != nil {
+			logging.Warn("Error closing session manager", "error", err)
+		}
 	}
 
 	// Stop the Negotiate handler's challenge-cleanup goroutine to avoid a leak
@@ -998,11 +1053,11 @@ func (s *Server) serveHTTP(ctx context.Context) {
 		OnError:          s.onError,
 		CacheInterceptor: s.cacheInterceptor,
 		MITM:             s.mitmInterceptor,
-		RecordMetrics: func(protocol, method, status string, duration time.Duration, sent, recv int64) {
+		RecordMetrics: func(protocol, method, status, backendName string, duration time.Duration, sent, recv int64) {
 			s.metricsCollector.RecordRequest(protocol, method, status, duration)
 			s.metricsCollector.RecordRequestSize(protocol, recv)
 			s.metricsCollector.RecordResponseSize(protocol, sent)
-			s.metricsCollector.RecordBytes("", sent, recv)
+			s.metricsCollector.RecordBytes(backendName, sent, recv)
 		},
 	})
 
@@ -1088,13 +1143,19 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 		ctx = withConnID(ctx, connID)
 	}
 
-	// Track connection metrics
+	// Track connection metrics. The selected backend is not known until the
+	// request is routed, so a capture is threaded through the context and
+	// populated by onConnect; the resolved name is then recorded when the
+	// connection completes.
+	capture := &backendCapture{}
+	ctx = withBackendCapture(ctx, capture)
+
 	startTime := time.Now()
-	done := s.metricsCollector.RecordConnection("http", "")
+	done := s.metricsCollector.RecordConnection("http")
 
 	handler.ServeConn(ctx, conn)
 
-	done(time.Since(startTime))
+	done(capture.get(), time.Since(startTime))
 }
 
 // serveSOCKS5 handles SOCKS5 proxy connections.
@@ -1118,6 +1179,12 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 		Bandwidth:            bandwidthCfg,
 		OnConnect:            s.onConnect,
 		OnError:              s.onError,
+		RecordMetrics: func(protocol, method, status, backendName string, duration time.Duration, sent, recv int64) {
+			s.metricsCollector.RecordRequest(protocol, method, status, duration)
+			s.metricsCollector.RecordRequestSize(protocol, recv)
+			s.metricsCollector.RecordResponseSize(protocol, sent)
+			s.metricsCollector.RecordBytes(backendName, sent, recv)
+		},
 	})
 
 	for {
@@ -1199,13 +1266,19 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 		ctx = withConnID(ctx, connID)
 	}
 
-	// Track connection metrics
+	// Track connection metrics. The selected backend is not known until the
+	// request is routed, so a capture is threaded through the context and
+	// populated by onConnect; the resolved name is then recorded when the
+	// connection completes.
+	capture := &backendCapture{}
+	ctx = withBackendCapture(ctx, capture)
+
 	startTime := time.Now()
-	done := s.metricsCollector.RecordConnection("socks5", "")
+	done := s.metricsCollector.RecordConnection("socks5")
 
 	handler.ServeConn(ctx, conn)
 
-	done(time.Since(startTime))
+	done(capture.get(), time.Since(startTime))
 }
 
 // getBackend returns a backend for a domain.
@@ -1307,6 +1380,13 @@ func (s *Server) onConnect(ctx context.Context, conn net.Conn, host string, be b
 		backendName = be.Name()
 	}
 
+	// Record the resolved backend so the connection-level metrics (recorded when
+	// the connection completes) can attribute connection counts/durations to the
+	// selected backend instead of an empty label.
+	if capture := backendCaptureFromContext(ctx); capture != nil {
+		capture.set(backendName)
+	}
+
 	logging.DebugContext(ctx, "Connection established",
 		"host", host,
 		"backend", backendName,
@@ -1406,6 +1486,46 @@ func connIDFromContext(ctx context.Context) string {
 		return id
 	}
 	return ""
+}
+
+// backendCapture is a concurrency-safe holder for the backend name selected
+// during request handling. It lets connection-scoped code (which starts before
+// routing) learn the backend chosen by the per-request handler so per-backend
+// connection metrics can be attributed correctly.
+type backendCapture struct {
+	mu   sync.Mutex
+	name string
+}
+
+func (b *backendCapture) set(name string) {
+	b.mu.Lock()
+	b.name = name
+	b.mu.Unlock()
+}
+
+func (b *backendCapture) get() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.name
+}
+
+// backendCaptureKeyType is the context key for the per-connection backendCapture.
+type backendCaptureKeyType struct{}
+
+var backendCaptureKey backendCaptureKeyType
+
+// withBackendCapture returns a context carrying the given backend capture.
+func withBackendCapture(ctx context.Context, capture *backendCapture) context.Context {
+	return context.WithValue(ctx, backendCaptureKey, capture)
+}
+
+// backendCaptureFromContext extracts the backend capture from the context, or
+// nil if absent.
+func backendCaptureFromContext(ctx context.Context) *backendCapture {
+	if c, ok := ctx.Value(backendCaptureKey).(*backendCapture); ok {
+		return c
+	}
+	return nil
 }
 
 // extractPort extracts the port from a listen address (e.g., ":8080" -> "8080").

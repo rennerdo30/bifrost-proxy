@@ -53,7 +53,7 @@ type HTTPHandler struct {
 	// mitm enables live HTTPS interception when non-nil. It defaults to nil
 	// (OFF): when nil, CONNECT requests use the opaque tunnel path unchanged.
 	mitm          *MITMInterceptor
-	recordMetrics func(protocol, method, status string, duration time.Duration, sent, recv int64)
+	recordMetrics func(protocol, method, status, backend string, duration time.Duration, sent, recv int64)
 }
 
 // HTTPHandlerConfig configures the HTTP handler.
@@ -78,10 +78,11 @@ type HTTPHandlerConfig struct {
 	// has been loaded.
 	MITM *MITMInterceptor
 	// RecordMetrics, when set, receives per-request metrics after each request
-	// completes (protocol, method, status, duration, bytes sent/received). It
-	// lets the server feed Prometheus counters without the proxy importing the
-	// metrics package. Leave nil to record nothing.
-	RecordMetrics func(protocol, method, status string, duration time.Duration, sent, recv int64)
+	// completes (protocol, method, status, backend, duration, bytes
+	// sent/received). It lets the server feed Prometheus counters without the
+	// proxy importing the metrics package. The backend is the selected backend
+	// name (empty when no backend was chosen). Leave nil to record nothing.
+	RecordMetrics func(protocol, method, status, backend string, duration time.Duration, sent, recv int64)
 }
 
 // NewHTTPHandler creates a new HTTP proxy handler.
@@ -200,7 +201,12 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 	}
 	defer func() {
 		entry.Username = util.GetUsername(ctx)
-		entry.Backend = util.GetBackend(ctx)
+		// The backend is selected on a request-scoped ctx inside the handlers and
+		// recorded directly on entry; only fall back to the ctx value if a handler
+		// did not set it (it does not propagate back to this ctx variable).
+		if entry.Backend == "" {
+			entry.Backend = util.GetBackend(ctx)
+		}
 		entry.RequestID = util.GetRequestID(ctx)
 		entry.Duration = time.Since(startTime)
 		// If not set by handlers, use observed bytes
@@ -217,7 +223,7 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 			_ = h.accessLogger.Log(*entry) //nolint:errcheck // Best effort access logging
 		}
 		if h.recordMetrics != nil {
-			h.recordMetrics("http", entry.Method, strconv.Itoa(entry.StatusCode), entry.Duration, entry.BytesSent, entry.BytesReceived)
+			h.recordMetrics("http", entry.Method, strconv.Itoa(entry.StatusCode), entry.Backend, entry.Duration, entry.BytesSent, entry.BytesReceived)
 		}
 	}()
 
@@ -301,6 +307,7 @@ func (h *HTTPHandler) handleConnect(ctx context.Context, conn net.Conn, req *htt
 	}
 
 	ctx = util.WithBackend(ctx, be.Name())
+	entry.Backend = be.Name()
 
 	// Dial the target through the backend
 	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, host, h.dialTimeout)
@@ -382,6 +389,7 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 	}
 
 	ctx = util.WithBackend(ctx, be.Name())
+	entry.Backend = be.Name()
 
 	// Dial the target through the backend
 	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, host, h.dialTimeout)
