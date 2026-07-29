@@ -10,6 +10,8 @@
 
 Bifrost is a **production-grade proxy system** designed for high-performance traffic routing, deep inspection, and seamless tunnel integration. It bridges your local environment with remote networks through WireGuard, OpenVPN, and intelligent domain-based routing.
 
+📚 **Full documentation:** <https://bifrost.docs.renner.dev/>
+
 ---
 
 ## ✨ Key Features
@@ -67,36 +69,51 @@ graph TD
 
 ## 💻 Dashboard & Interface
 
-Bifrost comes with a premium Web UI for monitoring and configuration.
+Both the client and the server ship a Web UI for monitoring and configuration. The UIs live in
+`web/client` and `web/server` (React + Vite + Tailwind) and are built and embedded into the Go
+binaries by the `make build` targets — no separate web server to run.
 
-![Web UI Mockup](assets/web_ui_mockup.png)
+Beyond the browser UI there are dedicated frontends in this repository:
+
+- `desktop/` — Wails-based desktop app (Windows, macOS, Linux) with tray integration.
+- `mobile/` — React Native / Expo app (iOS, Android).
+- `openwrt/` — packaging for running the client on OpenWrt routers.
+
 > [!NOTE]
-> *Note: UI appearance may vary based on platform and version.*
+> *UI appearance may vary based on platform and version.*
 
 ---
 
 ## 🏁 Quick Start
 
+Requirements for building from source: **Go 1.25+**, **Node.js** (the Web UIs are compiled and
+embedded during the build) and `make`. Prebuilt nightly archives are also published on the
+[Releases](https://github.com/rennerdo30/bifrost-proxy/releases) page.
+
 ### 1. Server Setup
 ```bash
-# Build the server
+# Build the server (also builds and embeds the server Web UI)
 make build-server
 
-# Start with default configuration
+# Start from a copy of the example configuration
+cp configs/server-config.example.yaml server-config.yaml
 ./bin/bifrost-server -c server-config.yaml
 ```
 
 ### 2. Client Setup
 ```bash
-# Build the client
+# Build the client (also builds and embeds the client Web UI)
 make build-client
 
-# Initialize configuration
+# Generate a client configuration
 ./bin/bifrost-client config init --server your-server:7080
 
-# Run the client
+# Validate it, then run
+./bin/bifrost-client validate -c client-config.yaml
 ./bin/bifrost-client -c client-config.yaml
 ```
+
+`configs/` contains ready-made examples for the server, the client, Docker and OpenWrt.
 
 ---
 
@@ -123,8 +140,23 @@ Explore our comprehensive guides for advanced setups:
 - 🔒 [Authentication Modes](docs/src/content/docs/authentication.mdx)
 - 🌐 [VPN & Split Tunneling](docs/src/content/docs/vpn-mode.mdx)
 - 📊 [API Reference](docs/src/content/docs/api/index.mdx)
+- 🤝 [Contributing](CONTRIBUTING.md) · 📝 [Changelog](CHANGELOG.md)
+
+The rendered version of these docs is at <https://bifrost.docs.renner.dev/>.
 
 ---
+
+## 🧰 Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Server & client | Go 1.25 (Cobra CLI, userspace WireGuard, OpenVPN, TUN) |
+| Web UIs | React 19, TypeScript, Vite, Tailwind CSS (embedded into the binaries) |
+| Desktop app | Wails (Go + web frontend) |
+| Mobile app | React Native / Expo |
+| Observability | Prometheus metrics, structured JSON logs |
+| Build & release | Make, GoReleaser, Docker, GitHub Actions |
+| Docs site | Astro Starlight (`docs/`) |
 
 ## 📜 License
 
