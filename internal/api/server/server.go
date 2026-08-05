@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -251,9 +252,34 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 	// Static files for Web UI (no auth)
 	staticHandler := StaticHandler()
 	r.Get("/", staticHandler.ServeHTTP)
-	r.NotFound(staticHandler.ServeHTTP)
+	r.NotFound(a.spaOrAPINotFound(staticHandler))
 
 	return r
+}
+
+// spaOrAPINotFound routes unmatched requests to the SPA so client-side deep
+// links work — EXCEPT under /api/, which must get a JSON 404.
+//
+// Serving index.html for an unmatched API path is actively harmful: the caller
+// receives 200 + text/html where it expects JSON, so `res.json()` throws and
+// the UI shows a generic "something went wrong" instead of a real error. It
+// also makes every missing route look healthy to any status-code-only check,
+// which is how the absence of these endpoints went unnoticed.
+//
+// Concretely: the Web UI's Request Log calls /api/v1/debug/entries, which only
+// exists in client mode. Under the server binary it fell through to here and
+// crashed the page. With a JSON 404 the UI can report it honestly instead.
+func (a *API) spaOrAPINotFound(staticHandler http.Handler) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			a.writeJSON(w, http.StatusNotFound, map[string]interface{}{
+				"error": "not found",
+				"path":  r.URL.Path,
+			})
+			return
+		}
+		staticHandler.ServeHTTP(w, r)
+	}
 }
 
 // addAPIRoutes adds all API routes to the router.
