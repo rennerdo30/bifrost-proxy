@@ -1,26 +1,68 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
 	"sync"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/go-chi/chi/v5"
-	"golang.org/x/net/websocket"
 )
 
 // MaxWebSocketClients is the maximum number of concurrent WebSocket connections.
 const MaxWebSocketClients = 100
 
-// WebSocketReadTimeout is the maximum time to wait for a message from a client.
+// WebSocketReadTimeout bounds how long a connection may go without ANY traffic
+// (application message, or a pong in reply to our keepalive ping) before it is
+// considered dead. Keep it comfortably above WebSocketPingInterval.
 const WebSocketReadTimeout = 60 * time.Second
+
+// WebSocketPingInterval is how often the server sends a protocol-level ping to
+// prove the peer is alive. Must be well under WebSocketReadTimeout so a healthy
+// but idle connection is refreshed before the read deadline expires.
+const WebSocketPingInterval = 20 * time.Second
+
+// WebSocketWriteTimeout bounds a single broadcast write to one client, so one
+// slow reader cannot stall the hub.
+const WebSocketWriteTimeout = 5 * time.Second
+
+// wsClient is one connected peer. Writes are serialised through mu because a
+// broadcast and the keepalive pinger can otherwise write concurrently, which
+// is not allowed on a single connection.
+type wsClient struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (c *wsClient) write(ctx context.Context, msg []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, WebSocketWriteTimeout)
+	defer cancel()
+	return c.conn.Write(ctx, websocket.MessageText, msg)
+}
+
+func (c *wsClient) ping(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, WebSocketWriteTimeout)
+	defer cancel()
+	return c.conn.Ping(ctx)
+}
+
+func (c *wsClient) close() {
+	_ = c.conn.Close(websocket.StatusNormalClosure, "") //nolint:errcheck // best effort
+}
 
 // WebSocketHub manages WebSocket connections.
 type WebSocketHub struct {
-	clients    map[*websocket.Conn]bool
+	clients    map[*wsClient]bool
 	broadcast  chan []byte
-	register   chan *websocket.Conn
-	unregister chan *websocket.Conn
+	register   chan *wsClient
+	unregister chan *wsClient
 	stopCh     chan struct{}
 	mu         sync.RWMutex
 	maxClients int
@@ -38,10 +80,10 @@ func NewWebSocketHubWithMaxClients(maxClients int) *WebSocketHub {
 		maxClients = MaxWebSocketClients
 	}
 	return &WebSocketHub{
-		clients:    make(map[*websocket.Conn]bool),
+		clients:    make(map[*wsClient]bool),
 		broadcast:  make(chan []byte, 256),
-		register:   make(chan *websocket.Conn),
-		unregister: make(chan *websocket.Conn),
+		register:   make(chan *wsClient),
+		unregister: make(chan *wsClient),
 		stopCh:     make(chan struct{}),
 		maxClients: maxClients,
 	}
@@ -55,7 +97,7 @@ func (h *WebSocketHub) Run() {
 			// Close all client connections on shutdown
 			h.mu.Lock()
 			for client := range h.clients {
-				client.Close()
+				client.close()
 				delete(h.clients, client)
 			}
 			h.mu.Unlock()
@@ -66,7 +108,7 @@ func (h *WebSocketHub) Run() {
 			// Enforce connection limit to prevent resource exhaustion
 			if len(h.clients) >= h.maxClients {
 				h.mu.Unlock()
-				client.Close()
+				client.close()
 				continue
 			}
 			h.clients[client] = true
@@ -76,7 +118,7 @@ func (h *WebSocketHub) Run() {
 			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
-				client.Close()
+				client.close()
 			}
 			h.mu.Unlock()
 
@@ -84,17 +126,15 @@ func (h *WebSocketHub) Run() {
 			// Snapshot client list under lock, then write without lock
 			// to avoid blocking other operations during slow writes
 			h.mu.RLock()
-			clients := make([]*websocket.Conn, 0, len(h.clients))
+			clients := make([]*wsClient, 0, len(h.clients))
 			for client := range h.clients {
 				clients = append(clients, client)
 			}
 			h.mu.RUnlock()
 
-			var failed []*websocket.Conn
+			var failed []*wsClient
 			for _, client := range clients {
-				// Set write deadline to prevent slow clients from blocking broadcasts
-				_ = client.SetWriteDeadline(time.Now().Add(5 * time.Second)) //nolint:errcheck // Best effort deadline
-				if _, err := client.Write(message); err != nil {
+				if err := client.write(context.Background(), message); err != nil {
 					failed = append(failed, client)
 				}
 			}
@@ -105,7 +145,7 @@ func (h *WebSocketHub) Run() {
 				for _, client := range failed {
 					if _, ok := h.clients[client]; ok {
 						delete(h.clients, client)
-						client.Close()
+						client.close()
 					}
 				}
 				h.mu.Unlock()
@@ -131,32 +171,77 @@ func (h *WebSocketHub) Broadcast(eventType string, data interface{}) {
 	}
 }
 
-// ServeWS handles WebSocket connections.
-func (h *WebSocketHub) ServeWS(ws *websocket.Conn) {
-	h.register <- ws
-	defer func() {
-		h.unregister <- ws
+// ServeHTTP upgrades the request and services the connection until it dies.
+//
+// ⚠ This used to use golang.org/x/net/websocket, which that package's own docs
+// describe as having "limited support for pings, pongs and close frames". Any
+// peer that sent a protocol-level ping — notably the Home Assistant Ingress
+// proxy, and every browser-side keepalive — desynchronised the frame stream and
+// the client aborted with "RSV1 set / reserved bits must be 0". The old code
+// also only understood a literal text message "ping", which no standard client
+// sends. Migrated to github.com/coder/websocket (the successor x/net/websocket
+// itself points at), which handles control frames in the library.
+func (h *WebSocketHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		// The UI is served from the same origin as the API, but Home Assistant
+		// Ingress (and any reverse proxy) rewrites Host, so a strict same-origin
+		// check rejects legitimate traffic. Access to this endpoint is already
+		// governed by the API's auth middleware.
+		InsecureSkipVerify: true,
+		// Compression is negotiated per-connection; leaving it at the default
+		// avoids emitting RSV1-compressed frames to peers that did not agree.
+	})
+	if err != nil {
+		return // Accept already wrote the error response
+	}
+
+	client := &wsClient{conn: conn}
+	h.register <- client
+	defer func() { h.unregister <- client }()
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Keepalive: a protocol ping every WebSocketPingInterval. The library
+	// answers peer pings automatically, and Ping() waits for the matching pong,
+	// so a dead peer surfaces here rather than hanging until the read deadline.
+	go func() {
+		t := time.NewTicker(WebSocketPingInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if err := client.ping(ctx); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
 	}()
 
-	// Keep connection alive and read messages (for ping/pong)
 	for {
-		// Set read deadline to prevent connections from being held indefinitely
-		_ = ws.SetReadDeadline(time.Now().Add(WebSocketReadTimeout)) //nolint:errcheck // Best effort deadline
-
-		var msg string
-		if err := websocket.Message.Receive(ws, &msg); err != nil {
-			break
+		readCtx, readCancel := context.WithTimeout(ctx, WebSocketReadTimeout)
+		typ, msg, err := conn.Read(readCtx)
+		readCancel()
+		if err != nil {
+			if errors.Is(err, context.Canceled) || websocket.CloseStatus(err) != -1 {
+				return
+			}
+			return
 		}
-		// Handle ping
-		if msg == "ping" {
-			_ = websocket.Message.Send(ws, "pong") //nolint:errcheck // Best effort pong response
+		// Backwards compatibility: older clients emulate keepalive with a
+		// literal "ping" text message rather than a control frame.
+		if typ == websocket.MessageText && string(msg) == "ping" {
+			_ = client.write(ctx, []byte("pong")) //nolint:errcheck // best effort
 		}
 	}
 }
 
 // AddWebSocketRoutes adds WebSocket routes to the router.
 func (a *API) AddWebSocketRoutes(r chi.Router, hub *WebSocketHub) {
-	r.Handle("/api/v1/ws", websocket.Handler(hub.ServeWS))
+	r.Handle("/api/v1/ws", hub)
 }
 
 // Event types for WebSocket broadcasts

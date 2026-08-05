@@ -13,7 +13,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"golang.org/x/net/websocket"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth/session"
@@ -230,7 +229,7 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 
 			// WebSocket route (with auth - uses query param token for WS connections)
 			if hub != nil {
-				r.Handle("/api/v1/ws", websocket.Handler(hub.ServeWS))
+				r.Handle("/api/v1/ws", hub)
 			}
 		})
 	} else {
@@ -239,7 +238,7 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 
 		// WebSocket route (no auth when token not configured)
 		if hub != nil {
-			r.Handle("/api/v1/ws", websocket.Handler(hub.ServeWS))
+			r.Handle("/api/v1/ws", hub)
 		}
 	}
 
