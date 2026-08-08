@@ -96,7 +96,7 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
     <div className="space-y-6">
       {/* Server Connection */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Server Connection</h3>
+        <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Server Connection</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">Server Address</label>
@@ -135,7 +135,7 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
 
       {/* Local Proxy Settings */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Local Proxy Settings</h3>
+        <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Local Proxy Settings</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="label">HTTP Listen Address</label>
@@ -171,7 +171,7 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
       {/* Authentication */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white">Authentication</h3>
+          <h3 className="text-lg font-semibold text-bifrost-heading">Authentication</h3>
           <label className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -186,7 +186,7 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
               }}
               className="rounded border-bifrost-border bg-bifrost-bg"
             />
-            <span className="text-sm text-gray-300">Enable</span>
+            <span className="text-sm text-bifrost-text">Enable</span>
           </label>
         </div>
         {useAuth && (
@@ -227,7 +227,7 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
       {/* Routing Rules */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-white">Routing Rules</h3>
+          <h3 className="text-lg font-semibold text-bifrost-heading">Routing Rules</h3>
           <button onClick={addRoute} className="btn btn-secondary text-sm">
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -248,9 +248,11 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
                 value={route.pattern}
                 onChange={(e) => updateRoute(index, { pattern: e.target.value })}
                 placeholder="*.example.com"
+                aria-label={`Domain pattern for rule ${index + 1}`}
               />
               <select
                 className="select w-32"
+                aria-label={`Action for rule ${index + 1}`}
                 value={route.action}
                 onChange={(e) =>
                   updateRoute(index, { action: e.target.value as 'proxy' | 'direct' })
@@ -260,10 +262,12 @@ export function GeneratorForm({ onConfigChange }: GeneratorFormProps) {
                 <option value="direct">Direct</option>
               </select>
               <button
+                type="button"
                 onClick={() => removeRoute(index)}
                 className="btn btn-ghost text-bifrost-error p-2"
+                aria-label={`Remove rule ${index + 1}`}
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>

@@ -1,4 +1,5 @@
 import { useVersion, useHealth } from '../../hooks/useStats'
+import { ThemeToggle } from '../ThemeToggle'
 
 export function Header() {
   const { data: version } = useVersion()
@@ -8,13 +9,13 @@ export function Header() {
 
   return (
     <header className="bg-bifrost-card border-b border-bifrost-border">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3 sm:h-16 sm:py-0">
           {/* Logo and Title */}
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-bifrost-accent to-cyan-500 flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 shrink-0 rounded-xl bg-gradient-to-br from-bifrost-accent to-cyan-500 flex items-center justify-center shadow-lg" aria-hidden="true">
               <svg
-                className="w-6 h-6 text-white"
+                className="w-6 h-6 text-bifrost-on-accent"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -28,21 +29,22 @@ export function Header() {
               </svg>
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">Bifrost</h1>
+              <h1 className="text-lg font-bold tracking-tight text-bifrost-heading sm:text-xl">Bifrost</h1>
               <p className="text-xs text-bifrost-muted">Proxy Server Dashboard</p>
             </div>
           </div>
 
           {/* Status and Version */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Connection Status */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2" role="status">
               <div
                 className={`w-2 h-2 rounded-full ${
                   isHealthy ? 'bg-bifrost-success animate-pulse-subtle' : 'bg-bifrost-error'
                 }`}
+                aria-hidden="true"
               />
-              <span className="text-sm text-gray-400">
+              <span className="text-sm text-bifrost-subtle">
                 {isHealthy ? 'Connected' : 'Disconnected'}
               </span>
             </div>
@@ -53,6 +55,8 @@ export function Header() {
                 v{version.version}
               </span>
             )}
+
+            <ThemeToggle />
 
             {/* GitHub Repository Link */}
             <a

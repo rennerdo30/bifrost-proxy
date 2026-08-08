@@ -35,7 +35,7 @@ export function AccessControlSection({ config, onChange }: AccessControlSectionP
 
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <h4 className="text-sm font-medium text-gray-300">IP Whitelist</h4>
+            <h4 className="text-sm font-medium text-bifrost-text">IP Whitelist</h4>
             {hasWhitelist && (
               <span className="badge badge-success text-xs">{config.whitelist.length} entries</span>
             )}
@@ -52,7 +52,7 @@ export function AccessControlSection({ config, onChange }: AccessControlSectionP
 
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <h4 className="text-sm font-medium text-gray-300">IP Blacklist</h4>
+            <h4 className="text-sm font-medium text-bifrost-text">IP Blacklist</h4>
             {hasBlacklist && (
               <span className="badge badge-error text-xs">{config.blacklist.length} entries</span>
             )}

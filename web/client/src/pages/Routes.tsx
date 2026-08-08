@@ -14,7 +14,7 @@ export function RoutesPage() {
       <RouteTester />
 
       <div>
-        <h2 className="text-lg font-semibold text-white mb-4">Routing Rules</h2>
+        <h2 className="text-lg font-semibold text-bifrost-heading mb-4">Routing Rules</h2>
         {isError ? (
           <div className="card text-center py-12 border-bifrost-error/30">
             <svg className="w-12 h-12 mx-auto text-bifrost-error mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

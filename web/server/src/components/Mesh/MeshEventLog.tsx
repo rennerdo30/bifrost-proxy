@@ -155,7 +155,7 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
     <div className="h-full flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h4 className="text-sm font-medium text-white">Event Log</h4>
+        <h4 className="text-sm font-medium text-bifrost-heading">Event Log</h4>
         <div className="flex items-center gap-2">
           <span
             className={`w-2 h-2 rounded-full ${isConnected ? 'bg-bifrost-success' : 'bg-bifrost-error'}`}
@@ -181,7 +181,7 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
             >
               {getEventTypeIcon(event.type)}
               <div className="flex-1 min-w-0">
-                <p className="text-sm text-white">{getEventMessage(event)}</p>
+                <p className="text-sm text-bifrost-heading">{getEventMessage(event)}</p>
                 {event.peer.virtual_ip && (
                   <p className="text-xs text-bifrost-muted font-mono">
                     IP: {event.peer.virtual_ip}
@@ -201,7 +201,7 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
         <div className="mt-2 pt-2 border-t border-bifrost-border">
           <button
             onClick={() => setEvents([])}
-            className="text-xs text-bifrost-muted hover:text-white transition-colors"
+            className="text-xs text-bifrost-muted hover:text-bifrost-heading transition-colors"
           >
             Clear log
           </button>

@@ -67,9 +67,22 @@ graph TD
 
 ## 💻 Dashboard & Interface
 
-Bifrost comes with a premium Web UI for monitoring and configuration.
+Bifrost ships **two** dashboards, both embedded into their binary at build time:
 
-![Web UI Mockup](assets/web_ui_mockup.png)
+| Dashboard | Source | Served by | Sections |
+| --- | --- | --- | --- |
+| Server | `web/server` | `bifrost-server` (API listener) | Dashboard, Backends, Request Log, Clients, Cache, Mesh, Config, Config Generator, Setup Guide |
+| Client | `web/client` | `bifrost-client` (API listener) | Traffic, Routes, Cache, VPN, Mesh, Settings, Logs |
+
+Both are React + TypeScript single-page apps built with Vite and styled with Tailwind CSS.
+They support a **dark and a light theme**: the theme follows your operating system
+preference by default and can be switched from the header, with the choice stored in
+`localStorage` and applied before the first paint.
+
+![Server dashboard, dark theme](assets/screenshot-server-dashboard.png)
+
+![Client routing rules, light theme](assets/screenshot-client-routes.png)
+
 > [!NOTE]
 > *Note: UI appearance may vary based on platform and version.*
 
@@ -77,18 +90,23 @@ Bifrost comes with a premium Web UI for monitoring and configuration.
 
 ## 🏁 Quick Start
 
+**Requirements:** Go (see `go.mod` for the minimum version) and Node.js with npm — the
+dashboards are compiled by Vite and then embedded into the binaries via `go:embed`, so the
+Make targets below run `npm install && npm run build` for you before `go build`.
+
 ### 1. Server Setup
 ```bash
-# Build the server
+# Build the server (also builds + embeds the server dashboard)
 make build-server
 
-# Start with default configuration
+# Start from the example configuration
+cp configs/server-config.example.yaml server-config.yaml
 ./bin/bifrost-server -c server-config.yaml
 ```
 
 ### 2. Client Setup
 ```bash
-# Build the client
+# Build the client (also builds + embeds the client dashboard)
 make build-client
 
 # Initialize configuration
@@ -97,6 +115,27 @@ make build-client
 # Run the client
 ./bin/bifrost-client -c client-config.yaml
 ```
+
+Both dashboards are disabled or bound to localhost by default — see the `web_ui` and `api`
+sections of the example configs in [`configs/`](configs/) for the listen addresses.
+
+---
+
+## 🧑‍💻 Working on the Dashboards
+
+```bash
+make web-install       # install npm dependencies for both dashboards
+make web-dev           # Vite dev server for the server dashboard
+make web-dev-client    # Vite dev server for the client dashboard
+make web-build         # production build of both dashboards
+```
+
+The dev servers proxy `/api` to a locally running Bifrost, so start the matching binary
+first. `go build ./...` only succeeds once the dashboards have been built at least
+once — `make build` (or `make web-build`) takes care of that.
+
+**Tech stack:** Go (proxy, tunnels, REST API) · React 19 + TypeScript + Vite + Tailwind CSS
+(dashboards) · TanStack Query (data fetching) · Prometheus (metrics).
 
 ---
 
@@ -116,7 +155,8 @@ bifrost-client service status
 
 ## 📖 Documentation
 
-Explore our comprehensive guides for advanced setups:
+The full documentation site is at **<https://bifrost.docs.renner.dev/>**. The sources live in
+[`docs/`](docs/):
 
 - 🚀 [Getting Started](docs/src/content/docs/getting-started.mdx)
 - ⚙️ [Configuration Guide](docs/src/content/docs/configuration.mdx)

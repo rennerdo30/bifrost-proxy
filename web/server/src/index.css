@@ -1,8 +1,88 @@
+/* Tailwind's reset. `@tailwind base` is a v3 directive that Tailwind v4
+ * silently ignores, so preflight was never emitted: the UI fell back to the
+ * browser defaults (serif type, underlined links, default margins). */
+@import "tailwindcss/preflight" layer(base);
 @reference "tailwindcss";
 @config "../tailwind.config.js";
-@tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * Design tokens
+ *
+ * The palette is expressed as CSS custom properties so both themes share one
+ * set of utility classes. Dark is the default; `html.light` swaps the values.
+ * Keep the token names in sync with `colors.bifrost.*` in tailwind.config.js.
+ * ------------------------------------------------------------------------- */
+:root,
+html.dark {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bifrost-bg: #0a0e17;
+  --bifrost-bg-elevated: #0f1520;
+  --bifrost-card: #111827;
+  --bifrost-card-hover: #1a2234;
+  --bifrost-card-active: #1e293b;
+  --bifrost-border: #1f2937;
+  --bifrost-border-subtle: #172033;
+  --bifrost-overlay: rgba(2, 6, 16, 0.7);
+
+  /* Brand + status */
+  --bifrost-accent: #3b82f6;
+  --bifrost-accent-hover: #2563eb;
+  --bifrost-accent-glow: rgba(59, 130, 246, 0.15);
+  --bifrost-success: #22c55e;
+  --bifrost-warning: #f59e0b;
+  --bifrost-error: #ef4444;
+
+  /* Text ramp: heading -> text -> subtle -> muted */
+  --bifrost-heading: #f9fafb;
+  --bifrost-text: #d1d5db;
+  --bifrost-subtle: #9ca3af;
+  --bifrost-muted: #8b95a5;
+
+  /* Foreground colours for filled surfaces */
+  --bifrost-on-accent: #ffffff;
+  --bifrost-on-warning: #1f2937;
+  --bifrost-on-success: #052e16;
+
+  /* Elevation */
+  --bifrost-shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --bifrost-shadow-raised: 0 10px 30px -12px rgba(0, 0, 0, 0.7);
+}
+
+html.light {
+  color-scheme: light;
+
+  --bifrost-bg: #f4f6f9;
+  --bifrost-bg-elevated: #ffffff;
+  --bifrost-card: #ffffff;
+  --bifrost-card-hover: #f1f5f9;
+  --bifrost-card-active: #e6ecf3;
+  --bifrost-border: #dbe1e9;
+  --bifrost-border-subtle: #eaeef3;
+  --bifrost-overlay: rgba(15, 23, 42, 0.45);
+
+  --bifrost-accent: #2563eb;
+  --bifrost-accent-hover: #1d4ed8;
+  --bifrost-accent-glow: rgba(37, 99, 235, 0.12);
+  --bifrost-success: #15803d;
+  --bifrost-warning: #b45309;
+  --bifrost-error: #dc2626;
+
+  --bifrost-heading: #0f172a;
+  --bifrost-text: #374151;
+  --bifrost-subtle: #4b5563;
+  --bifrost-muted: #64748b;
+
+  --bifrost-on-accent: #ffffff;
+  --bifrost-on-warning: #ffffff;
+  --bifrost-on-success: #ffffff;
+
+  --bifrost-shadow-card: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --bifrost-shadow-raised: 0 12px 32px -16px rgba(15, 23, 42, 0.25);
+}
 
 @layer base {
   html {
@@ -10,7 +90,18 @@
   }
 
   body {
-    @apply min-h-screen;
+    @apply min-h-screen bg-bifrost-bg text-bifrost-text antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply text-bifrost-heading;
+  }
+
+  ::selection {
+    @apply bg-bifrost-accent/30 text-bifrost-heading;
   }
 
   ::-webkit-scrollbar {
@@ -24,11 +115,48 @@
   ::-webkit-scrollbar-thumb {
     @apply bg-bifrost-border rounded-full hover:bg-bifrost-muted;
   }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--bifrost-border) transparent;
+  }
+
+  /* Native form controls follow the accent token instead of the OS default. */
+  input[type='checkbox'],
+  input[type='radio'],
+  progress,
+  input[type='range'] {
+    accent-color: var(--bifrost-accent);
+  }
+}
+
+/* A single, always-visible keyboard focus indicator. `outline` is used instead
+ * of a ring so it follows each element's own border radius and stays readable
+ * on every surface in both themes. Inputs opt out via their own focus ring. */
+:focus-visible {
+  outline: 2px solid var(--bifrost-accent);
+  outline-offset: 2px;
+}
+
+/* Respect the operating system's "reduce motion" preference. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 @layer components {
   .card {
-    @apply bg-bifrost-card border border-bifrost-border rounded-xl p-6 transition-all duration-200;
+    @apply bg-bifrost-card border border-bifrost-border rounded-xl p-5 sm:p-6 transition-all duration-200;
+    box-shadow: var(--bifrost-shadow-card);
   }
 
   .card-hover {
@@ -52,7 +180,7 @@
   }
 
   .section-nav-item {
-    @apply w-full text-left px-3 py-2 text-sm text-bifrost-muted rounded-lg hover:bg-bifrost-card-hover hover:text-white transition-all duration-150;
+    @apply w-full text-left px-3 py-2 text-sm text-bifrost-subtle rounded-lg hover:bg-bifrost-card-hover hover:text-bifrost-heading transition-all duration-150;
   }
 
   .section-nav-item-active {
@@ -60,23 +188,28 @@
   }
 
   .btn {
-    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 inline-flex items-center gap-2;
+    @apply px-4 py-2 rounded-lg font-medium transition-all duration-200 inline-flex items-center justify-center gap-2 select-none;
+    @apply active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-sm;
   }
 
   .btn-primary {
-    @apply bg-bifrost-accent text-white hover:bg-bifrost-accent-hover active:scale-[0.98];
+    @apply bg-bifrost-accent text-bifrost-on-accent hover:bg-bifrost-accent-hover;
   }
 
   .btn-secondary {
-    @apply bg-bifrost-card border border-bifrost-border text-gray-300 hover:bg-bifrost-card-hover hover:border-bifrost-muted;
+    @apply bg-bifrost-card border border-bifrost-border text-bifrost-text hover:bg-bifrost-card-hover hover:border-bifrost-muted;
   }
 
   .btn-ghost {
-    @apply text-gray-400 hover:text-white hover:bg-bifrost-card;
+    @apply text-bifrost-subtle hover:text-bifrost-heading hover:bg-bifrost-card-hover;
   }
 
   .input {
-    @apply w-full px-4 py-2.5 bg-bifrost-bg border border-bifrost-border rounded-lg text-gray-100 placeholder-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent transition-all duration-200;
+    @apply w-full px-4 py-2.5 bg-bifrost-bg-elevated border border-bifrost-border rounded-lg text-bifrost-heading placeholder-bifrost-muted hover:border-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200;
   }
 
   .input-error {
@@ -84,11 +217,11 @@
   }
 
   .select {
-    @apply w-full px-4 py-2.5 bg-bifrost-bg border border-bifrost-border rounded-lg text-gray-100 focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent transition-all duration-200 cursor-pointer;
+    @apply w-full px-4 py-2.5 bg-bifrost-bg-elevated border border-bifrost-border rounded-lg text-bifrost-heading hover:border-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent transition-all duration-200 cursor-pointer;
   }
 
   .label {
-    @apply block text-sm font-medium text-gray-300 mb-1.5;
+    @apply block text-sm font-medium text-bifrost-text mb-1.5;
   }
 
   .badge {
@@ -112,15 +245,15 @@
   }
 
   .table-header {
-    @apply text-left text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 py-3;
+    @apply text-left text-xs font-semibold text-bifrost-subtle uppercase tracking-wider px-4 py-3;
   }
 
   .table-cell {
-    @apply px-4 py-3 text-sm text-gray-300;
+    @apply px-4 py-3 text-sm text-bifrost-text;
   }
 
   .stat-value {
-    @apply text-3xl font-bold text-white tabular-nums;
+    @apply text-2xl sm:text-3xl font-bold text-bifrost-heading tabular-nums tracking-tight;
   }
 
   .stat-label {
@@ -132,11 +265,11 @@
   }
 
   .tab-active {
-    @apply bg-bifrost-accent text-white;
+    @apply bg-bifrost-accent text-bifrost-on-accent;
   }
 
   .tab-inactive {
-    @apply text-gray-400 hover:text-white hover:bg-bifrost-card;
+    @apply text-bifrost-subtle hover:text-bifrost-heading hover:bg-bifrost-card-hover;
   }
 
   .code-block {
@@ -154,4 +287,42 @@
   .animate-stagger-3 { animation-delay: 0.15s; }
   .animate-stagger-4 { animation-delay: 0.2s; }
   .animate-stagger-5 { animation-delay: 0.25s; }
+}
+
+@layer components {
+  /* Skip link for keyboard users; only visible while focused. */
+  .skip-link {
+    @apply absolute left-4 top-4 z-[100] -translate-y-24 rounded-lg bg-bifrost-accent px-4 py-2 text-sm font-medium text-bifrost-on-accent transition-transform;
+    @apply focus-visible:translate-y-0;
+  }
+
+  /* Loading + empty affordances, so every async view can look the same. */
+  .spinner {
+    @apply inline-block rounded-full border-2 border-current border-t-transparent animate-spin;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-md bg-bifrost-card-hover;
+  }
+
+  .empty-state {
+    @apply flex flex-col items-center justify-center gap-2 px-6 py-12 text-center;
+  }
+
+  .empty-state-title {
+    @apply text-sm font-medium text-bifrost-text;
+  }
+
+  .empty-state-hint {
+    @apply max-w-sm text-xs text-bifrost-muted;
+  }
+
+  /* Page heading rhythm. */
+  .page-title {
+    @apply text-2xl font-bold text-bifrost-heading tracking-tight;
+  }
+
+  .page-subtitle {
+    @apply mt-1 text-sm text-bifrost-muted;
+  }
 }

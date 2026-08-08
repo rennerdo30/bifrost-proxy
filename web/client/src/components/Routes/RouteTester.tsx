@@ -26,7 +26,7 @@ export function RouteTester() {
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-white mb-4">Test Domain Routing</h3>
+      <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Test Domain Routing</h3>
       <form onSubmit={handleTest} className="flex gap-3">
         <input
           type="text"
@@ -61,7 +61,7 @@ export function RouteTester() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-bifrost-muted">Domain</p>
-              <p className="font-mono text-white">{result.domain}</p>
+              <p className="font-mono text-bifrost-heading">{result.domain}</p>
             </div>
             <div className="text-right">
               <p className="text-sm text-bifrost-muted">Action</p>
@@ -73,7 +73,7 @@ export function RouteTester() {
           {result.matched_route && (
             <div className="mt-3 pt-3 border-t border-bifrost-border">
               <p className="text-sm text-bifrost-muted">Matched Rule</p>
-              <p className="text-white">{result.matched_route}</p>
+              <p className="text-bifrost-heading">{result.matched_route}</p>
             </div>
           )}
         </div>

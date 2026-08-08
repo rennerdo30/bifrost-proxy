@@ -18,7 +18,7 @@ export function DirectBackendForm({ config, onChange }: DirectBackendFormProps) 
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Connect Timeout</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Connect Timeout</label>
           <input
             type="text"
             value={config.connect_timeout || ''}
@@ -28,7 +28,7 @@ export function DirectBackendForm({ config, onChange }: DirectBackendFormProps) 
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Keep Alive</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Keep Alive</label>
           <input
             type="text"
             value={config.keep_alive || ''}
@@ -38,7 +38,7 @@ export function DirectBackendForm({ config, onChange }: DirectBackendFormProps) 
           />
         </div>
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-300 mb-1">Local Address</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Local Address</label>
           <input
             type="text"
             value={config.local_addr || ''}

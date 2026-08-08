@@ -47,7 +47,7 @@ export function Section({ title, badge, defaultOpen = false, id, icon, descripti
           )}
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-white">{title}</h3>
+              <h3 className="text-lg font-semibold text-bifrost-heading">{title}</h3>
               {badge && (
                 <span className={`badge ${badge === 'hot-reload' ? 'badge-success' : 'badge-warning'}`}>
                   {badge === 'hot-reload' ? 'Hot Reload' : 'Restart Required'}

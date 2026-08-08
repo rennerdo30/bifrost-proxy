@@ -8,22 +8,31 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Palette is driven by CSS custom properties so the whole UI can be
+        // re-themed (dark <-> light) without duplicating utility classes.
+        // Values live in src/index.css (:root and html.light).
         bifrost: {
-          bg: '#0a0e17',
-          'bg-elevated': '#0f1520',
-          card: '#111827',
-          'card-hover': '#1a2234',
-          'card-active': '#1e293b',
-          border: '#1f2937',
-          'border-subtle': '#172033',
-          accent: '#3b82f6',
-          'accent-hover': '#2563eb',
-          'accent-glow': 'rgba(59, 130, 246, 0.15)',
-          success: '#22c55e',
-          warning: '#f59e0b',
-          error: '#ef4444',
-          muted: '#6b7280',
-          text: '#e5e7eb',
+          bg: 'var(--bifrost-bg)',
+          'bg-elevated': 'var(--bifrost-bg-elevated)',
+          card: 'var(--bifrost-card)',
+          'card-hover': 'var(--bifrost-card-hover)',
+          'card-active': 'var(--bifrost-card-active)',
+          border: 'var(--bifrost-border)',
+          'border-subtle': 'var(--bifrost-border-subtle)',
+          accent: 'var(--bifrost-accent)',
+          'accent-hover': 'var(--bifrost-accent-hover)',
+          'accent-glow': 'var(--bifrost-accent-glow)',
+          success: 'var(--bifrost-success)',
+          warning: 'var(--bifrost-warning)',
+          error: 'var(--bifrost-error)',
+          heading: 'var(--bifrost-heading)',
+          text: 'var(--bifrost-text)',
+          subtle: 'var(--bifrost-subtle)',
+          muted: 'var(--bifrost-muted)',
+          'on-accent': 'var(--bifrost-on-accent)',
+          'on-warning': 'var(--bifrost-on-warning)',
+          'on-success': 'var(--bifrost-on-success)',
+          overlay: 'var(--bifrost-overlay)',
         }
       },
       fontFamily: {

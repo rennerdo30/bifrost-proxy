@@ -125,16 +125,16 @@ export function AddCacheRuleDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
       <div className="relative w-full max-w-lg bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-bifrost-card flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-          <h2 className="text-xl font-semibold text-white">Add Cache Rule</h2>
+          <h2 className="text-xl font-semibold text-bifrost-heading">Add Cache Rule</h2>
           <button
             onClick={onClose}
-            className="p-1 text-bifrost-muted hover:text-white transition-colors"
+            className="p-1 text-bifrost-muted hover:text-bifrost-heading transition-colors"
             aria-label="Close dialog"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -154,7 +154,7 @@ export function AddCacheRuleDialog({
 
             {/* Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-bifrost-text mb-1">
                 Rule Name
               </label>
               <input
@@ -168,7 +168,7 @@ export function AddCacheRuleDialog({
 
             {/* Domains */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-bifrost-text mb-1">
                 Domains
               </label>
               <textarea
@@ -185,7 +185,7 @@ export function AddCacheRuleDialog({
             {/* TTL and Priority */}
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-bifrost-text mb-1">
                   TTL
                 </label>
                 <input
@@ -198,7 +198,7 @@ export function AddCacheRuleDialog({
                 <p className="text-xs text-bifrost-muted mt-1">e.g., 1h, 30m, 7d</p>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">
+                <label className="block text-sm font-medium text-bifrost-text mb-1">
                   Priority
                 </label>
                 <input
@@ -215,7 +215,7 @@ export function AddCacheRuleDialog({
 
             {/* Max Size */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-bifrost-text mb-1">
                 Max Size (optional)
               </label>
               <input
@@ -232,7 +232,7 @@ export function AddCacheRuleDialog({
 
             {/* Content Types */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-bifrost-text mb-1">
                 Content Types (optional)
               </label>
               <input
@@ -251,7 +251,7 @@ export function AddCacheRuleDialog({
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-300">Enabled</p>
+                  <p className="text-sm font-medium text-bifrost-text">Enabled</p>
                   <p className="text-xs text-bifrost-muted">Rule is active</p>
                 </div>
                 <button
@@ -271,7 +271,7 @@ export function AddCacheRuleDialog({
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-300">Ignore Query String</p>
+                  <p className="text-sm font-medium text-bifrost-text">Ignore Query String</p>
                   <p className="text-xs text-bifrost-muted">Cache regardless of query params</p>
                 </div>
                 <button
@@ -291,7 +291,7 @@ export function AddCacheRuleDialog({
 
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-300">Respect Cache-Control</p>
+                  <p className="text-sm font-medium text-bifrost-text">Respect Cache-Control</p>
                   <p className="text-xs text-bifrost-muted">Honor upstream cache headers</p>
                 </div>
                 <button

@@ -43,8 +43,8 @@ export function RequestLog() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Request Log</h2>
-          <p className="text-bifrost-muted mt-1">
+          <h2 className="page-title">Request Log</h2>
+          <p className="page-subtitle">
             View recent proxy requests in real-time
           </p>
         </div>
@@ -70,7 +70,7 @@ export function RequestLog() {
           >
             {autoRefresh ? (
               <>
-                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-bifrost-on-accent animate-pulse" aria-hidden="true" />
                 Live
               </>
             ) : (
@@ -124,20 +124,20 @@ export function RequestLog() {
           {stats?.enabled && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="card py-3 bg-gradient-to-br from-bifrost-accent/10 to-transparent">
-                <p className="text-sm text-gray-400">Total Requests</p>
-                <p className="text-xl font-bold text-white">{stats.total_requests.toLocaleString()}</p>
+                <p className="text-sm text-bifrost-subtle">Total Requests</p>
+                <p className="text-xl font-bold text-bifrost-heading">{stats.total_requests.toLocaleString()}</p>
               </div>
               <div className="card py-3 bg-gradient-to-br from-cyan-500/10 to-transparent">
-                <p className="text-sm text-gray-400">Data Sent</p>
+                <p className="text-sm text-bifrost-subtle">Data Sent</p>
                 <p className="text-xl font-bold text-cyan-400">{formatBytes(stats.total_bytes_sent)}</p>
               </div>
               <div className="card py-3 bg-gradient-to-br from-emerald-500/10 to-transparent">
-                <p className="text-sm text-gray-400">Data Received</p>
+                <p className="text-sm text-bifrost-subtle">Data Received</p>
                 <p className="text-xl font-bold text-emerald-400">{formatBytes(stats.total_bytes_recv)}</p>
               </div>
               <div className="card py-3">
-                <p className="text-sm text-gray-400">Top Hosts</p>
-                <div className="text-sm text-white mt-1 truncate">
+                <p className="text-sm text-bifrost-subtle">Top Hosts</p>
+                <div className="text-sm text-bifrost-heading mt-1 truncate">
                   {stats.top_hosts.slice(0, 3).map(h => h.host).join(', ') || 'None'}
                 </div>
               </div>
@@ -148,23 +148,23 @@ export function RequestLog() {
           {data.requests.length > 0 && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="card py-3">
-                <p className="text-sm text-gray-400">Showing</p>
-                <p className="text-xl font-bold text-white">{data.requests.length}</p>
+                <p className="text-sm text-bifrost-subtle">Showing</p>
+                <p className="text-xl font-bold text-bifrost-heading">{data.requests.length}</p>
               </div>
               <div className="card py-3">
-                <p className="text-sm text-gray-400">Success (2xx)</p>
+                <p className="text-sm text-bifrost-subtle">Success (2xx)</p>
                 <p className="text-xl font-bold text-bifrost-success">
                   {data.requests.filter((r) => r.status_code >= 200 && r.status_code < 300).length}
                 </p>
               </div>
               <div className="card py-3">
-                <p className="text-sm text-gray-400">Redirects (3xx)</p>
+                <p className="text-sm text-bifrost-subtle">Redirects (3xx)</p>
                 <p className="text-xl font-bold text-bifrost-accent">
                   {data.requests.filter((r) => r.status_code >= 300 && r.status_code < 400).length}
                 </p>
               </div>
               <div className="card py-3">
-                <p className="text-sm text-gray-400">Errors (4xx/5xx)</p>
+                <p className="text-sm text-bifrost-subtle">Errors (4xx/5xx)</p>
                 <p className="text-xl font-bold text-bifrost-error">
                   {data.requests.filter((r) => r.status_code >= 400 || r.status_code === 0).length}
                 </p>

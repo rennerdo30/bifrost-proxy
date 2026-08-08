@@ -203,7 +203,7 @@ export function AddBackendDialog({
         {/* Common Fields */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Name</label>
             <input
               type="text"
               value={form.name}
@@ -215,7 +215,7 @@ export function AddBackendDialog({
             {isEdit && <p className="text-xs text-bifrost-muted mt-1">Name cannot be changed</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Type</label>
             <select
               value={form.type}
               onChange={(e) => {
@@ -234,7 +234,7 @@ export function AddBackendDialog({
             {isEdit && <p className="text-xs text-bifrost-muted mt-1">Type cannot be changed</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Priority</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Priority</label>
             <input
               type="number"
               value={form.priority}
@@ -244,7 +244,7 @@ export function AddBackendDialog({
             <p className="text-xs text-bifrost-muted mt-1">Higher = more preferred</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Weight</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Weight</label>
             <input
               type="number"
               value={form.weight}
@@ -261,14 +261,14 @@ export function AddBackendDialog({
                 onChange={(e) => updateForm('enabled', e.target.checked)}
                 className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm font-medium text-gray-300">Enabled</span>
+              <span className="text-sm font-medium text-bifrost-text">Enabled</span>
             </label>
           </div>
         </div>
 
         {/* Type-specific config */}
         <div className="pt-4 border-t border-bifrost-border">
-          <h4 className="text-sm font-semibold text-white mb-3">
+          <h4 className="text-sm font-semibold text-bifrost-heading mb-3">
             {backendTypes.find((t) => t.value === form.type)?.label} Configuration
           </h4>
           {renderTypeForm()}
@@ -276,7 +276,7 @@ export function AddBackendDialog({
 
         {/* Health Check */}
         <div className="pt-4 border-t border-bifrost-border">
-          <h4 className="text-sm font-semibold text-white mb-3">Health Check</h4>
+          <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Health Check</h4>
           <HealthCheckForm
             config={form.health_check}
             onChange={(health_check) => updateForm('health_check', health_check)}
