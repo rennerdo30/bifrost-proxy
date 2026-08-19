@@ -8,12 +8,9 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    minify: 'esbuild',
-    rollupOptions: {
-      output: {
-        manualChunks: undefined,
-      },
-    },
+    // Use the bundler's default minifier (Oxc as of Vite 8). Naming 'esbuild'
+    // explicitly would require esbuild as a separate dependency.
+    minify: true,
   },
   server: {
     port: 5175,
