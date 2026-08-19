@@ -29,7 +29,7 @@ const WebSocketPingInterval = 20 * time.Second
 // slow reader cannot stall the hub.
 const WebSocketWriteTimeout = 5 * time.Second
 
-// wsClient is one connected peer. Writes are serialised through mu because a
+// wsClient is one connected peer. Writes are serialized through mu because a
 // broadcast and the keepalive pinger can otherwise write concurrently, which
 // is not allowed on a single connection.
 type wsClient struct {

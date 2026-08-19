@@ -13,6 +13,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// wsTestPath is the endpoint every WebSocket regression test dials.
+const wsTestPath = "/api/v1/ws"
+
+// dialWS opens a WebSocket against a test server and takes care of the
+// handshake response body, which callers would otherwise leak.
+func dialWS(ctx context.Context, t *testing.T, srv *httptest.Server, opts *websocket.DialOptions) *websocket.Conn {
+	t.Helper()
+
+	conn, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+wsTestPath, opts)
+	if resp != nil && resp.Body != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	require.NoError(t, err, "upgrade should succeed")
+
+	return conn
+}
+
 // TestWebSocket_SurvivesProtocolPing is a regression test for the bug where
 // /api/v1/ws used golang.org/x/net/websocket, which that package's own docs
 // describe as having "limited support for pings, pongs and close frames".
@@ -36,8 +53,7 @@ func TestWebSocket_SurvivesProtocolPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/api/v1/ws", nil)
-	require.NoError(t, err, "dial should succeed")
+	conn := dialWS(ctx, t, srv, nil)
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	// Give the hub a moment to register the client.
@@ -112,8 +128,7 @@ func TestWebSocket_LegacyTextPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(srv.URL, "http")+"/api/v1/ws", nil)
-	require.NoError(t, err)
+	conn := dialWS(ctx, t, srv, nil)
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte("ping")))
@@ -139,11 +154,8 @@ func TestWebSocket_UpgradeThroughProxiedHost(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	conn, _, err := websocket.Dial(ctx,
-		"ws"+strings.TrimPrefix(srv.URL, "http")+"/api/v1/ws",
-		&websocket.DialOptions{
-			HTTPHeader: http.Header{"Origin": []string{"http://homeassistant.local:8123"}},
-		})
-	require.NoError(t, err, "upgrade must succeed behind a Host-rewriting proxy")
+	conn := dialWS(ctx, t, srv, &websocket.DialOptions{
+		HTTPHeader: http.Header{"Origin": []string{"http://homeassistant.local:8123"}},
+	})
 	conn.Close(websocket.StatusNormalClosure, "")
 }
