@@ -174,7 +174,9 @@ export function ServersScreen() {
         refreshControl={
           <RefreshControl
             refreshing={isRefetching}
-            onRefresh={() => refetch()}
+            onRefresh={() => {
+              void refetch()
+            }}
             tintColor="#3b82f6"
             colors={['#3b82f6']}
             accessibilityLabel="Pull to refresh server list"
