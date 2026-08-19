@@ -100,24 +100,32 @@ python3 -c "import bcrypt; print(bcrypt.hashpw(b'your-password', bcrypt.gensalt(
 
 ```yaml
 auth:
-  mode: native
-  native:
-    users:
-      - username: admin
-        password_hash: "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.gS6T9I2P9z8K2G"
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            password_hash: "$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.gS6T9I2P9z8K2G"
 ```
 
 ### LDAP Security
 
 ```yaml
 auth:
-  mode: ldap
-  ldap:
-    url: "ldaps://ldap.example.com:636"  # Use LDAPS
-    tls: true
-    insecure_skip_verify: false  # Always verify in production
-    bind_dn: "cn=bifrost-svc,ou=services,dc=example,dc=com"
-    bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        url: "ldaps://ldap.example.com:636"  # Use LDAPS
+        tls: true
+        insecure_skip_verify: false  # Always verify in production
+        bind_dn: "cn=bifrost-svc,ou=services,dc=example,dc=com"
+        bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
 ```
 
 > **Tip:** LDAP Best Practices
@@ -130,15 +138,19 @@ auth:
 
 ```yaml
 auth:
-  mode: oauth
-  oauth:
-    client_id: "${OAUTH_CLIENT_ID}"
-    client_secret: "${OAUTH_CLIENT_SECRET}"  # Never commit to git
-    issuer_url: "https://auth.example.com"
-    redirect_url: "https://bifrost.example.com/callback"
-    scopes:
-      - openid
-      - profile
+  providers:
+    - name: oauth
+      type: oauth
+      enabled: true
+      priority: 1
+      config:
+        client_id: "${OAUTH_CLIENT_ID}"
+        client_secret: "${OAUTH_CLIENT_SECRET}"  # Never commit to git
+        issuer_url: "https://auth.example.com"
+        redirect_url: "https://bifrost.example.com/callback"
+        scopes:
+          - openid
+          - profile
 ```
 
 ---
@@ -212,20 +224,35 @@ iptables -A INPUT -p tcp --dport 8080 -j DROP
 
 ### IP Access Control
 
-Configure allowed/denied IP ranges:
+Restrict which client IPs may use the proxy with two CIDR lists,
+`whitelist` and `blacklist`:
 
 ```yaml
 access_control:
-  enabled: true
-  default_action: deny
-  rules:
-    - cidr: "10.0.0.0/8"
-      action: allow
-    - cidr: "192.168.0.0/16"
-      action: allow
-    - cidr: "0.0.0.0/0"
-      action: deny
+  # If non-empty, ONLY IPs matching one of these CIDRs are allowed.
+  # Leave empty to allow all IPs that are not blacklisted.
+  whitelist:
+    - "10.0.0.0/8"
+    - "192.168.0.0/16"
+  # IPs matching any of these CIDRs are always denied.
+  blacklist:
+    - "203.0.113.0/24"
 ```
+
+Evaluation order:
+
+1. The **blacklist** is checked first — a match is always denied
+   (blacklist takes precedence over the whitelist).
+2. If the **whitelist** is non-empty, the IP must match an entry in it;
+   otherwise the request is denied.
+3. If the whitelist is empty, any IP not on the blacklist is allowed.
+
+Both lists accept individual addresses (e.g. `192.168.1.10`) as well as
+CIDR ranges. Access control is enforced only when at least one list is
+non-empty, and changes are hot-reloaded.
+
+There is no `enabled`, `default_action`, or `rules` key — the presence of
+entries in the lists is what activates enforcement.
 
 ---
 
@@ -265,8 +292,13 @@ Never commit secrets to version control. Use environment variables:
 ```yaml
 # config.yaml
 auth:
-  ldap:
-    bind_password: "${LDAP_PASSWORD}"
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        bind_password: "${LDAP_PASSWORD}"
 
 api:
   token: "${API_TOKEN}"

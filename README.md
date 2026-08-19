@@ -10,6 +10,8 @@
 
 Bifrost is a **production-grade proxy system** designed for high-performance traffic routing, deep inspection, and seamless tunnel integration. It bridges your local environment with remote networks through WireGuard, OpenVPN, and intelligent domain-based routing.
 
+📚 **Full documentation:** <https://bifrost.docs.renner.dev/>
+
 ---
 
 ## ✨ Key Features
@@ -67,7 +69,8 @@ graph TD
 
 ## 💻 Dashboard & Interface
 
-Bifrost ships **two** dashboards, both embedded into their binary at build time:
+Bifrost ships **two** dashboards, both embedded into their binary at build time by the
+`make build` targets — there is no separate web server to run:
 
 | Dashboard | Source | Served by | Sections |
 | --- | --- | --- | --- |
@@ -83,23 +86,31 @@ preference by default and can be switched from the header, with the choice store
 
 ![Client routing rules, light theme](assets/screenshot-client-routes.png)
 
+Beyond the browser dashboards there are dedicated frontends in this repository:
+
+- `desktop/` — Wails-based desktop app (Windows, macOS, Linux) with tray integration.
+- `mobile/` — React Native / Expo app (iOS, Android).
+- `openwrt/` — packaging for running the client on OpenWrt routers.
+
 > [!NOTE]
-> *Note: UI appearance may vary based on platform and version.*
+> *UI appearance may vary based on platform and version.*
 
 ---
 
 ## 🏁 Quick Start
 
-**Requirements:** Go (see `go.mod` for the minimum version) and Node.js with npm — the
-dashboards are compiled by Vite and then embedded into the binaries via `go:embed`, so the
-Make targets below run `npm install && npm run build` for you before `go build`.
+Requirements for building from source: **Go** (see `go.mod` for the minimum version),
+**Node.js** with npm and `make` — the dashboards are compiled by Vite and then embedded
+into the binaries via `go:embed`, so the Make targets below run `npm install && npm run build`
+for you before `go build`. Prebuilt nightly archives are also published on the
+[Releases](https://github.com/rennerdo30/bifrost-proxy/releases) page.
 
 ### 1. Server Setup
 ```bash
 # Build the server (also builds + embeds the server dashboard)
 make build-server
 
-# Start from the example configuration
+# Start from a copy of the example configuration
 cp configs/server-config.example.yaml server-config.yaml
 ./bin/bifrost-server -c server-config.yaml
 ```
@@ -109,15 +120,17 @@ cp configs/server-config.example.yaml server-config.yaml
 # Build the client (also builds + embeds the client dashboard)
 make build-client
 
-# Initialize configuration
+# Generate a client configuration
 ./bin/bifrost-client config init --server your-server:7080
 
-# Run the client
+# Validate it, then run
+./bin/bifrost-client validate -c client-config.yaml
 ./bin/bifrost-client -c client-config.yaml
 ```
 
-Both dashboards are disabled or bound to localhost by default — see the `web_ui` and `api`
-sections of the example configs in [`configs/`](configs/) for the listen addresses.
+[`configs/`](configs/) contains ready-made examples for the server, the client, Docker and
+OpenWrt. Both dashboards are disabled or bound to localhost by default — see the `web_ui`
+and `api` sections of those examples for the listen addresses.
 
 ---
 
@@ -133,9 +146,6 @@ make web-build         # production build of both dashboards
 The dev servers proxy `/api` to a locally running Bifrost, so start the matching binary
 first. `go build ./...` only succeeds once the dashboards have been built at least
 once — `make build` (or `make web-build`) takes care of that.
-
-**Tech stack:** Go (proxy, tunnels, REST API) · React 19 + TypeScript + Vite + Tailwind CSS
-(dashboards) · TanStack Query (data fetching) · Prometheus (metrics).
 
 ---
 
@@ -163,8 +173,23 @@ The full documentation site is at **<https://bifrost.docs.renner.dev/>**. The so
 - 🔒 [Authentication Modes](docs/src/content/docs/authentication.mdx)
 - 🌐 [VPN & Split Tunneling](docs/src/content/docs/vpn-mode.mdx)
 - 📊 [API Reference](docs/src/content/docs/api/index.mdx)
+- 🤝 [Contributing](CONTRIBUTING.md) · 📝 [Changelog](CHANGELOG.md)
+
+The rendered version of these docs is at <https://bifrost.docs.renner.dev/>.
 
 ---
+
+## 🧰 Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Server & client | Go 1.25 (Cobra CLI, userspace WireGuard, OpenVPN, TUN) |
+| Web UIs | React 19, TypeScript, Vite, Tailwind CSS (embedded into the binaries) |
+| Desktop app | Wails (Go + web frontend) |
+| Mobile app | React Native / Expo |
+| Observability | Prometheus metrics, structured JSON logs |
+| Build & release | Make, GoReleaser, Docker, GitHub Actions |
+| Docs site | Astro Starlight (`docs/`) |
 
 ## 📜 License
 

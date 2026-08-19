@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -14,6 +15,8 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"golang.org/x/net/websocket"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth/session"
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
@@ -39,6 +42,15 @@ type API struct {
 	connTracker    *ConnectionTracker
 	cacheAPI       *CacheAPI
 	meshAPI        *MeshAPI
+	// sessionManager, when non-nil, enables the token-exchange login/logout flow:
+	// a client that presents the correct api.token to POST /api/v1/login receives
+	// an HttpOnly session cookie which is then accepted by authMiddleware as an
+	// alternative to sending the token on every request (and lets browsers
+	// authenticate the WebSocket handshake, which cannot carry an Authorization
+	// header, via the cookie). It is only wired when a token is configured; a
+	// session can only be created by first presenting the token, so it never
+	// weakens the token gate. Nil disables the login flow entirely.
+	sessionManager *session.Manager
 }
 
 // Config holds API configuration.
@@ -57,6 +69,12 @@ type Config struct {
 	SOCKS5Port       string                           // SOCKS5 port for PAC file
 	EnableRequestLog bool                             // Enable request logging
 	RequestLogSize   int                              // Max requests to keep
+	// SessionManager, when non-nil AND Token is set, enables the token-exchange
+	// login/cookie flow (see API.sessionManager). The caller (server) owns the
+	// manager's lifecycle and must Close it on shutdown. Ignored when Token is
+	// empty because the API is unauthenticated in that case and sessions would
+	// gate nothing.
+	SessionManager *session.Manager
 }
 
 // New creates a new API server.
@@ -93,6 +111,15 @@ func New(cfg Config) *API {
 	// Create mesh API for P2P mesh networking
 	meshAPI := NewMeshAPI()
 
+	// The token-exchange session flow is only meaningful when the API is
+	// token-protected: without a token the API is open and a session would gate
+	// nothing. Ignoring the manager when the token is empty avoids advertising a
+	// login endpoint that grants access the caller already has.
+	sessionManager := cfg.SessionManager
+	if cfg.Token == "" {
+		sessionManager = nil
+	}
+
 	return &API{
 		backends:       cfg.Backends,
 		backendFactory: backend.NewFactory(),
@@ -109,6 +136,7 @@ func New(cfg Config) *API {
 		connTracker:    NewConnectionTracker(),
 		cacheAPI:       cacheAPI,
 		meshAPI:        meshAPI,
+		sessionManager: sessionManager,
 	}
 }
 
@@ -185,6 +213,14 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(a.securityHeadersMiddleware)
 
+	// Session login endpoint (token exchange -> HttpOnly cookie). It is mounted
+	// outside authMiddleware because it authenticates the presented token itself;
+	// csrfMiddleware still applies so the SPA must send X-Requested-With. Only
+	// registered when the session flow is enabled (token set + manager wired).
+	if a.sessionManager != nil {
+		r.With(a.csrfMiddleware).Post("/api/v1/login", a.handleLogin)
+	}
+
 	// Auth middleware if token is set
 	if a.token != "" {
 		r.Group(func(r chi.Router) {
@@ -227,6 +263,12 @@ func (a *API) addAPIRoutes(r chi.Router) {
 	r.Get("/api/v1/version", a.handleVersion)
 	r.Get("/api/v1/status", a.handleStatus)
 	r.Get("/api/v1/stats", a.handleStats)
+
+	// Session logout (destroys the session behind the presented cookie). No-op
+	// (503) when the session flow is disabled.
+	if a.sessionManager != nil {
+		r.Post("/api/v1/logout", a.handleLogout)
+	}
 
 	r.Route("/api/v1/backends", func(r chi.Router) {
 		r.Get("/", a.handleListBackends)
@@ -296,14 +338,113 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 			token = token[7:]
 		}
 
-		// Use constant-time comparison to prevent timing attacks
-		if subtle.ConstantTimeCompare([]byte(token), []byte(a.token)) != 1 {
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		// Use constant-time comparison to prevent timing attacks.
+		if subtle.ConstantTimeCompare([]byte(token), []byte(a.token)) == 1 {
+			next.ServeHTTP(w, r)
 			return
 		}
 
-		next.ServeHTTP(w, r)
+		// Fall back to a session cookie (or X-Session-Token/Bearer session ID).
+		// Sessions can only be created by first presenting the correct token to
+		// /api/v1/login, so this is an alternative credential, never a bypass: an
+		// unauthenticated caller cannot mint or guess a valid session. This also
+		// lets the browser authenticate the WebSocket handshake, which cannot set
+		// an Authorization header, via the automatically-sent cookie.
+		if a.sessionManager != nil {
+			if _, err := a.sessionManager.ValidateRequestSession(r); err == nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 	})
+}
+
+// apiSessionUser is the fixed identity attached to API sessions. The API auth
+// model is a single shared admin token (there is no per-user API account), so a
+// session created by exchanging that token represents that one administrator.
+const apiSessionUser = "api-admin"
+
+// handleLogin exchanges a valid api.token for an HttpOnly session cookie. It is
+// mounted outside authMiddleware and validates the token itself (constant-time)
+// so the SPA can obtain a cookie without having to attach the token to every
+// request afterwards. The token may be supplied via the Authorization: Bearer
+// header or a JSON body {"token":"..."}. It fails closed when sessions are not
+// enabled or the token is wrong.
+func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if a.sessionManager == nil || a.token == "" {
+		a.writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"error": "Session login is not enabled",
+		})
+		return
+	}
+
+	// Extract the presented token from the Authorization header or JSON body.
+	presented := r.Header.Get("Authorization")
+	if len(presented) > 7 && presented[:7] == "Bearer " {
+		presented = presented[7:]
+	}
+	if presented == "" {
+		var body struct {
+			Token string `json:"token"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body) //nolint:errcheck // Empty/invalid body -> empty token -> 401 below
+		presented = body.Token
+	}
+
+	if subtle.ConstantTimeCompare([]byte(presented), []byte(a.token)) != 1 {
+		a.writeJSON(w, http.StatusUnauthorized, map[string]interface{}{
+			"error": "Invalid token",
+		})
+		return
+	}
+
+	sess, err := a.sessionManager.CreateSession(&auth.UserInfo{Username: apiSessionUser}, clientIPFromRequest(r), r.UserAgent())
+	if err != nil {
+		slog.Error("failed to create API session", "error", err)
+		a.writeJSON(w, http.StatusInternalServerError, map[string]interface{}{
+			"error": "Failed to create session",
+		})
+		return
+	}
+
+	a.sessionManager.SetSessionCookie(w, sess)
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":     "authenticated",
+		"expires_at": sess.ExpiresAt.Format(time.RFC3339),
+	})
+}
+
+// handleLogout destroys the current session (if any) and clears the cookie. It
+// is mounted inside the auth group so only an authenticated caller can reach it.
+func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if a.sessionManager == nil {
+		a.writeJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"error": "Session login is not enabled",
+		})
+		return
+	}
+
+	if id, err := a.sessionManager.GetSessionFromRequest(r); err == nil {
+		if destroyErr := a.sessionManager.DestroySession(id); destroyErr != nil {
+			slog.Warn("failed to destroy API session", "error", destroyErr)
+		}
+	}
+	a.sessionManager.ClearSessionCookie(w)
+	a.writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status": "logged_out",
+	})
+}
+
+// clientIPFromRequest returns the client IP recorded on the request (chi's
+// RealIP middleware normalizes RemoteAddr), stripping any port.
+func clientIPFromRequest(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 // csrfMiddleware provides CSRF protection for mutating requests.

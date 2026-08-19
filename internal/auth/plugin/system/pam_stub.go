@@ -23,6 +23,11 @@ import (
 	"log/slog"
 )
 
+// pamCompiled reports whether the real libpam-backed Linux backend was compiled
+// in. In this (stub) build it was not, so Linux system auth fails closed. See
+// pam_linux.go for the value used in the real PAM build.
+const pamCompiled = false
+
 // validateLinux always fails closed on Linux when the real PAM backend was not
 // compiled in.
 //

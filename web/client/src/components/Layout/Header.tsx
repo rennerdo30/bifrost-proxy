@@ -1,6 +1,7 @@
 import { useStatus, useVersion } from '../../hooks/useStatus'
 import { useQueryClient } from '@tanstack/react-query'
 import { ThemeToggle } from '../ThemeToggle'
+import { ApiTokenDialog } from './ApiTokenDialog'
 
 export function Header() {
   const { data: status } = useStatus()
@@ -38,6 +39,8 @@ export function Header() {
             </div>
 
             <ThemeToggle />
+
+            <ApiTokenDialog />
 
             <button
               onClick={handleRefresh}

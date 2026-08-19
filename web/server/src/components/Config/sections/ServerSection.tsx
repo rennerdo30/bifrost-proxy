@@ -1,8 +1,54 @@
 import { Section } from '../Section'
-import { ValidatedInput } from '../../ui/ValidatedInput'
+import { ValidatedInput, ValidatedSelect } from '../../ui/ValidatedInput'
 import { useValidation } from '../../../hooks/useValidation'
 import { validators } from '../../../utils/validation'
-import type { ServerSettings, TLSConfig } from '../../../api/types'
+import type { ClientAuthMode, ServerSettings, TLSConfig } from '../../../api/types'
+
+// Client certificate verification modes for listener mTLS. Values match the
+// server's TLSConfig.ClientAuth (internal/config/server.go).
+const clientAuthOptions: { value: ClientAuthMode; label: string }[] = [
+  { value: '', label: 'None (no client certificate)' },
+  { value: 'request', label: 'Request (do not verify)' },
+  { value: 'require_any', label: 'Require any client certificate' },
+  { value: 'verify_if_given', label: 'Verify only if a certificate is presented' },
+  { value: 'require', label: 'Require and verify' },
+]
+
+// Renders the mTLS (client certificate) controls shared by both listeners.
+function ClientAuthFields({
+  tls,
+  onChange,
+}: {
+  tls: TLSConfig
+  onChange: (tls: TLSConfig) => void
+}) {
+  const verifies = tls.client_auth === 'require' || tls.client_auth === 'verify_if_given'
+  return (
+    <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
+      <ValidatedSelect
+        label="Client Certificate Auth (mTLS)"
+        value={tls.client_auth || ''}
+        onChange={(e) => onChange({ ...tls, client_auth: e.target.value as ClientAuthMode })}
+        helpText="Whether/how the listener requests and verifies client certificates"
+      >
+        {clientAuthOptions.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </ValidatedSelect>
+      {verifies && (
+        <ValidatedInput
+          label="Client CA File"
+          value={tls.client_ca_file || ''}
+          onChange={(e) => onChange({ ...tls, client_ca_file: e.target.value })}
+          placeholder="/path/to/client-ca.pem"
+          helpText="CA pool used to verify client certs (empty = mTLS auth provider's pool)"
+        />
+      )}
+    </div>
+  )
+}
 
 interface ServerSectionProps {
   config: ServerSettings
@@ -67,6 +113,13 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
     onChange({
       ...config,
       http: { ...(config.http || {}), tls },
+    })
+  }
+
+  const updateSOCKS5TLS = (tls: TLSConfig | undefined) => {
+    onChange({
+      ...config,
+      socks5: { ...(config.socks5 || {}), tls },
     })
   }
 
@@ -165,6 +218,9 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
                   error={errors['http.tls.key_file']}
                 />
               </div>
+            )}
+            {config.http?.tls?.enabled && (
+              <ClientAuthFields tls={config.http.tls} onChange={updateHTTPTLS} />
             )}
           </div>
         </div>
@@ -267,6 +323,9 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
                   error={errors['socks5.tls.key_file']}
                 />
               </div>
+            )}
+            {config.socks5?.tls?.enabled && (
+              <ClientAuthFields tls={config.socks5.tls} onChange={updateSOCKS5TLS} />
             )}
           </div>
         </div>

@@ -53,6 +53,13 @@ type MullvadConfig struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval,omitempty"` // How often to check for better servers
 	Features        []string      `yaml:"features,omitempty"`         // Required features
 
+	// OpenVPN TLS material. CACert is the PEM-encoded CA certificate used to
+	// verify the Mullvad OpenVPN server; it is REQUIRED for the OpenVPN protocol
+	// (config generation fails closed without it). No CA is embedded in the
+	// binary. TLSAuthKey is the optional OpenVPN tls-auth static key.
+	CACert     string `yaml:"ca_cert,omitempty"`      // OpenVPN CA certificate (PEM)
+	TLSAuthKey string `yaml:"tls_auth_key,omitempty"` // OpenVPN tls-auth static key
+
 	// LeakProofRouting requests Linux policy-routing based egress isolation on
 	// OpenVPN delegates so traffic cannot leak outside the tunnel. It requires
 	// root, is Linux-only, and is OFF by default. WireGuard delegates use a
@@ -165,7 +172,9 @@ func (b *MullvadBackend) Start(ctx context.Context) error {
 
 	// Create credentials
 	creds := vpnprovider.Credentials{
-		AccountID: b.config.AccountID,
+		AccountID:  b.config.AccountID,
+		CACert:     b.config.CACert,
+		TLSAuthKey: b.config.TLSAuthKey,
 	}
 
 	// Create the delegate backend based on protocol
@@ -314,7 +323,9 @@ func (b *MullvadBackend) checkAndRefreshServer() {
 // or starting the new delegate fails, the current delegate is left untouched.
 func (b *MullvadBackend) swapDelegate(ctx context.Context, server *vpnprovider.Server) error {
 	creds := vpnprovider.Credentials{
-		AccountID: b.config.AccountID,
+		AccountID:  b.config.AccountID,
+		CACert:     b.config.CACert,
+		TLSAuthKey: b.config.TLSAuthKey,
 	}
 
 	newDelegate, err := b.buildDelegate(ctx, server, creds)

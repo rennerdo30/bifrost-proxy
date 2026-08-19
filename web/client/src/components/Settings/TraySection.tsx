@@ -13,6 +13,7 @@ export function TraySection() {
       title="System Tray"
       icon={<TrayIcon />}
       description="System tray and quick access settings"
+      restartRequired
       defaultOpen={false}
     >
       <div className="space-y-4">

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import type { WSEvent } from '../api/types'
-import { BASE_PATH } from '../api/client'
+import { BASE_PATH, getApiToken } from '../api/client'
 
 type MessageHandler = (event: WSEvent) => void
 
@@ -21,7 +21,12 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (!enabled) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/api/v1/ws`
+    // Browsers cannot set the Authorization header on a WS handshake, so when
+    // an API token is configured we pass it via the ?token= query parameter
+    // that the server's auth middleware also accepts.
+    const token = getApiToken()
+    const query = token ? `?token=${encodeURIComponent(token)}` : ''
+    const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/api/v1/ws${query}`
 
     try {
       const ws = new WebSocket(wsUrl)

@@ -1028,6 +1028,33 @@ func TestFactory_ValidateProviders(t *testing.T) {
 	assert.Contains(t, err.Error(), "unknown")
 }
 
+// TestFactory_NegotiateProviderRejected verifies that configuring "negotiate"
+// (or "spnego") as an auth *provider* fails closed with actionable guidance
+// pointing operators at the top-level auth.negotiate.* middleware section.
+// Negotiate/SPNEGO is HTTP middleware, not a registered plugin, so a provider
+// entry of that type can never authenticate and must be rejected clearly.
+func TestFactory_NegotiateProviderRejected(t *testing.T) {
+	factory := auth.NewFactory()
+
+	for _, typ := range []string{"negotiate", "spnego", "NEGOTIATE", " Negotiate "} {
+		t.Run(typ, func(t *testing.T) {
+			// Create must reject and explain.
+			_, err := factory.Create(auth.ProviderConfig{Name: "sso", Type: typ, Enabled: true})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "not an auth provider")
+			assert.Contains(t, err.Error(), "auth.negotiate")
+
+			// ValidateProviders must reject with the same guidance.
+			err = factory.ValidateProviders([]auth.ProviderConfig{
+				{Name: "sso", Type: typ, Enabled: true},
+			})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "not an auth provider")
+			assert.Contains(t, err.Error(), "auth.negotiate")
+		})
+	}
+}
+
 // Chain authenticator edge case
 
 func TestChainAuthenticator_AuthenticateWithNilMetadata(t *testing.T) {
@@ -1962,4 +1989,29 @@ func TestMiddleware_SetAPIKeyAuth(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "test-key", w.Body.String())
+}
+
+// TestFactory_Create_NegotiateProviderRejected verifies that configuring
+// "negotiate" as an auth provider is rejected with guidance pointing at the
+// auth.negotiate middleware, since it is not a registered provider plugin.
+func TestFactory_Create_NegotiateProviderRejected(t *testing.T) {
+	factory := auth.NewFactory()
+	_, err := factory.Create(auth.ProviderConfig{
+		Name: "sso", Type: "negotiate", Enabled: true,
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth.negotiate")
+}
+
+// TestFactory_ValidateProviders_NegotiateRejected verifies the same guidance is
+// produced during config validation.
+func TestFactory_ValidateProviders_NegotiateRejected(t *testing.T) {
+	factory := auth.NewFactory()
+	err := factory.ValidateProviders([]auth.ProviderConfig{
+		{Name: "sso", Type: "negotiate", Enabled: true},
+	})
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "auth.negotiate")
 }

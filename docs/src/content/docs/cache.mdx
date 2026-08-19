@@ -259,19 +259,17 @@ curl http://localhost:7082/api/v1/cache/rules
 curl http://localhost:7082/api/v1/cache/presets
 ```
 
-## Prometheus Metrics
+## Cache Statistics
 
-The cache exports metrics:
+Cache statistics are **not** exported as Prometheus metrics. Instead, retrieve
+them from the REST API (also surfaced in the Web UI):
 
-| Metric | Type | Description |
-|--------|------|-------------|
-| `bifrost_cache_hits_total` | counter | Total cache hits by domain |
-| `bifrost_cache_misses_total` | counter | Total cache misses by domain and reason |
-| `bifrost_cache_bytes_served_total` | counter | Bytes served from cache vs origin |
-| `bifrost_cache_storage_size_bytes` | gauge | Current storage size by tier |
-| `bifrost_cache_storage_entries` | gauge | Current entry count by tier |
-| `bifrost_cache_evictions_total` | counter | Evictions by tier and reason |
-| `bifrost_cache_operation_duration_seconds` | histogram | Cache operation latency |
+```bash
+curl http://localhost:7082/api/v1/cache/stats
+```
+
+This returns hit/miss counts, bytes served, entry counts, and per-tier storage
+usage. See the [API reference](/api) for the full response schema.
 
 ## Range Request Support
 

@@ -120,6 +120,7 @@ func TestProtonVPN_OpenVPNDelegate_PropagatesTuning(t *testing.T) {
 	delegate, err := b.buildDelegate(context.Background(), server, vpnprovider.Credentials{
 		Username: "u",
 		Password: "p",
+		CACert:   nordTestCAPEM(t),
 	})
 	require.NoError(t, err)
 	assertOpenVPNDelegateTuned(t, delegate, net)
@@ -146,6 +147,7 @@ func TestMullvad_OpenVPNDelegate_PropagatesTuning(t *testing.T) {
 
 	delegate, err := b.buildDelegate(context.Background(), server, vpnprovider.Credentials{
 		AccountID: "0000000000000000",
+		CACert:    nordTestCAPEM(t),
 	})
 	require.NoError(t, err)
 	assertOpenVPNDelegateTuned(t, delegate, net)

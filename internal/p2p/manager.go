@@ -81,6 +81,15 @@ type ManagerConfig struct {
 
 	// PeerRelayEnabled enables peer relaying.
 	PeerRelayEnabled bool
+
+	// AllowUnknownPeers controls whether inbound handshakes from public keys
+	// that have not been registered via RegisterPeerKey are accepted. It
+	// defaults to false (fail closed): unknown/unauthorized peers are rejected
+	// so that no host that merely knows a (non-secret, discovery-distributed)
+	// public key can establish a session and inject frames into the tunnel
+	// device. Enabling it restores the legacy open-acceptance behavior and
+	// should only be used in trusted/testing environments.
+	AllowUnknownPeers bool
 }
 
 // DefaultManagerConfig returns a default manager configuration.
@@ -582,13 +591,25 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 	// Extract remote public key from handshake init
 	remotePublicKey := data[1:33]
 
-	// Look up peer by public key or address
+	// Look up peer by public key. Only keys registered via RegisterPeerKey
+	// (populated from authenticated discovery) resolve to a real peer ID.
 	peerID := pm.lookupPeerByKey(remotePublicKey)
 	if peerID == "" {
-		// Unknown peer - could accept or reject based on config
-		// For now, generate a temporary peer ID
+		if !pm.config.AllowUnknownPeers {
+			// Fail closed: reject inbound handshakes from unknown/unauthorized
+			// public keys so their frames are never injected into the tunnel
+			// device. The public key is not secret (it is distributed via
+			// discovery), so accepting it would let any reachable host spoof a
+			// peer.
+			slog.Warn("rejecting handshake from unknown peer",
+				"from", from.String(),
+				"public_key", base64.StdEncoding.EncodeToString(remotePublicKey),
+			)
+			return
+		}
+		// AllowUnknownPeers is explicitly enabled: accept with a synthetic ID.
 		peerID = fmt.Sprintf("incoming-%s", from.String())
-		slog.Debug("unknown peer connecting", "peer_id", peerID, "from", from.String())
+		slog.Debug("accepting unknown peer (AllowUnknownPeers enabled)", "peer_id", peerID, "from", from.String())
 	}
 
 	// Check if we already have a connection to this peer

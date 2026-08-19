@@ -17,6 +17,7 @@ export function ServerSection() {
       title="Bifrost Server"
       icon={<ServerIcon />}
       description="Connect to your Bifrost server to route traffic securely"
+      restartRequired
     >
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <FormInput

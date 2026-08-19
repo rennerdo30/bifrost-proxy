@@ -70,9 +70,30 @@ React dashboards are complete and call only endpoints that exist.
 
 ## 3. Remaining / gated / infrastructure-bound
 
-These are intentionally limited, gated off by default for safety, or require
-external infrastructure to validate. None is a silent fail-open.
+A follow-up re-audit (2026-07-02) is recorded in
+[`AUDIT-FINDINGS.md`](AUDIT-FINDINGS.md); it is the authoritative, itemized
+backlog and prioritized ranking. It surfaced a further batch of UI/config
+integration gaps, config-save/reload detection bugs, and VPN-provider crypto
+defects that are being remediated across follow-up work (e.g. `access_control`
+save not hot-applied, per-backend Prometheus labels empty, cache hits logged as
+HTTP 500, client Reload button / Auto-Update dead toggles, ProtonVPN SRP and
+OpenVPN CA material). Consult that file — not this snapshot — for the live
+status of those items.
 
+The list below is the subset that is **intentionally limited, gated off by
+default for safety, or requires external infrastructure to validate**, and
+therefore cannot be "finished" purely in-repo. None is a silent fail-open.
+
+- **Mobile native VPN cannot be compiled/validated in-repo** — the iOS/Android
+  tunnel skeletons need the platform toolchains (Xcode Network Extension / iOS
+  signing, Android NDK + `VpnService`) to build at all, so they remain gated-off
+  placeholders (see the mobile item below and `docs/.../mobile-client.mdx`).
+- **OpenVPN leak-proof egress routing needs root on real hardware to validate**
+  — the policy-routing/netns path is Linux-only, off by default, and cannot be
+  exercised safely in CI (see the OpenVPN item below).
+- **Linux PAM auth needs a `cgo` + `libpam` build** — the default/Docker build
+  ships a fail-closed stub; a working PAM backend requires building with the
+  `pam` tag on a host with `libpam` headers (see the System (PAM) item below).
 - **NTLM is unsupported by design** — fails closed; no working configuration
   exists. Retained only so a misconfiguration does not fall through.
 - **The `negotiate` auth mode is not a registered plugin.** A handler package
@@ -89,8 +110,12 @@ external infrastructure to validate. None is a silent fail-open.
   tunnel files are unbuildable skeletons that would forward cleartext; the path
   is gated off and the Expo app controls a remote client over REST. A real
   WireGuard implementation is future work.
-- **Userspace TCP proxy in VPN mode** is in-order only (no reassembly/windowing)
-  — acceptable for the current scope; flagged for future hardening.
+- **Userspace TCP proxy in VPN mode** performs bounded out-of-order segment
+  reassembly (`internal/vpn/tcpreasm.go`, wired at `internal/vpn/vpn.go`): early
+  segments are buffered (default caps 256 KiB / 1024 segments per connection) and
+  drained once the gap fills. It does **not** implement a full TCP receive
+  window, SACK, or congestion control — acceptable for the current scope and
+  flagged for future hardening.
 
 ## 4. Notes
 

@@ -172,13 +172,17 @@ func NewMetrics(registry prometheus.Registerer) *Metrics {
 	return m
 }
 
-// RecordHit records a cache hit.
+// RecordHit records a cache hit. A negative byte count (e.g. an unknown
+// Content-Length) still counts as a hit but does not adjust the byte counter,
+// since Prometheus counters must never decrease.
 func (m *Metrics) RecordHit(domain string, bytes int64) {
 	if m == nil {
 		return
 	}
 	m.Hits.WithLabelValues(domain).Inc()
-	m.BytesServed.WithLabelValues("cache").Add(float64(bytes))
+	if bytes > 0 {
+		m.BytesServed.WithLabelValues("cache").Add(float64(bytes))
+	}
 }
 
 // RecordMiss records a cache miss.
@@ -189,17 +193,17 @@ func (m *Metrics) RecordMiss(domain, reason string) {
 	m.Misses.WithLabelValues(domain, reason).Inc()
 }
 
-// RecordOriginBytes records bytes served from origin.
+// RecordOriginBytes records bytes served from origin. Negative counts are ignored.
 func (m *Metrics) RecordOriginBytes(bytes int64) {
-	if m == nil {
+	if m == nil || bytes <= 0 {
 		return
 	}
 	m.BytesServed.WithLabelValues("origin").Add(float64(bytes))
 }
 
-// RecordCachedBytes records bytes stored in cache.
+// RecordCachedBytes records bytes stored in cache. Negative counts are ignored.
 func (m *Metrics) RecordCachedBytes(bytes int64) {
-	if m == nil {
+	if m == nil || bytes <= 0 {
 		return
 	}
 	m.BytesCached.Add(float64(bytes))
@@ -262,3 +266,11 @@ const EvictionReasonTTL = "ttl"
 
 // EvictionReasonLRU is used when evicting due to LRU policy.
 const EvictionReasonLRU = "lru"
+
+// metricsSink is implemented by storage backends that can record their own
+// Prometheus metrics (e.g. evictions). The manager attaches metrics through
+// this interface during startup so storage backends stay decoupled from the
+// manager type.
+type metricsSink interface {
+	attachMetrics(m *Metrics)
+}

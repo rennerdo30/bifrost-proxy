@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -257,6 +258,86 @@ func TestSOCKS5Handler_handleRequest_Connect_IPv4(t *testing.T) {
 	assert.Equal(t, socks5ReplySuccess, reply[1])
 
 	require.Eventually(t, func() bool { return connectCalled.Load() }, time.Second, 10*time.Millisecond)
+}
+
+func TestSOCKS5Handler_RecordMetrics(t *testing.T) {
+	targetServer, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer targetServer.Close()
+
+	targetAddr := targetServer.Addr().(*net.TCPAddr)
+	targetIP := targetAddr.IP.To4()
+	targetPort := targetAddr.Port
+
+	// Accept and immediately close the upstream connection so both copy
+	// directions reach EOF and ServeConn (and its deferred metrics closure)
+	// returns promptly.
+	go func() {
+		c, aerr := targetServer.Accept()
+		if aerr == nil {
+			_ = c.Close() //nolint:errcheck // test cleanup
+		}
+	}()
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "socks-be"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background()) //nolint:errcheck // test cleanup
+
+	clientConn, serverConn := net.Pipe()
+
+	var (
+		mu         sync.Mutex
+		gotProto   string
+		gotMethod  string
+		gotBackend string
+		called     atomic.Bool
+	)
+	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
+		GetBackend: func(domain, clientIP string) backend.Backend {
+			return directBackend
+		},
+		RecordMetrics: func(protocol, method, status, backendName string, duration time.Duration, sent, recv int64) {
+			mu.Lock()
+			gotProto, gotMethod, gotBackend = protocol, method, backendName
+			mu.Unlock()
+			called.Store(true)
+		},
+	})
+
+	go func() {
+		defer serverConn.Close()
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	_, err = clientConn.Write([]byte{socks5Version, 0x01, socks5AuthNone})
+	require.NoError(t, err)
+	authResp := make([]byte, 2)
+	_, err = io.ReadFull(clientConn, authResp)
+	require.NoError(t, err)
+
+	req := []byte{socks5Version, socks5CmdConnect, 0x00, socks5AddrIPv4}
+	req = append(req, targetIP...)
+	portBytes := make([]byte, 2)
+	binary.BigEndian.PutUint16(portBytes, uint16(targetPort))
+	req = append(req, portBytes...)
+	_, err = clientConn.Write(req)
+	require.NoError(t, err)
+
+	reply := make([]byte, 10)
+	_, err = io.ReadFull(clientConn, reply)
+	require.NoError(t, err)
+
+	// Close the client so the copy loop and ServeConn return and the deferred
+	// metrics closure runs.
+	clientConn.Close()
+
+	require.Eventually(t, func() bool { return called.Load() }, time.Second, 10*time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, "socks5", gotProto)
+	assert.Equal(t, "CONNECT", gotMethod)
+	assert.Equal(t, "socks-be", gotBackend, "SOCKS5 metrics must carry the selected backend name")
 }
 
 func TestSOCKS5Handler_handleRequest_Connect_Domain(t *testing.T) {

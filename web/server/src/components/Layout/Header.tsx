@@ -1,5 +1,6 @@
 import { useVersion, useHealth } from '../../hooks/useStats'
 import { ThemeToggle } from '../ThemeToggle'
+import { ApiTokenButton } from './ApiTokenButton'
 
 export function Header() {
   const { data: version } = useVersion()
@@ -57,6 +58,9 @@ export function Header() {
             )}
 
             <ThemeToggle />
+
+            {/* API Token */}
+            <ApiTokenButton />
 
             {/* GitHub Repository Link */}
             <a

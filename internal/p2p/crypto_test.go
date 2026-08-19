@@ -221,16 +221,21 @@ func TestDeriveKey(t *testing.T) {
 		secret[i] = byte(i)
 	}
 
-	key1 := deriveKey(secret, []byte("send"))
-	key2 := deriveKey(secret, []byte("recv"))
+	key1 := deriveKey(secret, nil, []byte("send"))
+	key2 := deriveKey(secret, nil, []byte("recv"))
 
 	assert.Len(t, key1, 32)
 	assert.Len(t, key2, 32)
 	assert.NotEqual(t, key1, key2)
 
 	// Same inputs should produce same output
-	key3 := deriveKey(secret, []byte("send"))
+	key3 := deriveKey(secret, nil, []byte("send"))
 	assert.Equal(t, key1, key3)
+
+	// Different salt should produce different keys (per-session uniqueness).
+	saltA := bytes.Repeat([]byte{0xAA}, 64)
+	saltB := bytes.Repeat([]byte{0xBB}, 64)
+	assert.NotEqual(t, deriveKey(secret, saltA, []byte("send")), deriveKey(secret, saltB, []byte("send")))
 }
 
 func TestNoiseHandshake(t *testing.T) {

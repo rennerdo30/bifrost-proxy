@@ -1,11 +1,23 @@
-/* Tailwind's reset. `@tailwind base` is a v3 directive that Tailwind v4
- * silently ignores, so preflight was never emitted: the UI fell back to the
- * browser defaults (serif type, underlined links, default margins). */
-@import "tailwindcss/preflight" layer(base);
-@reference "tailwindcss";
+/* `@import "tailwindcss"` pulls in theme, preflight and utilities. The old
+ * `@tailwind base` spelling is a v3 directive that Tailwind v4 silently
+ * ignores, so preflight was never emitted and the UI fell back to the browser
+ * defaults (serif type, underlined links, default margins). */
+@import "tailwindcss";
 @config "../tailwind.config.js";
-@tailwind components;
-@tailwind utilities;
+
+/*
+ * Tailwind v4 theme tokens. These emit `--font-sans`/`--font-mono` CSS
+ * variables and wire them to `--default-font-family` so Preflight applies
+ * Inter to <html>/<body> (mirrors `fontFamily.sans`/`mono` in
+ * tailwind.config.js, which the legacy `@config` bridge does not surface
+ * as `--font-*` variables on its own).
+ */
+@theme {
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", Menlo, Monaco, monospace;
+  --default-font-family: var(--font-sans);
+  --default-mono-font-family: var(--font-mono);
+}
 
 /* ---------------------------------------------------------------------------
  * Design tokens
@@ -87,10 +99,11 @@ html.light {
 @layer base {
   html {
     @apply scroll-smooth;
+    font-family: var(--font-sans);
   }
 
   body {
-    @apply min-h-screen bg-bifrost-bg text-bifrost-text antialiased;
+    @apply min-h-screen bg-bifrost-bg text-bifrost-text font-sans antialiased;
   }
 
   h1,

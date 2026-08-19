@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
@@ -260,9 +261,14 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 		accountID = creds.AccountID
 	}
 
-	// Generate OpenVPN configuration
-	// Mullvad uses account number as username and "m" as password for OpenVPN
-	configContent := generateOpenVPNConfig(server, accountID)
+	// Generate OpenVPN configuration.
+	// Mullvad uses account number as username and "m" as password for OpenVPN.
+	// The CA certificate is required and supplied via configuration; generation
+	// fails closed if it is missing or invalid.
+	configContent, err := generateOpenVPNConfig(server, creds)
+	if err != nil {
+		return nil, err
+	}
 
 	config := &vpnprovider.OpenVPNConfig{
 		ConfigContent: configContent,
@@ -370,7 +376,22 @@ func GenerateKeyPair() (string, string, error) {
 }
 
 // generateOpenVPNConfig generates the OpenVPN configuration content.
-func generateOpenVPNConfig(server *vpnprovider.Server, _ string) string {
+//
+// The CA certificate must be supplied by the operator via configuration
+// (creds.CACert); we do NOT embed CA material in the binary. A wrong or
+// placeholder CA would either fail to parse or, worse, silently disable server
+// verification, so when no valid CA is supplied we fail closed rather than emit
+// an unusable or insecure config. The tls-auth static key is likewise
+// operator-supplied and only emitted when present.
+func generateOpenVPNConfig(server *vpnprovider.Server, creds vpnprovider.Credentials) (string, error) {
+	caCert := strings.TrimSpace(creds.CACert)
+	if caCert == "" {
+		return "", fmt.Errorf("%w: Mullvad OpenVPN requires a CA certificate to be configured (credentials.ca_cert)", vpnprovider.ErrConfigGenerationFailed)
+	}
+	if block, _ := pem.Decode([]byte(caCert)); block == nil {
+		return "", fmt.Errorf("%w: configured Mullvad CA certificate is not valid PEM", vpnprovider.ErrConfigGenerationFailed)
+	}
+
 	var sb strings.Builder
 
 	sb.WriteString("# Mullvad OpenVPN Configuration\n")
@@ -395,53 +416,37 @@ func generateOpenVPNConfig(server *vpnprovider.Server, _ string) string {
 	sb.WriteString("tls-cipher TLS-DHE-RSA-WITH-AES-256-GCM-SHA384\n")
 	sb.WriteString("auth-user-pass\n")
 	sb.WriteString("auth-nocache\n")
-	sb.WriteString("script-security 2\n")
 
-	// Add Mullvad CA certificate (this is the actual Mullvad CA)
+	// CA certificate (supplied via configuration, validated above).
 	sb.WriteString("\n<ca>\n")
-	sb.WriteString(mullvadCACert)
+	sb.WriteString(caCert)
+	if !strings.HasSuffix(caCert, "\n") {
+		sb.WriteString("\n")
+	}
 	sb.WriteString("</ca>\n")
 
-	return sb.String()
+	// Optional tls-auth static key (only emitted when operator-supplied).
+	if tlsAuth := strings.TrimSpace(creds.TLSAuthKey); tlsAuth != "" {
+		sb.WriteString("key-direction 1\n")
+		sb.WriteString("<tls-auth>\n")
+		sb.WriteString(tlsAuth)
+		if !strings.HasSuffix(tlsAuth, "\n") {
+			sb.WriteString("\n")
+		}
+		sb.WriteString("</tls-auth>\n")
+	}
+
+	return sb.String(), nil
 }
 
-// mullvadCACert is the Mullvad CA certificate for OpenVPN connections.
-const mullvadCACert = `-----BEGIN CERTIFICATE-----
-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
------END CERTIFICATE-----
-`
+// NOTE: Mullvad OpenVPN CA / tls-auth material is intentionally NOT embedded
+// here. The value previously hard-coded in this file failed x509 parsing
+// ("malformed algorithm identifier") and would have produced an .ovpn that
+// aborts at connect time. Embedding placeholder or hand-rolled crypto material
+// is unsafe. The CA certificate (and optional tls-auth key) must be supplied by
+// the operator via configuration (Credentials.CACert / Credentials.TLSAuthKey)
+// and is validated fail-closed at OpenVPN config-generation time. See
+// generateOpenVPNConfig.
 
 // GetAccountInfo retrieves account information from Mullvad.
 func (c *Client) GetAccountInfo(ctx context.Context) (*AccountInfo, error) {

@@ -493,6 +493,53 @@ func TestServerConnection_socks5Auth_Failure(t *testing.T) {
 	server.Close()
 }
 
+func TestServerConnection_Reconfigure(t *testing.T) {
+	conn := NewServerConnection(ServerConnectionConfig{
+		Address:  "old:7080",
+		Protocol: "http",
+	})
+
+	cfg, dialer := conn.snapshot()
+	assert.Equal(t, "old:7080", cfg.Address)
+	assert.Equal(t, "http", cfg.Protocol)
+
+	conn.Reconfigure(ServerConnectionConfig{
+		Address:    "new:9090",
+		Protocol:   "socks5",
+		Username:   "u",
+		Password:   "p",
+		Timeout:    45 * time.Second,
+		RetryCount: 9,
+		RetryDelay: 4 * time.Second,
+	})
+
+	cfg2, dialer2 := conn.snapshot()
+	assert.Equal(t, "new:9090", cfg2.Address)
+	assert.Equal(t, "socks5", cfg2.Protocol)
+	assert.Equal(t, "u", cfg2.Username)
+	assert.Equal(t, "p", cfg2.Password)
+	assert.Equal(t, 45*time.Second, cfg2.Timeout)
+	assert.Equal(t, 9, cfg2.RetryCount)
+	assert.Equal(t, 4*time.Second, cfg2.RetryDelay)
+
+	// The dialer is rebuilt so its timeout tracks the new config.
+	assert.NotSame(t, dialer, dialer2)
+	assert.Equal(t, 45*time.Second, dialer2.Timeout)
+}
+
+func TestServerConnection_Reconfigure_AppliesDefaults(t *testing.T) {
+	conn := NewServerConnection(ServerConnectionConfig{Address: "a:1"})
+
+	conn.Reconfigure(ServerConnectionConfig{Address: "b:2"})
+
+	cfg, _ := conn.snapshot()
+	assert.Equal(t, "b:2", cfg.Address)
+	assert.Equal(t, "http", cfg.Protocol)        // default
+	assert.Equal(t, 30*time.Second, cfg.Timeout) // default
+	assert.Equal(t, 3, cfg.RetryCount)           // default
+	assert.Equal(t, time.Second, cfg.RetryDelay) // default
+}
+
 func TestServerConnectionConfig_Struct(t *testing.T) {
 	cfg := ServerConnectionConfig{
 		Address:    "localhost:7080",

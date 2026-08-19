@@ -57,6 +57,13 @@ type ProtonVPNConfig struct {
 	Features        []string      `yaml:"features,omitempty"`         // Required features (e.g., "p2p", "streaming", "secure_core")
 	SecureCore      bool          `yaml:"secure_core,omitempty"`      // Use Secure Core servers (multi-hop)
 
+	// OpenVPN TLS material. CACert is the PEM-encoded CA certificate used to
+	// verify the ProtonVPN OpenVPN server; it is REQUIRED for the OpenVPN
+	// protocol (config generation fails closed without it). No CA is embedded in
+	// the binary. TLSAuthKey is the optional OpenVPN tls-auth static key.
+	CACert     string `yaml:"ca_cert,omitempty"`      // OpenVPN CA certificate (PEM)
+	TLSAuthKey string `yaml:"tls_auth_key,omitempty"` // OpenVPN tls-auth static key
+
 	// LeakProofRouting requests Linux policy-routing based egress isolation on
 	// OpenVPN delegates so traffic cannot leak outside the tunnel. It requires
 	// root, is Linux-only, and is OFF by default. WireGuard delegates use a
@@ -197,8 +204,10 @@ func (b *ProtonVPNBackend) Start(ctx context.Context) error {
 
 	// Create credentials
 	creds := vpnprovider.Credentials{
-		Username: b.config.Username,
-		Password: b.config.Password,
+		Username:   b.config.Username,
+		Password:   b.config.Password,
+		CACert:     b.config.CACert,
+		TLSAuthKey: b.config.TLSAuthKey,
 	}
 
 	// Create the delegate backend (OpenVPN or WireGuard, per config.Protocol)
@@ -361,8 +370,10 @@ func (b *ProtonVPNBackend) checkAndRefreshServer() {
 // or starting the new delegate fails, the current delegate is left untouched.
 func (b *ProtonVPNBackend) swapDelegate(ctx context.Context, server *vpnprovider.Server) error {
 	creds := vpnprovider.Credentials{
-		Username: b.config.Username,
-		Password: b.config.Password,
+		Username:   b.config.Username,
+		Password:   b.config.Password,
+		CACert:     b.config.CACert,
+		TLSAuthKey: b.config.TLSAuthKey,
 	}
 
 	newDelegate, err := b.buildDelegate(ctx, server, creds)

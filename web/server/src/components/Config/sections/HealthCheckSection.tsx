@@ -112,6 +112,22 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
                 />
               </div>
             )}
+            <ValidatedInput
+              label="Healthy Threshold"
+              type="number"
+              value={config.healthy_threshold ?? 0}
+              onChange={(e) => update('healthy_threshold', parseInt(e.target.value) || 0)}
+              placeholder="1"
+              helpText="Consecutive successes before marking healthy (0 = 1)"
+            />
+            <ValidatedInput
+              label="Unhealthy Threshold"
+              type="number"
+              value={config.unhealthy_threshold ?? 0}
+              onChange={(e) => update('unhealthy_threshold', parseInt(e.target.value) || 0)}
+              placeholder="1"
+              helpText="Consecutive failures before marking unhealthy (0 = 1)"
+            />
           </div>
         )}
       </div>

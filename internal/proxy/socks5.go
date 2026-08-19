@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/accesslog"
@@ -74,6 +75,7 @@ type SOCKS5Handler struct {
 	dialNetwork          string
 	onConnect            func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	onError              func(ctx context.Context, conn net.Conn, host string, err error)
+	recordMetrics        func(protocol, method, status, backend string, duration time.Duration, sent, recv int64)
 }
 
 // SOCKS5HandlerConfig configures the SOCKS5 handler.
@@ -92,6 +94,12 @@ type SOCKS5HandlerConfig struct {
 	DialNetwork string
 	OnConnect   func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	OnError     func(ctx context.Context, conn net.Conn, host string, err error)
+	// RecordMetrics, when set, receives per-request metrics after each SOCKS5
+	// request completes (protocol, method, status, backend, duration, bytes
+	// sent/received), mirroring the HTTP handler so SOCKS5 traffic appears in the
+	// request/size Prometheus series. The status is the SOCKS5 reply code as a
+	// string. Leave nil to record nothing.
+	RecordMetrics func(protocol, method, status, backend string, duration time.Duration, sent, recv int64)
 }
 
 // NewSOCKS5Handler creates a new SOCKS5 proxy handler.
@@ -115,6 +123,7 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 		dialNetwork:          cfg.DialNetwork,
 		onConnect:            cfg.OnConnect,
 		onError:              cfg.OnError,
+		recordMetrics:        cfg.RecordMetrics,
 	}
 }
 
@@ -140,7 +149,12 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 	}
 	defer func() {
 		entry.Username = util.GetUsername(ctx)
-		entry.Backend = util.GetBackend(ctx)
+		// The backend is selected on a request-scoped ctx inside handleConnect and
+		// recorded directly on entry; only fall back to the ctx value if it was not
+		// set (it does not propagate back to this ctx variable).
+		if entry.Backend == "" {
+			entry.Backend = util.GetBackend(ctx)
+		}
 		entry.RequestID = util.GetRequestID(ctx)
 		entry.Duration = time.Since(startTime)
 		if entry.BytesReceived == 0 {
@@ -154,6 +168,13 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 		}
 		if h.accessLogger != nil {
 			_ = h.accessLogger.Log(*entry) //nolint:errcheck // Best effort access logging
+		}
+		if h.recordMetrics != nil {
+			method := entry.Method
+			if method == "" {
+				method = "CONNECT"
+			}
+			h.recordMetrics("socks5", method, strconv.Itoa(entry.StatusCode), entry.Backend, entry.Duration, entry.BytesSent, entry.BytesReceived)
 		}
 	}()
 
@@ -470,6 +491,9 @@ func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target
 	}
 
 	ctx = util.WithBackend(ctx, be.Name())
+	if entry != nil {
+		entry.Backend = be.Name()
+	}
 
 	// Dial the target through the backend
 	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, target, h.dialTimeout)
