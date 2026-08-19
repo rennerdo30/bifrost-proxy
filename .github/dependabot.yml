@@ -1,41 +1,62 @@
+# Standardized Dependabot configuration.
+#
+# Minor and patch updates for each ecosystem are grouped into a single weekly
+# pull request. This keeps the review queue small and — importantly — makes it
+# impossible to split version-locked pairs (react/react-dom, @mui/material and
+# @mui/icons-material, next and eslint-config-next) across separate PRs, which
+# has broken main before.
+#
+# Major updates are intentionally NOT grouped: they arrive as individual pull
+# requests so each one gets evaluated on its own.
 version: 2
+
 updates:
-  # Go modules
   - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "deps(go):"
-
-  # npm dependencies for server web UI
-  - package-ecosystem: "npm"
-    directory: "/web/server"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "deps(npm):"
-
-  # npm dependencies for client web UI
-  - package-ecosystem: "npm"
-    directory: "/web/client"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "deps(npm):"
-
-  # GitHub Actions
-  - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/desktop"
     schedule:
       interval: "weekly"
       day: "monday"
     open-pull-requests-limit: 5
     commit-message:
+      prefix: "deps(go):"
+    groups:
+      go-minor-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "npm"
+    directories:
+      - "/web/client"
+      - "/web/server"
+      - "/desktop/frontend"
+      - "/mobile"
+      - "/docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(npm):"
+      prefix-development: "deps(npm-dev):"
+    groups:
+      npm-minor-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 3
+    commit-message:
       prefix: "deps(actions):"
+    groups:
+      actions-minor-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
