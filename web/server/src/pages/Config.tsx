@@ -1,74 +1,108 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as yaml from 'js-yaml'
 import { api } from '../api/client'
 import { ConfigEditor } from '../components/Config/ConfigEditor'
+import {
+  CONFIG_SECTIONS,
+  groupedSections,
+  sectionLabel,
+  sectionMatchesQuery,
+  type ConfigSectionKey,
+} from '../components/Config/sectionMeta'
 import { useToast } from '../components/Toast'
 import { useUnsavedChanges } from '../hooks/useUnsavedChanges'
 import type { ServerConfig, ConfigValidateResponse } from '../api/types'
 
-// Sections definition for sidebar navigation
-const sections = [
-  { id: 'section-server-settings', label: 'Server', keywords: ['http', 'socks5', 'listen', 'tls', 'timeout'] },
-  { id: 'section-backends', label: 'Backends', keywords: ['backend', 'wireguard', 'openvpn', 'proxy', 'vpn'] },
-  { id: 'section-routes', label: 'Routes', keywords: ['route', 'domain', 'load balance'] },
-  { id: 'section-authentication', label: 'Authentication', keywords: ['auth', 'native', 'ldap', 'oauth', 'user', 'password'] },
-  { id: 'section-rate-limiting', label: 'Rate Limit', keywords: ['rate', 'limit', 'throttle', 'bandwidth'] },
-  { id: 'section-access-control', label: 'Access Control', keywords: ['whitelist', 'blacklist', 'ip', 'acl'] },
-  { id: 'section-access-logging', label: 'Access Log', keywords: ['access', 'log', 'format', 'apache'] },
-  { id: 'section-prometheus-metrics', label: 'Metrics', keywords: ['prometheus', 'metrics', 'monitoring'] },
-  { id: 'section-application-logging', label: 'Logging', keywords: ['log', 'level', 'debug', 'format'] },
-  { id: 'section-web-ui', label: 'Web UI', keywords: ['web', 'ui', 'dashboard'] },
-  { id: 'section-rest-api', label: 'API', keywords: ['api', 'rest', 'token', 'websocket'] },
-  { id: 'section-health-checks', label: 'Health Check', keywords: ['health', 'check', 'tcp', 'ping'] },
-  { id: 'section-auto-update', label: 'Auto Update', keywords: ['update', 'auto', 'channel'] },
-  { id: 'section-cache', label: 'Cache', keywords: ['cache', 'memory', 'disk', 'ttl', 'evict'] },
-  { id: 'section-network', label: 'Network', keywords: ['network', 'ipv6', 'keepalive', 'dial', 'connections'] },
-  { id: 'section-session-storage', label: 'Session', keywords: ['session', 'redis', 'store', 'duration'] },
-  { id: 'section-https-interception-(mitm)', label: 'MITM', keywords: ['mitm', 'https', 'interception', 'ca', 'debug'] },
-]
+/** Maximum size of an imported config file. */
+const MAX_IMPORT_FILE_SIZE = 1024 * 1024
 
-// Hot-reloadable section IDs (these don't require restart)
-const hotReloadSections = new Set([
-  'section-routes', 'section-rate-limiting', 'section-access-control',
-  'section-access-logging', 'section-health-checks',
-])
+/** Delay before wiring the scroll observer, so sections have mounted. */
+const OBSERVER_ATTACH_DELAY_MS = 300
+
+/** Viewport band that counts as "the section you are reading". */
+const OBSERVER_ROOT_MARGIN = '-80px 0px -60% 0px'
+
+const EXPORT_FILENAME = 'bifrost-server-config.yaml'
+
+const YAML_DUMP_OPTIONS = { indent: 2, lineWidth: 120, noRefs: true } as const
+
+/** Renders a comma-separated list of section labels for a toast message. */
+function labelList(keys: string[]): string {
+  return keys.map(sectionLabel).join(', ')
+}
 
 export function Config() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
-  const [activeSection, setActiveSection] = useState<string | null>(null)
+  const [activeSection, setActiveSection] = useState<ConfigSectionKey | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
+  const [revealSection, setRevealSection] = useState<ConfigSectionKey | null>(null)
+  // Bumped when the config is replaced wholesale (import), to discard the
+  // editor's in-progress edits. Without this the editor keeps the pre-import
+  // config, immediately reports every section as modified, and saving would
+  // silently revert the import.
+  const [editorResetKey, setEditorResetKey] = useState(0)
   const observerRef = useRef<IntersectionObserver | null>(null)
 
-  const { data: config, isLoading } = useQuery({
+  const { data: config, isLoading, isError, refetch } = useQuery({
     queryKey: ['config'],
     queryFn: api.getFullConfig,
   })
+
+  // Which sections the running server can apply without a restart. Fetched from
+  // the server rather than hard-coded client-side, so the badges and the
+  // post-save summary cannot contradict what the server actually does.
+  const { data: configMeta } = useQuery({
+    queryKey: ['config', 'meta'],
+    queryFn: api.getConfigMeta,
+    staleTime: Infinity,
+  })
+
+  const hotReloadableSections = useMemo(() => {
+    if (!configMeta) return undefined
+    return configMeta.reduce<Record<string, boolean>>((acc, entry) => {
+      acc[entry.section] = entry.hot_reloadable
+      return acc
+    }, {})
+  }, [configMeta])
+
+  const isHotReloadable = useCallback(
+    (section: string) => {
+      const fromServer = hotReloadableSections?.[section]
+      if (typeof fromServer === 'boolean') return fromServer
+      return CONFIG_SECTIONS.find((s) => s.key === section)?.hotReloadable ?? false
+    },
+    [hotReloadableSections]
+  )
 
   // Track unsaved changes for navigation warning
   useUnsavedChanges(hasChanges)
 
   // IntersectionObserver for active section tracking
   useEffect(() => {
+    if (isLoading) return
+
+    const byDomId = new Map(CONFIG_SECTIONS.map((s) => [s.domId, s.key]))
     observerRef.current = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            setActiveSection(entry.target.id)
+            const key = byDomId.get(entry.target.id)
+            if (key) setActiveSection(key)
           }
         }
       },
-      { rootMargin: '-80px 0px -60% 0px', threshold: 0.1 }
+      { rootMargin: OBSERVER_ROOT_MARGIN, threshold: 0.1 }
     )
 
     const timer = setTimeout(() => {
-      for (const section of sections) {
-        const el = document.getElementById(section.id)
+      for (const section of CONFIG_SECTIONS) {
+        const el = document.getElementById(section.domId)
         if (el) observerRef.current?.observe(el)
       }
-    }, 500)
+    }, OBSERVER_ATTACH_DELAY_MS)
 
     return () => {
       clearTimeout(timer)
@@ -76,20 +110,22 @@ export function Config() {
     }
   }, [isLoading])
 
-  const scrollToSection = (id: string) => {
-    const el = document.getElementById(id)
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }
+  // Ask the editor to expand + scroll to the section, so a collapsed panel is
+  // actually revealed rather than scrolled to as a one-line header.
+  const goToSection = useCallback((key: ConfigSectionKey) => {
+    setActiveSection(key)
+    setRevealSection(key)
+  }, [])
 
-  // Filter sections by search query
-  const filteredSections = searchQuery
-    ? sections.filter((s) => {
-        const q = searchQuery.toLowerCase()
-        return s.label.toLowerCase().includes(q) || s.keywords.some((k) => k.includes(q))
-      })
-    : sections
+  // Stable identity: this is a dependency of the editor's reveal effect, so an
+  // inline arrow would let any unrelated re-render (e.g. the scroll observer
+  // updating the active section) cancel and reschedule the pending scroll.
+  const handleSectionRevealed = useCallback(() => setRevealSection(null), [])
+
+  const filteredGroups = useMemo(
+    () => groupedSections(CONFIG_SECTIONS.filter((s) => sectionMatchesQuery(s, searchQuery))),
+    [searchQuery]
+  )
 
   const saveMutation = useMutation({
     mutationFn: async ({ config, backup }: { config: ServerConfig; backup: boolean }) => {
@@ -99,31 +135,36 @@ export function Config() {
       queryClient.invalidateQueries({ queryKey: ['config'] })
       setHasChanges(false)
 
-      if (data.changed_sections && data.changed_sections.length > 0) {
-        const hotReloaded = data.changed_sections.filter((s) =>
-          hotReloadSections.has(`section-${s.toLowerCase().replace(/\s+/g, '-')}`)
-        )
-        const needsRestart = data.changed_sections.filter((s) =>
-          !hotReloadSections.has(`section-${s.toLowerCase().replace(/\s+/g, '-')}`)
-        )
+      // Prefer the server's own split. Older servers only send
+      // changed_sections + requires_restart, so fall back to deriving it from
+      // the section metadata the same server exposes.
+      const changed = data.changed_sections ?? []
+      const hotReloaded = data.hot_reloaded_sections ?? changed.filter(isHotReloadable)
+      const needsRestart =
+        data.restart_required_sections ?? changed.filter((s) => !isHotReloadable(s))
 
-        if (needsRestart.length > 0 && hotReloaded.length > 0) {
-          showToast(
-            `Saved. Hot-reloaded: ${hotReloaded.join(', ')}. Restart needed for: ${needsRestart.join(', ')}.`,
-            'warning'
-          )
-        } else if (needsRestart.length > 0) {
-          showToast(
-            `Configuration saved. Restart required for: ${needsRestart.join(', ')}.`,
-            'warning'
-          )
-        } else {
-          showToast('Configuration saved and applied.', 'success')
+      if (data.errors && data.errors.length > 0) {
+        for (const err of data.errors) {
+          const prefix = err.section && err.section !== 'general' ? `${err.section}: ` : ''
+          showToast(`${prefix}${err.message}`, 'error')
         }
-      } else if (data.requires_restart) {
-        showToast('Configuration saved. Server restart required for changes to take effect.', 'warning')
+        return
+      }
+
+      if (changed.length === 0) {
+        showToast('Configuration saved. No changes were detected.', 'info')
+        return
+      }
+
+      if (needsRestart.length > 0 && hotReloaded.length > 0) {
+        showToast(
+          `Saved. Applied now: ${labelList(hotReloaded)}. Restart required for: ${labelList(needsRestart)}.`,
+          'warning'
+        )
+      } else if (needsRestart.length > 0) {
+        showToast(`Configuration saved. Restart required for: ${labelList(needsRestart)}.`, 'warning')
       } else {
-        showToast('Configuration saved and reloaded successfully.', 'success')
+        showToast(`Configuration saved and applied: ${labelList(hotReloaded)}.`, 'success')
       }
     },
     onError: (error) => {
@@ -135,7 +176,7 @@ export function Config() {
     mutationFn: api.reloadConfig,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['config'] })
-      showToast('Configuration reloaded successfully.', 'success')
+      showToast('Configuration reloaded from disk.', 'success')
     },
     onError: (error) => {
       showToast(`Failed to reload configuration: ${error}`, 'error')
@@ -143,7 +184,6 @@ export function Config() {
   })
 
   const handleSave = async (config: ServerConfig, backup: boolean) => {
-    setHasChanges(true) // Mark as changed during save for tracking
     await saveMutation.mutateAsync({ config, backup })
   }
 
@@ -158,8 +198,10 @@ export function Config() {
         // The server returns structured {section, field, message} errors; format
         // them into a readable string rather than rendering "[object Object]".
         result.errors.forEach((err) => {
-          const prefix = err.section && err.section !== 'general' ? `${err.section}: ` : ''
-          showToast(`Validation: ${prefix}${err.message}`, 'error')
+          const scope = [err.section && err.section !== 'general' ? err.section : null, err.field]
+            .filter(Boolean)
+            .join('.')
+          showToast(scope ? `${scope}: ${err.message}` : err.message, 'error')
         })
       }
       return result
@@ -172,12 +214,12 @@ export function Config() {
   const exportConfig = () => {
     if (!config) return
     try {
-      const yamlStr = yaml.dump(config, { indent: 2, lineWidth: 120, noRefs: true })
+      const yamlStr = yaml.dump(config, YAML_DUMP_OPTIONS)
       const blob = new Blob([yamlStr], { type: 'application/x-yaml' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = 'bifrost-server-config.yaml'
+      a.download = EXPORT_FILENAME
       a.click()
       URL.revokeObjectURL(url)
       showToast('Configuration exported as YAML.', 'success')
@@ -195,8 +237,7 @@ export function Config() {
       const file = (e.target as HTMLInputElement).files?.[0]
       if (!file) return
 
-      const MAX_FILE_SIZE = 1024 * 1024
-      if (file.size > MAX_FILE_SIZE) {
+      if (file.size > MAX_IMPORT_FILE_SIZE) {
         showToast('Configuration file is too large. Maximum size is 1MB.', 'error')
         return
       }
@@ -216,9 +257,10 @@ export function Config() {
           return
         }
 
-        // Save the imported config
         await saveMutation.mutateAsync({ config: parsed, backup: true })
-        showToast('Configuration imported and saved.', 'success')
+        // Drop any in-progress edits so the editor shows the imported config
+        // rather than offering to save the previous one over it.
+        setEditorResetKey((key) => key + 1)
       } catch (err) {
         showToast(`Failed to import: ${err instanceof Error ? err.message : 'Invalid file'}`, 'error')
       }
@@ -226,23 +268,64 @@ export function Config() {
     input.click()
   }
 
+  const navList = (
+    <nav className="space-y-3" aria-label="Configuration sections">
+      {filteredGroups.map(({ group, sections }) => (
+        <div key={group}>
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-bifrost-muted">
+            {group}
+          </p>
+          <div className="space-y-0.5">
+            {sections.map((section) => (
+              <button
+                key={section.key}
+                onClick={() => goToSection(section.key)}
+                aria-current={activeSection === section.key ? 'true' : undefined}
+                className={`section-nav-item ${activeSection === section.key ? 'section-nav-item-active' : ''}`}
+              >
+                {section.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {filteredGroups.length === 0 && (
+        <p className="px-3 py-4 text-sm text-bifrost-muted">
+          No sections match “{searchQuery}”.
+        </p>
+      )}
+    </nav>
+  )
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h2 className="page-title">Configuration</h2>
-          <p className="page-subtitle">View and edit server configuration</p>
+          <p className="page-subtitle">
+            Edit the server configuration. Each section shows whether saving applies it
+            immediately or needs a restart.
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportConfig} className="btn btn-secondary text-sm" title="Export config as YAML">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <button
+            onClick={exportConfig}
+            disabled={!config}
+            className="btn btn-secondary text-sm"
+            aria-label="Export configuration as YAML"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             Export
           </button>
-          <button onClick={importConfig} className="btn btn-secondary text-sm" title="Import config from YAML/JSON">
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <button
+            onClick={importConfig}
+            className="btn btn-secondary text-sm"
+            aria-label="Import configuration from a YAML or JSON file"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
             </svg>
             Import
@@ -250,50 +333,65 @@ export function Config() {
         </div>
       </div>
 
+      {isError && (
+        <div
+          className="card border-bifrost-error/40 flex flex-wrap items-center justify-between gap-3"
+          role="alert"
+        >
+          <p className="text-sm text-bifrost-error">
+            Could not load the server configuration.
+          </p>
+          <button onClick={() => refetch()} className="btn btn-secondary text-sm">Retry</button>
+        </div>
+      )}
+
       {/* Two-Column Layout: Sidebar + Content */}
-      <div className="flex gap-6">
+      <div className="flex flex-col lg:flex-row gap-6">
         {/* Sidebar Navigation */}
-        <aside className="hidden lg:block w-52 flex-shrink-0">
-          <div className="sticky top-4 space-y-2">
-            {/* Search */}
+        <aside className="hidden lg:block w-56 flex-shrink-0">
+          <div className="sticky top-4 space-y-3">
             <div className="relative">
-              <svg className="absolute left-3 top-2.5 w-4 h-4 text-bifrost-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg
+                className="absolute left-3 top-2.5 w-4 h-4 text-bifrost-muted"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                aria-hidden="true"
+              >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
+              <label className="sr-only" htmlFor="config-section-filter">Filter configuration sections</label>
               <input
-                type="text"
+                id="config-section-filter"
+                type="search"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter sections..."
                 className="w-full pl-9 pr-3 py-2 text-sm bg-bifrost-bg border border-bifrost-border rounded-lg text-bifrost-heading placeholder-bifrost-muted focus:outline-none focus:ring-1 focus:ring-bifrost-accent/50"
               />
             </div>
-
-            {/* Section Links */}
-            <nav className="space-y-0.5">
-              {filteredSections.map((section) => (
-                <button
-                  key={section.id}
-                  onClick={() => scrollToSection(section.id)}
-                  className={`section-nav-item ${activeSection === section.id ? 'section-nav-item-active' : ''}`}
-                >
-                  {section.label}
-                </button>
-              ))}
-            </nav>
+            {navList}
           </div>
         </aside>
 
         {/* Mobile Section Dropdown */}
-        <div className="lg:hidden w-full mb-4">
+        <div className="lg:hidden w-full">
+          <label className="sr-only" htmlFor="config-section-jump">Jump to configuration section</label>
           <select
+            id="config-section-jump"
             value={activeSection || ''}
-            onChange={(e) => scrollToSection(e.target.value)}
+            onChange={(e) => {
+              if (e.target.value) goToSection(e.target.value as ConfigSectionKey)
+            }}
             className="select text-sm"
           >
             <option value="">Jump to section...</option>
-            {sections.map((section) => (
-              <option key={section.id} value={section.id}>{section.label}</option>
+            {groupedSections().map(({ group, sections }) => (
+              <optgroup key={group} label={group}>
+                {sections.map((section) => (
+                  <option key={section.key} value={section.key}>{section.label}</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
@@ -306,6 +404,11 @@ export function Config() {
             onSave={handleSave}
             onReload={handleReload}
             onValidate={handleValidate}
+            hotReloadableSections={hotReloadableSections}
+            onDirtyChange={setHasChanges}
+            revealSection={revealSection}
+            onSectionRevealed={handleSectionRevealed}
+            resetKey={editorResetKey}
           />
         </div>
       </div>

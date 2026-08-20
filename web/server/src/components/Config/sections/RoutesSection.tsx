@@ -52,7 +52,7 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
   const sortedRoutes = [...routes].sort((a, b) => (b.priority || 0) - (a.priority || 0))
 
   return (
-    <Section title="Routes" badge="hot-reload">
+    <Section sectionKey="routes" title="Routes">
       <div className="space-y-4">
         {routes.length === 0 ? (
           <div className="text-center py-8 text-bifrost-muted">

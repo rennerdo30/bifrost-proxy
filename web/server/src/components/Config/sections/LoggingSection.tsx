@@ -13,7 +13,7 @@ export function LoggingSection({ config, onChange }: LoggingSectionProps) {
   }
 
   return (
-    <Section title="Application Logging" badge="restart-required">
+    <Section sectionKey="logging" title="Application Logging">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <ValidatedSelect
           label="Log Level"

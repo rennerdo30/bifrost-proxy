@@ -66,6 +66,20 @@ backends:
 | `timeout` | duration | `5s` | Timeout for each health check |
 | `target` | string | - | Target address to check (host:port) |
 | `path` | string | `/health` | HTTP path for HTTP health checks |
+| `scheme` | string | `http` | URL scheme for HTTP health checks: `http` or `https`. Only valid when `type: http` |
+| `insecure_skip_verify` | bool | `false` | Skip TLS certificate verification. Requires `scheme: https` |
+| `healthy_threshold` | int | `1` | Consecutive successful checks before a backend is marked healthy |
+| `unhealthy_threshold` | int | `1` | Consecutive failed checks before a backend is marked unhealthy |
+
+All of these are editable from the server dashboard under
+**Configuration → Global Health Checks** (global defaults) and per backend in the
+backend editor.
+
+:::caution[scheme and insecure_skip_verify are validated]
+The server rejects `scheme` or `insecure_skip_verify` on a `tcp`/`ping` check,
+and rejects `insecure_skip_verify` without `scheme: https`, rather than silently
+ignoring them. This applies both at startup and when saving from the dashboard.
+:::
 
 ## Health Check Types
 
@@ -113,10 +127,40 @@ backends:
 ```
 
 **How it works:**
-1. Sends HTTP GET request to `http://{target}{path}`
+1. Sends HTTP GET request to `{scheme}://{target}{path}` (`scheme` defaults to `http`)
 2. Status codes 200-399 are considered healthy
 3. Status codes 400+ are considered unhealthy
 4. Connection failures are considered unhealthy
+
+#### HTTPS health checks
+
+Set `scheme: https` to probe a backend that terminates TLS. Certificates are
+verified against the system trust store by default, so a self-signed or expired
+certificate marks the backend unhealthy. For a backend you control on a trusted
+network, add `insecure_skip_verify: true` to accept it:
+
+```yaml
+backends:
+  - name: internal-api
+    type: http_proxy
+    config:
+      address: "api.internal:8443"
+    health_check:
+      type: http
+      scheme: https
+      insecure_skip_verify: true   # self-signed internal certificate
+      interval: "10s"
+      timeout: "5s"
+      target: "api.internal:8443"
+      path: "/healthz"
+      healthy_threshold: 2         # require two good checks before recovering
+      unhealthy_threshold: 3       # tolerate two transient failures
+```
+
+`insecure_skip_verify` disables authentication of the backend for the health
+probe only — proxied traffic is unaffected — but it means the probe can be
+satisfied by any host that can answer on that address. Prefer installing the
+internal CA on the proxy host where you can.
 
 **Response validation:**
 - `2xx` → Healthy
@@ -322,6 +366,8 @@ health_check:
   type: tcp
   interval: "30s"
   timeout: "5s"
+  healthy_threshold: 1
+  unhealthy_threshold: 1
 
 backends:
   # Uses global settings

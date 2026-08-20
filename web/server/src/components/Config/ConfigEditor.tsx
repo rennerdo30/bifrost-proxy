@@ -3,6 +3,12 @@ import * as yaml from 'js-yaml'
 import type { ServerConfig, ConfigValidateResponse } from '../../api/types'
 import { deepEqual } from '../../utils/deepEqual'
 import { useKeyboardShortcuts } from '../../hooks/useKeyboardShortcuts'
+import { ConfigSectionProvider } from './ConfigSectionContext'
+import {
+  CONFIG_SECTIONS,
+  sectionLabel,
+  type ConfigSectionKey,
+} from './sectionMeta'
 import { ServerSection } from './sections/ServerSection'
 import { BackendsSection } from './sections/BackendsSection'
 import { RoutesSection } from './sections/RoutesSection'
@@ -27,6 +33,22 @@ interface ConfigEditorProps {
   onSave: (config: ServerConfig, backup: boolean) => Promise<void>
   onReload: () => Promise<void>
   onValidate?: (config: ServerConfig) => Promise<ConfigValidateResponse>
+  /**
+   * Server-reported hot-reloadability per section (GET /config/meta). When a
+   * section is absent the local fallback in sectionMeta is used.
+   */
+  hotReloadableSections?: Record<string, boolean>
+  /** Notifies the page of unsaved edits so it can guard navigation. */
+  onDirtyChange?: (dirty: boolean) => void
+  /** Section the sidebar asked to reveal; expanded and scrolled into view. */
+  revealSection?: ConfigSectionKey | null
+  onSectionRevealed?: () => void
+  /**
+   * Changing this discards in-progress edits and re-adopts the incoming config.
+   * Used when the config is replaced wholesale (import), where keeping the old
+   * edits would mean a subsequent save reverts the replacement.
+   */
+  resetKey?: number
 }
 
 // Default config values for initialization
@@ -124,7 +146,26 @@ const defaultConfig: ServerConfig = {
   cache: defaultCache,
 }
 
-export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }: ConfigEditorProps) {
+/** Sections opened by default so the editor is not a wall of collapsed rows. */
+const INITIALLY_OPEN_SECTIONS: ConfigSectionKey[] = ['server', 'backends', 'routes']
+
+const YAML_DUMP_OPTIONS = { indent: 2, lineWidth: 120, noRefs: true } as const
+
+/** Height of the raw-YAML textarea. */
+const RAW_EDITOR_CLASS = 'w-full h-[600px]'
+
+export function ConfigEditor({
+  config,
+  isLoading,
+  onSave,
+  onReload,
+  onValidate,
+  hotReloadableSections,
+  onDirtyChange,
+  revealSection,
+  onSectionRevealed,
+  resetKey = 0,
+}: ConfigEditorProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [isValidating, setIsValidating] = useState(false)
   const [isReloading, setIsReloading] = useState(false)
@@ -133,6 +174,9 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
   const [editorMode, setEditorMode] = useState<'visual' | 'raw'>('visual')
   const [rawYaml, setRawYaml] = useState('')
   const [rawError, setRawError] = useState<string | null>(null)
+  const [openSections, setOpenSections] = useState<Set<ConfigSectionKey>>(
+    () => new Set(INITIALLY_OPEN_SECTIONS)
+  )
 
   // Initialize editedConfig when config loads
   useEffect(() => {
@@ -142,13 +186,114 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config])
 
+  // Discard in-progress edits when the caller replaces the config wholesale.
+  // The initialiser above then re-adopts the incoming config.
+  useEffect(() => {
+    if (resetKey > 0) setEditedConfig(null)
+  }, [resetKey])
+
   const currentConfig = editedConfig || config || defaultConfig
 
-  // Fix: proper structural comparison instead of just !!editedConfig
+  /**
+   * The unedited config, normalised the same way `editedConfig` is initialised.
+   * Comparing against the raw server response instead would report a change for
+   * any section the server omits but `defaultConfig` supplies, marking the
+   * editor dirty before the operator has touched anything.
+   */
+  const baselineConfig = useMemo(
+    () => (config ? { ...defaultConfig, ...config } : null),
+    [config]
+  )
+
+  // Proper structural comparison instead of just !!editedConfig
   const hasChanges = useMemo(() => {
-    if (!editedConfig || !config) return false
-    return !deepEqual(editedConfig, config)
-  }, [editedConfig, config])
+    if (!editedConfig || !baselineConfig) return false
+    return !deepEqual(editedConfig, baselineConfig)
+  }, [editedConfig, baselineConfig])
+
+  // Report unsaved edits upward so the page can warn before navigation. This
+  // used to be tracked only while a save was in flight, which meant the guard
+  // never fired for the case it exists for.
+  useEffect(() => {
+    onDirtyChange?.(hasChanges)
+  }, [hasChanges, onDirtyChange])
+
+  /**
+   * Which sections the operator has actually edited. Mirrors the server's
+   * per-section comparison so the pre-save summary matches what the save
+   * response will report.
+   */
+  const dirtySections = useMemo(() => {
+    const dirty = new Set<ConfigSectionKey>()
+    if (!editedConfig || !baselineConfig) return dirty
+    for (const section of CONFIG_SECTIONS) {
+      const before: unknown = baselineConfig[section.key]
+      const after: unknown = editedConfig[section.key]
+      // Treat "absent" and "absent" as equal so an optional section neither
+      // side sets is never reported as an edit.
+      if (before === undefined && after === undefined) continue
+      if (!deepEqual(before ?? null, after ?? null)) dirty.add(section.key)
+    }
+    return dirty
+  }, [editedConfig, baselineConfig])
+
+  const isHotReloadable = useCallback(
+    (key: ConfigSectionKey) => {
+      const fromServer = hotReloadableSections?.[key]
+      if (typeof fromServer === 'boolean') return fromServer
+      return CONFIG_SECTIONS.find((s) => s.key === key)?.hotReloadable ?? false
+    },
+    [hotReloadableSections]
+  )
+
+  const { pendingHotReload, pendingRestart } = useMemo(() => {
+    const hot: ConfigSectionKey[] = []
+    const restart: ConfigSectionKey[] = []
+    for (const section of CONFIG_SECTIONS) {
+      if (!dirtySections.has(section.key)) continue
+      if (isHotReloadable(section.key)) hot.push(section.key)
+      else restart.push(section.key)
+    }
+    return { pendingHotReload: hot, pendingRestart: restart }
+  }, [dirtySections, isHotReloadable])
+
+  const toggleSection = useCallback((key: ConfigSectionKey) => {
+    setOpenSections((prev) => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }, [])
+
+  const openSection = useCallback((key: ConfigSectionKey) => {
+    setOpenSections((prev) => (prev.has(key) ? prev : new Set(prev).add(key)))
+  }, [])
+
+  // Reveal a section requested from the sidebar: leave raw mode, expand the
+  // panel, then scroll. Expanding first means the anchor is where the operator
+  // expects rather than a collapsed one-line header.
+  useEffect(() => {
+    if (!revealSection) return
+    setEditorMode('visual')
+    openSection(revealSection)
+    const meta = CONFIG_SECTIONS.find((s) => s.key === revealSection)
+    const frame = requestAnimationFrame(() => {
+      if (meta) document.getElementById(meta.domId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      onSectionRevealed?.()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [revealSection, openSection, onSectionRevealed])
+
+  const sectionState = useMemo(
+    () => ({
+      hotReloadable: isHotReloadable,
+      dirtySections,
+      openSections,
+      toggleSection,
+    }),
+    [isHotReloadable, dirtySections, openSections, toggleSection]
+  )
 
   const handleSave = useCallback(async () => {
     if (!currentConfig) return
@@ -189,6 +334,14 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
     }
   }
 
+  const handleDiscard = () => {
+    setEditedConfig(baselineConfig)
+    setRawError(null)
+    if (editorMode === 'raw' && baselineConfig) {
+      setRawYaml(yaml.dump(baselineConfig, YAML_DUMP_OPTIONS))
+    }
+  }
+
   const updateConfig = (partial: Partial<ServerConfig>) => {
     setEditedConfig((prev) => ({
       ...(prev || config || defaultConfig),
@@ -205,7 +358,7 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
   // Toggle to raw YAML mode
   const switchToRawMode = () => {
     try {
-      setRawYaml(yaml.dump(currentConfig, { indent: 2, lineWidth: 120, noRefs: true }))
+      setRawYaml(yaml.dump(currentConfig, YAML_DUMP_OPTIONS))
       setRawError(null)
       setEditorMode('raw')
     } catch {
@@ -245,9 +398,13 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
     }
   }
 
+  const expandAll = () => setOpenSections(new Set(CONFIG_SECTIONS.map((s) => s.key)))
+  const collapseAll = () => setOpenSections(new Set())
+
   if (isLoading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4" aria-busy="true" aria-live="polite">
+        <span className="sr-only">Loading configuration…</span>
         {[...Array(5)].map((_, i) => (
           <div key={i} className="card animate-pulse">
             <div className="h-6 bg-bifrost-border rounded w-32 mb-2" />
@@ -260,8 +417,15 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
 
   if (!config) {
     return (
-      <div className="card text-center py-12">
-        <p className="text-bifrost-subtle">Unable to load configuration</p>
+      <div className="card text-center py-12 space-y-3" role="alert">
+        <p className="text-bifrost-heading font-medium">Unable to load configuration</p>
+        <p className="text-sm text-bifrost-subtle max-w-md mx-auto">
+          The server did not return its configuration. This usually means the API is
+          unreachable, or the server was started without a config file path.
+        </p>
+        <button onClick={() => window.location.reload()} className="btn btn-secondary text-sm">
+          Retry
+        </button>
       </div>
     )
   }
@@ -270,10 +434,12 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
 
   return (
     <div className="space-y-4">
-      {/* Editor Mode Toggle */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-1 bg-bifrost-bg rounded-lg p-1">
+      {/* Editor mode + bulk expand/collapse */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1 bg-bifrost-bg rounded-lg p-1" role="tablist" aria-label="Editor mode">
           <button
+            role="tab"
+            aria-selected={editorMode === 'visual'}
             onClick={() => editorMode === 'raw' ? switchToVisualMode() : undefined}
             className={`px-3 py-1.5 text-sm rounded-md transition-all ${
               editorMode === 'visual'
@@ -284,6 +450,8 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
             Visual Editor
           </button>
           <button
+            role="tab"
+            aria-selected={editorMode === 'raw'}
             onClick={() => editorMode === 'visual' ? switchToRawMode() : undefined}
             className={`px-3 py-1.5 text-sm rounded-md transition-all ${
               editorMode === 'raw'
@@ -294,200 +462,239 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
             Raw YAML
           </button>
         </div>
-        <div className="text-xs text-bifrost-muted">
-          <span className="badge badge-success text-xs mr-2">Hot Reload</span>
-          applied without restart
-          <span className="badge badge-warning text-xs mx-2">Restart Required</span>
-          needs server restart
-        </div>
+
+        {editorMode === 'visual' && (
+          <div className="flex items-center gap-2">
+            <button onClick={expandAll} className="btn btn-ghost btn-sm text-xs">Expand all</button>
+            <button onClick={collapseAll} className="btn btn-ghost btn-sm text-xs">Collapse all</button>
+          </div>
+        )}
+      </div>
+
+      {/* Legend: what the per-section badges mean */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-bifrost-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="badge badge-success text-xs">Hot Reload</span>
+          applied on save, no restart
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="badge badge-warning text-xs">Restart Required</span>
+          saved to disk, applies after restart
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="badge badge-info text-xs">Modified</span>
+          unsaved edit in this section
+        </span>
       </div>
 
       {/* Raw YAML Editor */}
       {editorMode === 'raw' ? (
         <div className="space-y-2">
           {rawError && (
-            <div className="p-3 bg-bifrost-error/10 border border-bifrost-error/30 rounded-lg text-sm text-bifrost-error">
+            <div
+              className="p-3 bg-bifrost-error/10 border border-bifrost-error/30 rounded-lg text-sm text-bifrost-error"
+              role="alert"
+            >
               YAML Error: {rawError}
             </div>
           )}
+          <label className="sr-only" htmlFor="raw-yaml-editor">Raw YAML configuration</label>
           <textarea
+            id="raw-yaml-editor"
             value={rawYaml}
             onChange={(e) => handleRawYamlChange(e.target.value)}
-            className="w-full h-[600px] font-mono text-sm bg-bifrost-bg border border-bifrost-border rounded-lg p-4 text-bifrost-heading placeholder-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent resize-y"
+            aria-invalid={!!rawError}
+            className={`${RAW_EDITOR_CLASS} font-mono text-sm bg-bifrost-bg border border-bifrost-border rounded-lg p-4 text-bifrost-heading placeholder-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent resize-y`}
             spellCheck={false}
           />
         </div>
       ) : (
-        <>
-          {/* Server Settings */}
+        <ConfigSectionProvider value={sectionState}>
           <ServerSection
             config={currentConfig.server || defaultServer}
             onChange={(server) => updateConfig({ server })}
           />
 
-          {/* Backends */}
           <BackendsSection
             backends={currentConfig.backends || []}
             onChange={(backends) => updateConfig({ backends })}
           />
 
-          {/* Routes */}
           <RoutesSection
             routes={currentConfig.routes || []}
             availableBackends={availableBackends}
             onChange={(routes) => updateConfig({ routes })}
           />
 
-          {/* Authentication */}
           <AuthSection
             config={currentConfig.auth || defaultAuth}
             onChange={(auth) => updateConfig({ auth })}
           />
 
-          {/* Rate Limiting */}
-          <RateLimitSection
-            config={currentConfig.rate_limit || defaultRateLimit}
-            onChange={(rate_limit) => updateConfig({ rate_limit })}
-          />
-
-          {/* Access Control */}
           <AccessControlSection
             config={currentConfig.access_control || defaultAccessControl}
             onChange={(access_control) => updateConfig({ access_control })}
           />
 
-          {/* Access Logging */}
-          <AccessLogSection
-            config={currentConfig.access_log || defaultAccessLog}
-            onChange={(access_log) => updateConfig({ access_log })}
+          <MITMSection
+            config={currentConfig.mitm}
+            onChange={(mitm) => updateConfig({ mitm })}
           />
 
-          {/* Prometheus Metrics */}
-          <MetricsSection
-            config={currentConfig.metrics || defaultMetrics}
-            onChange={(metrics) => updateConfig({ metrics })}
+          <RateLimitSection
+            config={currentConfig.rate_limit || defaultRateLimit}
+            onChange={(rate_limit) => updateConfig({ rate_limit })}
           />
 
-          {/* Application Logging */}
-          <LoggingSection
-            config={currentConfig.logging || defaultLogging}
-            onChange={(logging) => updateConfig({ logging })}
-          />
-
-          {/* Web UI */}
-          <WebUISection
-            config={currentConfig.web_ui || defaultWebUI}
-            onChange={(web_ui) => updateConfig({ web_ui })}
-          />
-
-          {/* REST API */}
-          <APISection
-            config={currentConfig.api || defaultAPI}
-            onChange={(api) => updateConfig({ api })}
-          />
-
-          {/* Global Health Checks */}
-          <HealthCheckSection
-            config={currentConfig.health_check}
-            onChange={(health_check) => updateConfig({ health_check })}
-          />
-
-          {/* Auto Update */}
-          <AutoUpdateSection
-            config={currentConfig.auto_update || defaultAutoUpdate}
-            onChange={(auto_update) => updateConfig({ auto_update })}
-          />
-
-          {/* Cache */}
           <CacheSection
             config={currentConfig.cache || defaultCache}
             onChange={(cache) => updateConfig({ cache })}
           />
 
-          {/* Network */}
+          <HealthCheckSection
+            config={currentConfig.health_check}
+            onChange={(health_check) => updateConfig({ health_check })}
+          />
+
           <NetworkSection
             config={currentConfig.network}
             onChange={(network) => updateConfig({ network })}
           />
 
-          {/* Session Storage */}
+          <AccessLogSection
+            config={currentConfig.access_log || defaultAccessLog}
+            onChange={(access_log) => updateConfig({ access_log })}
+          />
+
+          <MetricsSection
+            config={currentConfig.metrics || defaultMetrics}
+            onChange={(metrics) => updateConfig({ metrics })}
+          />
+
+          <LoggingSection
+            config={currentConfig.logging || defaultLogging}
+            onChange={(logging) => updateConfig({ logging })}
+          />
+
+          <WebUISection
+            config={currentConfig.web_ui || defaultWebUI}
+            onChange={(web_ui) => updateConfig({ web_ui })}
+          />
+
+          <APISection
+            config={currentConfig.api || defaultAPI}
+            onChange={(api) => updateConfig({ api })}
+          />
+
           <SessionSection
             config={currentConfig.session}
             onChange={(session) => updateConfig({ session })}
           />
 
-          {/* HTTPS Interception (MITM) */}
-          <MITMSection
-            config={currentConfig.mitm}
-            onChange={(mitm) => updateConfig({ mitm })}
+          <AutoUpdateSection
+            config={currentConfig.auto_update || defaultAutoUpdate}
+            onChange={(auto_update) => updateConfig({ auto_update })}
           />
-        </>
+        </ConfigSectionProvider>
       )}
 
       {/* Sticky Save Bar */}
       {hasChanges && (
-        <div className="sticky-bar">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={createBackup}
-                  onChange={(e) => setCreateBackup(e.target.checked)}
-                  className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
-                />
-                <span className="text-sm text-bifrost-subtle">Create backup</span>
-              </label>
-              <span className="text-xs text-bifrost-muted hidden sm:inline">
-                Press <kbd className="px-1.5 py-0.5 bg-bifrost-bg rounded text-xs border border-bifrost-border">
-                  {navigator.platform.includes('Mac') ? '\u2318' : 'Ctrl'}+S
-                </kbd> to save
-              </span>
+        <div className="sticky-bar" role="region" aria-label="Unsaved configuration changes">
+          <div className="space-y-3">
+            {/* What is about to happen, before the operator commits to it */}
+            <div className="flex flex-wrap items-start gap-x-6 gap-y-2 text-xs">
+              {pendingHotReload.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="badge badge-success text-xs">Applies immediately</span>
+                  {pendingHotReload.map((key) => (
+                    <span key={key} className="text-bifrost-subtle">{sectionLabel(key)}</span>
+                  ))}
+                </div>
+              )}
+              {pendingRestart.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="badge badge-warning text-xs">Needs restart</span>
+                  {pendingRestart.map((key) => (
+                    <span key={key} className="text-bifrost-subtle">{sectionLabel(key)}</span>
+                  ))}
+                </div>
+              )}
+              {pendingHotReload.length === 0 && pendingRestart.length === 0 && (
+                <span className="text-bifrost-muted">Unsaved changes</span>
+              )}
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                onClick={handleReload}
-                disabled={isReloading || isSaving}
-                className="btn btn-secondary text-sm"
-              >
-                {isReloading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Reloading...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Reload
-                  </>
-                )}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={isSaving || isReloading || isValidating}
-                className="btn btn-primary text-sm"
-              >
-                {isValidating ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Validating...
-                  </>
-                ) : isSaving ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-                    </svg>
-                    Save Changes
-                  </>
-                )}
-              </button>
+
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={createBackup}
+                    onChange={(e) => setCreateBackup(e.target.checked)}
+                    className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
+                  />
+                  <span className="text-sm text-bifrost-subtle">Create backup</span>
+                </label>
+                <span className="text-xs text-bifrost-muted hidden sm:inline">
+                  Press <kbd className="px-1.5 py-0.5 bg-bifrost-bg rounded text-xs border border-bifrost-border">
+                    {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+S
+                  </kbd> to save
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleDiscard}
+                  disabled={isSaving || isReloading || isValidating}
+                  className="btn btn-ghost text-sm"
+                >
+                  Discard
+                </button>
+                <button
+                  onClick={handleReload}
+                  disabled={isReloading || isSaving}
+                  className="btn btn-secondary text-sm"
+                  title="Discard edits and re-apply the config file currently on disk"
+                >
+                  {isReloading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Reloading...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Reload
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving || isReloading || isValidating}
+                  className="btn btn-primary text-sm"
+                >
+                  {isValidating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Validating...
+                    </>
+                  ) : isSaving ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+                      </svg>
+                      Save Changes
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>
