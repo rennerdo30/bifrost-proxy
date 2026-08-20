@@ -39,6 +39,11 @@ export function Config() {
   const [searchQuery, setSearchQuery] = useState('')
   const [hasChanges, setHasChanges] = useState(false)
   const [revealSection, setRevealSection] = useState<ConfigSectionKey | null>(null)
+  // Bumped when the config is replaced wholesale (import), to discard the
+  // editor's in-progress edits. Without this the editor keeps the pre-import
+  // config, immediately reports every section as modified, and saving would
+  // silently revert the import.
+  const [editorResetKey, setEditorResetKey] = useState(0)
   const observerRef = useRef<IntersectionObserver | null>(null)
 
   const { data: config, isLoading, isError, refetch } = useQuery({
@@ -107,10 +112,15 @@ export function Config() {
 
   // Ask the editor to expand + scroll to the section, so a collapsed panel is
   // actually revealed rather than scrolled to as a one-line header.
-  const goToSection = (key: ConfigSectionKey) => {
+  const goToSection = useCallback((key: ConfigSectionKey) => {
     setActiveSection(key)
     setRevealSection(key)
-  }
+  }, [])
+
+  // Stable identity: this is a dependency of the editor's reveal effect, so an
+  // inline arrow would let any unrelated re-render (e.g. the scroll observer
+  // updating the active section) cancel and reschedule the pending scroll.
+  const handleSectionRevealed = useCallback(() => setRevealSection(null), [])
 
   const filteredGroups = useMemo(
     () => groupedSections(CONFIG_SECTIONS.filter((s) => sectionMatchesQuery(s, searchQuery))),
@@ -248,6 +258,9 @@ export function Config() {
         }
 
         await saveMutation.mutateAsync({ config: parsed, backup: true })
+        // Drop any in-progress edits so the editor shows the imported config
+        // rather than offering to save the previous one over it.
+        setEditorResetKey((key) => key + 1)
       } catch (err) {
         showToast(`Failed to import: ${err instanceof Error ? err.message : 'Invalid file'}`, 'error')
       }
@@ -394,7 +407,8 @@ export function Config() {
             hotReloadableSections={hotReloadableSections}
             onDirtyChange={setHasChanges}
             revealSection={revealSection}
-            onSectionRevealed={() => setRevealSection(null)}
+            onSectionRevealed={handleSectionRevealed}
+            resetKey={editorResetKey}
           />
         </div>
       </div>

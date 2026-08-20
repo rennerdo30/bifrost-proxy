@@ -2,6 +2,14 @@ import { Section } from '../Section'
 import { ValidatedInput, ValidatedSelect } from '../../ui/ValidatedInput'
 import { useValidation } from '../../../hooks/useValidation'
 import { validators } from '../../../utils/validation'
+import {
+  DEFAULT_HEALTH_CHECK,
+  HEALTH_CHECK_SCHEME_HTTP,
+  HEALTH_CHECK_SCHEME_HTTPS,
+  HEALTH_CHECK_TYPE_HTTP,
+  withHealthCheckScheme,
+  withHealthCheckType,
+} from '../healthCheck'
 import type { HealthCheckConfig, HealthCheckScheme } from '../../../api/types'
 
 interface HealthCheckSectionProps {
@@ -27,17 +35,8 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
   })
 
   const toggleEnabled = (enable: boolean) => {
-    if (enable) {
-      clearErrors()
-      onChange({
-        type: 'tcp',
-        interval: '10s',
-        timeout: '5s',
-      })
-    } else {
-      clearErrors()
-      onChange(undefined)
-    }
+    clearErrors()
+    onChange(enable ? { ...DEFAULT_HEALTH_CHECK } : undefined)
   }
 
   const update = (field: string, value: unknown) => {
@@ -49,27 +48,15 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
     }
   }
 
-  // The server rejects scheme / insecure_skip_verify on non-HTTP checks and
-  // insecure_skip_verify without HTTPS, because they would be silently inert.
-  // Drop them here so switching the type never produces a config that fails
-  // validation on save.
+  // Type and scheme changes go through the shared normalisation so this form and
+  // the per-backend HealthCheckForm cannot drift apart, and so switching the
+  // check type never leaves behind a field the server rejects as inert.
   const updateType = (type: HealthCheckConfig['type']) => {
-    if (!config) return
-    const next: HealthCheckConfig = { ...config, type }
-    if (type !== 'http') {
-      delete next.scheme
-      delete next.insecure_skip_verify
-    }
-    onChange(next)
+    if (config) onChange(withHealthCheckType(config, type))
   }
 
   const updateScheme = (scheme: HealthCheckScheme) => {
-    if (!config) return
-    const next: HealthCheckConfig = { ...config, scheme }
-    if (scheme !== 'https') {
-      delete next.insecure_skip_verify
-    }
-    onChange(next)
+    if (config) onChange(withHealthCheckScheme(config, scheme))
   }
 
   return (
@@ -123,7 +110,7 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
               error={errors.target}
               helpText="Health check endpoint (optional)"
             />
-            {config.type === 'http' && (
+            {config.type === HEALTH_CHECK_TYPE_HTTP && (
               <>
                 <ValidatedInput
                   label="HTTP Path"
@@ -135,14 +122,14 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
                 />
                 <ValidatedSelect
                   label="Scheme"
-                  value={config.scheme || 'http'}
+                  value={config.scheme || HEALTH_CHECK_SCHEME_HTTP}
                   onChange={(e) => updateScheme(e.target.value as HealthCheckScheme)}
                   helpText="Use HTTPS to probe a TLS-terminating backend"
                 >
-                  <option value="http">HTTP</option>
-                  <option value="https">HTTPS</option>
+                  <option value={HEALTH_CHECK_SCHEME_HTTP}>HTTP</option>
+                  <option value={HEALTH_CHECK_SCHEME_HTTPS}>HTTPS</option>
                 </ValidatedSelect>
-                {config.scheme === 'https' && (
+                {config.scheme === HEALTH_CHECK_SCHEME_HTTPS && (
                   <div className="md:col-span-2">
                     <label className="flex items-start gap-3 cursor-pointer">
                       <input
