@@ -26,6 +26,7 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/proxy"
 	"github.com/rennerdo30/bifrost-proxy/internal/ratelimit"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
+	"github.com/rennerdo30/bifrost-proxy/internal/updater"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
@@ -58,6 +59,7 @@ type Server struct {
 	wsHub          *apiserver.WebSocketHub
 	api            *apiserver.API
 	sessionManager *session.Manager
+	updater        *updater.Updater
 
 	running bool
 	mu      sync.RWMutex
@@ -530,6 +532,7 @@ func (s *Server) Start(ctx context.Context) error {
 			EnableRequestLog: s.config.API.EnableRequestLog,
 			RequestLogSize:   s.config.API.RequestLogSize,
 			SessionManager:   s.sessionManager,
+			Mesh:             s.config.Mesh,
 		})
 
 		// Create WebSocket hub with configurable max clients (default 100, for low-power devices use 5-10)
@@ -627,6 +630,12 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	}
 
+	// Start the auto-update background checker if enabled. Without this the
+	// auto_update config block has no runtime effect at all.
+	if s.config.AutoUpdate.Enabled {
+		s.startUpdater(ctx)
+	}
+
 	logging.Info("Bifrost server started")
 	return nil
 }
@@ -656,6 +665,10 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.mu.Unlock()
 
 	logging.Info("Stopping Bifrost server")
+
+	// Stop the auto-update background checker before the rest of the shutdown so
+	// its goroutine cannot start a new check while dependencies are torn down.
+	s.stopUpdater()
 
 	// Stop metrics server
 	if s.metricsServer != nil {
@@ -979,6 +992,14 @@ func (s *Server) ReloadConfig() error {
 // to connected WebSocket clients.
 const wsBroadcastInterval = 5 * time.Second
 
+// Protocol labels used for the Prometheus `protocol` dimension. They must match
+// the values the proxy handlers pass to their RecordMetrics hooks so that
+// connection-scoped and request-scoped series line up.
+const (
+	protocolHTTP   = "http"
+	protocolSOCKS5 = "socks5"
+)
+
 // broadcastWSEvents periodically pushes aggregate stats and backend health
 // events to all connected WebSocket clients. This lets the UI stop polling the
 // REST endpoints once the WebSocket is connected.
@@ -1151,7 +1172,7 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	ctx = withBackendCapture(ctx, capture)
 
 	startTime := time.Now()
-	done := s.metricsCollector.RecordConnection("http")
+	done := s.metricsCollector.RecordConnection(protocolHTTP)
 
 	handler.ServeConn(ctx, conn)
 
@@ -1274,7 +1295,7 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 	ctx = withBackendCapture(ctx, capture)
 
 	startTime := time.Now()
-	done := s.metricsCollector.RecordConnection("socks5")
+	done := s.metricsCollector.RecordConnection(protocolSOCKS5)
 
 	handler.ServeConn(ctx, conn)
 

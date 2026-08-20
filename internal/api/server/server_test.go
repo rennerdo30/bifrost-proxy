@@ -722,27 +722,16 @@ func TestAPI_HandleGetRequestStats_NilLog(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
-func TestAPI_SetWebSocketHub(t *testing.T) {
-	api := New(Config{})
-	hub := NewWebSocketHub()
-
-	api.setWebSocketHub(hub)
-	assert.Equal(t, hub, api.wsHub)
-}
-
-func TestAPI_HandleGetConfigTimestamp(t *testing.T) {
+// TestAPI_NoConfigTimestampRoute pins the removal of the unrouted
+// /api/v1/config/timestamp handler, which returned time.Now() rather than the
+// config file's modification time. Config metadata is served by
+// /api/v1/config/meta.
+func TestAPI_NoConfigTimestampRoute(t *testing.T) {
 	api := New(Config{})
 
 	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v1/config/timestamp", nil)
-	api.handleGetConfigTimestamp(w, r)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Contains(t, resp, "timestamp")
+	api.Router().ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/config/timestamp", nil))
+	assert.Equal(t, http.StatusNotFound, w.Code)
 }
 
 func TestAPI_PAC_Routes(t *testing.T) {
@@ -1742,7 +1731,7 @@ func TestWebSocketHub_Stop(t *testing.T) {
 	hub.Stop()
 }
 
-func TestAddWebSocketRoutes(t *testing.T) {
+func TestRouterWithWebSocket_SetsHub(t *testing.T) {
 	api := New(Config{})
 	hub := NewWebSocketHub()
 

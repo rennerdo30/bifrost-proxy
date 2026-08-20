@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/go-chi/chi/v5"
 )
 
 // MaxWebSocketClients is the maximum number of concurrent WebSocket connections.
@@ -237,11 +236,6 @@ func (h *WebSocketHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			_ = client.write(ctx, []byte("pong")) //nolint:errcheck // best effort
 		}
 	}
-}
-
-// AddWebSocketRoutes adds WebSocket routes to the router.
-func (a *API) AddWebSocketRoutes(r chi.Router, hub *WebSocketHub) {
-	r.Handle("/api/v1/ws", hub)
 }
 
 // Event types for WebSocket broadcasts

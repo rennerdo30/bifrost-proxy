@@ -83,6 +83,17 @@ GET /api/v1/status
 }
 ```
 
+**Traffic counters:**
+
+| Field | Meaning |
+|-------|---------|
+| `bytes_sent` | Cumulative bytes written back to local proxy clients since the client started |
+| `bytes_received` | Cumulative bytes read from local proxy clients since the client started |
+| `active_connections` | Proxy connections currently being served across the HTTP and SOCKS5 listeners |
+
+The byte counters cover both the HTTP and SOCKS5 listeners and are reset when
+the client process restarts (they are in-memory, not persisted).
+
 ---
 
 ## Connection Management

@@ -59,7 +59,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - AST-based YAML updates to maintain comments and formatting
   - Preserves user-added documentation in configuration files
 
+### Added
+- Server `mesh` config block for the mesh coordinator API: `mesh.enabled`
+  (default `true`) mounts or removes the `/api/v1/mesh/*` routes, and
+  `mesh.state_path` persists coordinator networks and peers across restarts
+  (atomic `0600` write; peer virtual IPs are re-pinned on startup so a restart
+  does not renumber a running mesh). Previously the coordinator was
+  unconditionally mounted and purely in-memory
+
+### Removed
+- Dead API helpers `AddWebSocketRoutes`, `setWebSocketHub` and the unrouted
+  `handleGetConfigTimestamp` (which returned `time.Now()` instead of the config
+  file's modification time — use `GET /api/v1/config/meta`)
+- `device.GenerateMAC`, whose doc comment promised a random address while the
+  body returned the hardcoded `02:BF:00:00:00:01`. Use
+  `device.GenerateRandomMAC`, which the production paths already used
+
+### Changed
+- `API.Router()` now registers the same routes as `RouterWithWebSocket` instead
+  of a hand-maintained subset that silently omitted the cache and mesh routes
+- Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
+  reporting success while changing nothing but an in-memory field
+
 ### Fixed
+- Client `/api/v1/status` now reports real traffic counters. `bytes_sent`,
+  `bytes_received` and `active_connections` were hardwired to zero because the
+  client never supplied the API's counter callbacks; they are now fed from the
+  HTTP and SOCKS5 proxy handlers
+- `auto_update` is no longer a dead toggle on the server. `Server.Start` now
+  constructs the updater and starts the background checker when
+  `auto_update.enabled` is set (honouring `channel` and `check_interval`, with
+  the interval clamped to a 1 hour minimum), logs available updates at `INFO`
+  level, and stops the checker on graceful shutdown
+- `cache_bytes_served_total{source="origin"}` is now recorded. It had no
+  production writer, so it stayed at zero and the bandwidth-saved ratio against
+  `{source="cache"}` could not be computed. Bytes are counted for every response
+  fetched from the origin while the cache is enabled, cacheable or not
+- Cache hits are no longer reported as HTTP 500. The cache-served branch never
+  set a status code, so the access log and `bifrost_requests_total` recorded
+  `status="500"` for every hit while the client correctly received 200. Hits now
+  record the status actually written (200, or 206 for range requests) and carry
+  the synthetic backend label `cache`
 - VPN manager nil pointer panics when disabled or uninitialized
 - Auto-updater reliability issues with non-SemVer releases
 - Improved error handling in API server
