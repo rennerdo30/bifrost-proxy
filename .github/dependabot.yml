@@ -19,6 +19,9 @@
 #     to land in one pull request.
 #   * GitHub Actions updates are grouped across ALL update types. Action majors
 #     are mechanical and low risk, and one pull request per action is pure noise.
+#
+# /mobile is a separate npm entry because it needs `ignore` rules that must not
+# apply to the other npm directories - see the comment on that entry.
 version: 2
 
 updates:
@@ -43,7 +46,6 @@ updates:
       - "/web/client"
       - "/web/server"
       - "/desktop/frontend"
-      - "/mobile"
       - "/docs"
     schedule:
       interval: "weekly"
@@ -52,6 +54,17 @@ updates:
     commit-message:
       prefix: "deps(npm):"
       prefix-development: "deps(npm-dev):"
+    ignore:
+      # TypeScript majors are held back by the linter, not by our code. The
+      # latest stable typescript-eslint (8.67.0) declares
+      # `peer typescript@">=4.8.4 <6.1.0"`, and its parser hard-errors with
+      # "typescript-eslint does not support TS 7.0" if installed anyway, so
+      # `npm ci` fails before any build step runs. TypeScript 7 also removed
+      # `baseUrl`, so it needs a tsconfig migration in every frontend.
+      # Revisit once typescript-eslint ships stable TS 7 support: bump
+      # typescript + typescript-eslint + the tsconfigs together.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # Must stay ahead of the catch-all group below: Dependabot puts a
       # dependency into the FIRST group whose patterns match it.
@@ -63,6 +76,43 @@ updates:
           - "starlight-theme-*"
           - "*/starlight-*"
       npm-minor-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # The Expo mobile app. Expo SDK pins the exact versions of react, react-native
+  # and the native modules it bundles, and `expo-doctor` (run in CI) fails the
+  # build when an installed version differs from the one the SDK expects - even
+  # for a patch bump, because the SDK pins react exactly. Dependabot bumping
+  # those packages independently is therefore guaranteed to break CI, which is
+  # what repeatedly happened on master (react 19.2.0 -> 19.2.8, react-native
+  # 0.83.10 -> 0.87.0). They are ignored here and moved only by an Expo SDK
+  # upgrade via `npx expo install --fix`, which resolves the whole set together.
+  - package-ecosystem: "npm"
+    directory: "/mobile"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(npm):"
+      prefix-development: "deps(npm-dev):"
+    ignore:
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "react"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native-async-storage/*"
+      - dependency-name: "@types/react"
+      # Expo's Metro/babel preset requires Babel 7; Babel 8 breaks the bundler.
+      - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
+      # See the typescript note on the npm entry above.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+    groups:
+      mobile-minor-patch:
         applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
