@@ -10,6 +10,31 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
 
+// Config section names. These are the canonical identifiers shared by the
+// save/validate responses, the /config/meta endpoint and the Web UI, and they
+// match the `yaml`/`json` tags of the corresponding config.ServerConfig fields.
+// Every top-level field of config.ServerConfig must have a constant here —
+// TestConfigSectionsCoverServerConfig enforces that.
+const (
+	SectionServer        = "server"
+	SectionBackends      = "backends"
+	SectionRoutes        = "routes"
+	SectionAuth          = "auth"
+	SectionRateLimit     = "rate_limit"
+	SectionAccessControl = "access_control"
+	SectionAccessLog     = "access_log"
+	SectionMetrics       = "metrics"
+	SectionLogging       = "logging"
+	SectionWebUI         = "web_ui"
+	SectionAPI           = "api"
+	SectionHealthCheck   = "health_check"
+	SectionAutoUpdate    = "auto_update"
+	SectionCache         = "cache"
+	SectionNetwork       = "network"
+	SectionSession       = "session"
+	SectionMITM          = "mitm"
+)
+
 // ConfigMeta describes which config sections are hot-reloadable.
 type ConfigMeta struct {
 	Section       string `json:"section"`
@@ -25,12 +50,21 @@ type ConfigSaveRequest struct {
 
 // ConfigSaveResponse represents the response after saving config.
 type ConfigSaveResponse struct {
-	Success         bool              `json:"success"`
-	Message         string            `json:"message"`
-	BackupPath      string            `json:"backup_path,omitempty"`
-	RequiresRestart bool              `json:"requires_restart"`
-	ChangedSections []string          `json:"changed_sections"`
-	Errors          []ValidationError `json:"errors,omitempty"`
+	Success    bool   `json:"success"`
+	Message    string `json:"message"`
+	BackupPath string `json:"backup_path,omitempty"`
+	// RequiresRestart is true when at least one changed section cannot be
+	// applied by ReloadConfig, i.e. RestartRequiredSections is non-empty.
+	RequiresRestart bool     `json:"requires_restart"`
+	ChangedSections []string `json:"changed_sections"`
+	// HotReloadedSections lists the changed sections that were applied to the
+	// running server without a restart. Populated so the Web UI never has to
+	// re-derive hot-reloadability client-side (where it can drift).
+	HotReloadedSections []string `json:"hot_reloaded_sections"`
+	// RestartRequiredSections lists the changed sections that were written to
+	// disk but only take effect after a server restart.
+	RestartRequiredSections []string          `json:"restart_required_sections"`
+	Errors                  []ValidationError `json:"errors,omitempty"`
 }
 
 // ValidationError represents a config validation error.
@@ -46,32 +80,47 @@ type ValidationError struct {
 // routes, rate_limit (incl. bandwidth), access_control, and cache (rules only).
 // Everything else genuinely requires a restart, so it must NOT be listed here.
 var hotReloadableSections = map[string]bool{
-	"routes":         true,
-	"rate_limit":     true,
-	"access_control": true,
-	"cache":          true,
+	SectionRoutes:        true,
+	SectionRateLimit:     true,
+	SectionAccessControl: true,
+	SectionCache:         true,
+}
+
+// configSectionDescriptions describes every config section for /config/meta.
+// The hot-reloadable flag is NOT duplicated here — it is derived from
+// hotReloadableSections so the two can never disagree.
+var configSectionDescriptions = []struct {
+	Section     string
+	Description string
+}{
+	{SectionServer, "Server listeners and timeouts"},
+	{SectionBackends, "Backend connection configurations"},
+	{SectionRoutes, "Routing rules"},
+	{SectionAuth, "Authentication settings"},
+	{SectionRateLimit, "Rate limiting and bandwidth configuration"},
+	{SectionAccessControl, "IP whitelist/blacklist rules"},
+	{SectionAccessLog, "Access logging settings"},
+	{SectionMetrics, "Prometheus metrics settings"},
+	{SectionLogging, "Application logging"},
+	{SectionWebUI, "Web UI settings"},
+	{SectionAPI, "API settings"},
+	{SectionHealthCheck, "Health check defaults"},
+	{SectionAutoUpdate, "Automatic update settings"},
+	{SectionCache, "Response cache rules (storage changes require restart)"},
+	{SectionNetwork, "Network dial/keepalive/connection settings"},
+	{SectionSession, "Session store settings"},
+	{SectionMITM, "MITM inspection settings"},
 }
 
 // handleGetConfigMeta returns metadata about config sections.
 func (a *API) handleGetConfigMeta(w http.ResponseWriter, r *http.Request) {
-	meta := []ConfigMeta{
-		{Section: "server", HotReloadable: false, Description: "Server listeners and timeouts"},
-		{Section: "backends", HotReloadable: false, Description: "Backend connection configurations"},
-		{Section: "routes", HotReloadable: true, Description: "Routing rules"},
-		{Section: "auth", HotReloadable: false, Description: "Authentication settings"},
-		{Section: "rate_limit", HotReloadable: true, Description: "Rate limiting and bandwidth configuration"},
-		{Section: "access_control", HotReloadable: true, Description: "IP whitelist/blacklist rules"},
-		{Section: "access_log", HotReloadable: false, Description: "Access logging settings"},
-		{Section: "metrics", HotReloadable: false, Description: "Prometheus metrics settings"},
-		{Section: "logging", HotReloadable: false, Description: "Application logging"},
-		{Section: "web_ui", HotReloadable: false, Description: "Web UI settings"},
-		{Section: "api", HotReloadable: false, Description: "API settings"},
-		{Section: "health_check", HotReloadable: false, Description: "Health check defaults"},
-		{Section: "auto_update", HotReloadable: false, Description: "Automatic update settings"},
-		{Section: "cache", HotReloadable: true, Description: "Response cache rules (storage changes require restart)"},
-		{Section: "network", HotReloadable: false, Description: "Network dial/keepalive/connection settings"},
-		{Section: "session", HotReloadable: false, Description: "Session store settings"},
-		{Section: "mitm", HotReloadable: false, Description: "MITM inspection settings"},
+	meta := make([]ConfigMeta, 0, len(configSectionDescriptions))
+	for _, d := range configSectionDescriptions {
+		meta = append(meta, ConfigMeta{
+			Section:       d.Section,
+			HotReloadable: hotReloadableSections[d.Section],
+			Description:   d.Description,
+		})
 	}
 	a.writeJSON(w, http.StatusOK, meta)
 }
@@ -134,13 +183,17 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Detect changed sections
-	var changedSections []string
+	// Detect changed sections and split them into hot-reloadable vs
+	// restart-required so the client does not have to re-derive it.
+	changedSections := []string{}
+	hotReloadedSections := []string{}
+	restartRequiredSections := []string{}
 	var requiresRestart bool
 	if a.getFullConfig != nil {
 		currentConfig := a.getFullConfig()
 		changedSections = detectChangedSections(currentConfig, &req.Config)
-		requiresRestart = hasRestartRequiredChanges(changedSections)
+		hotReloadedSections, restartRequiredSections = splitChangedSections(changedSections)
+		requiresRestart = len(restartRequiredSections) > 0
 	}
 
 	// Save config
@@ -153,30 +206,54 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-reload if only hot-reloadable sections changed
+	// Auto-reload whenever at least one hot-reloadable section changed.
+	//
+	// This deliberately also runs for "mixed" saves that additionally touch a
+	// restart-required section: ReloadConfig re-reads the file and applies only
+	// the sections it knows how to apply, so skipping it would leave e.g. a new
+	// access_control blocklist unenforced just because the same save also
+	// changed a listener port.
 	reloadError := ""
-	if !requiresRestart && len(changedSections) > 0 && a.reloadConfig != nil {
+	if len(hotReloadedSections) > 0 && a.reloadConfig != nil {
 		if err := a.reloadConfig(); err != nil {
 			// Log error but don't fail - config is already saved
-			slog.Error("failed to auto-reload config after save", "error", err)
+			slog.Error("failed to auto-reload config after save",
+				"error", err,
+				"hot_reloadable_sections", hotReloadedSections,
+			)
 			reloadError = err.Error()
+			// The reload failed, so nothing was actually applied to the running
+			// server; every changed section now needs a restart. Report that
+			// rather than claiming sections were hot-reloaded.
+			restartRequiredSections = append(restartRequiredSections, hotReloadedSections...)
+			hotReloadedSections = []string{}
+			requiresRestart = len(restartRequiredSections) > 0
+		} else {
+			slog.Debug("auto-reloaded config after save",
+				"hot_reloaded_sections", hotReloadedSections,
+				"restart_required_sections", restartRequiredSections,
+			)
 		}
 	}
 
 	// Broadcast config change via WebSocket
 	if a.wsHub != nil {
 		a.wsHub.Broadcast(EventConfigSaved, map[string]interface{}{
-			"changed_sections": changedSections,
-			"requires_restart": requiresRestart,
+			"changed_sections":          changedSections,
+			"requires_restart":          requiresRestart,
+			"hot_reloaded_sections":     hotReloadedSections,
+			"restart_required_sections": restartRequiredSections,
 		})
 	}
 
 	response := ConfigSaveResponse{
-		Success:         true,
-		Message:         "Configuration saved successfully",
-		BackupPath:      backupPath,
-		RequiresRestart: requiresRestart,
-		ChangedSections: changedSections,
+		Success:                 true,
+		Message:                 "Configuration saved successfully",
+		BackupPath:              backupPath,
+		RequiresRestart:         requiresRestart,
+		ChangedSections:         changedSections,
+		HotReloadedSections:     hotReloadedSections,
+		RestartRequiredSections: restartRequiredSections,
 	}
 	if reloadError != "" {
 		response.Message = "Configuration saved but reload failed"
@@ -212,63 +289,61 @@ func (a *API) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// detectChangedSections compares two configs and returns changed sections.
+// configSectionComparators maps each config section to the pair of values that
+// must be compared to decide whether that section changed. Driving
+// detectChangedSections off a table (rather than a hand-written if-chain) means
+// a newly added ServerConfig section shows up as a missing table entry, which
+// TestConfigSectionsCoverServerConfig turns into a build-time-visible failure
+// instead of a silently unreported — and therefore never applied — section.
+var configSectionComparators = []struct {
+	Section string
+	Values  func(c *config.ServerConfig) any
+}{
+	{SectionServer, func(c *config.ServerConfig) any { return c.Server }},
+	{SectionBackends, func(c *config.ServerConfig) any { return c.Backends }},
+	{SectionRoutes, func(c *config.ServerConfig) any { return c.Routes }},
+	{SectionAuth, func(c *config.ServerConfig) any { return c.Auth }},
+	{SectionRateLimit, func(c *config.ServerConfig) any { return c.RateLimit }},
+	{SectionAccessControl, func(c *config.ServerConfig) any { return c.AccessControl }},
+	{SectionAccessLog, func(c *config.ServerConfig) any { return c.AccessLog }},
+	{SectionMetrics, func(c *config.ServerConfig) any { return c.Metrics }},
+	{SectionLogging, func(c *config.ServerConfig) any { return c.Logging }},
+	{SectionWebUI, func(c *config.ServerConfig) any { return c.WebUI }},
+	{SectionAPI, func(c *config.ServerConfig) any { return c.API }},
+	{SectionHealthCheck, func(c *config.ServerConfig) any { return c.HealthCheck }},
+	{SectionAutoUpdate, func(c *config.ServerConfig) any { return c.AutoUpdate }},
+	{SectionCache, func(c *config.ServerConfig) any { return c.Cache }},
+	{SectionNetwork, func(c *config.ServerConfig) any { return c.Network }},
+	{SectionSession, func(c *config.ServerConfig) any { return c.Session }},
+	{SectionMITM, func(c *config.ServerConfig) any { return c.MITM }},
+}
+
+// detectChangedSections compares two configs and returns changed sections, in
+// the canonical section order of configSectionComparators.
 func detectChangedSections(current, new *config.ServerConfig) []string {
 	changed := []string{}
-
-	if !reflect.DeepEqual(current.Server, new.Server) {
-		changed = append(changed, "server")
+	for _, c := range configSectionComparators {
+		if !reflect.DeepEqual(c.Values(current), c.Values(new)) {
+			changed = append(changed, c.Section)
+		}
 	}
-	if !reflect.DeepEqual(current.Backends, new.Backends) {
-		changed = append(changed, "backends")
-	}
-	if !reflect.DeepEqual(current.Routes, new.Routes) {
-		changed = append(changed, "routes")
-	}
-	if !reflect.DeepEqual(current.Auth, new.Auth) {
-		changed = append(changed, "auth")
-	}
-	if !reflect.DeepEqual(current.RateLimit, new.RateLimit) {
-		changed = append(changed, "rate_limit")
-	}
-	if !reflect.DeepEqual(current.AccessControl, new.AccessControl) {
-		changed = append(changed, "access_control")
-	}
-	if !reflect.DeepEqual(current.AccessLog, new.AccessLog) {
-		changed = append(changed, "access_log")
-	}
-	if !reflect.DeepEqual(current.Metrics, new.Metrics) {
-		changed = append(changed, "metrics")
-	}
-	if !reflect.DeepEqual(current.Logging, new.Logging) {
-		changed = append(changed, "logging")
-	}
-	if !reflect.DeepEqual(current.WebUI, new.WebUI) {
-		changed = append(changed, "web_ui")
-	}
-	if !reflect.DeepEqual(current.API, new.API) {
-		changed = append(changed, "api")
-	}
-	if !reflect.DeepEqual(current.HealthCheck, new.HealthCheck) {
-		changed = append(changed, "health_check")
-	}
-	if !reflect.DeepEqual(current.AutoUpdate, new.AutoUpdate) {
-		changed = append(changed, "auto_update")
-	}
-	if !reflect.DeepEqual(current.Cache, new.Cache) {
-		changed = append(changed, "cache")
-	}
-	if !reflect.DeepEqual(current.Network, new.Network) {
-		changed = append(changed, "network")
-	}
-	if !reflect.DeepEqual(current.Session, new.Session) {
-		changed = append(changed, "session")
-	}
-	if !reflect.DeepEqual(current.MITM, new.MITM) {
-		changed = append(changed, "mitm")
-	}
-
 	return changed
+}
+
+// splitChangedSections partitions changed sections into those that
+// (*server.Server).ReloadConfig applies without a restart and those that only
+// take effect after a restart.
+func splitChangedSections(sections []string) (hotReloaded, restartRequired []string) {
+	hotReloaded = []string{}
+	restartRequired = []string{}
+	for _, section := range sections {
+		if hotReloadableSections[section] {
+			hotReloaded = append(hotReloaded, section)
+		} else {
+			restartRequired = append(restartRequired, section)
+		}
+	}
+	return hotReloaded, restartRequired
 }
 
 // hasRestartRequiredChanges checks if any changed section requires restart.
