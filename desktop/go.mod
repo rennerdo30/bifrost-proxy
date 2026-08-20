@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	github.com/rennerdo30/bifrost-proxy v0.0.0-20260117173324-c3dd86f36831
-	github.com/wailsapp/wails/v2 v2.14.0
+	github.com/wailsapp/wails/v2 v2.15.0
 )
 
 // Use local code instead of cached module
