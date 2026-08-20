@@ -755,29 +755,54 @@ docker exec bifrost-server bifrost-server config reload
 ### 11.2 Health Check Configuration
 
 ```yaml
-# Global health check defaults
-health_checks:
-  defaults:
-    interval: "30s"
-    timeout: "5s"
-    healthy_threshold: 2      # Checks before marking healthy
-    unhealthy_threshold: 3    # Checks before marking unhealthy
+# Global health check defaults, applied to every backend that does not define
+# its own `health_check` block.
+health_check:
+  type: "tcp"                 # tcp, http, or ping
+  target: "1.1.1.1:443"       # required; a backend with no target is skipped
+  interval: "30s"
+  timeout: "5s"
+  healthy_threshold: 2        # consecutive successes before marking healthy
+  unhealthy_threshold: 3      # consecutive failures before marking unhealthy
 
 # Per-backend override (in backend definition)
 backends:
   - name: "germany"
     type: "wireguard"
-    wireguard:
+    config:
       config_file: "/path/to/germany.conf"
     health_check:
-      enabled: true
+      type: "http"
+      target: "api.internal:8443"
+      path: "/healthz"
+      scheme: "https"             # http (default) or https; type: http only
+      insecure_skip_verify: true  # requires scheme: https
       interval: "15s"
       timeout: "3s"
-      type: "http"
-      http:
-        url: "https://api.ipify.org"
-        expected_status: 200
+      healthy_threshold: 2
+      unhealthy_threshold: 3
 ```
+
+| Field | Type | Default | Notes |
+|-------|------|---------|-------|
+| `type` | string | `tcp` | `tcp`, `http`, `ping` |
+| `target` | string | — | `host:port` (or host for `ping`); required |
+| `path` | string | `/health` | `type: http` only |
+| `scheme` | string | `http` | `http` or `https`; rejected for non-HTTP types |
+| `insecure_skip_verify` | bool | `false` | Rejected unless `scheme: https` |
+| `interval` | duration | `30s` | |
+| `timeout` | duration | `5s` | |
+| `healthy_threshold` | int | `1` | `<= 0` is treated as 1 |
+| `unhealthy_threshold` | int | `1` | `<= 0` is treated as 1 |
+
+Both the global and per-backend blocks are validated by
+`config.HealthCheckConfig.Validate`, which rejects settings that could never take
+effect (an unknown `scheme`, a `scheme` or `insecure_skip_verify` on a non-HTTP
+check, `insecure_skip_verify` without `scheme: https`) rather than silently
+ignoring them. All fields are editable from the server dashboard.
+
+Changes to `health_check` require a server restart; the dashboard labels the
+section accordingly.
 
 - Faster response to real-world issues
 
@@ -916,17 +941,29 @@ kill -HUP <pid>
 POST /api/config/reload
 ```
 
-**What can be hot-reloaded:**
-- Routing rules
-- Backend definitions
-- Rate limiting settings
-- Access control lists
-- Logging configuration
+**What can be hot-reloaded** — exactly four config sections, applied by
+`(*server.Server).ReloadConfig`:
 
-**What requires restart:**
-- Port bindings
-- TLS certificates
-- Authentication mode changes
+| Section | Applied on reload |
+|---------|-------------------|
+| `routes` | Routing rules are reloaded into the router |
+| `rate_limit` | Request rate limits and `bandwidth` throttles |
+| `access_control` | IP whitelist / blacklist |
+| `cache` | Cache rules and presets (storage settings are ignored; enabling caching on a server that started with it disabled still needs a restart) |
+
+**What requires a restart** — every other section: `server` (listeners, TLS,
+mTLS), `backends`, `auth`, `access_log`, `metrics`, `logging`, `web_ui`, `api`,
+`health_check`, `auto_update`, `network`, `session`, `mitm`, plus cache *storage*
+changes.
+
+`GET /api/v1/config/meta` returns this classification per section, and
+`PUT /api/v1/config` returns `hot_reloaded_sections` and
+`restart_required_sections` for the specific save. Both are derived from the same
+table in `internal/api/server/config_handlers.go`, so API clients and the
+dashboard never re-derive it and cannot disagree with the server.
+
+A save that changes both kinds of section still hot-applies the hot-reloadable
+part; it does not defer everything to the restart.
 
 ### 13.3 Connection Draining
 

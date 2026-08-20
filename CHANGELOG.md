@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- HTTPS health checks are now configurable: `health_check.scheme` (`http`/`https`)
+  and `health_check.insecure_skip_verify`, on both the global block and
+  per-backend overrides, editable from the server dashboard (the per-backend
+  health check editor also gained the de-bounce thresholds, previously
+  global-only). The health checker already supported both; only the config
+  plumbing was missing, so HTTPS probes were impossible to configure
+- `health_check` blocks are validated instead of silently ignored: an unknown
+  `scheme`, a `scheme`/`insecure_skip_verify` on a non-HTTP check, or
+  `insecure_skip_verify` without `scheme: https` is now rejected at startup and
+  on save. Only the two new fields are validated, so existing configs are
+  unaffected
+- `PUT /api/v1/config` and the `config.saved` WebSocket event now return
+  `hot_reloaded_sections` and `restart_required_sections`, so clients no longer
+  have to guess which of their changes took effect
+- Server dashboard configuration editor: sections are grouped (Core, Security &
+  Access, Traffic & Performance, Observability, Platform) with a filterable
+  sidebar, per-section "Modified" markers, a pre-save summary splitting changes
+  into "applies immediately" and "needs restart", a Discard action, and
+  expand/collapse-all controls
 - TUN-based VPN mode with split tunneling support
   - App-based rules (include/exclude applications by name)
   - Domain-based rules with pattern matching
@@ -60,6 +79,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserves user-added documentation in configuration files
 
 ### Fixed
+- A config save that changed both a hot-reloadable and a restart-required section
+  skipped the hot-reload entirely, so e.g. a new `access_control` blocklist saved
+  alongside a listener change stayed unenforced until a restart. The
+  hot-reloadable part is now always applied
+- The server dashboard wrongly reported hot-reloaded `access_control`,
+  `rate_limit` and `cache` saves as "restart required" (`routes` was the only
+  section it classified correctly). Section hot-reloadability now comes from
+  `GET /api/v1/config/meta` and the save response instead of a client-side list
+  that both had the wrong membership and mangled its lookup keys
+- Importing a configuration file left the dashboard editor holding the
+  pre-import config, so every section showed as modified and saving would have
+  reverted the import
+- The "Health Check" link in the configuration sidebar scrolled nowhere: its
+  anchor was derived from an older section heading. Section anchors are now
+  derived from the config section name and can no longer drift from the heading
+- Collapsed configuration sections kept their form fields in the tab order and
+  in the accessibility tree, so keyboard and screen-reader users walked through
+  the fields of all 17 collapsed panels
+- The unsaved-changes navigation warning never fired, because the dashboard only
+  tracked edits while a save was already in flight
+- If auto-reload failed after a config save, the API still reported the sections
+  as applied; it now reports them as needing a restart
+- `GET /api/v1/config/meta` duplicated its hot-reloadable flags in a second hand-
+  maintained list that could disagree with the save path; both now derive from
+  one table
 - VPN manager nil pointer panics when disabled or uninitialized
 - Auto-updater reliability issues with non-SemVer releases
 - Improved error handling in API server

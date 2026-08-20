@@ -313,31 +313,45 @@ Get metadata about configuration sections, including hot-reload capabilities.
 GET /api/v1/config/meta
 ```
 
-**Response:**
+**Response:** a JSON array with one entry per top-level config section.
+
 ```json
 [
   {
     "section": "routes",
     "hot_reloadable": true,
-    "description": "Routing rules can be changed without restart"
+    "description": "Routing rules"
   },
   {
     "section": "rate_limit",
     "hot_reloadable": true,
-    "description": "Rate limiting settings can be changed without restart"
+    "description": "Rate limiting and bandwidth configuration"
   },
   {
     "section": "server",
     "hot_reloadable": false,
-    "description": "Server listener changes require restart"
+    "description": "Server listeners and timeouts"
   },
   {
     "section": "backends",
     "hot_reloadable": false,
-    "description": "Backend changes require restart"
+    "description": "Backend connection configurations"
   }
 ]
 ```
+
+Exactly four sections are hot-reloadable: `routes`, `rate_limit` (including
+`bandwidth`), `access_control` and `cache` (rules and presets only — storage
+changes still require a restart). Every other section reports
+`hot_reloadable: false`.
+
+This endpoint is derived from the same table the save path uses, so a client that
+renders "applies immediately" vs "needs a restart" from it cannot disagree with
+the save response. Prefer it over a hard-coded client-side list.
+
+One caveat: `cache` reports `hot_reloadable: true`, but the reload only touches
+the cache when a cache manager exists. Turning `cache.enabled` on from a server
+that started with caching disabled still needs a restart.
 
 ---
 
@@ -365,11 +379,29 @@ PUT /api/v1/config
 ```json
 {
   "success": true,
-  "message": "Configuration saved",
-  "requires_restart": false,
-  "changed_sections": ["routes"]
+  "message": "Configuration saved successfully",
+  "requires_restart": true,
+  "changed_sections": ["server", "access_control"],
+  "hot_reloaded_sections": ["access_control"],
+  "restart_required_sections": ["server"]
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `changed_sections` | string[] | Sections that differ from the running config |
+| `hot_reloaded_sections` | string[] | Changed sections applied to the running server immediately |
+| `restart_required_sections` | string[] | Changed sections written to disk that take effect after a restart |
+| `requires_restart` | boolean | True exactly when `restart_required_sections` is non-empty |
+| `backup_path` | string | Path of the backup, when `create_backup` was set |
+| `errors` | object[] | `{section, field, message}` entries; a `reload` section means the save succeeded but applying it did not |
+
+A save that touches both kinds of section still hot-applies the hot-reloadable
+part — in the example above the new `access_control` blocklist is enforced
+immediately even though the listener change needs a restart. If the reload
+itself fails, `hot_reloaded_sections` is empty, every changed section is listed
+under `restart_required_sections`, and an error with `"section": "reload"` is
+returned; the configuration is still saved to disk.
 
 ---
 
