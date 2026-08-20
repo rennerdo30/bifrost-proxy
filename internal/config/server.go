@@ -391,7 +391,7 @@ func DefaultServerConfig() ServerConfig {
 		},
 		Cache: cache.DefaultConfig(),
 		Mesh: MeshConfig{
-			// Preserves the historical behaviour of always mounting the
+			// Preserves the historical behavior of always mounting the
 			// coordinator; persistence stays opt-in via state_path.
 			Enabled: true,
 		},
