@@ -55,7 +55,7 @@ func labelValue(m *dto.Metric, name string) string {
 // already resolved one, which made the per-backend Prometheus breakdown
 // useless.
 func TestServer_ConnectionMetricsCarryBackendLabel(t *testing.T) {
-	const backendName = "labelled-backend"
+	const backendName = "labeled-backend"
 
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -113,6 +113,9 @@ func TestServer_ConnectionMetricsCarryBackendLabel(t *testing.T) {
 	} {
 		requireBackendLabel(t, s, family, backendName)
 	}
+
+	requireProtocolLabel(t, s, "bifrost_requests_total", protocolHTTP)
+	requireProtocolLabel(t, s, "bifrost_connections_total", protocolHTTP)
 }
 
 // TestServer_SOCKS5MetricsRecorded is the regression test for SOCKS5 traffic
@@ -120,7 +123,7 @@ func TestServer_ConnectionMetricsCarryBackendLabel(t *testing.T) {
 // used to be constructed without a RecordMetrics hook, so only HTTP traffic
 // showed up in Prometheus.
 func TestServer_SOCKS5MetricsRecorded(t *testing.T) {
-	const backendName = "socks-labelled-backend"
+	const backendName = "socks-labeled-backend"
 
 	targetServer, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
@@ -195,7 +198,7 @@ func TestServer_SOCKS5MetricsRecorded(t *testing.T) {
 		requireBackendLabel(t, s, family, backendName)
 	}
 
-	// Request-scoped families are labelled by protocol, not backend.
+	// Request-scoped families are labeled by protocol, not backend.
 	requireProtocolLabel(t, s, "bifrost_requests_total", protocolSOCKS5)
 	requireProtocolLabel(t, s, "bifrost_request_duration_seconds", protocolSOCKS5)
 	requireProtocolLabel(t, s, "bifrost_request_size_bytes", protocolSOCKS5)

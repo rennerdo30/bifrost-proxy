@@ -22,7 +22,7 @@ type MeshAPI struct {
 	mu       sync.RWMutex
 
 	// statePath, when non-empty, is the file networks and peers are persisted
-	// to so they survive a restart. persistMu serialises writes to it
+	// to so they survive a restart. persistMu serializes writes to it
 	// independently of mu so a slow disk cannot block request handling.
 	statePath string
 	persistMu sync.Mutex

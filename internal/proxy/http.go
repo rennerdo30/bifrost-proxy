@@ -24,7 +24,7 @@ import (
 )
 
 // backendNameCache is the synthetic backend name reported for responses served
-// straight out of the local response cache. No real backend is dialled for
+// straight out of the local response cache. No real backend is dialed for
 // those requests, so without it the access log and the Prometheus `backend`
 // label would be empty and cache hits would be indistinguishable from requests
 // that failed before backend selection.

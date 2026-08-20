@@ -46,7 +46,7 @@ type meshNetworkState struct {
 	Peers   []mesh.PeerInfo `json:"peers"`
 }
 
-// snapshot builds a serialisable copy of the current coordinator state.
+// snapshot builds a serializable copy of the current coordinator state.
 func (m *MeshAPI) snapshot() meshState {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -99,7 +99,7 @@ func (m *MeshAPI) persist() {
 	}
 }
 
-// writeState serialises state and replaces the state file atomically.
+// writeState serializes state and replaces the state file atomically.
 func (m *MeshAPI) writeState(state meshState) error {
 	m.persistMu.Lock()
 	defer m.persistMu.Unlock()
@@ -110,8 +110,8 @@ func (m *MeshAPI) writeState(state meshState) error {
 	}
 
 	dir := filepath.Dir(m.statePath)
-	if err := os.MkdirAll(dir, meshStateDirPerm); err != nil {
-		return fmt.Errorf("create mesh state directory %s: %w", dir, err)
+	if mkErr := os.MkdirAll(dir, meshStateDirPerm); mkErr != nil {
+		return fmt.Errorf("create mesh state directory %s: %w", dir, mkErr)
 	}
 
 	tmp, err := os.CreateTemp(dir, meshStateTempPattern)
