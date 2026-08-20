@@ -114,6 +114,9 @@ function getEmitter(): NativeEventEmitter | null {
   return eventEmitter
 }
 
+/** Name of the state-change event emitted by the native modules. */
+const STATE_CHANGED_EVENT = 'BifrostVpnStateChanged'
+
 const DISCONNECTED_STATUS: NativeVpnStatus = {
   connected: false,
   serverAddress: '',
@@ -164,7 +167,12 @@ export const BifrostVpn = {
     if (emitter == null) {
       return () => {}
     }
-    const subscription = emitter.addListener('BifrostVpnStateChanged', listener)
+    // React Native types the emitter payload as `readonly Object[]`, so narrow
+    // it at the bridge boundary instead of handing `listener` over directly.
+    const handleEvent = (...args: readonly unknown[]): void => {
+      listener(args[0] as NativeVpnStateEvent)
+    }
+    const subscription = emitter.addListener(STATE_CHANGED_EVENT, handleEvent)
     return () => subscription.remove()
   },
 }
