@@ -54,6 +54,17 @@ updates:
     commit-message:
       prefix: "deps(npm):"
       prefix-development: "deps(npm-dev):"
+    ignore:
+      # TypeScript majors are held back by the linter, not by our code. The
+      # latest stable typescript-eslint (8.67.0) declares
+      # `peer typescript@">=4.8.4 <6.1.0"`, and its parser hard-errors with
+      # "typescript-eslint does not support TS 7.0" if installed anyway, so
+      # `npm ci` fails before any build step runs. TypeScript 7 also removed
+      # `baseUrl`, so it needs a tsconfig migration in every frontend.
+      # Revisit once typescript-eslint ships stable TS 7 support: bump
+      # typescript + typescript-eslint + the tsconfigs together.
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       # Must stay ahead of the catch-all group below: Dependabot puts a
       # dependency into the FIRST group whose patterns match it.
@@ -96,6 +107,9 @@ updates:
       - dependency-name: "@types/react"
       # Expo's Metro/babel preset requires Babel 7; Babel 8 breaks the bundler.
       - dependency-name: "@babel/core"
+        update-types: ["version-update:semver-major"]
+      # See the typescript note on the npm entry above.
+      - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
     groups:
       mobile-minor-patch:
