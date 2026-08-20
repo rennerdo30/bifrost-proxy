@@ -261,7 +261,7 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
   if (!config) {
     return (
       <div className="card text-center py-12">
-        <p className="text-gray-400">Unable to load configuration</p>
+        <p className="text-bifrost-subtle">Unable to load configuration</p>
       </div>
     )
   }
@@ -277,8 +277,8 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
             onClick={() => editorMode === 'raw' ? switchToVisualMode() : undefined}
             className={`px-3 py-1.5 text-sm rounded-md transition-all ${
               editorMode === 'visual'
-                ? 'bg-bifrost-accent text-white'
-                : 'text-bifrost-muted hover:text-white'
+                ? 'bg-bifrost-accent text-bifrost-on-accent'
+                : 'text-bifrost-muted hover:text-bifrost-heading'
             }`}
           >
             Visual Editor
@@ -287,8 +287,8 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
             onClick={() => editorMode === 'visual' ? switchToRawMode() : undefined}
             className={`px-3 py-1.5 text-sm rounded-md transition-all ${
               editorMode === 'raw'
-                ? 'bg-bifrost-accent text-white'
-                : 'text-bifrost-muted hover:text-white'
+                ? 'bg-bifrost-accent text-bifrost-on-accent'
+                : 'text-bifrost-muted hover:text-bifrost-heading'
             }`}
           >
             Raw YAML
@@ -313,7 +313,7 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
           <textarea
             value={rawYaml}
             onChange={(e) => handleRawYamlChange(e.target.value)}
-            className="w-full h-[600px] font-mono text-sm bg-bifrost-bg border border-bifrost-border rounded-lg p-4 text-gray-100 placeholder-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent resize-y"
+            className="w-full h-[600px] font-mono text-sm bg-bifrost-bg border border-bifrost-border rounded-lg p-4 text-bifrost-heading placeholder-bifrost-muted focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 focus:border-bifrost-accent resize-y"
             spellCheck={false}
           />
         </div>
@@ -436,7 +436,7 @@ export function ConfigEditor({ config, isLoading, onSave, onReload, onValidate }
                   onChange={(e) => setCreateBackup(e.target.checked)}
                   className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                 />
-                <span className="text-sm text-gray-400">Create backup</span>
+                <span className="text-sm text-bifrost-subtle">Create backup</span>
               </label>
               <span className="text-xs text-bifrost-muted hidden sm:inline">
                 Press <kbd className="px-1.5 py-0.5 bg-bifrost-bg rounded text-xs border border-bifrost-border">

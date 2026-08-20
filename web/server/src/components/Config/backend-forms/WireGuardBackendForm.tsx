@@ -198,7 +198,7 @@ export function WireGuardBackendForm({ config, onChange }: WireGuardBackendFormP
       {showImport && (
         <div className="bg-bifrost-bg-tertiary rounded-lg p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-white">Import WireGuard Configuration</h4>
+            <h4 className="text-sm font-semibold text-bifrost-heading">Import WireGuard Configuration</h4>
             <input
               type="file"
               ref={fileInputRef}
@@ -215,7 +215,7 @@ export function WireGuardBackendForm({ config, onChange }: WireGuardBackendFormP
             </button>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-bifrost-text mb-1">
               Or paste your WireGuard config below:
             </label>
             <textarea
@@ -263,10 +263,10 @@ AllowedIPs = 0.0.0.0/0`}
 
       {/* Interface Settings */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Interface</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Interface</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-300 mb-1">Private Key</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Private Key</label>
             <textarea
               value={config.private_key || ''}
               onChange={(e) => update('private_key', e.target.value)}
@@ -276,7 +276,7 @@ AllowedIPs = 0.0.0.0/0`}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Address</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Address</label>
             <input
               type="text"
               value={config.address || ''}
@@ -286,7 +286,7 @@ AllowedIPs = 0.0.0.0/0`}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">MTU</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">MTU</label>
             <input
               type="number"
               value={config.mtu ?? ''}
@@ -308,10 +308,10 @@ AllowedIPs = 0.0.0.0/0`}
 
       {/* Peer Settings */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Peer</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Peer</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-300 mb-1">Public Key</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Public Key</label>
             <input
               type="text"
               value={peer.public_key || ''}
@@ -321,7 +321,7 @@ AllowedIPs = 0.0.0.0/0`}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Endpoint</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Endpoint</label>
             <input
               type="text"
               value={peer.endpoint || ''}
@@ -331,7 +331,7 @@ AllowedIPs = 0.0.0.0/0`}
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Persistent Keepalive</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Persistent Keepalive</label>
             <input
               type="number"
               value={peer.persistent_keepalive ?? ''}
@@ -342,7 +342,7 @@ AllowedIPs = 0.0.0.0/0`}
             <p className="text-xs text-bifrost-muted mt-1">Seconds (0 to disable)</p>
           </div>
           <div className="md:col-span-2">
-            <label className="block text-sm font-medium text-gray-300 mb-1">Preshared Key</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Preshared Key</label>
             <input
               type="text"
               value={peer.preshared_key || ''}

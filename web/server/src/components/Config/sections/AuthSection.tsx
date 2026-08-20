@@ -175,7 +175,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
   return (
     <Section title="Authentication" badge="restart-required">
       <div className="space-y-4">
-        <p className="text-sm text-gray-300">
+        <p className="text-sm text-bifrost-text">
           {providers.length === 0
             ? 'No authentication required'
             : `${providers.filter((p) => p.enabled).length} of ${providers.length} providers enabled`}
@@ -202,7 +202,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                   />
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className={`font-medium ${provider.enabled ? 'text-white' : 'text-gray-500'}`}>
+                      <span className={`font-medium ${provider.enabled ? 'text-bifrost-heading' : 'text-bifrost-muted'}`}>
                         {provider.name}
                       </span>
                       <span className="badge badge-info text-xs">{provider.type}</span>
@@ -273,7 +273,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                 <div className="border-t border-bifrost-border p-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Provider Name</label>
+                      <label className="block text-sm font-medium text-bifrost-text mb-1">Provider Name</label>
                       <input
                         type="text"
                         value={provider.name}
@@ -282,7 +282,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
+                      <label className="block text-sm font-medium text-bifrost-text mb-1">Type</label>
                       <select
                         value={provider.type}
                         onChange={(e) => {
@@ -322,10 +322,10 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
         {/* Add Provider Form */}
         {showAddForm ? (
           <div className="bg-bifrost-bg rounded-lg border border-bifrost-accent p-4">
-            <h4 className="text-sm font-medium text-white mb-3">Add Authentication Provider</h4>
+            <h4 className="text-sm font-medium text-bifrost-heading mb-3">Add Authentication Provider</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Provider Name</label>
+                <label className="block text-sm font-medium text-bifrost-text mb-1">Provider Name</label>
                 <input
                   type="text"
                   value={newProviderName}
@@ -336,7 +336,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
+                <label className="block text-sm font-medium text-bifrost-text mb-1">Type</label>
                 <select
                   value={newProviderType}
                   onChange={(e) => setNewProviderType(e.target.value as AuthProviderType)}

@@ -8,25 +8,25 @@ function ConnectionRow({ conn }: { conn: Connection }) {
   return (
     <tr className="border-b border-bifrost-border hover:bg-bifrost-bg-tertiary/50">
       <td className="px-4 py-3">
-        <div className="font-mono text-sm text-white">{conn.client_ip}</div>
+        <div className="font-mono text-sm text-bifrost-heading">{conn.client_ip}</div>
         <div className="text-xs text-bifrost-muted">{conn.client_port}</div>
       </td>
       <td className="px-4 py-3">
         <span className={`px-2 py-0.5 rounded text-xs font-medium ${
           conn.protocol === 'HTTP' ? 'bg-blue-500/20 text-blue-400' :
           conn.protocol === 'SOCKS5' ? 'bg-purple-500/20 text-purple-400' :
-          'bg-gray-500/20 text-gray-400'
+          'bg-bifrost-muted/20 text-bifrost-subtle'
         }`}>
           {conn.protocol || 'UNKNOWN'}
         </span>
       </td>
-      <td className="px-4 py-3 text-sm text-gray-300 truncate max-w-xs">
+      <td className="px-4 py-3 text-sm text-bifrost-text truncate max-w-xs">
         {conn.host || '-'}
       </td>
-      <td className="px-4 py-3 text-sm text-gray-300">
+      <td className="px-4 py-3 text-sm text-bifrost-text">
         {conn.backend || '-'}
       </td>
-      <td className="px-4 py-3 text-sm text-gray-400">
+      <td className="px-4 py-3 text-sm text-bifrost-subtle">
         {formatDuration(conn.start_time)}
       </td>
       <td className="px-4 py-3 text-sm">
@@ -42,14 +42,14 @@ function ClientRow({ client }: { client: ClientSummary }) {
   return (
     <tr className="border-b border-bifrost-border hover:bg-bifrost-bg-tertiary/50">
       <td className="px-4 py-3">
-        <div className="font-mono text-sm text-white">{client.client_ip}</div>
+        <div className="font-mono text-sm text-bifrost-heading">{client.client_ip}</div>
       </td>
       <td className="px-4 py-3 text-center">
         <span className="px-2 py-0.5 rounded bg-bifrost-purple/20 text-bifrost-purple font-medium">
           {client.connections}
         </span>
       </td>
-      <td className="px-4 py-3 text-sm text-gray-400">
+      <td className="px-4 py-3 text-sm text-bifrost-subtle">
         {formatDuration(client.first_seen)}
       </td>
       <td className="px-4 py-3 text-sm">
@@ -101,8 +101,8 @@ export function Clients() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Connected Clients</h2>
-          <p className="text-bifrost-muted mt-1">
+          <h2 className="page-title">Connected Clients</h2>
+          <p className="page-subtitle">
             View active client connections in real-time
           </p>
         </div>
@@ -115,8 +115,8 @@ export function Clients() {
               onClick={() => setView('clients')}
               className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                 view === 'clients'
-                  ? 'bg-bifrost-purple text-white'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-bifrost-purple text-bifrost-heading'
+                  : 'text-bifrost-subtle hover:text-bifrost-heading'
               }`}
             >
               By Client
@@ -125,8 +125,8 @@ export function Clients() {
               onClick={() => setView('connections')}
               className={`px-3 py-1.5 text-sm font-medium transition-colors ${
                 view === 'connections'
-                  ? 'bg-bifrost-purple text-white'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-bifrost-purple text-bifrost-heading'
+                  : 'text-bifrost-subtle hover:text-bifrost-heading'
               }`}
             >
               All Connections
@@ -140,7 +140,7 @@ export function Clients() {
           >
             {autoRefresh ? (
               <>
-                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-bifrost-on-accent animate-pulse" aria-hidden="true" />
                 Live
               </>
             ) : (
@@ -173,21 +173,21 @@ export function Clients() {
       {/* Stats Summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card py-3">
-          <p className="text-sm text-gray-400">Connected Clients</p>
-          <p className="text-xl font-bold text-white">{clientsData?.count ?? 0}</p>
+          <p className="text-sm text-bifrost-subtle">Connected Clients</p>
+          <p className="text-xl font-bold text-bifrost-heading">{clientsData?.count ?? 0}</p>
         </div>
         <div className="card py-3">
-          <p className="text-sm text-gray-400">Active Connections</p>
+          <p className="text-sm text-bifrost-subtle">Active Connections</p>
           <p className="text-xl font-bold text-bifrost-purple">{connectionsData?.count ?? 0}</p>
         </div>
         <div className="card py-3">
-          <p className="text-sm text-gray-400">HTTP</p>
+          <p className="text-sm text-bifrost-subtle">HTTP</p>
           <p className="text-xl font-bold text-blue-400">
             {connectionsData?.connections?.filter(c => c.protocol === 'HTTP').length ?? 0}
           </p>
         </div>
         <div className="card py-3">
-          <p className="text-sm text-gray-400">SOCKS5</p>
+          <p className="text-sm text-bifrost-subtle">SOCKS5</p>
           <p className="text-xl font-bold text-purple-400">
             {connectionsData?.connections?.filter(c => c.protocol === 'SOCKS5').length ?? 0}
           </p>
@@ -231,7 +231,7 @@ export function Clients() {
           clientsData?.clients && clientsData.clients.length > 0 ? (
             <table className="w-full">
               <thead>
-                <tr className="bg-bifrost-bg-tertiary text-left text-sm text-gray-400">
+                <tr className="bg-bifrost-bg-tertiary text-left text-sm text-bifrost-subtle">
                   <th className="px-4 py-3 font-medium">Client IP</th>
                   <th className="px-4 py-3 font-medium text-center">Connections</th>
                   <th className="px-4 py-3 font-medium">Connected Since</th>
@@ -266,7 +266,7 @@ export function Clients() {
         ) : connectionsData?.connections && connectionsData.connections.length > 0 ? (
           <table className="w-full">
             <thead>
-              <tr className="bg-bifrost-bg-tertiary text-left text-sm text-gray-400">
+              <tr className="bg-bifrost-bg-tertiary text-left text-sm text-bifrost-subtle">
                 <th className="px-4 py-3 font-medium">Client</th>
                 <th className="px-4 py-3 font-medium">Protocol</th>
                 <th className="px-4 py-3 font-medium">Host</th>

@@ -299,7 +299,7 @@ export function VPN() {
                 disabled={setModeMutation.isPending}
                 className={`px-3 py-1 rounded text-sm transition-colors ${
                   splitRules?.mode === 'exclude'
-                    ? 'bg-bifrost-accent text-white'
+                    ? 'bg-bifrost-accent text-bifrost-on-accent'
                     : 'bg-bifrost-card border border-bifrost-border text-bifrost-muted hover:border-bifrost-accent hover:text-bifrost-accent'
                 }`}
               >
@@ -310,7 +310,7 @@ export function VPN() {
                 disabled={setModeMutation.isPending}
                 className={`px-3 py-1 rounded text-sm transition-colors ${
                   splitRules?.mode === 'include'
-                    ? 'bg-bifrost-accent text-white'
+                    ? 'bg-bifrost-accent text-bifrost-on-accent'
                     : 'bg-bifrost-card border border-bifrost-border text-bifrost-muted hover:border-bifrost-accent hover:text-bifrost-accent'
                 }`}
               >

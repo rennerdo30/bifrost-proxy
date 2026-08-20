@@ -65,16 +65,16 @@ export function PurgeDomainDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
       <div className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-          <h2 className="text-xl font-semibold text-white">Purge Domain Cache</h2>
+          <h2 className="text-xl font-semibold text-bifrost-heading">Purge Domain Cache</h2>
           <button
             onClick={onClose}
-            className="p-1 text-bifrost-muted hover:text-white transition-colors"
+            className="p-1 text-bifrost-muted hover:text-bifrost-heading transition-colors"
             aria-label="Close dialog"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -92,12 +92,12 @@ export function PurgeDomainDialog({
               </div>
             )}
 
-            <p className="text-gray-300 text-sm">
+            <p className="text-bifrost-text text-sm">
               This will delete all cached entries for the specified domain.
             </p>
 
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">
+              <label className="block text-sm font-medium text-bifrost-text mb-1">
                 Domain
               </label>
               <input
@@ -118,7 +118,7 @@ export function PurgeDomainDialog({
             </button>
             <button
               type="submit"
-              className="btn bg-bifrost-warning hover:bg-bifrost-warning/80 text-black"
+              className="btn bg-bifrost-warning hover:bg-bifrost-warning/80 text-bifrost-on-warning"
               disabled={isPurging}
             >
               {isPurging ? 'Purging...' : 'Purge Domain'}

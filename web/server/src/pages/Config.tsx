@@ -231,8 +231,8 @@ export function Config() {
       {/* Page Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Configuration</h2>
-          <p className="text-bifrost-muted mt-1">View and edit server configuration</p>
+          <h2 className="page-title">Configuration</h2>
+          <p className="page-subtitle">View and edit server configuration</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportConfig} className="btn btn-secondary text-sm" title="Export config as YAML">
@@ -265,7 +265,7 @@ export function Config() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Filter sections..."
-                className="w-full pl-9 pr-3 py-2 text-sm bg-bifrost-bg border border-bifrost-border rounded-lg text-gray-100 placeholder-bifrost-muted focus:outline-none focus:ring-1 focus:ring-bifrost-accent/50"
+                className="w-full pl-9 pr-3 py-2 text-sm bg-bifrost-bg border border-bifrost-border rounded-lg text-bifrost-heading placeholder-bifrost-muted focus:outline-none focus:ring-1 focus:ring-bifrost-accent/50"
               />
             </div>
 

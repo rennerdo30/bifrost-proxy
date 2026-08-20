@@ -79,7 +79,7 @@ export function BackendList({ backends, isLoading, onEdit, onDelete, onTest }: B
             d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008zm-3 6h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008z"
           />
         </svg>
-        <p className="text-gray-400">No backends configured</p>
+        <p className="text-bifrost-subtle">No backends configured</p>
         <p className="text-sm text-bifrost-muted mt-1">
           Add backends to your configuration to get started
         </p>
@@ -112,7 +112,7 @@ export function BackendList({ backends, isLoading, onEdit, onDelete, onTest }: B
                 style={{ animationDelay: `${index * 30}ms` }}
               >
                 <td className="table-cell">
-                  <span className="font-medium text-white">{backend.name}</span>
+                  <span className="font-medium text-bifrost-heading">{backend.name}</span>
                 </td>
                 <td className="table-cell">
                   <span className="badge badge-info">{backend.type}</span>
@@ -165,7 +165,7 @@ export function BackendList({ backends, isLoading, onEdit, onDelete, onTest }: B
                       {onEdit && (
                         <button
                           onClick={() => onEdit(backend.name)}
-                          className="p-1.5 text-bifrost-muted hover:text-white hover:bg-white/10 rounded transition-colors"
+                          className="p-1.5 text-bifrost-muted hover:text-bifrost-heading hover:bg-white/10 rounded transition-colors"
                           title="Edit backend"
                           aria-label={`Edit backend ${backend.name}`}
                         >

@@ -34,7 +34,7 @@ export function RoutesList({ routes }: RoutesListProps) {
                 <td className="table-cell">
                   <span className="badge badge-info">{route.priority}</span>
                 </td>
-                <td className="table-cell font-medium text-white">
+                <td className="table-cell font-medium text-bifrost-heading">
                   {route.name}
                 </td>
                 <td className="table-cell">

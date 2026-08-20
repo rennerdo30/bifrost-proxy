@@ -26,8 +26,8 @@ export function ConfigGenerator() {
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h2 className="text-2xl font-bold text-white">Config Generator</h2>
-        <p className="text-bifrost-muted mt-1">
+        <h2 className="page-title">Config Generator</h2>
+        <p className="page-subtitle">
           Generate client configuration files for the Bifrost client
         </p>
       </div>

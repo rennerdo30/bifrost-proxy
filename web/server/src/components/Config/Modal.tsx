@@ -112,7 +112,7 @@ export function Modal({
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm"
         onClick={onClose}
         aria-hidden="true"
       />
@@ -127,12 +127,12 @@ export function Modal({
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-          <h2 id={titleId} className="text-xl font-semibold text-white">
+          <h2 id={titleId} className="text-xl font-semibold text-bifrost-heading">
             {title}
           </h2>
           <button
             onClick={onClose}
-            className="p-1 text-bifrost-muted hover:text-white transition-colors"
+            className="p-1 text-bifrost-muted hover:text-bifrost-heading transition-colors"
             aria-label="Close dialog"
           >
             <svg

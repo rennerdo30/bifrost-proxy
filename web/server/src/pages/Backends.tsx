@@ -97,8 +97,8 @@ export function Backends() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Backends</h2>
-          <p className="text-bifrost-muted mt-1">
+          <h2 className="page-title">Backends</h2>
+          <p className="page-subtitle">
             Manage and monitor proxy backend connections
           </p>
         </div>
@@ -154,7 +154,7 @@ export function Backends() {
           <svg className="w-5 h-5 text-bifrost-accent mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          <p className="text-sm text-gray-300">
+          <p className="text-sm text-bifrost-text">
             <strong>Runtime vs Persistent:</strong> Backends added here are active immediately but not persisted across restarts.
             To make changes permanent, configure backends in the <a href="/config" className="text-bifrost-accent hover:underline">Configuration</a> page.
           </p>
@@ -165,17 +165,17 @@ export function Backends() {
       {backends && backends.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="card bg-gradient-to-br from-bifrost-accent/10 to-transparent">
-            <p className="text-sm text-gray-400">Total Backends</p>
-            <p className="text-2xl font-bold text-white mt-1">{backends.length}</p>
+            <p className="text-sm text-bifrost-subtle">Total Backends</p>
+            <p className="text-2xl font-bold text-bifrost-heading mt-1">{backends.length}</p>
           </div>
           <div className="card bg-gradient-to-br from-bifrost-success/10 to-transparent">
-            <p className="text-sm text-gray-400">Healthy</p>
+            <p className="text-sm text-bifrost-subtle">Healthy</p>
             <p className="text-2xl font-bold text-bifrost-success mt-1">
               {backends.filter((b) => b.healthy).length}
             </p>
           </div>
           <div className="card bg-gradient-to-br from-bifrost-error/10 to-transparent">
-            <p className="text-sm text-gray-400">Unhealthy</p>
+            <p className="text-sm text-bifrost-subtle">Unhealthy</p>
             <p className="text-2xl font-bold text-bifrost-error mt-1">
               {backends.filter((b) => !b.healthy).length}
             </p>

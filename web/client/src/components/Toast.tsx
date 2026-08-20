@@ -126,22 +126,22 @@ function ToastItem({
       aria-live="polite"
       className={`
         relative flex items-start gap-3
-        bg-slate-800/95 backdrop-blur-sm
-        border border-slate-700 border-l-4 ${getBorderColor(toast.type)}
+        bg-bifrost-card/95 backdrop-blur-sm
+        border border-bifrost-border border-l-4 ${getBorderColor(toast.type)}
         rounded-lg shadow-lg shadow-black/20
         p-4 pr-10 min-w-[300px] max-w-md
         ${isExiting ? 'animate-toast-out' : 'animate-toast-in'}
       `}
     >
       <ToastIcon type={toast.type} />
-      <p className="text-sm text-slate-100 leading-relaxed break-words flex-1">
+      <p className="text-sm text-bifrost-heading leading-relaxed break-words flex-1">
         {toast.message}
       </p>
 
       {/* Dismiss button */}
       <button
         onClick={onDismiss}
-        className="absolute top-2 right-2 p-1.5 rounded-md text-slate-400 hover:text-slate-200 hover:bg-slate-700/50 transition-colors"
+        className="absolute top-2 right-2 p-1.5 rounded-md text-bifrost-subtle hover:text-bifrost-heading hover:bg-bifrost-card-hover transition-colors"
         aria-label="Dismiss notification"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -151,7 +151,7 @@ function ToastItem({
 
       {/* Progress bar for auto-dismiss */}
       {toast.duration > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 h-1 bg-slate-700/50 rounded-b-lg overflow-hidden">
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-bifrost-border/50 rounded-b-lg overflow-hidden">
           <div
             className={`h-full transition-none ${
               toast.type === 'success' ? 'bg-emerald-400/60' :

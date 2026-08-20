@@ -162,8 +162,8 @@ export function Cache() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Cache</h2>
-          <p className="text-bifrost-muted mt-1">
+          <h2 className="page-title">Cache</h2>
+          <p className="page-subtitle">
             Monitor and manage cached responses
           </p>
         </div>
@@ -267,15 +267,15 @@ export function Cache() {
       {stats && stats.enabled && (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-4">
           <div className="card py-3 bg-gradient-to-br from-bifrost-accent/10 to-transparent">
-            <p className="text-sm text-gray-400">Storage Type</p>
-            <p className="text-lg font-bold text-white capitalize mt-1">{stats.storage_type}</p>
+            <p className="text-sm text-bifrost-subtle">Storage Type</p>
+            <p className="text-lg font-bold text-bifrost-heading capitalize mt-1">{stats.storage_type}</p>
           </div>
           <div className="card py-3 bg-gradient-to-br from-cyan-500/10 to-transparent">
-            <p className="text-sm text-gray-400">Entries</p>
+            <p className="text-sm text-bifrost-subtle">Entries</p>
             <p className="text-lg font-bold text-cyan-400 mt-1">{stats.entries.toLocaleString()}</p>
           </div>
           <div className="card py-3 bg-gradient-to-br from-emerald-500/10 to-transparent">
-            <p className="text-sm text-gray-400">Size Used</p>
+            <p className="text-sm text-bifrost-subtle">Size Used</p>
             <p className="text-lg font-bold text-emerald-400 mt-1">
               {formatBytes(stats.total_size_bytes)}
             </p>
@@ -284,7 +284,7 @@ export function Cache() {
             </p>
           </div>
           <div className="card py-3 bg-gradient-to-br from-bifrost-success/10 to-transparent">
-            <p className="text-sm text-gray-400">Hit Rate</p>
+            <p className="text-sm text-bifrost-subtle">Hit Rate</p>
             <p className="text-lg font-bold text-bifrost-success mt-1">
               {(stats.hit_rate * 100).toFixed(1)}%
             </p>
@@ -293,14 +293,14 @@ export function Cache() {
             </p>
           </div>
           <div className="card py-3 bg-gradient-to-br from-bifrost-error/10 to-transparent">
-            <p className="text-sm text-gray-400">Misses</p>
+            <p className="text-sm text-bifrost-subtle">Misses</p>
             <p className="text-lg font-bold text-bifrost-error mt-1">
               {stats.miss_count.toLocaleString()}
             </p>
           </div>
           <div className="card py-3">
-            <p className="text-sm text-gray-400">Evictions</p>
-            <p className="text-lg font-bold text-white mt-1">
+            <p className="text-sm text-bifrost-subtle">Evictions</p>
+            <p className="text-lg font-bold text-bifrost-heading mt-1">
               {stats.eviction_count.toLocaleString()}
             </p>
           </div>
@@ -311,7 +311,7 @@ export function Cache() {
       {stats && stats.enabled && (
         <div className="card">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-400">Storage Usage</span>
+            <span className="text-sm text-bifrost-subtle">Storage Usage</span>
             <span className="text-sm font-mono text-bifrost-muted">
               {formatBytes(stats.total_size_bytes)} / {formatBytes(stats.max_size_bytes)}
             </span>
@@ -337,8 +337,8 @@ export function Cache() {
           onClick={() => setActiveTab('entries')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'entries'
-              ? 'border-bifrost-accent text-white'
-              : 'border-transparent text-bifrost-muted hover:text-white'
+              ? 'border-bifrost-accent text-bifrost-heading'
+              : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
           }`}
         >
           Cached Entries
@@ -352,8 +352,8 @@ export function Cache() {
           onClick={() => setActiveTab('rules')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'rules'
-              ? 'border-bifrost-accent text-white'
-              : 'border-transparent text-bifrost-muted hover:text-white'
+              ? 'border-bifrost-accent text-bifrost-heading'
+              : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
           }`}
         >
           Rules
@@ -367,8 +367,8 @@ export function Cache() {
           onClick={() => setActiveTab('presets')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeTab === 'presets'
-              ? 'border-bifrost-accent text-white'
-              : 'border-transparent text-bifrost-muted hover:text-white'
+              ? 'border-bifrost-accent text-bifrost-heading'
+              : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
           }`}
         >
           Presets

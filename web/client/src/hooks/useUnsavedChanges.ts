@@ -1,30 +1,23 @@
-import { useEffect, useCallback } from 'react'
-import { useBlocker } from 'react-router-dom'
+import { useEffect } from 'react'
 
 /**
- * Hook that warns users about unsaved changes when navigating away.
- * Uses both browser beforeunload and react-router blocker.
+ * Warns the user about unsaved changes before the tab is closed or reloaded.
+ *
+ * Note: react-router's `useBlocker` cannot be used here. It only works inside a
+ * data router, while the app is mounted with `<HashRouter>`, so calling it threw
+ * ("useBlocker must be used within a data router") and took the whole page down
+ * via the error boundary.
  */
 export function useUnsavedChanges(hasChanges: boolean) {
-  // Browser tab/window close warning
   useEffect(() => {
     if (!hasChanges) return
 
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault()
+    const handler = (event: BeforeUnloadEvent) => {
+      // Required for the browser to show its native confirmation dialog.
+      event.preventDefault()
     }
 
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [hasChanges])
-
-  // React Router navigation blocking
-  const blocker = useBlocker(
-    useCallback(
-      () => hasChanges,
-      [hasChanges]
-    )
-  )
-
-  return { blocker }
 }

@@ -42,7 +42,7 @@ export function APISection({ config, onChange }: APISectionProps) {
             onChange={(e) => update('enabled', e.target.checked)}
             className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
           />
-          <span className="text-sm font-medium text-gray-300">Enable REST API</span>
+          <span className="text-sm font-medium text-bifrost-text">Enable REST API</span>
         </label>
 
         {config.enabled && (
@@ -57,7 +57,7 @@ export function APISection({ config, onChange }: APISectionProps) {
                 helpText="Format: :port or host:port"
               />
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">API Token</label>
+                <label className="block text-sm font-medium text-bifrost-text mb-1">API Token</label>
                 <div className="relative">
                   <input
                     type={showToken ? 'text' : 'password'}
@@ -70,7 +70,7 @@ export function APISection({ config, onChange }: APISectionProps) {
                   <button
                     type="button"
                     onClick={() => setShowToken(!showToken)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-white"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-bifrost-heading"
                     aria-label={showToken ? 'Hide token' : 'Show token'}
                   >
                     {showToken ? (
@@ -105,7 +105,7 @@ export function APISection({ config, onChange }: APISectionProps) {
                   onChange={(e) => update('enable_request_log', e.target.checked)}
                   className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                 />
-                <span className="text-sm font-medium text-gray-300">Enable Request Log (for Web UI)</span>
+                <span className="text-sm font-medium text-bifrost-text">Enable Request Log (for Web UI)</span>
               </label>
               {config.enable_request_log !== false && (
                 <div className="pl-7">

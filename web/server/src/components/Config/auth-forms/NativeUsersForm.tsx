@@ -51,7 +51,7 @@ export function NativeUsersForm({ config, onChange }: NativeUsersFormProps) {
       {users.map((user, index) => (
         <div key={index} className="p-4 bg-bifrost-bg rounded-lg space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-white">User {index + 1}</span>
+            <span className="text-sm font-medium text-bifrost-heading">User {index + 1}</span>
             <button
               type="button"
               onClick={() => removeUser(index)}
@@ -65,7 +65,7 @@ export function NativeUsersForm({ config, onChange }: NativeUsersFormProps) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Username</label>
               <input
                 type="text"
                 value={user.username}
@@ -75,7 +75,7 @@ export function NativeUsersForm({ config, onChange }: NativeUsersFormProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Password Hash (bcrypt)</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Password Hash (bcrypt)</label>
               <input
                 type="text"
                 value={user.password_hash}

@@ -12,16 +12,21 @@ const tabs = [
 
 export function TabNav() {
   return (
-    <nav className="flex gap-2 p-1 bg-bifrost-card rounded-xl border border-bifrost-border">
+    <nav
+      aria-label="Sections"
+      className="flex gap-1 overflow-x-auto p-1 bg-bifrost-card rounded-xl border border-bifrost-border sm:gap-2"
+    >
       {tabs.map((tab) => (
         <NavLink
           key={tab.path}
           to={tab.path}
           className={({ isActive }) =>
-            `tab flex items-center gap-2 ${isActive ? 'tab-active' : 'tab-inactive'}`
+            `tab flex shrink-0 items-center gap-2 whitespace-nowrap ${
+              isActive ? 'tab-active' : 'tab-inactive'
+            }`
           }
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
           </svg>
           {tab.label}

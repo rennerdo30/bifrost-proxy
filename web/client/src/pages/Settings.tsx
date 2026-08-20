@@ -197,7 +197,7 @@ export function Settings() {
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <h2 className="text-xl font-semibold text-bifrost-text">Settings</h2>
+          <h2 className="page-title">Settings</h2>
           <div className="flex flex-wrap items-center gap-3">
             {saveStatus === 'saved' && (
               <span className="text-sm text-bifrost-success flex items-center gap-1">

@@ -95,7 +95,7 @@ export function CacheEntryList({
             d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
           />
         </svg>
-        <p className="text-gray-400">No cached entries</p>
+        <p className="text-bifrost-subtle">No cached entries</p>
         <p className="text-sm text-bifrost-muted mt-1">
           Cached responses will appear here as they are stored
         </p>
@@ -134,12 +134,12 @@ export function CacheEntryList({
                     style={{ animationDelay: `${index * 20}ms` }}
                   >
                     <td className="table-cell">
-                      <span className="font-medium text-white truncate max-w-[150px] block">
+                      <span className="font-medium text-bifrost-heading truncate max-w-[150px] block">
                         {entry.host}
                       </span>
                     </td>
                     <td className="table-cell">
-                      <span className="text-gray-400 truncate max-w-[300px] block font-mono text-xs">
+                      <span className="text-bifrost-subtle truncate max-w-[300px] block font-mono text-xs">
                         {entry.url}
                       </span>
                     </td>
@@ -182,25 +182,25 @@ export function CacheEntryList({
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                           <div>
                             <p className="text-bifrost-muted text-xs uppercase">Cache Key</p>
-                            <p className="text-gray-300 font-mono text-xs break-all mt-1">
+                            <p className="text-bifrost-text font-mono text-xs break-all mt-1">
                               {entry.key}
                             </p>
                           </div>
                           <div>
                             <p className="text-bifrost-muted text-xs uppercase">Created</p>
-                            <p className="text-gray-300 font-mono text-sm mt-1">
+                            <p className="text-bifrost-text font-mono text-sm mt-1">
                               {new Date(entry.created_at).toLocaleString()}
                             </p>
                           </div>
                           <div>
                             <p className="text-bifrost-muted text-xs uppercase">Expires</p>
-                            <p className="text-gray-300 font-mono text-sm mt-1">
+                            <p className="text-bifrost-text font-mono text-sm mt-1">
                               {new Date(entry.expires_at).toLocaleString()}
                             </p>
                           </div>
                           <div>
                             <p className="text-bifrost-muted text-xs uppercase">Access Count</p>
-                            <p className="text-gray-300 font-mono text-sm mt-1">
+                            <p className="text-bifrost-text font-mono text-sm mt-1">
                               {entry.access_count}
                             </p>
                           </div>

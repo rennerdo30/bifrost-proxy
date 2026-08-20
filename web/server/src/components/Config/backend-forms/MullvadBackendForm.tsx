@@ -63,9 +63,9 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
 
       {/* Account ID */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Account</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Account</h4>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Account ID</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Account ID</label>
           <input
             type="text"
             value={formatAccountId(config.account_id || '')}
@@ -87,10 +87,10 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
 
       {/* Server Selection */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Server Selection</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Server Selection</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Country</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Country</label>
             <select
               value={config.country || ''}
               onChange={(e) => update('country', e.target.value || undefined)}
@@ -104,7 +104,7 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">City</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">City</label>
             <input
               type="text"
               value={config.city || ''}
@@ -122,11 +122,11 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
                 onChange={(e) => update('auto_select', e.target.checked)}
                 className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm font-medium text-gray-300">Auto-select best server</span>
+              <span className="text-sm font-medium text-bifrost-text">Auto-select best server</span>
             </label>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Max Server Load (%)</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Max Server Load (%)</label>
             <input
               type="range"
               min="10"
@@ -138,7 +138,7 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
             />
             <div className="flex justify-between text-xs text-bifrost-muted mt-1">
               <span>10%</span>
-              <span className="font-medium text-white">{config.max_load ?? 70}%</span>
+              <span className="font-medium text-bifrost-heading">{config.max_load ?? 70}%</span>
               <span>100%</span>
             </div>
           </div>
@@ -147,7 +147,7 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
 
       {/* Protocol Selection */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Protocol</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Protocol</h4>
         <div className="flex gap-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -157,7 +157,7 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
               onChange={() => handleProtocolChange('wireguard')}
               className="form-radio text-bifrost-purple"
             />
-            <span className="text-sm text-gray-300">WireGuard (Recommended)</span>
+            <span className="text-sm text-bifrost-text">WireGuard (Recommended)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -167,7 +167,7 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
               onChange={() => handleProtocolChange('openvpn')}
               className="form-radio text-bifrost-purple"
             />
-            <span className="text-sm text-gray-300">OpenVPN</span>
+            <span className="text-sm text-bifrost-text">OpenVPN</span>
           </label>
         </div>
         <p className="text-xs text-bifrost-muted mt-2">
@@ -179,10 +179,10 @@ export function MullvadBackendForm({ config, onChange }: MullvadBackendFormProps
 
       {/* Advanced Settings */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Advanced Settings</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Advanced Settings</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Refresh Interval</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Refresh Interval</label>
             <input
               type="text"
               value={config.refresh_interval || ''}

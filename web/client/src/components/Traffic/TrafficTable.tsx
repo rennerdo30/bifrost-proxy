@@ -64,7 +64,7 @@ export function TrafficTable({ entries }: TrafficTableProps) {
                   {formatTime(entry.timestamp)}
                 </td>
                 <td className="table-cell">
-                  <span className={`font-mono font-medium ${methodColors[entry.method || ''] || 'text-gray-400'}`}>
+                  <span className={`font-mono font-medium ${methodColors[entry.method || ''] || 'text-bifrost-subtle'}`}>
                     {entry.method || entry.type || '—'}
                   </span>
                 </td>
