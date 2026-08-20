@@ -76,6 +76,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System proxy support extended beyond Windows to macOS (`networksetup`) and
   Linux/GNOME (`gsettings`); unsupported desktops now return `ErrNotSupported`
   instead of reporting a successful no-op
+- Redesigned logo, favicons, tray icons and app icons around a single mark: a
+  faceted span crossing between two realms, drawn on a 4-unit grid so it stays
+  legible down to 16px. Light and dark variants plus a monochrome cut ship in
+  `assets/`; both dashboards and the docs site now use the same favicon
 
 ## [1.0.0] - 2026-01-16
 

@@ -1,41 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <defs>
-    <linearGradient id="bridgeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" style="stop-color:#FF6B6B"/>
-      <stop offset="25%" style="stop-color:#FFE66D"/>
-      <stop offset="50%" style="stop-color:#4ECDC4"/>
-      <stop offset="75%" style="stop-color:#45B7D1"/>
-      <stop offset="100%" style="stop-color:#96CEB4"/>
-    </linearGradient>
-    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#1a1a2e"/>
-      <stop offset="100%" style="stop-color:#16213e"/>
-    </linearGradient>
-  </defs>
+<!--
+  Bifrost mark: a faceted span crossing between two realms.
 
-  <!-- Background circle -->
-  <circle cx="100" cy="100" r="95" fill="url(#bgGradient)"/>
+  Hand-built on a 4-unit grid inside a 64x40 viewBox, artwork bounds 4,4-60,36,
+  so every horizontal and vertical stroke edge lands on a whole pixel at 16px.
+  Three flat colours, no gradients: the two landings (cyan / violet) and the
+  span itself in the product accent blue. The span is drawn first and the two
+  landings overlap it, which puts the colour seams on straight runs of the leg
+  - butt caps there mean the seams are clean lines, not lobes.
 
-  <!-- Bridge arch (rainbow bridge) -->
-  <path d="M 30 130 Q 100 40 170 130"
-        stroke="url(#bridgeGradient)"
-        stroke-width="12"
-        fill="none"
-        stroke-linecap="round"/>
-
-  <!-- Connection nodes -->
-  <circle cx="30" cy="130" r="12" fill="#FF6B6B"/>
-  <circle cx="170" cy="130" r="12" fill="#96CEB4"/>
-
-  <!-- Center node (proxy) -->
-  <circle cx="100" cy="70" r="16" fill="#4ECDC4"/>
-  <circle cx="100" cy="70" r="8" fill="#1a1a2e"/>
-
-  <!-- Data flow lines -->
-  <line x1="42" y1="125" x2="85" y2="78" stroke="#FF6B6B" stroke-width="3" stroke-dasharray="5,3" opacity="0.7"/>
-  <line x1="158" y1="125" x2="115" y2="78" stroke="#96CEB4" stroke-width="3" stroke-dasharray="5,3" opacity="0.7"/>
-
-  <!-- Small orbiting dots representing data packets -->
-  <circle cx="60" cy="105" r="4" fill="#FFE66D"/>
-  <circle cx="140" cy="105" r="4" fill="#45B7D1"/>
+  Colours come from the dashboard palette (web/server/src/index.css) and follow
+  the viewer's colour scheme. The stroke="..." presentation attributes are the
+  fallback for renderers that ignore the stylesheet; assets/logo-light.svg and
+  assets/logo-dark.svg pin one palette each for contexts that cannot resolve
+  prefers-color-scheme, and assets/logo-mono.svg is the single-colour cut.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" width="256" height="160"
+     class="bifrost-mark" role="img" aria-labelledby="bifrost-logo-title">
+  <title id="bifrost-logo-title">Bifrost Proxy</title>
+  <style>
+    .bifrost-mark {
+      --bifrost-span: #2563eb;
+      --bifrost-realm-in: #0891b2;
+      --bifrost-realm-out: #7c3aed;
+    }
+    @media (prefers-color-scheme: dark) {
+      .bifrost-mark {
+        --bifrost-span: #3b82f6;
+        --bifrost-realm-in: #22d3ee;
+        --bifrost-realm-out: #8b5cf6;
+      }
+    }
+    .bifrost-mark .bifrost-span { stroke: var(--bifrost-span); }
+    .bifrost-mark .bifrost-realm-in { stroke: var(--bifrost-realm-in); }
+    .bifrost-mark .bifrost-realm-out { stroke: var(--bifrost-realm-out); }
+  </style>
+  <g fill="none" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
+    <path class="bifrost-span" stroke="#2563eb" d="M20 24V14L26 8H38L44 14V24"/>
+    <path class="bifrost-realm-in" stroke="#0891b2" d="M4 32H20V20"/>
+    <path class="bifrost-realm-out" stroke="#7c3aed" d="M44 20V32H60"/>
+  </g>
 </svg>
