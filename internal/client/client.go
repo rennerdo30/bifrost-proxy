@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	apiclient "github.com/rennerdo30/bifrost-proxy/internal/api/client"
@@ -25,6 +26,11 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
+
+// clientSOCKS5DialTimeout is the timeout applied to upstream dials made on
+// behalf of a local SOCKS5 client. The SOCKS5 listener has no per-listener
+// timeout in the client config, unlike the HTTP listener.
+const clientSOCKS5DialTimeout = 30 * time.Second
 
 // Client is the Bifrost client.
 type Client struct {
@@ -47,6 +53,51 @@ type Client struct {
 	mu      sync.RWMutex
 	wg      sync.WaitGroup
 	done    chan struct{}
+
+	// Traffic counters exposed through the local API's /status endpoint. They
+	// are cumulative for bytes and instantaneous for connections, and are
+	// updated from the proxy handlers' RecordMetrics hooks (bytes) and around
+	// each ServeConn (connections).
+	bytesSent     atomic.Int64
+	bytesReceived atomic.Int64
+	activeConns   atomic.Int64
+}
+
+// recordProxyTraffic accumulates the per-request byte counters reported by the
+// HTTP and SOCKS5 proxy handlers. Negative values (unknown Content-Length) are
+// ignored so the totals stay monotonic.
+func (c *Client) recordProxyTraffic(sent, received int64) {
+	if sent > 0 {
+		c.bytesSent.Add(sent)
+	}
+	if received > 0 {
+		c.bytesReceived.Add(received)
+	}
+}
+
+// BytesSent returns the total number of bytes sent to proxy clients.
+func (c *Client) BytesSent() int64 { return c.bytesSent.Load() }
+
+// BytesReceived returns the total number of bytes received from proxy clients.
+func (c *Client) BytesReceived() int64 { return c.bytesReceived.Load() }
+
+// ActiveConnections returns the number of proxy connections currently being
+// served across the HTTP and SOCKS5 listeners.
+func (c *Client) ActiveConnections() int {
+	n := c.activeConns.Load()
+	if n < 0 {
+		return 0
+	}
+	return int(n)
+}
+
+// serveProxyConn runs handler.ServeConn for one accepted connection while
+// keeping the active-connection gauge accurate. The decrement is deferred so a
+// panic in the handler cannot leak the gauge.
+func (c *Client) serveProxyConn(ctx context.Context, conn net.Conn, serve func(context.Context, net.Conn)) {
+	c.activeConns.Add(1)
+	defer c.activeConns.Add(-1)
+	serve(util.WithRequestID(ctx, generateRequestID()), conn)
 }
 
 // New creates a new Bifrost client.
@@ -185,6 +236,12 @@ func (c *Client) Start(ctx context.Context) error {
 				return c.getQuickSettings()
 			},
 			SettingsUpdater: c.updateQuickSettings,
+			// Traffic counters for /status. Without these the endpoint reported a
+			// hardcoded-looking bytes_sent=0 / bytes_received=0 /
+			// active_connections=0 forever.
+			BytesSent:     c.BytesSent,
+			BytesReceived: c.BytesReceived,
+			ActiveConns:   c.ActiveConnections,
 		})
 
 		c.apiServer = &http.Server{
@@ -515,6 +572,9 @@ func (c *Client) serveHTTP(ctx context.Context) {
 		DialTimeout: c.config.Proxy.HTTP.ReadTimeout.Duration(),
 		OnConnect:   c.onConnect,
 		OnError:     c.onError,
+		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
+			c.recordProxyTraffic(sent, recv)
+		},
 	})
 
 	for {
@@ -530,11 +590,10 @@ func (c *Client) serveHTTP(ctx context.Context) {
 		}
 
 		c.wg.Add(1)
-		go func() {
+		go func(conn net.Conn) {
 			defer c.wg.Done()
-			ctx = util.WithRequestID(ctx, generateRequestID())
-			handler.ServeConn(ctx, conn)
-		}()
+			c.serveProxyConn(ctx, conn, handler.ServeConn)
+		}(conn)
 	}
 }
 
@@ -545,9 +604,12 @@ func (c *Client) serveSOCKS5(ctx context.Context) {
 	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
 		GetBackend:   c.getBackend,
 		AuthRequired: false, // Client doesn't require auth
-		DialTimeout:  30 * time.Second,
+		DialTimeout:  clientSOCKS5DialTimeout,
 		OnConnect:    c.onConnect,
 		OnError:      c.onError,
+		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
+			c.recordProxyTraffic(sent, recv)
+		},
 	})
 
 	for {
@@ -563,11 +625,10 @@ func (c *Client) serveSOCKS5(ctx context.Context) {
 		}
 
 		c.wg.Add(1)
-		go func() {
+		go func(conn net.Conn) {
 			defer c.wg.Done()
-			ctx = util.WithRequestID(ctx, generateRequestID())
-			handler.ServeConn(ctx, conn)
-		}()
+			c.serveProxyConn(ctx, conn, handler.ServeConn)
+		}(conn)
 	}
 }
 
