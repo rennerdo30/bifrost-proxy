@@ -91,6 +91,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `auto_update.enabled` is set (honouring `channel` and `check_interval`, with
   the interval clamped to a 1 hour minimum), logs available updates at `INFO`
   level, and stops the checker on graceful shutdown
+- `cache_bytes_served_total{source="origin"}` is now recorded. It had no
+  production writer, so it stayed at zero and the bandwidth-saved ratio against
+  `{source="cache"}` could not be computed. Bytes are counted for every response
+  fetched from the origin while the cache is enabled, cacheable or not
 - Cache hits are no longer reported as HTTP 500. The cache-served branch never
   set a status code, so the access log and `bifrost_requests_total` recorded
   `status="500"` for every hit while the client correctly received 200. Hits now
