@@ -60,6 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserves user-added documentation in configuration files
 
 ### Fixed
+- Client `/api/v1/status` now reports real traffic counters. `bytes_sent`,
+  `bytes_received` and `active_connections` were hardwired to zero because the
+  client never supplied the API's counter callbacks; they are now fed from the
+  HTTP and SOCKS5 proxy handlers
 - `auto_update` is no longer a dead toggle on the server. `Server.Start` now
   constructs the updater and starts the background checker when
   `auto_update.enabled` is set (honouring `channel` and `check_interval`, with
