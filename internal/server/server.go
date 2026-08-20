@@ -26,6 +26,7 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/proxy"
 	"github.com/rennerdo30/bifrost-proxy/internal/ratelimit"
 	"github.com/rennerdo30/bifrost-proxy/internal/router"
+	"github.com/rennerdo30/bifrost-proxy/internal/updater"
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
@@ -58,6 +59,7 @@ type Server struct {
 	wsHub          *apiserver.WebSocketHub
 	api            *apiserver.API
 	sessionManager *session.Manager
+	updater        *updater.Updater
 
 	running bool
 	mu      sync.RWMutex
@@ -627,6 +629,12 @@ func (s *Server) Start(ctx context.Context) error {
 		}()
 	}
 
+	// Start the auto-update background checker if enabled. Without this the
+	// auto_update config block has no runtime effect at all.
+	if s.config.AutoUpdate.Enabled {
+		s.startUpdater(ctx)
+	}
+
 	logging.Info("Bifrost server started")
 	return nil
 }
@@ -656,6 +664,10 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.mu.Unlock()
 
 	logging.Info("Stopping Bifrost server")
+
+	// Stop the auto-update background checker before the rest of the shutdown so
+	// its goroutine cannot start a new check while dependencies are torn down.
+	s.stopUpdater()
 
 	// Stop metrics server
 	if s.metricsServer != nil {

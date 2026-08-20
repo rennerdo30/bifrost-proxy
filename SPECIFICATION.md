@@ -1507,6 +1507,16 @@ auto_update:
   channel: "stable"
 ```
 
+Both daemons own the checker's lifecycle: `Server.Start` / `Client.Start` create
+the updater when `enabled` is `true` and stop the background checker during
+graceful shutdown. The first check runs one minute after startup. On the server
+`check_interval` is clamped to a minimum of one hour to stay within the
+unauthenticated GitHub Releases API rate limit; a non-positive value falls back
+to 24 hours. Available updates are reported through the `Notifier` interface —
+an `INFO` log line on the server, and a log line plus a desktop notification on
+the client. The server never installs an update on its own; installation stays a
+deliberate `bifrost-server update install` action.
+
 ## 22. System Service Management
 
 Bifrost provides native service management for Windows (SCM), macOS (launchd), and Linux (systemd).
