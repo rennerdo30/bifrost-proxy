@@ -43,6 +43,12 @@ interface ConfigEditorProps {
   /** Section the sidebar asked to reveal; expanded and scrolled into view. */
   revealSection?: ConfigSectionKey | null
   onSectionRevealed?: () => void
+  /**
+   * Changing this discards in-progress edits and re-adopts the incoming config.
+   * Used when the config is replaced wholesale (import), where keeping the old
+   * edits would mean a subsequent save reverts the replacement.
+   */
+  resetKey?: number
 }
 
 // Default config values for initialization
@@ -158,6 +164,7 @@ export function ConfigEditor({
   onDirtyChange,
   revealSection,
   onSectionRevealed,
+  resetKey = 0,
 }: ConfigEditorProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [isValidating, setIsValidating] = useState(false)
@@ -178,6 +185,12 @@ export function ConfigEditor({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config])
+
+  // Discard in-progress edits when the caller replaces the config wholesale.
+  // The initialiser above then re-adopts the incoming config.
+  useEffect(() => {
+    if (resetKey > 0) setEditedConfig(null)
+  }, [resetKey])
 
   const currentConfig = editedConfig || config || defaultConfig
 

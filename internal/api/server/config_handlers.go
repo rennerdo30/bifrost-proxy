@@ -224,8 +224,9 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 			reloadError = err.Error()
 			// The reload failed, so nothing was actually applied to the running
 			// server; every changed section now needs a restart. Report that
-			// rather than claiming sections were hot-reloaded.
-			restartRequiredSections = append(restartRequiredSections, hotReloadedSections...)
+			// rather than claiming sections were hot-reloaded. Rebuild the list
+			// from changedSections so it keeps the canonical section order.
+			restartRequiredSections = append([]string{}, changedSections...)
 			hotReloadedSections = []string{}
 			requiresRestart = len(restartRequiredSections) > 0
 		} else {
