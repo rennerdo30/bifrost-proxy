@@ -1,8 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
-  <!-- Bifrost: Rainbow bridge / network gateway -->
-  <path d="M4 24C4 14 10 8 16 8s12 6 12 16" stroke="#22d3ee" stroke-width="2" fill="none"/>
-  <path d="M8 24C8 16 11 12 16 12s8 4 8 12" stroke="#f97316" stroke-width="2" fill="none"/>
-  <path d="M12 24c0-6 2-8 4-8s4 2 4 8" stroke="#22d3ee" stroke-width="2" fill="none"/>
-  <circle cx="16" cy="6" r="2" fill="#f97316"/>
-  <rect x="4" y="24" width="24" height="3" rx="1" fill="#22d3ee" opacity="0.5"/>
+<!--
+  Bifrost app icon / favicon: the mark on a plate, so it keeps its contrast on
+  any tab strip, dock or launcher, light or dark.
+
+  Same 4-unit grid and construction as assets/logo.svg, re-centred for a square
+  64x64 box: the mark spans 8,16-56,48, which keeps every horizontal and
+  vertical stroke edge on a whole pixel at 16px.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-labelledby="bifrost-icon-title">
+  <title id="bifrost-icon-title">Bifrost Proxy</title>
+  <rect width="64" height="64" rx="14" fill="#0a0e17"/>
+  <g fill="none" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
+    <path stroke="#3b82f6" d="M20 36V26L26 20H38L44 26V36"/>
+    <path stroke="#22d3ee" d="M8 44H20V32"/>
+    <path stroke="#8b5cf6" d="M44 32V44H56"/>
+  </g>
 </svg>
