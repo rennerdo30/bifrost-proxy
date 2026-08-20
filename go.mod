@@ -4,6 +4,7 @@ go 1.25.5
 
 require (
 	fyne.io/systray v1.12.2
+	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-ldap/ldap/v3 v3.4.14
 	github.com/jcmturner/gokrb5/v8 v8.4.4
