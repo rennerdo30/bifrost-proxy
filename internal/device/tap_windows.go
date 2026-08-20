@@ -366,20 +366,19 @@ func (t *windowsTAP) MACAddress() net.HardwareAddr {
 	return t.mac
 }
 
-// SetMACAddress sets the MAC address of the TAP interface.
-// Note: On Windows, this typically requires driver support and may not work
-// with all TAP drivers.
+// SetMACAddress reports that changing the adapter MAC address is unsupported on
+// Windows.
+//
+// Windows TAP drivers do not expose a MAC change via ioctl; it would require a
+// registry modification plus an adapter restart. This used to update only the
+// in-memory copy and return nil, which told the caller the adapter MAC had
+// changed when nothing on the wire had — so it now fails closed with
+// ErrSetMACUnsupported and leaves t.mac (which mirrors the real adapter) alone.
 func (t *windowsTAP) SetMACAddress(mac net.HardwareAddr) error {
 	if len(mac) != 6 {
 		return ErrInvalidMACAddress
 	}
-
-	// Windows TAP drivers typically don't support changing MAC address
-	// via ioctl. This would require registry modification and adapter restart.
-	// For now, just update the local copy.
-	t.mac = mac
-
-	return nil
+	return ErrSetMACUnsupported
 }
 
 // GetMACFromInterface retrieves the MAC address from the interface.
