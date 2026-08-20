@@ -273,12 +273,68 @@ type HealthCheckConfig struct {
 	Target   string   `yaml:"target,omitempty" json:"target,omitempty"`
 	Path     string   `yaml:"path,omitempty" json:"path,omitempty"` // For HTTP health checks
 
+	// Scheme selects the URL scheme for HTTP health checks: "http" or "https".
+	// Empty means HealthCheckSchemeHTTP.
+	Scheme string `yaml:"scheme,omitempty" json:"scheme,omitempty"`
+	// InsecureSkipVerify disables TLS certificate verification for HTTPS health
+	// checks. Only meaningful when Scheme is "https"; use it for backends that
+	// present a self-signed certificate.
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify,omitempty" json:"insecure_skip_verify,omitempty"`
+
 	// HealthyThreshold is the number of consecutive successful checks required
 	// before a backend is marked healthy (de-bouncing). <= 0 means 1.
 	HealthyThreshold int `yaml:"healthy_threshold,omitempty" json:"healthy_threshold,omitempty"`
 	// UnhealthyThreshold is the number of consecutive failed checks required
 	// before a backend is marked unhealthy (de-bouncing). <= 0 means 1.
 	UnhealthyThreshold int `yaml:"unhealthy_threshold,omitempty" json:"unhealthy_threshold,omitempty"`
+}
+
+// Health check URL schemes for HTTP-type health checks.
+const (
+	HealthCheckSchemeHTTP  = "http"
+	HealthCheckSchemeHTTPS = "https"
+)
+
+// HealthCheckTypeHTTP is the health check type that probes an HTTP(S) URL and
+// is therefore the only type for which Scheme and InsecureSkipVerify apply.
+const HealthCheckTypeHTTP = "http"
+
+// Validate checks a health check block for internally inconsistent settings.
+// It is intentionally lenient about empty values (they fall back to defaults)
+// and only rejects values the health checker cannot act on, so that an operator
+// gets an error at save/load time rather than a silently ignored setting.
+func (c *HealthCheckConfig) Validate() error {
+	switch c.Scheme {
+	case "", HealthCheckSchemeHTTP, HealthCheckSchemeHTTPS:
+	default:
+		return fmt.Errorf("health_check scheme must be %q or %q, got %q",
+			HealthCheckSchemeHTTP, HealthCheckSchemeHTTPS, c.Scheme)
+	}
+
+	// scheme/insecure_skip_verify are only consumed by the HTTP checker. Accept
+	// them when the type is unset (the global block may only be supplying
+	// defaults), but reject a combination that can never take effect.
+	if c.Type != "" && c.Type != HealthCheckTypeHTTP {
+		if c.Scheme != "" {
+			return fmt.Errorf("health_check scheme is only supported for type %q, got type %q",
+				HealthCheckTypeHTTP, c.Type)
+		}
+		if c.InsecureSkipVerify {
+			return fmt.Errorf("health_check insecure_skip_verify is only supported for type %q, got type %q",
+				HealthCheckTypeHTTP, c.Type)
+		}
+	}
+
+	if c.InsecureSkipVerify && c.Scheme != HealthCheckSchemeHTTPS {
+		return fmt.Errorf("health_check insecure_skip_verify requires scheme %q", HealthCheckSchemeHTTPS)
+	}
+
+	// HealthyThreshold/UnhealthyThreshold are deliberately not validated here:
+	// any value <= 0 is documented to mean "1" (transition immediately), so
+	// rejecting a negative value would both contradict that contract and break
+	// configs that load fine today.
+
+	return nil
 }
 
 // AutoUpdateConfig contains auto-update settings.
@@ -401,6 +457,16 @@ func (c *ServerConfig) Validate() error {
 		if b.Type == "" {
 			return fmt.Errorf("backend type is required for backend: %s", b.Name)
 		}
+
+		if b.HealthCheck != nil {
+			if err := b.HealthCheck.Validate(); err != nil {
+				return fmt.Errorf("backend %s: %w", b.Name, err)
+			}
+		}
+	}
+
+	if err := c.HealthCheck.Validate(); err != nil {
+		return err
 	}
 
 	for _, r := range c.Routes {
