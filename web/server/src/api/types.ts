@@ -129,6 +129,9 @@ export interface ServerSettings {
   graceful_period?: string
 }
 
+// Health check URL scheme, for HTTP-type checks only.
+export type HealthCheckScheme = 'http' | 'https'
+
 // Health Check Configuration
 export interface HealthCheckConfig {
   type: 'tcp' | 'http' | 'ping'
@@ -136,6 +139,13 @@ export interface HealthCheckConfig {
   timeout: string
   target?: string
   path?: string
+  // scheme selects the URL scheme for HTTP health checks. Omitted means "http".
+  // Only valid when type is "http".
+  scheme?: HealthCheckScheme
+  // insecure_skip_verify disables TLS certificate verification for HTTPS health
+  // checks. Requires scheme "https"; use only for backends with a self-signed
+  // certificate.
+  insecure_skip_verify?: boolean
   // healthy_threshold is the number of consecutive successful checks required
   // before a backend is marked healthy (de-bouncing). <= 0 / omitted means 1.
   healthy_threshold?: number
@@ -616,14 +626,19 @@ export interface ServerConfig {
   mitm?: MITMConfig
 }
 
-// Config metadata
-export interface ConfigMeta {
-  sections: Array<{
-    name: string
-    hot_reloadable: boolean
-    description: string
-  }>
+// Metadata for one config section, as returned by GET /config/meta. Matches the
+// server's ConfigMeta (internal/api/server/config_handlers.go), which serialises
+// a bare JSON array of these — not an object with a `sections` field.
+export interface ConfigSectionMetaResponse {
+  // section is the canonical section name, e.g. "access_control".
+  section: string
+  // hot_reloadable is true when saving the section is applied to the running
+  // server immediately; false means the change needs a server restart.
+  hot_reloadable: boolean
+  description: string
 }
+
+export type ConfigMetaResponse = ConfigSectionMetaResponse[]
 
 // Config save
 export interface ConfigSaveRequest {
@@ -635,8 +650,16 @@ export interface ConfigSaveResponse {
   success: boolean
   message: string
   backup_path?: string
+  // requires_restart is true when restart_required_sections is non-empty.
   requires_restart: boolean
   changed_sections?: string[]
+  // hot_reloaded_sections are the changed sections the server applied to the
+  // running process. Authoritative — do not re-derive this client-side.
+  hot_reloaded_sections?: string[]
+  // restart_required_sections are the changed sections written to disk that only
+  // take effect after a server restart.
+  restart_required_sections?: string[]
+  errors?: ConfigValidationError[]
 }
 
 // A single validation error returned by /config/validate. Matches the server's

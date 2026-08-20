@@ -26,7 +26,7 @@ export function AutoUpdateSection({ config, onChange }: AutoUpdateSectionProps) 
   }
 
   return (
-    <Section title="Auto Update" badge="restart-required">
+    <Section sectionKey="auto_update" title="Auto Update">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input

@@ -2,7 +2,7 @@ import { Section } from '../Section'
 import { ValidatedInput, ValidatedSelect } from '../../ui/ValidatedInput'
 import { useValidation } from '../../../hooks/useValidation'
 import { validators } from '../../../utils/validation'
-import type { HealthCheckConfig } from '../../../api/types'
+import type { HealthCheckConfig, HealthCheckScheme } from '../../../api/types'
 
 interface HealthCheckSectionProps {
   config?: HealthCheckConfig
@@ -49,8 +49,31 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
     }
   }
 
+  // The server rejects scheme / insecure_skip_verify on non-HTTP checks and
+  // insecure_skip_verify without HTTPS, because they would be silently inert.
+  // Drop them here so switching the type never produces a config that fails
+  // validation on save.
+  const updateType = (type: HealthCheckConfig['type']) => {
+    if (!config) return
+    const next: HealthCheckConfig = { ...config, type }
+    if (type !== 'http') {
+      delete next.scheme
+      delete next.insecure_skip_verify
+    }
+    onChange(next)
+  }
+
+  const updateScheme = (scheme: HealthCheckScheme) => {
+    if (!config) return
+    const next: HealthCheckConfig = { ...config, scheme }
+    if (scheme !== 'https') {
+      delete next.insecure_skip_verify
+    }
+    onChange(next)
+  }
+
   return (
-    <Section title="Global Health Checks" badge="restart-required">
+    <Section sectionKey="health_check" title="Global Health Checks">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input
@@ -70,7 +93,7 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
             <ValidatedSelect
               label="Type"
               value={config.type || 'tcp'}
-              onChange={(e) => update('type', e.target.value)}
+              onChange={(e) => updateType(e.target.value as HealthCheckConfig['type'])}
             >
               <option value="tcp">TCP</option>
               <option value="http">HTTP</option>
@@ -101,7 +124,7 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
               helpText="Health check endpoint (optional)"
             />
             {config.type === 'http' && (
-              <div className="md:col-span-2">
+              <>
                 <ValidatedInput
                   label="HTTP Path"
                   value={config.path || ''}
@@ -110,7 +133,38 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
                   error={errors.path}
                   helpText="URL path for HTTP health checks"
                 />
-              </div>
+                <ValidatedSelect
+                  label="Scheme"
+                  value={config.scheme || 'http'}
+                  onChange={(e) => updateScheme(e.target.value as HealthCheckScheme)}
+                  helpText="Use HTTPS to probe a TLS-terminating backend"
+                >
+                  <option value="http">HTTP</option>
+                  <option value="https">HTTPS</option>
+                </ValidatedSelect>
+                {config.scheme === 'https' && (
+                  <div className="md:col-span-2">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!config.insecure_skip_verify}
+                        onChange={(e) => update('insecure_skip_verify', e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
+                      />
+                      <span>
+                        <span className="text-sm font-medium text-bifrost-text">
+                          Skip TLS certificate verification
+                        </span>
+                        <span className="block text-xs text-bifrost-muted mt-0.5">
+                          Accepts self-signed and expired backend certificates. The health
+                          probe no longer authenticates the backend &mdash; only enable it for
+                          backends you control on a trusted network.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </>
             )}
             <ValidatedInput
               label="Healthy Threshold"

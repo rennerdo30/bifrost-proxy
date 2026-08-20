@@ -51,7 +51,7 @@ export function RateLimitSection({ config, onChange }: RateLimitSectionProps) {
   }
 
   return (
-    <Section title="Rate Limiting" badge="hot-reload">
+    <Section sectionKey="rate_limit" title="Rate Limiting">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input

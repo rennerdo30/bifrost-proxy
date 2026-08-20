@@ -40,8 +40,8 @@ export function NetworkSection({ config, onChange }: NetworkSectionProps) {
 
   return (
     <Section
+      sectionKey="network"
       title="Network"
-      badge="restart-required"
       description="Outbound dial tuning applied to backend connections"
     >
       <div className="space-y-4">

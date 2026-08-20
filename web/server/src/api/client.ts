@@ -8,7 +8,7 @@ import type {
   RequestLogResponse,
   RequestLogStats,
   ServerConfig,
-  ConfigMeta,
+  ConfigMetaResponse,
   ConfigSaveRequest,
   ConfigSaveResponse,
   ConfigValidateResponse,
@@ -131,7 +131,7 @@ export const api = {
   // Config
   getConfig: () => fetchJSON<ServerConfig>('/config/'),
   getFullConfig: () => fetchJSON<ServerConfig>('/config/full'),
-  getConfigMeta: () => fetchJSON<ConfigMeta>('/config/meta'),
+  getConfigMeta: () => fetchJSON<ConfigMetaResponse>('/config/meta'),
   saveConfig: (request: ConfigSaveRequest) =>
     fetchJSON<ConfigSaveResponse>('/config/', {
       method: 'PUT',
