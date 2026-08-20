@@ -6,8 +6,19 @@
 # @mui/icons-material, next and eslint-config-next) across separate PRs, which
 # has broken main before.
 #
-# Major updates are intentionally NOT grouped: they arrive as individual pull
-# requests so each one gets evaluated on its own.
+# Major updates for the application ecosystems (npm, pip, cargo, gomod, pub) are
+# intentionally NOT grouped: they arrive as individual pull requests so each one
+# gets evaluated on its own.
+#
+# Two deliberate exceptions to that rule:
+#   * The Astro documentation stack (astro, @astrojs/*, Starlight themes and
+#     plugins) is grouped across ALL update types. Those packages carry hard
+#     peer ranges on each other - @astrojs/starlight 0.41 requires astro
+#     ^7.0.2 - so when a major is split off into its own pull request neither
+#     half can be merged, while both still report as mergeable. The stack has
+#     to land in one pull request.
+#   * GitHub Actions updates are grouped across ALL update types. Action majors
+#     are mechanical and low risk, and one pull request per action is pure noise.
 version: 2
 
 updates:
@@ -42,6 +53,15 @@ updates:
       prefix: "deps(npm):"
       prefix-development: "deps(npm-dev):"
     groups:
+      # Must stay ahead of the catch-all group below: Dependabot puts a
+      # dependency into the FIRST group whose patterns match it.
+      astro-docs:
+        applies-to: version-updates
+        patterns:
+          - "astro"
+          - "@astrojs/*"
+          - "starlight-theme-*"
+          - "*/starlight-*"
       npm-minor-patch:
         applies-to: version-updates
         patterns: ["*"]
@@ -56,7 +76,6 @@ updates:
     commit-message:
       prefix: "deps(actions):"
     groups:
-      actions-minor-patch:
+      actions-all:
         applies-to: version-updates
         patterns: ["*"]
-        update-types: ["minor", "patch"]
