@@ -23,6 +23,13 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/util"
 )
 
+// backendNameCache is the synthetic backend name reported for responses served
+// straight out of the local response cache. No real backend is dialed for
+// those requests, so without it the access log and the Prometheus `backend`
+// label would be empty and cache hits would be indistinguishable from requests
+// that failed before backend selection.
+const backendNameCache = "cache"
+
 // NegotiateResult is returned by a NegotiateAuth hook. On success UserInfo is
 // set. When the hook needs the client to continue the handshake it sets
 // Challenge=true along with ChallengeStatus/ChallengeHeaders (the
@@ -369,12 +376,20 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 
 	// Try to serve from cache first (for GET requests)
 	if h.cacheInterceptor != nil && req.Method == http.MethodGet {
-		handled, err := h.cacheInterceptor.HandleRequest(ctx, conn, req)
+		hit, err := h.cacheInterceptor.HandleRequestWithResult(ctx, conn, req)
 		if err != nil {
 			slog.Debug("cache error", "error", err, "host", host)
 		}
-		if handled {
-			// Request was served from cache
+		if hit.Handled {
+			// Request was served from cache. Record the status that was actually
+			// written to the client; without this the deferred access-log/metrics
+			// closure would fall back to 500 and report every cache hit as an
+			// error (bifrost_requests_total{status="500"}).
+			entry.StatusCode = hit.StatusCode
+			if entry.StatusCode == 0 {
+				entry.StatusCode = http.StatusOK
+			}
+			entry.Backend = backendNameCache
 			return nil
 		}
 	}

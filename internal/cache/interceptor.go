@@ -28,36 +28,64 @@ func NewInterceptor(manager *Manager) *Interceptor {
 	}
 }
 
+// Hit describes the outcome of an attempt to serve a request from the cache.
+//
+// Callers need the status code that was actually written to the client so that
+// access logs and Prometheus counters attribute a cache hit to its real status
+// (200, 206, or whatever status was cached) instead of falling back to a
+// synthetic error status.
+type Hit struct {
+	// Handled reports whether a complete response was written to the
+	// connection. When false the request must be forwarded to a backend.
+	Handled bool
+	// StatusCode is the HTTP status written to the client. It is only
+	// meaningful when Handled is true.
+	StatusCode int
+}
+
+// missed is the zero Hit: nothing was written, the request must go upstream.
+var missed = Hit{}
+
 // HandleRequest attempts to serve a request from cache.
 // Returns true if the request was handled (served from cache), false if it should
 // be forwarded to the backend.
+//
+// Prefer HandleRequestWithResult when the caller needs the served status code.
 func (i *Interceptor) HandleRequest(ctx context.Context, conn net.Conn, req *http.Request) (bool, error) {
+	hit, err := i.HandleRequestWithResult(ctx, conn, req)
+	return hit.Handled, err
+}
+
+// HandleRequestWithResult attempts to serve a request from cache and reports
+// both whether the request was handled and the status code written to the
+// client.
+func (i *Interceptor) HandleRequestWithResult(ctx context.Context, conn net.Conn, req *http.Request) (Hit, error) {
 	if i.manager == nil || !i.manager.IsEnabled() {
-		return false, nil
+		return missed, nil
 	}
 
 	// Only handle GET requests
 	if req.Method != http.MethodGet {
-		return false, nil
+		return missed, nil
 	}
 
 	// Check if we should cache this domain
 	if !i.manager.ShouldCache(req) {
-		return false, nil
+		return missed, nil
 	}
 
 	// Try to get from cache
 	entry, err := i.manager.Get(ctx, req)
 	if err != nil {
 		// Cache miss - let the request proceed to backend
-		return false, nil
+		return missed, nil
 	}
 	defer entry.Close()
 
 	// Check if entry is fresh
 	if !i.validator.IsFresh(entry) {
 		// Entry is stale - need to revalidate or fetch fresh
-		return false, nil
+		return missed, nil
 	}
 
 	// Handle Range requests
@@ -71,7 +99,7 @@ func (i *Interceptor) HandleRequest(ctx context.Context, conn net.Conn, req *htt
 }
 
 // serveFromCache writes a cached response to the connection.
-func (i *Interceptor) serveFromCache(_ context.Context, conn net.Conn, req *http.Request, entry *Entry) (bool, error) {
+func (i *Interceptor) serveFromCache(_ context.Context, conn net.Conn, req *http.Request, entry *Entry) (Hit, error) {
 	meta := entry.Metadata
 
 	// Build response
@@ -104,21 +132,22 @@ func (i *Interceptor) serveFromCache(_ context.Context, conn net.Conn, req *http
 			"host", req.Host,
 			"path", req.URL.Path,
 		)
-		return false, err
+		return missed, err
 	}
 
 	slog.Info("served from cache",
 		"host", req.Host,
 		"path", req.URL.Path,
+		"status", meta.StatusCode,
 		"size", meta.ContentLength,
 		"age", time.Since(meta.CreatedAt).Round(time.Second),
 	)
 
-	return true, nil
+	return Hit{Handled: true, StatusCode: meta.StatusCode}, nil
 }
 
 // serveRangeRequest handles HTTP Range requests from cache.
-func (i *Interceptor) serveRangeRequest(ctx context.Context, conn net.Conn, req *http.Request, entry *Entry, rangeHeader string) (bool, error) {
+func (i *Interceptor) serveRangeRequest(ctx context.Context, conn net.Conn, req *http.Request, entry *Entry, rangeHeader string) (Hit, error) {
 	meta := entry.Metadata
 
 	// Parse range header
@@ -148,7 +177,7 @@ func (i *Interceptor) serveRangeRequest(ctx context.Context, conn net.Conn, req 
 			"error", err,
 			"key", truncateKey(meta.Key),
 		)
-		return false, nil // Let backend handle it
+		return missed, nil // Let backend handle it
 	}
 	defer rangeReader.Close()
 
@@ -175,7 +204,7 @@ func (i *Interceptor) serveRangeRequest(ctx context.Context, conn net.Conn, req 
 
 	// Write response
 	if err := resp.Write(conn); err != nil {
-		return false, err
+		return missed, err
 	}
 
 	slog.Info("served range from cache",
@@ -185,7 +214,7 @@ func (i *Interceptor) serveRangeRequest(ctx context.Context, conn net.Conn, req 
 		"size", contentLength,
 	)
 
-	return true, nil
+	return Hit{Handled: true, StatusCode: http.StatusPartialContent}, nil
 }
 
 // StoreResponse stores an HTTP response in the cache.
@@ -194,6 +223,12 @@ func (i *Interceptor) StoreResponse(ctx context.Context, req *http.Request, resp
 	if i.manager == nil || !i.manager.IsEnabled() {
 		return resp.Body, nil
 	}
+
+	// This response came from the origin, whether or not it turns out to be
+	// cacheable. Recording it here (rather than only on the store path) is what
+	// makes cache_bytes_served_total{source="origin"} comparable to
+	// {source="cache"}, i.e. what makes the bandwidth-saved ratio meaningful.
+	i.manager.RecordOriginBytes(resp.ContentLength)
 
 	// Check if we should cache this response
 	if !i.validator.ShouldCache(req, resp) {

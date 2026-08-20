@@ -103,3 +103,22 @@ api:
   enabled: true               # Enable REST API
   listen: ":7082"             # Address to listen on for the API
   # token: "your-api-token"   # Optional API authentication token
+
+# Mesh coordinator
+# Serves the /api/v1/mesh/* discovery endpoints that mesh clients register with.
+mesh:
+  enabled: true               # Mount the coordinator routes (false removes them)
+  # state_path: "/var/lib/bifrost/mesh-state.json"
+                              # Persist networks and peers across restarts.
+                              # Unset means in-memory only: every network and
+                              # peer registration is lost when the server
+                              # restarts. Requires a restart to change.
+
+# Automatic updates
+# Periodically check GitHub releases for a newer version and log a notice.
+# The server never installs an update on its own; use `bifrost-server update
+# install` for that.
+auto_update:
+  enabled: false              # Enable the background update checker
+  check_interval: "24h"       # How often to check (minimum 1h)
+  channel: "stable"           # stable or prerelease

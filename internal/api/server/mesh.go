@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/net/websocket"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/mesh"
 )
 
@@ -18,6 +20,12 @@ import (
 type MeshAPI struct {
 	networks map[string]*MeshNetwork
 	mu       sync.RWMutex
+
+	// statePath, when non-empty, is the file networks and peers are persisted
+	// to so they survive a restart. persistMu serializes writes to it
+	// independently of mu so a slow disk cannot block request handling.
+	statePath string
+	persistMu sync.Mutex
 }
 
 // MeshNetwork represents a single mesh network.
@@ -32,16 +40,27 @@ type MeshNetwork struct {
 	mu          sync.RWMutex
 }
 
-// MeshConfig contains mesh API configuration.
-type MeshConfig struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
-}
-
-// NewMeshAPI creates a new mesh API handler.
+// NewMeshAPI creates an in-memory mesh API handler with no persistence.
 func NewMeshAPI() *MeshAPI {
 	return &MeshAPI{
 		networks: make(map[string]*MeshNetwork),
 	}
+}
+
+// NewMeshAPIWithConfig creates a mesh API handler from the server's mesh config.
+// When cfg.StatePath is set, previously persisted networks and peers are
+// restored and every subsequent mutation is written back. A restore failure is
+// returned so the caller can decide whether to surface it; the returned handler
+// is always usable (it simply starts empty).
+func NewMeshAPIWithConfig(cfg config.MeshConfig) (*MeshAPI, error) {
+	m := &MeshAPI{
+		networks:  make(map[string]*MeshNetwork),
+		statePath: cfg.StatePath,
+	}
+	if err := m.restore(); err != nil {
+		return m, fmt.Errorf("restore mesh state: %w", err)
+	}
+	return m, nil
 }
 
 // RegisterRoutes registers mesh API routes on a chi router.
@@ -140,9 +159,9 @@ func (m *MeshAPI) handleCreateNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if _, exists := m.networks[req.ID]; exists {
+		m.mu.Unlock()
 		http.Error(w, "network already exists", http.StatusConflict)
 		return
 	}
@@ -152,6 +171,7 @@ func (m *MeshAPI) handleCreateNetwork(w http.ResponseWriter, r *http.Request) {
 		NetworkCIDR: req.CIDR,
 	})
 	if err != nil {
+		m.mu.Unlock()
 		http.Error(w, "invalid CIDR: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -167,6 +187,10 @@ func (m *MeshAPI) handleCreateNetwork(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m.networks[req.ID] = network
+	m.mu.Unlock()
+
+	// persist must run without m held (it takes a read lock itself).
+	m.persist()
 
 	slog.Info("mesh network created", "network_id", req.ID, "cidr", req.CIDR)
 
@@ -206,14 +230,15 @@ func (m *MeshAPI) handleDeleteNetwork(w http.ResponseWriter, r *http.Request) {
 	networkID := chi.URLParam(r, "networkID")
 
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if _, exists := m.networks[networkID]; !exists {
+		m.mu.Unlock()
 		http.Error(w, "network not found", http.StatusNotFound)
 		return
 	}
-
 	delete(m.networks, networkID)
+	m.mu.Unlock()
+
+	m.persist()
 
 	slog.Info("mesh network deleted", "network_id", networkID)
 
@@ -259,6 +284,7 @@ func (m *MeshAPI) handleRegisterPeer(w http.ResponseWriter, r *http.Request) {
 	peer.SetVirtualIP(ip)
 
 	network.peers.Add(peer)
+	m.persist()
 
 	// Get all other peers for the response
 	allPeers := network.peers.All()
@@ -404,6 +430,7 @@ func (m *MeshAPI) handleUpdatePeer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	peer.UpdateLastSeen()
+	m.persist()
 
 	// Broadcast update event
 	network.broadcastEvent(mesh.PeerEvent{
@@ -445,6 +472,7 @@ func (m *MeshAPI) handleDeregisterPeer(w http.ResponseWriter, r *http.Request) {
 
 	// Remove from registry
 	network.peers.Remove(peerID)
+	m.persist()
 
 	// Broadcast leave event
 	network.broadcastEvent(mesh.PeerEvent{
@@ -554,9 +582,9 @@ func (m *MeshAPI) GetNetwork(id string) (*MeshNetwork, bool) {
 // CreateNetwork creates a mesh network programmatically.
 func (m *MeshAPI) CreateNetwork(id, name, cidr string) (*MeshNetwork, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	if _, exists := m.networks[id]; exists {
+		m.mu.Unlock()
 		return nil, ErrNetworkExists
 	}
 
@@ -564,6 +592,7 @@ func (m *MeshAPI) CreateNetwork(id, name, cidr string) (*MeshNetwork, error) {
 		NetworkCIDR: cidr,
 	})
 	if err != nil {
+		m.mu.Unlock()
 		return nil, err
 	}
 
@@ -578,6 +607,9 @@ func (m *MeshAPI) CreateNetwork(id, name, cidr string) (*MeshNetwork, error) {
 	}
 
 	m.networks[id] = network
+	m.mu.Unlock()
+
+	m.persist()
 	return network, nil
 }
 

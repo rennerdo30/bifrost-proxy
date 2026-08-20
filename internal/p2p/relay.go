@@ -540,6 +540,16 @@ func unwrapRelayMessage(msg []byte) (*RelayMessage, error) {
 }
 
 // RelayRouter routes relay messages to their destinations.
+//
+// NOTE: RelayRouter (together with PeerRelay and PeerRelayedConnection) is
+// implemented and unit-tested in isolation but is NOT wired into the mesh data
+// plane: multi-hop peer relaying is unimplemented and mesh config validation
+// rejects `relay_via_peers: true` outright (see internal/mesh/config.go) rather
+// than advertising a relay path that would drop traffic. wrapRelayMessage /
+// unwrapRelayMessage likewise do not yet populate SrcPeerID or a TTL. Enabling
+// multi-hop relay end-to-end is tracked as future work; until then this type is
+// not exercised by the live connection flow. TURN-based relaying, which *is*
+// wired, lives in TURNClient.
 type RelayRouter struct {
 	localPeerID string
 	manager     *P2PManager
