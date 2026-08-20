@@ -444,6 +444,25 @@ When auto-update is enabled, the application checks for updates in the backgroun
 2. **Periodic checks**: Every `check_interval` (default 24 hours)
 3. **Timeout**: 30 seconds per check
 4. **State tracking**: Respects previous checks to avoid redundant API calls
+5. **Graceful shutdown**: The checker is stopped as the first step of daemon
+   shutdown, so no check can start while dependencies are being torn down
+
+Both daemons start the checker from their own lifecycle when
+`auto_update.enabled` is `true`, and stop it on shutdown:
+
+| Daemon | Started in | Notification |
+|--------|-----------|--------------|
+| Server (`bifrost-server`) | `Server.Start` | `INFO` log line (`Update available`) — the server is headless |
+| Client (`bifrost-client`) | `Client.Start` | `INFO` log line **and** a desktop/tray notification |
+
+Because the checker talks to the unauthenticated GitHub Releases API (which is
+rate limited), the server clamps `check_interval` to a minimum of **1 hour**. A
+smaller configured value is logged as a warning and raised to that minimum. A
+missing or non-positive value falls back to the 24-hour default.
+
+Initialization failures (for example an unwritable state directory) are logged
+at `ERROR` level and the daemon continues serving traffic without automatic
+update checks.
 
 ```go
 // Background checker lifecycle

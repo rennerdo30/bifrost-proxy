@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserves user-added documentation in configuration files
 
 ### Fixed
+- `auto_update` is no longer a dead toggle on the server. `Server.Start` now
+  constructs the updater and starts the background checker when
+  `auto_update.enabled` is set (honouring `channel` and `check_interval`, with
+  the interval clamped to a 1 hour minimum), logs available updates at `INFO`
+  level, and stops the checker on graceful shutdown
 - Cache hits are no longer reported as HTTP 500. The cache-served branch never
   set a status code, so the access log and `bifrost_requests_total` recorded
   `status="500"` for every hit while the client correctly received 200. Hits now
