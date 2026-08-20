@@ -532,6 +532,7 @@ func (s *Server) Start(ctx context.Context) error {
 			EnableRequestLog: s.config.API.EnableRequestLog,
 			RequestLogSize:   s.config.API.RequestLogSize,
 			SessionManager:   s.sessionManager,
+			Mesh:             s.config.Mesh,
 		})
 
 		// Create WebSocket hub with configurable max clients (default 100, for low-power devices use 5-10)

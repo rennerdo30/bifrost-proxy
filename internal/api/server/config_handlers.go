@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
-	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
@@ -283,15 +282,3 @@ func hasRestartRequiredChanges(sections []string) bool {
 
 // EventConfigSaved is broadcast when config is saved.
 const EventConfigSaved = "config.saved"
-
-// setWebSocketHub sets the WebSocket hub for broadcasting events.
-func (a *API) setWebSocketHub(hub *WebSocketHub) {
-	a.wsHub = hub
-}
-
-// handleGetConfigTimestamp returns the config file modification time.
-func (a *API) handleGetConfigTimestamp(w http.ResponseWriter, _ *http.Request) {
-	a.writeJSON(w, http.StatusOK, map[string]interface{}{
-		"timestamp": time.Now().Format(time.RFC3339),
-	})
-}

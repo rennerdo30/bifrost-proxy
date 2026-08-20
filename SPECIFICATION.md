@@ -526,7 +526,17 @@ POST   /api/v1/config/reload        - Reload config
 
 GET    /api/v1/requests             - Recent proxied requests
 GET    /api/v1/connections          - Active connections
+
+GET    /api/v1/cache/...            - Response cache control (only when cache.enabled)
+GET    /api/v1/mesh/...             - Mesh coordinator (only when mesh.enabled)
 ```
+
+The `/api/v1/mesh/*` coordinator routes are mounted only when `mesh.enabled` is
+true (the default); with it set to false the paths return 404. When
+`mesh.state_path` is set, coordinator networks and peers are persisted to that
+file (atomic write, mode `0600`) and restored on startup with peer virtual IPs
+re-pinned, so a restart does not renumber a running mesh. With no `state_path`
+the coordinator is in-memory only. The `mesh` section requires a restart.
 
 ### 5.4 Client REST API
 
