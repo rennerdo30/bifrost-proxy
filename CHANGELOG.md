@@ -60,6 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Preserves user-added documentation in configuration files
 
 ### Fixed
+- Cache hits are no longer reported as HTTP 500. The cache-served branch never
+  set a status code, so the access log and `bifrost_requests_total` recorded
+  `status="500"` for every hit while the client correctly received 200. Hits now
+  record the status actually written (200, or 206 for range requests) and carry
+  the synthetic backend label `cache`
 - VPN manager nil pointer panics when disabled or uninitialized
 - Auto-updater reliability issues with non-SemVer releases
 - Improved error handling in API server
