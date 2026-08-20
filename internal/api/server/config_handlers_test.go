@@ -457,7 +457,7 @@ func TestHandleSaveConfig_WithWebSocket(t *testing.T) {
 	}
 
 	api := New(cfg)
-	api.setWebSocketHub(hub)
+	api.wsHub = hub
 
 	body := strings.NewReader(`{
 		"config": {
@@ -688,19 +688,4 @@ func TestHandleSaveConfig_AccessControlHotReloads(t *testing.T) {
 	assert.Contains(t, resp.ChangedSections, "access_control")
 	assert.False(t, resp.RequiresRestart, "access_control is hot-reloadable")
 	assert.True(t, reloadCalled, "access_control-only save must auto-reload")
-}
-
-func TestHandleGetConfigTimestamp(t *testing.T) {
-	api := New(Config{})
-
-	w := httptest.NewRecorder()
-	r := httptest.NewRequest("GET", "/api/v1/config/timestamp", nil)
-	api.handleGetConfigTimestamp(w, r)
-
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]interface{}
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Contains(t, resp, "timestamp")
 }

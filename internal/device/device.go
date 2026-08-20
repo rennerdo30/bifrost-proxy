@@ -212,25 +212,11 @@ var (
 	ErrDeviceClosed        = errors.New("device is closed")
 	ErrTAPNotSupported     = errors.New("TAP device not supported on this platform")
 	ErrInvalidMACAddress   = errors.New("invalid MAC address")
+	// ErrSetMACUnsupported is returned by platforms whose TAP drivers cannot
+	// change an adapter's MAC address at runtime. Returning it (instead of nil)
+	// keeps callers from believing a MAC change took effect when it did not.
+	ErrSetMACUnsupported = errors.New("changing the TAP adapter MAC address is not supported on this platform")
 )
-
-// GenerateMAC generates a random locally-administered MAC address.
-func GenerateMAC() net.HardwareAddr {
-	mac := make([]byte, 6)
-
-	// Generate random bytes
-	// In a real implementation, we'd use crypto/rand
-	// For now, use a deterministic pattern based on time
-	// that can be replaced later
-	mac[0] = 0x02 // Locally administered, unicast
-	mac[1] = 0xBF // "BF" for Bifrost
-	mac[2] = 0x00
-	mac[3] = 0x00
-	mac[4] = 0x00
-	mac[5] = 0x01
-
-	return mac
-}
 
 // GenerateRandomMAC generates a random locally-administered MAC address using crypto/rand.
 func GenerateRandomMAC() (net.HardwareAddr, error) {
