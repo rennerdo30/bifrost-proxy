@@ -162,16 +162,6 @@ func TestWebSocketHub_ChannelBufferSize(t *testing.T) {
 	}
 }
 
-func TestAPI_AddWebSocketRoutes(t *testing.T) {
-	api := New(Config{})
-	hub := NewWebSocketHub()
-
-	// This test verifies the method exists and doesn't panic
-	// Actual routing would require a full router setup
-	_ = api
-	_ = hub
-}
-
 func TestWebSocketHub_RunStartsWithoutPanic(t *testing.T) {
 	hub := NewWebSocketHub()
 

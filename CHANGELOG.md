@@ -59,6 +59,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - AST-based YAML updates to maintain comments and formatting
   - Preserves user-added documentation in configuration files
 
+### Added
+- Server `mesh` config block for the mesh coordinator API: `mesh.enabled`
+  (default `true`) mounts or removes the `/api/v1/mesh/*` routes, and
+  `mesh.state_path` persists coordinator networks and peers across restarts
+  (atomic `0600` write; peer virtual IPs are re-pinned on startup so a restart
+  does not renumber a running mesh). Previously the coordinator was
+  unconditionally mounted and purely in-memory
+
+### Removed
+- Dead API helpers `AddWebSocketRoutes`, `setWebSocketHub` and the unrouted
+  `handleGetConfigTimestamp` (which returned `time.Now()` instead of the config
+  file's modification time — use `GET /api/v1/config/meta`)
+- `device.GenerateMAC`, whose doc comment promised a random address while the
+  body returned the hardcoded `02:BF:00:00:00:01`. Use
+  `device.GenerateRandomMAC`, which the production paths already used
+
+### Changed
+- `API.Router()` now registers the same routes as `RouterWithWebSocket` instead
+  of a hand-maintained subset that silently omitted the cache and mesh routes
+- Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
+  reporting success while changing nothing but an in-memory field
+
 ### Fixed
 - Client `/api/v1/status` now reports real traffic counters. `bytes_sent`,
   `bytes_received` and `active_connections` were hardwired to zero because the

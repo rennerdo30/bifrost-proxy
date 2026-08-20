@@ -10,6 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
 
 func TestNewMeshAPI(t *testing.T) {
@@ -689,10 +691,12 @@ func TestWriteJSON(t *testing.T) {
 }
 
 func TestMeshConfig_Struct(t *testing.T) {
-	cfg := MeshConfig{
-		Enabled: true,
+	cfg := config.MeshConfig{
+		Enabled:   true,
+		StatePath: "/var/lib/bifrost/mesh-state.json",
 	}
 	assert.True(t, cfg.Enabled)
+	assert.Equal(t, "/var/lib/bifrost/mesh-state.json", cfg.StatePath)
 }
 
 func TestNetworkResponse_Struct(t *testing.T) {

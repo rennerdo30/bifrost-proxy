@@ -327,6 +327,41 @@ sequenceDiagram
 | `POST` | `.../peers/{peer}/heartbeat` | Keep alive |
 | `WS` | `/api/v1/mesh/networks/{id}/events` | Real-time events |
 
+### Server-Side Coordinator Configuration
+
+The coordinator lives in the **server** binary and is configured through the
+`mesh` block of the server config:
+
+```yaml
+mesh:
+  # Mount the /api/v1/mesh coordinator routes. Default: true.
+  # Set to false to remove the endpoints entirely.
+  enabled: true
+
+  # Persist networks and peers so they survive a server restart.
+  # When unset the coordinator keeps state in memory only and every network
+  # and peer registration is lost on restart.
+  state_path: "/var/lib/bifrost/mesh-state.json"
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | bool | `true` | Mount the coordinator REST/WebSocket routes. When `false`, all `/api/v1/mesh/*` paths return 404. |
+| `state_path` | string | *(empty)* | File the coordinator persists networks and peers to. Empty means in-memory only. |
+
+Notes on persistence:
+
+- The state file is written atomically (temp file plus rename) with mode `0600`
+  and holds network IDs/CIDRs plus each peer's ID, name, public key, virtual IP,
+  endpoints and metadata. It contains no private keys.
+- Peer virtual IPs are re-pinned on startup, so restarting the server does not
+  renumber a running mesh.
+- Entries that can no longer be parsed (an invalid CIDR or virtual IP) are
+  skipped with a warning rather than aborting startup.
+- A write failure is logged but does not fail the request that triggered it: an
+  in-memory registration that already succeeded is not rolled back.
+- `mesh` changes require a server restart.
+
 ### Peer Information
 
 Each peer advertises:
