@@ -224,6 +224,12 @@ func (i *Interceptor) StoreResponse(ctx context.Context, req *http.Request, resp
 		return resp.Body, nil
 	}
 
+	// This response came from the origin, whether or not it turns out to be
+	// cacheable. Recording it here (rather than only on the store path) is what
+	// makes cache_bytes_served_total{source="origin"} comparable to
+	// {source="cache"}, i.e. what makes the bandwidth-saved ratio meaningful.
+	i.manager.RecordOriginBytes(resp.ContentLength)
+
 	// Check if we should cache this response
 	if !i.validator.ShouldCache(req, resp) {
 		return resp.Body, nil
