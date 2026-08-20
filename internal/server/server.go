@@ -979,6 +979,14 @@ func (s *Server) ReloadConfig() error {
 // to connected WebSocket clients.
 const wsBroadcastInterval = 5 * time.Second
 
+// Protocol labels used for the Prometheus `protocol` dimension. They must match
+// the values the proxy handlers pass to their RecordMetrics hooks so that
+// connection-scoped and request-scoped series line up.
+const (
+	protocolHTTP   = "http"
+	protocolSOCKS5 = "socks5"
+)
+
 // broadcastWSEvents periodically pushes aggregate stats and backend health
 // events to all connected WebSocket clients. This lets the UI stop polling the
 // REST endpoints once the WebSocket is connected.
@@ -1151,7 +1159,7 @@ func (s *Server) handleHTTPConn(ctx context.Context, conn net.Conn, handler *pro
 	ctx = withBackendCapture(ctx, capture)
 
 	startTime := time.Now()
-	done := s.metricsCollector.RecordConnection("http")
+	done := s.metricsCollector.RecordConnection(protocolHTTP)
 
 	handler.ServeConn(ctx, conn)
 
@@ -1274,7 +1282,7 @@ func (s *Server) handleSOCKS5Conn(ctx context.Context, conn net.Conn, handler *p
 	ctx = withBackendCapture(ctx, capture)
 
 	startTime := time.Now()
-	done := s.metricsCollector.RecordConnection("socks5")
+	done := s.metricsCollector.RecordConnection(protocolSOCKS5)
 
 	handler.ServeConn(ctx, conn)
 
