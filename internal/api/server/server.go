@@ -75,6 +75,11 @@ type Config struct {
 	// empty because the API is unauthenticated in that case and sessions would
 	// gate nothing.
 	SessionManager *session.Manager
+
+	// Mesh configures the mesh coordinator API. When Mesh.Enabled is false the
+	// /api/v1/mesh routes are not mounted at all. Mesh.StatePath, when set,
+	// persists coordinator networks and peers across restarts.
+	Mesh config.MeshConfig
 }
 
 // New creates a new API server.
@@ -108,8 +113,22 @@ func New(cfg Config) *API {
 		cacheAPI = NewCacheAPI(cfg.CacheManager)
 	}
 
-	// Create mesh API for P2P mesh networking
-	meshAPI := NewMeshAPI()
+	// Create the mesh coordinator API only when it is enabled. A nil meshAPI
+	// leaves the /api/v1/mesh routes unmounted entirely, so the toggle actually
+	// removes the surface instead of merely hiding it.
+	var meshAPI *MeshAPI
+	if cfg.Mesh.Enabled {
+		var meshErr error
+		meshAPI, meshErr = NewMeshAPIWithConfig(cfg.Mesh)
+		if meshErr != nil {
+			// The handler is still usable (it just starts empty), so refusing to
+			// serve would be worse than continuing with a loud warning.
+			slog.Warn("mesh coordinator state could not be restored; starting empty",
+				"state_path", cfg.Mesh.StatePath,
+				"error", meshErr,
+			)
+		}
+	}
 
 	// The token-exchange session flow is only meaningful when the API is
 	// token-protected: without a token the API is open and a session would gate
@@ -150,7 +169,10 @@ func (a *API) RequestLog() *RequestLog {
 	return a.requestLog
 }
 
-// Router returns the HTTP router for the API.
+// Router returns the HTTP router for the API without the WebSocket endpoint,
+// the PAC endpoints or the static Web UI. The server binary uses
+// RouterWithWebSocket; this variant exists for embedders that mount only the
+// REST surface.
 func (a *API) Router() http.Handler {
 	r := chi.NewRouter()
 
@@ -168,31 +190,12 @@ func (a *API) Router() http.Handler {
 		r.Use(a.authMiddleware)
 	}
 
-	// Routes
-	r.Get("/api/v1/health", a.handleHealth)
-	r.Get("/api/v1/version", a.handleVersion)
-	r.Get("/api/v1/status", a.handleStatus)
-	r.Get("/api/v1/stats", a.handleStats)
-
-	// Backend routes
-	r.Route("/api/v1/backends", func(r chi.Router) {
-		r.Get("/", a.handleListBackends)
-		r.Post("/", a.handleAddBackend)
-		r.Get("/{name}", a.handleGetBackend)
-		r.Delete("/{name}", a.handleRemoveBackend)
-		r.Get("/{name}/stats", a.handleGetBackendStats)
-		r.Post("/{name}/test", a.handleTestBackend)
-	})
-
-	// Config routes
-	r.Route("/api/v1/config", func(r chi.Router) {
-		r.Get("/", a.handleGetConfig)
-		r.Get("/full", a.handleGetFullConfig)
-		r.Get("/meta", a.handleGetConfigMeta)
-		r.Put("/", a.handleSaveConfig)
-		r.Post("/validate", a.handleValidateConfig)
-		r.Post("/reload", a.handleReloadConfig)
-	})
+	// Register the same route set as RouterWithWebSocket. This used to be a
+	// hand-maintained subset, which meant a route added to addAPIRoutes (mesh
+	// and cache, for example) silently did not exist on this router — so tests
+	// exercising Router() were not testing the routing the server actually
+	// serves.
+	a.addAPIRoutes(r)
 
 	return r
 }

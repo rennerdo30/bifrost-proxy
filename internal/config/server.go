@@ -30,6 +30,21 @@ type ServerConfig struct {
 	Network       NetworkConfig       `yaml:"network" json:"network"`
 	Session       SessionConfig       `yaml:"session" json:"session"`
 	MITM          MITMConfig          `yaml:"mitm" json:"mitm"`
+	Mesh          MeshConfig          `yaml:"mesh" json:"mesh"`
+}
+
+// MeshConfig configures the server's mesh coordinator API — the REST/WebSocket
+// surface under /api/v1/mesh that clients use to discover each other.
+type MeshConfig struct {
+	// Enabled mounts the coordinator routes. Defaults to true so that existing
+	// deployments (where the coordinator was unconditionally mounted) keep
+	// working; set it to false to remove the endpoints entirely.
+	Enabled bool `yaml:"enabled" json:"enabled"`
+
+	// StatePath is the file the coordinator persists its networks and peers to,
+	// so they survive a restart. When empty the coordinator keeps state in
+	// memory only and every network/peer registration is lost on restart.
+	StatePath string `yaml:"state_path,omitempty" json:"state_path,omitempty"`
 }
 
 // ServerSettings contains server-specific settings.
@@ -431,6 +446,11 @@ func DefaultServerConfig() ServerConfig {
 			Channel:       "stable",
 		},
 		Cache: cache.DefaultConfig(),
+		Mesh: MeshConfig{
+			// Preserves the historical behavior of always mounting the
+			// coordinator; persistence stays opt-in via state_path.
+			Enabled: true,
+		},
 	}
 }
 

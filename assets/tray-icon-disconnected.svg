@@ -1,13 +1,13 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <!-- Bridge arch - gray/inactive -->
-  <path d="M 4 22 Q 16 6 28 22"
-        stroke="#6c757d"
-        stroke-width="3"
-        fill="none"
-        stroke-linecap="round"/>
-
-  <!-- Nodes - gray -->
-  <circle cx="4" cy="22" r="3" fill="#6c757d"/>
-  <circle cx="28" cy="22" r="3" fill="#6c757d"/>
-  <circle cx="16" cy="10" r="4" fill="#6c757d"/>
+<!--
+  Tray icon, disconnected: the span is missing its crown and the mark is muted,
+  so the state reads from the silhouette as well as the colour.
+  Same grid as assets/icon.svg without the plate, transparent canvas.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
+     role="img" aria-labelledby="tray-disconnected-title">
+  <title id="tray-disconnected-title">Bifrost: disconnected</title>
+  <g fill="none" stroke="#94a3b8" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
+    <path d="M8 44H20V26L26 20H29"/>
+    <path d="M35 20H38L44 26V44H56"/>
+  </g>
 </svg>

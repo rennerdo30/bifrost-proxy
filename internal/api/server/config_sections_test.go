@@ -99,6 +99,9 @@ func TestDetectChangedSections_EachSectionDetected(t *testing.T) {
 			c.MITM.Enabled = true
 			c.MITM.CACertFile = "/etc/bifrost/ca.pem"
 		}},
+		{SectionMesh, func(c *config.ServerConfig) {
+			c.Mesh.StatePath = "/var/lib/bifrost/mesh.json"
+		}},
 	}
 
 	// Every section must be exercised; a new ServerConfig section without a

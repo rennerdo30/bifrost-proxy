@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
-	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
@@ -33,6 +32,7 @@ const (
 	SectionNetwork       = "network"
 	SectionSession       = "session"
 	SectionMITM          = "mitm"
+	SectionMesh          = "mesh"
 )
 
 // ConfigMeta describes which config sections are hot-reloadable.
@@ -110,6 +110,7 @@ var configSectionDescriptions = []struct {
 	{SectionNetwork, "Network dial/keepalive/connection settings"},
 	{SectionSession, "Session store settings"},
 	{SectionMITM, "MITM inspection settings"},
+	{SectionMesh, "Mesh coordinator API (mounting and state persistence)"},
 }
 
 // handleGetConfigMeta returns metadata about config sections.
@@ -317,6 +318,7 @@ var configSectionComparators = []struct {
 	{SectionNetwork, func(c *config.ServerConfig) any { return c.Network }},
 	{SectionSession, func(c *config.ServerConfig) any { return c.Session }},
 	{SectionMITM, func(c *config.ServerConfig) any { return c.MITM }},
+	{SectionMesh, func(c *config.ServerConfig) any { return c.Mesh }},
 }
 
 // detectChangedSections compares two configs and returns changed sections, in
@@ -359,15 +361,3 @@ func hasRestartRequiredChanges(sections []string) bool {
 
 // EventConfigSaved is broadcast when config is saved.
 const EventConfigSaved = "config.saved"
-
-// setWebSocketHub sets the WebSocket hub for broadcasting events.
-func (a *API) setWebSocketHub(hub *WebSocketHub) {
-	a.wsHub = hub
-}
-
-// handleGetConfigTimestamp returns the config file modification time.
-func (a *API) handleGetConfigTimestamp(w http.ResponseWriter, _ *http.Request) {
-	a.writeJSON(w, http.StatusOK, map[string]interface{}{
-		"timestamp": time.Now().Format(time.RFC3339),
-	})
-}

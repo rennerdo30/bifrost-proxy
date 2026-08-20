@@ -239,6 +239,14 @@ func (m *Manager) SyncMetrics() {
 	}
 }
 
+// RecordOriginBytes attributes bytes that were fetched from the origin server
+// to the cache_bytes_served_total{source="origin"} series. It is the counterpart
+// of the {source="cache"} series that RecordHit feeds, and without both the
+// bandwidth-saved ratio cannot be computed. No-op when metrics are not attached.
+func (m *Manager) RecordOriginBytes(n int64) {
+	m.snapshot().metrics.RecordOriginBytes(n)
+}
+
 // Get retrieves a cached response for a request.
 // Returns nil if not found or expired.
 func (m *Manager) Get(ctx context.Context, req *http.Request) (*Entry, error) {
