@@ -125,7 +125,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <div className="flex gap-3 justify-center">
               <button
                 onClick={this.handleRetry}
-                className="px-4 py-2 bg-bifrost-accent text-white rounded-md hover:bg-bifrost-accent/90 transition-colors"
+                className="px-4 py-2 bg-bifrost-accent text-bifrost-on-accent rounded-md hover:bg-bifrost-accent/90 transition-colors"
                 aria-label="Try again"
               >
                 Try Again
@@ -181,7 +181,7 @@ function SectionErrorFallback({ error, section, onRetry }: SectionErrorFallbackP
           <div className="flex gap-2">
             <button
               onClick={onRetry}
-              className="text-sm px-3 py-1.5 bg-bifrost-accent text-white rounded hover:bg-bifrost-accent/90 transition-colors"
+              className="text-sm px-3 py-1.5 bg-bifrost-accent text-bifrost-on-accent rounded hover:bg-bifrost-accent/90 transition-colors"
               aria-label={`Retry loading ${section}`}
             >
               Retry

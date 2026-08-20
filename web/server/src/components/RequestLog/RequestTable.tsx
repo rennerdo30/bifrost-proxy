@@ -28,7 +28,7 @@ function getMethodColor(method: string): string {
     case 'CONNECT':
       return 'text-purple-400'
     default:
-      return 'text-gray-400'
+      return 'text-bifrost-subtle'
   }
 }
 
@@ -51,7 +51,7 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
             d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"
           />
         </svg>
-        <p className="text-gray-400">Request logging is disabled</p>
+        <p className="text-bifrost-subtle">Request logging is disabled</p>
         <p className="text-sm text-bifrost-muted mt-1">
           Enable <code className="bg-bifrost-bg px-2 py-0.5 rounded">enable_request_log: true</code> in your config
         </p>
@@ -107,7 +107,7 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
             d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"
           />
         </svg>
-        <p className="text-gray-400">No requests logged yet</p>
+        <p className="text-bifrost-subtle">No requests logged yet</p>
         <p className="text-sm text-bifrost-muted mt-1">
           Requests will appear here as they are processed
         </p>
@@ -149,12 +149,12 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
                     </span>
                   </td>
                   <td className="table-cell">
-                    <span className="font-medium text-white truncate max-w-[200px] block">
+                    <span className="font-medium text-bifrost-heading truncate max-w-[200px] block">
                       {request.host}
                     </span>
                   </td>
                   <td className="table-cell">
-                    <span className="text-gray-400 truncate max-w-[300px] block font-mono text-xs">
+                    <span className="text-bifrost-subtle truncate max-w-[300px] block font-mono text-xs">
                       {request.path || '/'}
                     </span>
                   </td>
@@ -180,26 +180,26 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
                           <p className="text-bifrost-muted text-xs uppercase">Full URL</p>
-                          <p className="text-gray-300 font-mono text-xs break-all mt-1">
+                          <p className="text-bifrost-text font-mono text-xs break-all mt-1">
                             {request.url}
                           </p>
                         </div>
                         <div>
                           <p className="text-bifrost-muted text-xs uppercase">Client IP</p>
-                          <p className="text-gray-300 font-mono mt-1">{request.client_ip || '-'}</p>
+                          <p className="text-bifrost-text font-mono mt-1">{request.client_ip || '-'}</p>
                         </div>
                         <div>
                           <p className="text-bifrost-muted text-xs uppercase">Backend</p>
-                          <p className="text-gray-300 mt-1">{request.backend || '-'}</p>
+                          <p className="text-bifrost-text mt-1">{request.backend || '-'}</p>
                         </div>
                         <div>
                           <p className="text-bifrost-muted text-xs uppercase">Protocol</p>
-                          <p className="text-gray-300 mt-1">{request.protocol || 'HTTP'}</p>
+                          <p className="text-bifrost-text mt-1">{request.protocol || 'HTTP'}</p>
                         </div>
                         {request.user_agent && (
                           <div className="col-span-2 md:col-span-4">
                             <p className="text-bifrost-muted text-xs uppercase">User Agent</p>
-                            <p className="text-gray-300 font-mono text-xs break-all mt-1">
+                            <p className="text-bifrost-text font-mono text-xs break-all mt-1">
                               {request.user_agent}
                             </p>
                           </div>

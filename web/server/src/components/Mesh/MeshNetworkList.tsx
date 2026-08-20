@@ -79,7 +79,7 @@ export function MeshNetworkList({
                 </svg>
               </div>
               <div>
-                <h3 className="font-medium text-white">{network.name || network.id}</h3>
+                <h3 className="font-medium text-bifrost-heading">{network.name || network.id}</h3>
                 <p className="text-sm text-bifrost-muted">
                   {network.cidr} &middot; {network.peer_count} peer{network.peer_count !== 1 ? 's' : ''}
                 </p>

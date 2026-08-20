@@ -141,7 +141,7 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
       <div className="space-y-6">
         {/* HTTP Listener */}
         <div>
-          <h4 className="text-sm font-semibold text-white mb-3">HTTP Proxy</h4>
+          <h4 className="text-sm font-semibold text-bifrost-heading mb-3">HTTP Proxy</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ValidatedInput
               label="Listen Address"
@@ -193,7 +193,7 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
                 onChange={(e) => toggleHTTPTLS(e.target.checked)}
                 className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm font-medium text-gray-300">Enable TLS</span>
+              <span className="text-sm font-medium text-bifrost-text">Enable TLS</span>
             </label>
             {config.http?.tls?.enabled && (
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -227,7 +227,7 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
 
         {/* SOCKS5 Listener */}
         <div>
-          <h4 className="text-sm font-semibold text-white mb-3">SOCKS5 Proxy</h4>
+          <h4 className="text-sm font-semibold text-bifrost-heading mb-3">SOCKS5 Proxy</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <ValidatedInput
               label="Listen Address"
@@ -286,7 +286,7 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
                 }}
                 className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm font-medium text-gray-300">Enable TLS for SOCKS5</span>
+              <span className="text-sm font-medium text-bifrost-text">Enable TLS for SOCKS5</span>
             </label>
             {config.socks5?.tls?.enabled && (
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4">

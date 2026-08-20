@@ -37,14 +37,14 @@ export function HealthCheckForm({ config, onChange, optional = true }: HealthChe
             onChange={(e) => toggleEnabled(e.target.checked)}
             className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
           />
-          <span className="text-sm font-medium text-gray-300">Custom Health Check</span>
+          <span className="text-sm font-medium text-bifrost-text">Custom Health Check</span>
         </label>
       )}
 
       {enabled && config && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pl-7">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Type</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Type</label>
             <select
               value={config.type || 'tcp'}
               onChange={(e) => update('type', e.target.value)}
@@ -56,7 +56,7 @@ export function HealthCheckForm({ config, onChange, optional = true }: HealthChe
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Interval</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Interval</label>
             <input
               type="text"
               value={config.interval || ''}
@@ -66,7 +66,7 @@ export function HealthCheckForm({ config, onChange, optional = true }: HealthChe
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Timeout</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Timeout</label>
             <input
               type="text"
               value={config.timeout || ''}
@@ -76,7 +76,7 @@ export function HealthCheckForm({ config, onChange, optional = true }: HealthChe
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Target</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Target</label>
             <input
               type="text"
               value={config.target || ''}
@@ -87,7 +87,7 @@ export function HealthCheckForm({ config, onChange, optional = true }: HealthChe
           </div>
           {config.type === 'http' && (
             <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-300 mb-1">HTTP Path</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">HTTP Path</label>
               <input
                 type="text"
                 value={config.path || ''}

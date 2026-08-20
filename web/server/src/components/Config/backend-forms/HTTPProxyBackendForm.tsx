@@ -21,7 +21,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="md:col-span-2">
-          <label className="block text-sm font-medium text-gray-300 mb-1">Proxy Address</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Proxy Address</label>
           <input
             type="text"
             value={config.address || ''}
@@ -31,7 +31,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Username</label>
           <input
             type="text"
             value={config.username || ''}
@@ -41,7 +41,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Password</label>
           <div className="relative">
             <input
               type={showPassword ? 'text' : 'password'}
@@ -53,7 +53,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-white"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-bifrost-heading"
             >
               {showPassword ? (
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -69,7 +69,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Connect Timeout</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Connect Timeout</label>
           <input
             type="text"
             value={config.connect_timeout || ''}

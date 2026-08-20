@@ -50,10 +50,10 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
 
       {/* Credentials */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Credentials</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Credentials</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Username</label>
             <input
               type="text"
               value={config.username || ''}
@@ -63,7 +63,7 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Password</label>
             <input
               type="password"
               value={config.password || ''}
@@ -81,10 +81,10 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
 
       {/* Server Selection */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Server Selection</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Server Selection</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Country</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Country</label>
             <select
               value={config.country || ''}
               onChange={(e) => update('country', e.target.value || undefined)}
@@ -98,7 +98,7 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">City</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">City</label>
             <input
               type="text"
               value={config.city || ''}
@@ -116,11 +116,11 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
                 onChange={(e) => update('auto_select', e.target.checked)}
                 className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm font-medium text-gray-300">Auto-select best server</span>
+              <span className="text-sm font-medium text-bifrost-text">Auto-select best server</span>
             </label>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Max Server Load (%)</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Max Server Load (%)</label>
             <input
               type="range"
               min="10"
@@ -132,7 +132,7 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
             />
             <div className="flex justify-between text-xs text-bifrost-muted mt-1">
               <span>10%</span>
-              <span className="font-medium text-white">{config.max_load ?? 70}%</span>
+              <span className="font-medium text-bifrost-heading">{config.max_load ?? 70}%</span>
               <span>100%</span>
             </div>
           </div>
@@ -141,7 +141,7 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
 
       {/* Protocol Selection */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Protocol</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Protocol</h4>
         <div className="flex gap-4">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -151,7 +151,7 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
               onChange={() => handleProtocolChange('wireguard')}
               className="form-radio text-bifrost-purple"
             />
-            <span className="text-sm text-gray-300">WireGuard (Recommended)</span>
+            <span className="text-sm text-bifrost-text">WireGuard (Recommended)</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -161,14 +161,14 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
               onChange={() => handleProtocolChange('openvpn')}
               className="form-radio text-bifrost-purple"
             />
-            <span className="text-sm text-gray-300">OpenVPN</span>
+            <span className="text-sm text-bifrost-text">OpenVPN</span>
           </label>
         </div>
       </div>
 
       {/* PIA-specific Features */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Features</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Features</h4>
         <div className="space-y-3">
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -178,7 +178,7 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
               className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
             />
             <div>
-              <span className="text-sm font-medium text-gray-300">Port Forwarding</span>
+              <span className="text-sm font-medium text-bifrost-text">Port Forwarding</span>
               <p className="text-xs text-bifrost-muted">Enable port forwarding for P2P and hosting</p>
             </div>
           </label>
@@ -187,10 +187,10 @@ export function PIABackendForm({ config, onChange }: PIABackendFormProps) {
 
       {/* Advanced Settings */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Advanced Settings</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Advanced Settings</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Refresh Interval</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Refresh Interval</label>
             <input
               type="text"
               value={config.refresh_interval || ''}

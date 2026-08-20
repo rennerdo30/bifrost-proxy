@@ -69,11 +69,24 @@ graph TD
 
 ## 💻 Dashboard & Interface
 
-Both the client and the server ship a Web UI for monitoring and configuration. The UIs live in
-`web/client` and `web/server` (React + Vite + Tailwind) and are built and embedded into the Go
-binaries by the `make build` targets — no separate web server to run.
+Bifrost ships **two** dashboards, both embedded into their binary at build time by the
+`make build` targets — there is no separate web server to run:
 
-Beyond the browser UI there are dedicated frontends in this repository:
+| Dashboard | Source | Served by | Sections |
+| --- | --- | --- | --- |
+| Server | `web/server` | `bifrost-server` (API listener) | Dashboard, Backends, Request Log, Clients, Cache, Mesh, Config, Config Generator, Setup Guide |
+| Client | `web/client` | `bifrost-client` (API listener) | Traffic, Routes, Cache, VPN, Mesh, Settings, Logs |
+
+Both are React + TypeScript single-page apps built with Vite and styled with Tailwind CSS.
+They support a **dark and a light theme**: the theme follows your operating system
+preference by default and can be switched from the header, with the choice stored in
+`localStorage` and applied before the first paint.
+
+![Server dashboard, dark theme](assets/screenshot-server-dashboard.png)
+
+![Client routing rules, light theme](assets/screenshot-client-routes.png)
+
+Beyond the browser dashboards there are dedicated frontends in this repository:
 
 - `desktop/` — Wails-based desktop app (Windows, macOS, Linux) with tray integration.
 - `mobile/` — React Native / Expo app (iOS, Android).
@@ -86,13 +99,15 @@ Beyond the browser UI there are dedicated frontends in this repository:
 
 ## 🏁 Quick Start
 
-Requirements for building from source: **Go 1.25+**, **Node.js** (the Web UIs are compiled and
-embedded during the build) and `make`. Prebuilt nightly archives are also published on the
+Requirements for building from source: **Go** (see `go.mod` for the minimum version),
+**Node.js** with npm and `make` — the dashboards are compiled by Vite and then embedded
+into the binaries via `go:embed`, so the Make targets below run `npm install && npm run build`
+for you before `go build`. Prebuilt nightly archives are also published on the
 [Releases](https://github.com/rennerdo30/bifrost-proxy/releases) page.
 
 ### 1. Server Setup
 ```bash
-# Build the server (also builds and embeds the server Web UI)
+# Build the server (also builds + embeds the server dashboard)
 make build-server
 
 # Start from a copy of the example configuration
@@ -102,7 +117,7 @@ cp configs/server-config.example.yaml server-config.yaml
 
 ### 2. Client Setup
 ```bash
-# Build the client (also builds and embeds the client Web UI)
+# Build the client (also builds + embeds the client dashboard)
 make build-client
 
 # Generate a client configuration
@@ -113,7 +128,24 @@ make build-client
 ./bin/bifrost-client -c client-config.yaml
 ```
 
-`configs/` contains ready-made examples for the server, the client, Docker and OpenWrt.
+[`configs/`](configs/) contains ready-made examples for the server, the client, Docker and
+OpenWrt. Both dashboards are disabled or bound to localhost by default — see the `web_ui`
+and `api` sections of those examples for the listen addresses.
+
+---
+
+## 🧑‍💻 Working on the Dashboards
+
+```bash
+make web-install       # install npm dependencies for both dashboards
+make web-dev           # Vite dev server for the server dashboard
+make web-dev-client    # Vite dev server for the client dashboard
+make web-build         # production build of both dashboards
+```
+
+The dev servers proxy `/api` to a locally running Bifrost, so start the matching binary
+first. `go build ./...` only succeeds once the dashboards have been built at least
+once — `make build` (or `make web-build`) takes care of that.
 
 ---
 
@@ -133,7 +165,8 @@ bifrost-client service status
 
 ## 📖 Documentation
 
-Explore our comprehensive guides for advanced setups:
+The full documentation site is at **<https://bifrost.docs.renner.dev/>**. The sources live in
+[`docs/`](docs/):
 
 - 🚀 [Getting Started](docs/src/content/docs/getting-started.mdx)
 - ⚙️ [Configuration Guide](docs/src/content/docs/configuration.mdx)

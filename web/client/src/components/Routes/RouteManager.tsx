@@ -64,7 +64,7 @@ function AddRouteModal({ isOpen, onClose, onAdd, existingNames }: AddRouteModalP
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up">
         <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
           <h2 className="text-xl font-semibold text-bifrost-text">Add Route</h2>
@@ -213,7 +213,7 @@ function EditRouteModal({ isOpen, onClose, onSave, route, existingNames }: EditR
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-lg bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up">
         <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
           <h2 className="text-xl font-semibold text-bifrost-text">Edit Route</h2>

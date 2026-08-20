@@ -129,7 +129,7 @@ export function MeshPeerList({
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h3 className="font-medium text-white truncate">{peer.name || peer.id}</h3>
+                    <h3 className="font-medium text-bifrost-heading truncate">{peer.name || peer.id}</h3>
                     {getConnectionIcon(extPeer.connection_type)}
                   </div>
                   <p className="text-sm text-bifrost-muted font-mono truncate">{peer.virtual_ip}</p>

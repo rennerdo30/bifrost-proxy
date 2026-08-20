@@ -68,7 +68,7 @@ export function ApiKeysForm({ config, onChange }: ApiKeysFormProps) {
       </p>
 
       <div className="max-w-xs">
-        <label className="block text-sm font-medium text-gray-300 mb-1">Header Name</label>
+        <label className="block text-sm font-medium text-bifrost-text mb-1">Header Name</label>
         <input
           type="text"
           value={headerName}
@@ -81,7 +81,7 @@ export function ApiKeysForm({ config, onChange }: ApiKeysFormProps) {
       {keys.map((key, index) => (
         <div key={index} className="p-4 bg-bifrost-bg rounded-lg space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-white">Key {index + 1}</span>
+            <span className="text-sm font-medium text-bifrost-heading">Key {index + 1}</span>
             <button
               type="button"
               onClick={() => removeKey(index)}
@@ -95,7 +95,7 @@ export function ApiKeysForm({ config, onChange }: ApiKeysFormProps) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Name</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Name</label>
               <input
                 type="text"
                 value={key.name}
@@ -105,7 +105,7 @@ export function ApiKeysForm({ config, onChange }: ApiKeysFormProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Groups</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Groups</label>
               <input
                 type="text"
                 value={key.groups.join(', ')}
@@ -123,7 +123,7 @@ export function ApiKeysForm({ config, onChange }: ApiKeysFormProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Key Hash (bcrypt)</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Key Hash (bcrypt)</label>
               <input
                 type="text"
                 value={key.key_hash}
@@ -133,7 +133,7 @@ export function ApiKeysForm({ config, onChange }: ApiKeysFormProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Key (plaintext)</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Key (plaintext)</label>
               <input
                 type="text"
                 value={key.key_plain}

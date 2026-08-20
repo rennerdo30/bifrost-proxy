@@ -126,7 +126,7 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
         )}
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Route Name</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Route Name</label>
           <input
             type="text"
             value={form.name || ''}
@@ -149,7 +149,7 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Priority</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Priority</label>
           <input
             type="number"
             value={form.priority}
@@ -168,7 +168,7 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
                 onChange={() => setUseMultipleBackends(false)}
                 className="w-4 h-4 border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm text-gray-300">Single Backend</span>
+              <span className="text-sm text-bifrost-text">Single Backend</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -177,13 +177,13 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
                 onChange={() => setUseMultipleBackends(true)}
                 className="w-4 h-4 border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm text-gray-300">Load Balance (Multiple)</span>
+              <span className="text-sm text-bifrost-text">Load Balance (Multiple)</span>
             </label>
           </div>
 
           {!useMultipleBackends ? (
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Backend</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Backend</label>
               <select
                 value={form.backend || ''}
                 onChange={(e) => updateForm('backend', e.target.value)}
@@ -200,7 +200,7 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
           ) : (
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Backends</label>
+                <label className="block text-sm font-medium text-bifrost-text mb-2">Backends</label>
                 <div className="space-y-2">
                   {availableBackends.map((b) => (
                     <label key={b} className="flex items-center gap-2 cursor-pointer">
@@ -210,14 +210,14 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
                         onChange={() => toggleBackend(b)}
                         className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                       />
-                      <span className="text-sm text-gray-300">{b}</span>
+                      <span className="text-sm text-bifrost-text">{b}</span>
                     </label>
                   ))}
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-1">Load Balance Strategy</label>
+                <label className="block text-sm font-medium text-bifrost-text mb-1">Load Balance Strategy</label>
                 <select
                   value={form.load_balance || 'round_robin'}
                   onChange={(e) => updateForm('load_balance', e.target.value)}

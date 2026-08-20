@@ -103,13 +103,13 @@ export function MeshPeerDetails({ peer, onClose, onRemove }: MeshPeerDetailsProp
             </span>
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-white">{peer.name || peer.id}</h3>
+            <h3 className="text-lg font-semibold text-bifrost-heading">{peer.name || peer.id}</h3>
             {getStatusBadge(extPeer.status)}
           </div>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 rounded hover:bg-bifrost-bg text-bifrost-muted hover:text-white transition-colors"
+          className="p-1.5 rounded hover:bg-bifrost-bg text-bifrost-muted hover:text-bifrost-heading transition-colors"
           aria-label="Close details"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -126,18 +126,18 @@ export function MeshPeerDetails({ peer, onClose, onRemove }: MeshPeerDetailsProp
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-bifrost-muted">ID</dt>
-              <dd className="text-white font-mono text-xs truncate max-w-[200px]" title={peer.id}>
+              <dd className="text-bifrost-heading font-mono text-xs truncate max-w-[200px]" title={peer.id}>
                 {peer.id}
               </dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-bifrost-muted">Virtual IP</dt>
-              <dd className="text-white font-mono">{peer.virtual_ip || 'N/A'}</dd>
+              <dd className="text-bifrost-heading font-mono">{peer.virtual_ip || 'N/A'}</dd>
             </div>
             {peer.public_key && (
               <div className="flex justify-between">
                 <dt className="text-bifrost-muted">Public Key</dt>
-                <dd className="text-white font-mono text-xs truncate max-w-[200px]" title={peer.public_key}>
+                <dd className="text-bifrost-heading font-mono text-xs truncate max-w-[200px]" title={peer.public_key}>
                   {peer.public_key.slice(0, 16)}...
                 </dd>
               </div>
@@ -151,19 +151,19 @@ export function MeshPeerDetails({ peer, onClose, onRemove }: MeshPeerDetailsProp
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-bifrost-muted">Type</dt>
-              <dd className="text-white">{getConnectionTypeLabel(extPeer.connection_type)}</dd>
+              <dd className="text-bifrost-heading">{getConnectionTypeLabel(extPeer.connection_type)}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-bifrost-muted">Latency</dt>
-              <dd className="text-white font-mono">{formatDuration(extPeer.latency)}</dd>
+              <dd className="text-bifrost-heading font-mono">{formatDuration(extPeer.latency)}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-bifrost-muted">Last Seen</dt>
-              <dd className="text-white text-xs">{formatTimestamp(extPeer.last_seen)}</dd>
+              <dd className="text-bifrost-heading text-xs">{formatTimestamp(extPeer.last_seen)}</dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-bifrost-muted">Joined</dt>
-              <dd className="text-white text-xs">{formatTimestamp(extPeer.joined_at)}</dd>
+              <dd className="text-bifrost-heading text-xs">{formatTimestamp(extPeer.joined_at)}</dd>
             </div>
           </dl>
         </div>
@@ -201,7 +201,7 @@ export function MeshPeerDetails({ peer, onClose, onRemove }: MeshPeerDetailsProp
                   key={i}
                   className="flex items-center justify-between text-sm bg-bifrost-bg rounded px-2 py-1.5"
                 >
-                  <span className="font-mono text-white">
+                  <span className="font-mono text-bifrost-heading">
                     {ep.address}:{ep.port}
                   </span>
                   <span className={`badge ${
@@ -225,7 +225,7 @@ export function MeshPeerDetails({ peer, onClose, onRemove }: MeshPeerDetailsProp
               {Object.entries(peer.metadata).map(([key, value]) => (
                 <div key={key} className="flex justify-between">
                   <dt className="text-bifrost-muted">{key}</dt>
-                  <dd className="text-white truncate max-w-[200px]" title={value}>
+                  <dd className="text-bifrost-heading truncate max-w-[200px]" title={value}>
                     {value}
                   </dd>
                 </div>

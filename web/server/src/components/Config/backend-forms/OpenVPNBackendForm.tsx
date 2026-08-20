@@ -82,7 +82,7 @@ export function OpenVPNBackendForm({ config, onChange }: OpenVPNBackendFormProps
       {showImport && (
         <div className="bg-bifrost-bg-tertiary rounded-lg p-4 space-y-4">
           <div className="flex items-center justify-between">
-            <h4 className="text-sm font-semibold text-white">Import OpenVPN Configuration</h4>
+            <h4 className="text-sm font-semibold text-bifrost-heading">Import OpenVPN Configuration</h4>
             <input
               type="file"
               ref={fileInputRef}
@@ -99,7 +99,7 @@ export function OpenVPNBackendForm({ config, onChange }: OpenVPNBackendFormProps
             </button>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">
+            <label className="block text-sm font-medium text-bifrost-text mb-1">
               Or paste your OpenVPN config below:
             </label>
             <textarea
@@ -148,7 +148,7 @@ key [inline]
       {config.config_content && (
         <div className="bg-bifrost-bg-tertiary rounded-lg p-4">
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-sm font-semibold text-white">Embedded Configuration</h4>
+            <h4 className="text-sm font-semibold text-bifrost-heading">Embedded Configuration</h4>
             <button
               type="button"
               onClick={() => update('config_content', undefined)}
@@ -167,7 +167,7 @@ key [inline]
       {/* Config File Path (alternative to embedded) */}
       {!config.config_content && (
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Config File Path</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Config File Path</label>
           <input
             type="text"
             value={config.config_file || ''}
@@ -183,7 +183,7 @@ key [inline]
 
       {/* Authentication */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Authentication</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Authentication</h4>
 
         {/* Auth Method Toggle */}
         <div className="flex gap-4 mb-4">
@@ -195,7 +195,7 @@ key [inline]
               onChange={() => handleAuthMethodChange('file')}
               className="form-radio text-bifrost-purple"
             />
-            <span className="text-sm text-gray-300">Auth File</span>
+            <span className="text-sm text-bifrost-text">Auth File</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
@@ -205,13 +205,13 @@ key [inline]
               onChange={() => handleAuthMethodChange('inline')}
               className="form-radio text-bifrost-purple"
             />
-            <span className="text-sm text-gray-300">Username/Password</span>
+            <span className="text-sm text-bifrost-text">Username/Password</span>
           </label>
         </div>
 
         {authMethod === 'file' ? (
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Auth File</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Auth File</label>
             <input
               type="text"
               value={config.auth_file || ''}
@@ -226,7 +226,7 @@ key [inline]
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Username</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Username</label>
               <input
                 type="text"
                 value={config.username || ''}
@@ -236,7 +236,7 @@ key [inline]
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Password</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Password</label>
               <input
                 type="password"
                 value={config.password || ''}
@@ -252,10 +252,10 @@ key [inline]
 
       {/* Advanced Settings */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Advanced Settings</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Advanced Settings</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">OpenVPN Binary</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">OpenVPN Binary</label>
             <input
               type="text"
               value={config.binary || ''}
@@ -265,7 +265,7 @@ key [inline]
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Connect Timeout</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Connect Timeout</label>
             <input
               type="text"
               value={config.connect_timeout || ''}
@@ -275,7 +275,7 @@ key [inline]
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Management Address</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Management Address</label>
             <input
               type="text"
               value={config.management_addr || ''}
@@ -285,7 +285,7 @@ key [inline]
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Management Port</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Management Port</label>
             <input
               type="number"
               value={config.management_port ?? ''}

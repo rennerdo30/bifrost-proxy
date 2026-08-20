@@ -49,7 +49,7 @@ export function TestBackendDialog({ isOpen, onClose, backendName }: TestBackendD
     >
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Target URL</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Target URL</label>
           <input
             type="text"
             value={target}
@@ -61,7 +61,7 @@ export function TestBackendDialog({ isOpen, onClose, backendName }: TestBackendD
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300 mb-1">Timeout</label>
+          <label className="block text-sm font-medium text-bifrost-text mb-1">Timeout</label>
           <input
             type="text"
             value={timeout}
@@ -127,20 +127,20 @@ export function TestBackendDialog({ isOpen, onClose, backendName }: TestBackendD
 
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
-                <span className="text-gray-400">Backend:</span>
-                <span className="text-white font-mono">{result.backend}</span>
+                <span className="text-bifrost-subtle">Backend:</span>
+                <span className="text-bifrost-heading font-mono">{result.backend}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Target:</span>
-                <span className="text-white font-mono truncate max-w-[200px]">{result.target}</span>
+                <span className="text-bifrost-subtle">Target:</span>
+                <span className="text-bifrost-heading font-mono truncate max-w-[200px]">{result.target}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-400">Duration:</span>
-                <span className="text-white font-mono">{result.duration}</span>
+                <span className="text-bifrost-subtle">Duration:</span>
+                <span className="text-bifrost-heading font-mono">{result.duration}</span>
               </div>
               {result.healthy !== undefined && (
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Healthy:</span>
+                  <span className="text-bifrost-subtle">Healthy:</span>
                   <span className={result.healthy ? 'text-bifrost-success' : 'text-bifrost-error'}>
                     {result.healthy ? 'Yes' : 'No'}
                   </span>
@@ -148,7 +148,7 @@ export function TestBackendDialog({ isOpen, onClose, backendName }: TestBackendD
               )}
               {result.error && (
                 <div className="mt-2 pt-2 border-t border-bifrost-border">
-                  <span className="text-gray-400 block mb-1">Error:</span>
+                  <span className="text-bifrost-subtle block mb-1">Error:</span>
                   <span className="text-bifrost-error text-xs font-mono break-all">{result.error}</span>
                 </div>
               )}

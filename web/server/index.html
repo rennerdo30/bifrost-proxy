@@ -6,10 +6,34 @@
   <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0a0e17" />
+  <meta name="description" content="Bifrost proxy server dashboard: backend health, request log, clients, cache and configuration." />
   <title>Bifrost Server Dashboard</title>
+  <script>
+    // Applies the stored (or OS) theme before the first paint so the page never
+    // flashes the wrong palette. Keep the storage key in sync with
+    // THEME_STORAGE_KEY in src/hooks/useTheme.ts.
+    (function () {
+      try {
+        var stored = localStorage.getItem('bifrost-theme');
+        var theme = stored === 'light' || stored === 'dark'
+          ? stored
+          : (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+        var root = document.documentElement;
+        root.classList.toggle('dark', theme === 'dark');
+        root.classList.toggle('light', theme === 'light');
+        root.style.colorScheme = theme;
+        if (theme === 'light') {
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', '#f4f6f9');
+        }
+      } catch (e) {
+        /* keep the default dark theme */
+      }
+    })();
+  </script>
 </head>
 
-<body class="bg-bifrost-bg text-gray-100 font-sans antialiased">
+<body>
   <div id="root"></div>
   <script type="module" src="/src/main.tsx"></script>
 </body>

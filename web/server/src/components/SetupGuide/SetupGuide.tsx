@@ -18,7 +18,7 @@ function CodeBlock({ code }: CodeBlockProps) {
 
   return (
     <div className="relative group">
-      <pre className="code-block text-gray-300 text-sm overflow-x-auto">
+      <pre className="code-block text-bifrost-text text-sm overflow-x-auto">
         {code}
       </pre>
       <button
@@ -39,7 +39,7 @@ interface SectionProps {
 function Section({ title, children }: SectionProps) {
   return (
     <div className="space-y-3">
-      <h4 className="text-lg font-medium text-white">{title}</h4>
+      <h4 className="text-lg font-medium text-bifrost-heading">{title}</h4>
       {children}
     </div>
   )
@@ -66,8 +66,8 @@ export function SetupGuideContent() {
       <div className="card bg-gradient-to-r from-bifrost-accent/10 to-transparent border-bifrost-accent/30">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-lg font-semibold text-white mb-2">PAC File (Recommended)</h3>
-            <p className="text-gray-400 text-sm mb-4">
+            <h3 className="text-lg font-semibold text-bifrost-heading mb-2">PAC File (Recommended)</h3>
+            <p className="text-bifrost-subtle text-sm mb-4">
               Use the Proxy Auto-Configuration file for automatic routing based on your server's rules.
             </p>
             <CodeBlock code={pacUrl} />
@@ -94,7 +94,7 @@ export function SetupGuideContent() {
 
       {/* Platform Selector */}
       <div>
-        <h3 className="text-lg font-semibold text-white mb-4">Setup Instructions</h3>
+        <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Setup Instructions</h3>
         <div className="flex flex-wrap gap-2 mb-6">
           {platforms.map((p) => (
             <button
@@ -112,10 +112,10 @@ export function SetupGuideContent() {
           {platform === 'macos' && (
             <>
               <Section title="System Proxy (GUI)">
-                <ol className="list-decimal list-inside space-y-2 text-gray-400">
-                  <li>Open <strong className="text-white">System Preferences</strong> → <strong className="text-white">Network</strong></li>
-                  <li>Select your network connection and click <strong className="text-white">Advanced</strong></li>
-                  <li>Go to the <strong className="text-white">Proxies</strong> tab</li>
+                <ol className="list-decimal list-inside space-y-2 text-bifrost-subtle">
+                  <li>Open <strong className="text-bifrost-heading">System Preferences</strong> → <strong className="text-bifrost-heading">Network</strong></li>
+                  <li>Select your network connection and click <strong className="text-bifrost-heading">Advanced</strong></li>
+                  <li>Go to the <strong className="text-bifrost-heading">Proxies</strong> tab</li>
                   <li>For HTTP proxy: Enter <code className="bg-bifrost-bg px-1 rounded">{proxyHost}:{httpPort}</code></li>
                   <li>For SOCKS proxy: Enter <code className="bg-bifrost-bg px-1 rounded">{proxyHost}:{socks5Port}</code></li>
                   <li>Or use Automatic Proxy Configuration URL: <code className="bg-bifrost-bg px-1 rounded">{pacUrl}</code></li>
@@ -155,9 +155,9 @@ networksetup -setsocksfirewallproxystate "Wi-Fi" off`} />
           {platform === 'windows' && (
             <>
               <Section title="System Proxy (GUI)">
-                <ol className="list-decimal list-inside space-y-2 text-gray-400">
-                  <li>Open <strong className="text-white">Settings</strong> → <strong className="text-white">Network & Internet</strong> → <strong className="text-white">Proxy</strong></li>
-                  <li>Under Manual proxy setup, enable <strong className="text-white">Use a proxy server</strong></li>
+                <ol className="list-decimal list-inside space-y-2 text-bifrost-subtle">
+                  <li>Open <strong className="text-bifrost-heading">Settings</strong> → <strong className="text-bifrost-heading">Network & Internet</strong> → <strong className="text-bifrost-heading">Proxy</strong></li>
+                  <li>Under Manual proxy setup, enable <strong className="text-bifrost-heading">Use a proxy server</strong></li>
                   <li>Enter Address: <code className="bg-bifrost-bg px-1 rounded">{proxyHost}</code> Port: <code className="bg-bifrost-bg px-1 rounded">{httpPort}</code></li>
                   <li>Or use Automatic setup with script address: <code className="bg-bifrost-bg px-1 rounded">{pacUrl}</code></li>
                 </ol>
@@ -225,7 +225,7 @@ Acquire::https::Proxy "http://${proxyHost}:${httpPort}";`} />
           {platform === 'browser' && (
             <>
               <Section title="Chrome / Edge">
-                <p className="text-gray-400 mb-3">Chrome uses system proxy settings by default. To use a different proxy:</p>
+                <p className="text-bifrost-subtle mb-3">Chrome uses system proxy settings by default. To use a different proxy:</p>
                 <CodeBlock code={`# Launch with custom proxy
 google-chrome --proxy-server="http://${proxyHost}:${httpPort}"
 
@@ -237,10 +237,10 @@ google-chrome --proxy-server="socks5://${proxyHost}:${socks5Port}"`} />
               </Section>
 
               <Section title="Firefox">
-                <ol className="list-decimal list-inside space-y-2 text-gray-400">
-                  <li>Open <strong className="text-white">Settings</strong> → <strong className="text-white">General</strong> → <strong className="text-white">Network Settings</strong></li>
-                  <li>Click <strong className="text-white">Settings...</strong></li>
-                  <li>Select <strong className="text-white">Manual proxy configuration</strong></li>
+                <ol className="list-decimal list-inside space-y-2 text-bifrost-subtle">
+                  <li>Open <strong className="text-bifrost-heading">Settings</strong> → <strong className="text-bifrost-heading">General</strong> → <strong className="text-bifrost-heading">Network Settings</strong></li>
+                  <li>Click <strong className="text-bifrost-heading">Settings...</strong></li>
+                  <li>Select <strong className="text-bifrost-heading">Manual proxy configuration</strong></li>
                   <li>HTTP Proxy: <code className="bg-bifrost-bg px-1 rounded">{proxyHost}</code> Port: <code className="bg-bifrost-bg px-1 rounded">{httpPort}</code></li>
                   <li>SOCKS Host: <code className="bg-bifrost-bg px-1 rounded">{proxyHost}</code> Port: <code className="bg-bifrost-bg px-1 rounded">{socks5Port}</code></li>
                   <li>Or use Automatic proxy configuration URL: <code className="bg-bifrost-bg px-1 rounded">{pacUrl}</code></li>
@@ -248,9 +248,9 @@ google-chrome --proxy-server="socks5://${proxyHost}:${socks5Port}"`} />
               </Section>
 
               <Section title="Safari">
-                <p className="text-gray-400">
+                <p className="text-bifrost-subtle">
                   Safari uses macOS system proxy settings. Configure proxy in{' '}
-                  <strong className="text-white">System Preferences → Network → Proxies</strong>.
+                  <strong className="text-bifrost-heading">System Preferences → Network → Proxies</strong>.
                 </p>
               </Section>
             </>
@@ -260,7 +260,7 @@ google-chrome --proxy-server="socks5://${proxyHost}:${socks5Port}"`} />
 
       {/* Common Tools */}
       <div className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Common Tools</h3>
+        <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Common Tools</h3>
         <div className="space-y-4">
           <Section title="curl">
             <CodeBlock code={`# HTTP proxy

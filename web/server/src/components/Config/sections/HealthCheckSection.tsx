@@ -59,7 +59,7 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
             onChange={(e) => toggleEnabled(e.target.checked)}
             className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
           />
-          <span className="text-sm font-medium text-gray-300">Enable Global Health Checks</span>
+          <span className="text-sm font-medium text-bifrost-text">Enable Global Health Checks</span>
         </label>
         <p className="text-xs text-bifrost-muted pl-7">
           Applied to all backends without their own health check configuration

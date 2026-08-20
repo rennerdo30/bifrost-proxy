@@ -138,7 +138,7 @@ function PasswordField({
         type="button"
         onClick={() => setShow(!show)}
         aria-label={show ? 'Hide value' : 'Show value'}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-white"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-bifrost-heading"
       >
         {show ? (
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -189,7 +189,7 @@ export function AuthProviderConfigForm({ type, config, onChange }: AuthProviderC
                   onChange={(e) => update(field.key, e.target.checked)}
                   className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                 />
-                <span className="text-sm text-gray-300">{field.label}</span>
+                <span className="text-sm text-bifrost-text">{field.label}</span>
                 {field.insecure && raw === true && <span className="badge badge-warning text-xs">Insecure</span>}
               </label>
             )
@@ -198,7 +198,7 @@ export function AuthProviderConfigForm({ type, config, onChange }: AuthProviderC
           const colSpan = field.kind === 'textarea' ? 'md:col-span-2' : ''
           return (
             <div key={field.key} className={colSpan}>
-              <label htmlFor={id} className="block text-sm font-medium text-gray-300 mb-1">
+              <label htmlFor={id} className="block text-sm font-medium text-bifrost-text mb-1">
                 {field.label}
               </label>
               {field.kind === 'textarea' ? (

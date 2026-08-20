@@ -114,8 +114,8 @@ export function Mesh() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-white">Mesh Networking</h2>
-          <p className="text-bifrost-muted mt-1">
+          <h2 className="page-title">Mesh Networking</h2>
+          <p className="page-subtitle">
             Manage P2P mesh networks and peer connections
           </p>
         </div>
@@ -167,21 +167,21 @@ export function Mesh() {
       {/* Statistics Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <div className="card py-3 bg-gradient-to-br from-bifrost-accent/10 to-transparent">
-          <p className="text-sm text-gray-400">Networks</p>
+          <p className="text-sm text-bifrost-subtle">Networks</p>
           <p className="text-2xl font-bold text-bifrost-accent mt-1">{networks.length}</p>
         </div>
         <div className="card py-3 bg-gradient-to-br from-cyan-500/10 to-transparent">
-          <p className="text-sm text-gray-400">Total Peers</p>
+          <p className="text-sm text-bifrost-subtle">Total Peers</p>
           <p className="text-2xl font-bold text-cyan-400 mt-1">{totalPeers}</p>
         </div>
         <div className="card py-3 bg-gradient-to-br from-bifrost-success/10 to-transparent">
-          <p className="text-sm text-gray-400">Connected</p>
+          <p className="text-sm text-bifrost-subtle">Connected</p>
           <p className="text-2xl font-bold text-bifrost-success mt-1">
             {selectedNetworkId ? connectedPeers : '-'}
           </p>
         </div>
         <div className="card py-3 bg-gradient-to-br from-emerald-500/10 to-transparent">
-          <p className="text-sm text-gray-400">Selected Network</p>
+          <p className="text-sm text-bifrost-subtle">Selected Network</p>
           <p className="text-lg font-bold text-emerald-400 mt-1 truncate">
             {selectedNetworkId || 'None'}
           </p>
@@ -194,7 +194,7 @@ export function Mesh() {
         <div className="lg:col-span-3">
           <div className="card h-full">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-white">Networks</h3>
+              <h3 className="text-sm font-medium text-bifrost-heading">Networks</h3>
               <span className="badge badge-info">{networks.length}</span>
             </div>
             <MeshNetworkList
@@ -213,7 +213,7 @@ export function Mesh() {
             <div className="card h-full flex flex-col" style={{ minHeight: '500px' }}>
               {/* View Toggle */}
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-white">
+                <h3 className="text-sm font-medium text-bifrost-heading">
                   Peers ({peers.length})
                 </h3>
                 <div className="flex items-center gap-1 bg-bifrost-bg rounded-lg p-1">
@@ -221,8 +221,8 @@ export function Mesh() {
                     onClick={() => setViewMode('topology')}
                     className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                       viewMode === 'topology'
-                        ? 'bg-bifrost-accent text-white'
-                        : 'text-bifrost-muted hover:text-white'
+                        ? 'bg-bifrost-accent text-bifrost-on-accent'
+                        : 'text-bifrost-muted hover:text-bifrost-heading'
                     }`}
                   >
                     <svg className="w-4 h-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -234,8 +234,8 @@ export function Mesh() {
                     onClick={() => setViewMode('list')}
                     className={`px-3 py-1.5 text-xs font-medium rounded transition-colors ${
                       viewMode === 'list'
-                        ? 'bg-bifrost-accent text-white'
-                        : 'text-bifrost-muted hover:text-white'
+                        ? 'bg-bifrost-accent text-bifrost-on-accent'
+                        : 'text-bifrost-muted hover:text-bifrost-heading'
                     }`}
                   >
                     <svg className="w-4 h-4 inline-block mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>

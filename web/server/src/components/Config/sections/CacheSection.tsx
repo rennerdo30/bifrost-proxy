@@ -162,7 +162,7 @@ export function CacheSection({ config, onChange }: CacheSectionProps) {
             onChange={(e) => update('enabled', e.target.checked)}
             className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
           />
-          <span className="text-sm font-medium text-gray-300">Enable Caching</span>
+          <span className="text-sm font-medium text-bifrost-text">Enable Caching</span>
         </label>
 
         {config.enabled && (
@@ -189,10 +189,10 @@ export function CacheSection({ config, onChange }: CacheSectionProps) {
 
             {/* Storage Configuration */}
             <div className="bg-bifrost-bg rounded-lg p-4 space-y-4">
-              <h4 className="text-sm font-semibold text-white">Storage Backend</h4>
+              <h4 className="text-sm font-semibold text-bifrost-heading">Storage Backend</h4>
 
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Storage Type</label>
+                <label className="block text-sm font-medium text-bifrost-text mb-2">Storage Type</label>
                 <div className="flex gap-4">
                   {(['memory', 'disk', 'tiered'] as const).map((type) => (
                     <label key={type} className="flex items-center gap-2 cursor-pointer">
@@ -203,7 +203,7 @@ export function CacheSection({ config, onChange }: CacheSectionProps) {
                         onChange={() => updateStorage(type)}
                         className="w-4 h-4 border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                       />
-                      <span className="text-sm text-gray-300 capitalize">{type}</span>
+                      <span className="text-sm text-bifrost-text capitalize">{type}</span>
                     </label>
                   ))}
                 </div>
@@ -299,7 +299,7 @@ export function CacheSection({ config, onChange }: CacheSectionProps) {
 
             {/* Presets */}
             <div className="bg-bifrost-bg rounded-lg p-4 space-y-4">
-              <h4 className="text-sm font-semibold text-white">Cache Presets</h4>
+              <h4 className="text-sm font-semibold text-bifrost-heading">Cache Presets</h4>
               <p className="text-xs text-bifrost-muted">
                 Enable built-in cache rules for common content providers
               </p>
@@ -326,7 +326,7 @@ export function CacheSection({ config, onChange }: CacheSectionProps) {
                       className="w-4 h-4 mt-0.5 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                     />
                     <div>
-                      <span className="text-sm font-medium text-white block">{preset.label}</span>
+                      <span className="text-sm font-medium text-bifrost-heading block">{preset.label}</span>
                       <span className="text-xs text-bifrost-muted">{preset.description}</span>
                     </div>
                   </label>
@@ -338,7 +338,7 @@ export function CacheSection({ config, onChange }: CacheSectionProps) {
             <div className="bg-bifrost-bg rounded-lg p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-sm font-semibold text-white">Custom Cache Rules</h4>
+                  <h4 className="text-sm font-semibold text-bifrost-heading">Custom Cache Rules</h4>
                   <p className="text-xs text-bifrost-muted">Define custom caching rules for specific domains</p>
                 </div>
                 <button
@@ -422,7 +422,7 @@ function CacheRuleEditor({ rule, onChange, onDelete }: CacheRuleEditorProps) {
             className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
           />
           <div>
-            <span className={`text-sm font-medium ${rule.enabled ? 'text-white' : 'text-gray-500'}`}>
+            <span className={`text-sm font-medium ${rule.enabled ? 'text-bifrost-heading' : 'text-bifrost-muted'}`}>
               {rule.name || 'Untitled Rule'}
             </span>
             <span className="text-xs text-bifrost-muted ml-2">
@@ -461,7 +461,7 @@ function CacheRuleEditor({ rule, onChange, onDelete }: CacheRuleEditorProps) {
         <div className="p-4 space-y-4 border-t border-bifrost-border">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Rule Name</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Rule Name</label>
               <input
                 type="text"
                 value={rule.name}
@@ -471,7 +471,7 @@ function CacheRuleEditor({ rule, onChange, onDelete }: CacheRuleEditorProps) {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Priority</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Priority</label>
               <input
                 type="number"
                 value={rule.priority}
@@ -491,7 +491,7 @@ function CacheRuleEditor({ rule, onChange, onDelete }: CacheRuleEditorProps) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">TTL</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">TTL</label>
               <input
                 type="text"
                 value={rule.ttl}
@@ -502,7 +502,7 @@ function CacheRuleEditor({ rule, onChange, onDelete }: CacheRuleEditorProps) {
               <p className="text-xs text-bifrost-muted mt-1">e.g., 1h, 7d, 30d</p>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-1">Max File Size</label>
+              <label className="block text-sm font-medium text-bifrost-text mb-1">Max File Size</label>
               <input
                 type="text"
                 value={rule.max_size || ''}
@@ -548,7 +548,7 @@ function CacheRuleEditor({ rule, onChange, onDelete }: CacheRuleEditorProps) {
                   onChange={(e) => update('ignore_query', e.target.checked || undefined)}
                   className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                 />
-                <span className="text-sm text-gray-300">Ignore query string</span>
+                <span className="text-sm text-bifrost-text">Ignore query string</span>
               </label>
               <label className="flex items-center gap-2 cursor-pointer">
                 <input
@@ -557,7 +557,7 @@ function CacheRuleEditor({ rule, onChange, onDelete }: CacheRuleEditorProps) {
                   onChange={(e) => update('respect_cache_control', e.target.checked || undefined)}
                   className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
                 />
-                <span className="text-sm text-gray-300">Respect Cache-Control headers</span>
+                <span className="text-sm text-bifrost-text">Respect Cache-Control headers</span>
               </label>
             </div>
           </div>

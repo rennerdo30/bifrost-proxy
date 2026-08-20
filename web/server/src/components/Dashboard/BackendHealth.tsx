@@ -10,7 +10,7 @@ export function BackendHealth({ backends, isLoading }: BackendHealthProps) {
   if (isLoading) {
     return (
       <div className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Backend Status</h3>
+        <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Backend Status</h3>
         <div className="space-y-3">
           {[...Array(3)].map((_, i) => (
             <div key={i} className="animate-pulse flex items-center gap-3">
@@ -26,7 +26,7 @@ export function BackendHealth({ backends, isLoading }: BackendHealthProps) {
   if (!backends || backends.length === 0) {
     return (
       <div className="card">
-        <h3 className="text-lg font-semibold text-white mb-4">Backend Status</h3>
+        <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Backend Status</h3>
         <p className="text-bifrost-muted">No backends configured</p>
       </div>
     )
@@ -34,7 +34,7 @@ export function BackendHealth({ backends, isLoading }: BackendHealthProps) {
 
   return (
     <div className="card">
-      <h3 className="text-lg font-semibold text-white mb-4">Backend Status</h3>
+      <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Backend Status</h3>
       <div className="space-y-3">
         {backends.map((backend, index) => (
           <div
@@ -51,12 +51,12 @@ export function BackendHealth({ backends, isLoading }: BackendHealthProps) {
                 }`}
               />
               <div>
-                <p className="font-medium text-white">{backend.name}</p>
+                <p className="font-medium text-bifrost-heading">{backend.name}</p>
                 <p className="text-xs text-bifrost-muted">{backend.type}</p>
               </div>
             </div>
             <div className="text-right">
-              <p className="text-sm text-gray-300">
+              <p className="text-sm text-bifrost-text">
                 {backend.stats.active_connections} active
               </p>
               <p className="text-xs text-bifrost-muted">

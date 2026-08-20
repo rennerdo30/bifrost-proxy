@@ -35,7 +35,7 @@ export function AutoUpdateSection({ config, onChange }: AutoUpdateSectionProps) 
             onChange={(e) => update('enabled', e.target.checked)}
             className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
           />
-          <span className="text-sm font-medium text-gray-300">Enable Auto Update</span>
+          <span className="text-sm font-medium text-bifrost-text">Enable Auto Update</span>
         </label>
 
         {config.enabled && (

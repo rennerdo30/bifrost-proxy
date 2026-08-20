@@ -188,12 +188,22 @@ export function Logs() {
       <div className="card p-0 overflow-hidden">
         <div className="max-h-[600px] overflow-y-auto font-mono text-sm">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <div className="animate-spin w-6 h-6 border-2 border-bifrost-accent border-t-transparent rounded-full" />
+            <div className="flex items-center justify-center gap-3 py-12 text-bifrost-muted">
+              <span className="spinner h-6 w-6 text-bifrost-accent" role="status" aria-label="Loading logs" />
             </div>
           ) : filteredLogs.length === 0 ? (
-            <div className="text-center py-12 text-bifrost-muted">
-              {filter ? 'No logs match your filter' : 'No logs available'}
+            <div className="empty-state font-sans">
+              <svg className="h-8 w-8 text-bifrost-muted" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="empty-state-title">
+                {filter ? 'No logs match your filter' : 'No logs yet'}
+              </p>
+              <p className="empty-state-hint">
+                {filter
+                  ? 'Try a different search term or clear the filter.'
+                  : 'Log entries appear here as the client proxies requests.'}
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-bifrost-border/30">

@@ -49,7 +49,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
 
       {/* Credentials */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Credentials</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Credentials</h4>
         <div className="bg-bifrost-bg-tertiary rounded-lg p-3 mb-4">
           <p className="text-xs text-yellow-400">
             Important: Use your ProtonVPN OpenVPN credentials, not your Proton account password.
@@ -58,7 +58,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">OpenVPN Username</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">OpenVPN Username</label>
             <input
               type="text"
               value={config.username || ''}
@@ -68,7 +68,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">OpenVPN Password</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">OpenVPN Password</label>
             <input
               type="password"
               value={config.password || ''}
@@ -83,7 +83,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
 
       {/* Subscription Tier */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Subscription Tier</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Subscription Tier</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {TIERS.map((tier) => (
             <label
@@ -102,7 +102,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
                   onChange={() => update('tier', tier.value)}
                   className="form-radio text-bifrost-purple"
                 />
-                <span className="text-sm font-medium text-white">{tier.label}</span>
+                <span className="text-sm font-medium text-bifrost-heading">{tier.label}</span>
               </div>
               <p className="text-xs text-bifrost-muted mt-1 ml-6">{tier.description}</p>
             </label>
@@ -112,10 +112,10 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
 
       {/* Server Selection */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Server Selection</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Server Selection</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Country</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Country</label>
             <select
               value={config.country || ''}
               onChange={(e) => update('country', e.target.value || undefined)}
@@ -129,7 +129,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
             </select>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">City</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">City</label>
             <input
               type="text"
               value={config.city || ''}
@@ -147,11 +147,11 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
                 onChange={(e) => update('auto_select', e.target.checked)}
                 className="w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
               />
-              <span className="text-sm font-medium text-gray-300">Auto-select best server</span>
+              <span className="text-sm font-medium text-bifrost-text">Auto-select best server</span>
             </label>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Max Server Load (%)</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Max Server Load (%)</label>
             <input
               type="range"
               min="10"
@@ -163,7 +163,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
             />
             <div className="flex justify-between text-xs text-bifrost-muted mt-1">
               <span>10%</span>
-              <span className="font-medium text-white">{config.max_load ?? 70}%</span>
+              <span className="font-medium text-bifrost-heading">{config.max_load ?? 70}%</span>
               <span>100%</span>
             </div>
           </div>
@@ -172,7 +172,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
 
       {/* Secure Core */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Security Features</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Security Features</h4>
         <div className="space-y-3">
           <label className="flex items-center gap-3 cursor-pointer">
             <input
@@ -183,7 +183,7 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
               disabled={(config.tier ?? 0) < 2}
             />
             <div>
-              <span className={`text-sm font-medium ${(config.tier ?? 0) < 2 ? 'text-gray-500' : 'text-gray-300'}`}>
+              <span className={`text-sm font-medium ${(config.tier ?? 0) < 2 ? 'text-bifrost-muted' : 'text-bifrost-text'}`}>
                 Secure Core
               </span>
               <p className="text-xs text-bifrost-muted">
@@ -196,9 +196,9 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
 
       {/* Protocol Info */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Protocol</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Protocol</h4>
         <div className="bg-bifrost-bg-tertiary rounded-lg p-3">
-          <p className="text-sm text-gray-300">OpenVPN (UDP)</p>
+          <p className="text-sm text-bifrost-text">OpenVPN (UDP)</p>
           <p className="text-xs text-bifrost-muted mt-1">
             ProtonVPN backend uses OpenVPN protocol for maximum compatibility
           </p>
@@ -207,10 +207,10 @@ export function ProtonVPNBackendForm({ config, onChange }: ProtonVPNBackendFormP
 
       {/* Advanced Settings */}
       <div>
-        <h4 className="text-sm font-semibold text-white mb-3">Advanced Settings</h4>
+        <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Advanced Settings</h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-300 mb-1">Refresh Interval</label>
+            <label className="block text-sm font-medium text-bifrost-text mb-1">Refresh Interval</label>
             <input
               type="text"
               value={config.refresh_interval || ''}

@@ -69,7 +69,7 @@ export function YamlPreview({ yaml }: YamlPreviewProps) {
       )}
 
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white">Generated Config</h3>
+        <h3 className="text-lg font-semibold text-bifrost-heading">Generated Config</h3>
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopy}
@@ -104,14 +104,14 @@ export function YamlPreview({ yaml }: YamlPreviewProps) {
       </div>
 
       <div className="code-block flex-1 overflow-auto">
-        <pre className="text-gray-300 whitespace-pre-wrap">{yaml}</pre>
+        <pre className="text-bifrost-text whitespace-pre-wrap">{yaml}</pre>
       </div>
 
       <div className="mt-4 p-3 bg-bifrost-bg rounded-lg">
         <p className="text-xs text-bifrost-muted">
           Save this file as <code className="text-bifrost-accent">bifrost-client.yaml</code> and run:
         </p>
-        <code className="block mt-2 text-sm text-gray-300">
+        <code className="block mt-2 text-sm text-bifrost-text">
           bifrost-client -c bifrost-client.yaml
         </code>
       </div>

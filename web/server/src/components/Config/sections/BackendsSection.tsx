@@ -78,7 +78,7 @@ export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
                   <div className={`w-2 h-2 rounded-full ${backend.enabled ? 'bg-bifrost-success' : 'bg-bifrost-muted'}`} />
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-white">{backend.name}</span>
+                      <span className="font-medium text-bifrost-heading">{backend.name}</span>
                       <span className={`badge text-xs ${typeBadgeColors[backend.type] || 'badge-info'}`}>
                         {typeLabels[backend.type] || backend.type}
                       </span>

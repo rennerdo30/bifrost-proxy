@@ -38,24 +38,24 @@ export function ConfirmModal({
   if (!isOpen) return null
 
   const confirmButtonClasses = {
-    danger: 'bg-bifrost-error hover:bg-bifrost-error/80 text-white',
-    warning: 'bg-bifrost-warning hover:bg-bifrost-warning/80 text-black',
+    danger: 'bg-bifrost-error hover:bg-bifrost-error/80 text-bifrost-on-accent',
+    warning: 'bg-bifrost-warning hover:bg-bifrost-warning/80 text-bifrost-on-warning',
     default: 'btn-primary',
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} />
 
       {/* Modal */}
       <div className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-          <h2 className="text-xl font-semibold text-white">{title}</h2>
+          <h2 className="text-xl font-semibold text-bifrost-heading">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1 text-bifrost-muted hover:text-white transition-colors"
+            className="p-1 text-bifrost-muted hover:text-bifrost-heading transition-colors"
             aria-label="Close dialog"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -66,7 +66,7 @@ export function ConfirmModal({
 
         {/* Content */}
         <div className="px-6 py-4">
-          <p className="text-gray-300">{message}</p>
+          <p className="text-bifrost-text">{message}</p>
         </div>
 
         {/* Footer */}

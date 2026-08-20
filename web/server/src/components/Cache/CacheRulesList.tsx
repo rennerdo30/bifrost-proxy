@@ -62,7 +62,7 @@ export function CacheRulesList({
           />
           <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
-        <p className="text-gray-400">No cache rules configured</p>
+        <p className="text-bifrost-subtle">No cache rules configured</p>
         <p className="text-sm text-bifrost-muted mt-1">
           Add rules to control caching behavior for specific domains
         </p>
@@ -93,7 +93,7 @@ export function CacheRulesList({
               >
                 <td className="table-cell">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-white">{rule.name}</span>
+                    <span className="font-medium text-bifrost-heading">{rule.name}</span>
                     {rule.preset && (
                       <span className="badge badge-info text-xs">Preset</span>
                     )}

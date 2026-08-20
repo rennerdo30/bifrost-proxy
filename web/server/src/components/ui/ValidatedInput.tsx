@@ -48,7 +48,7 @@ export const ValidatedInput = forwardRef<HTMLInputElement, ValidatedInputProps>(
         {label && (
           <label
             htmlFor={inputId}
-            className="block text-sm font-medium text-gray-300 mb-1"
+            className="block text-sm font-medium text-bifrost-text mb-1"
           >
             {label}
           </label>
@@ -137,7 +137,7 @@ export const ValidatedSelect = forwardRef<HTMLSelectElement, ValidatedSelectProp
         {label && (
           <label
             htmlFor={selectId}
-            className="block text-sm font-medium text-gray-300 mb-1"
+            className="block text-sm font-medium text-bifrost-text mb-1"
           >
             {label}
           </label>
@@ -225,7 +225,7 @@ export const ValidatedTextarea = forwardRef<HTMLTextAreaElement, ValidatedTextar
         {label && (
           <label
             htmlFor={textareaId}
-            className="block text-sm font-medium text-gray-300 mb-1"
+            className="block text-sm font-medium text-bifrost-text mb-1"
           >
             {label}
           </label>

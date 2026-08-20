@@ -71,7 +71,7 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       {route.name && (
-                        <span className="font-medium text-white">{route.name}</span>
+                        <span className="font-medium text-bifrost-heading">{route.name}</span>
                       )}
                       <span className="badge badge-info text-xs">Priority: {route.priority || 0}</span>
                     </div>
@@ -88,11 +88,11 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
                     <div className="text-xs text-bifrost-muted mt-1">
                       {route.backend ? (
                         <>
-                          Backend: <span className="text-white">{route.backend}</span>
+                          Backend: <span className="text-bifrost-heading">{route.backend}</span>
                         </>
                       ) : route.backends ? (
                         <>
-                          Backends: <span className="text-white">{route.backends.join(', ')}</span>
+                          Backends: <span className="text-bifrost-heading">{route.backends.join(', ')}</span>
                           {route.load_balance && (
                             <> • {route.load_balance.replace('_', ' ')}</>
                           )}

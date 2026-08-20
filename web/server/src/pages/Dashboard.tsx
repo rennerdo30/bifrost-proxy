@@ -12,8 +12,8 @@ export function Dashboard() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Dashboard</h2>
-          <p className="text-bifrost-muted mt-1">
+          <h2 className="page-title">Dashboard</h2>
+          <p className="page-subtitle">
             Monitor your proxy server performance
           </p>
         </div>
@@ -23,7 +23,7 @@ export function Dashboard() {
               isConnected ? 'bg-bifrost-success' : 'bg-bifrost-warning'
             }`}
           />
-          <span className="text-sm text-gray-400">
+          <span className="text-sm text-bifrost-subtle">
             {isConnected ? 'Live updates' : 'Polling'}
           </span>
         </div>
@@ -39,11 +39,11 @@ export function Dashboard() {
 
         {/* Quick Stats */}
         <div className="card">
-          <h3 className="text-lg font-semibold text-white mb-4">Traffic Overview</h3>
+          <h3 className="text-lg font-semibold text-bifrost-heading mb-4">Traffic Overview</h3>
           <div className="space-y-4">
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Bytes Sent</span>
-              <span className="text-white font-mono">
+              <span className="text-bifrost-subtle">Bytes Sent</span>
+              <span className="text-bifrost-heading font-mono">
                 {formatBytes(stats?.bytes_sent ?? 0)}
               </span>
             </div>
@@ -61,8 +61,8 @@ export function Dashboard() {
               />
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Bytes Received</span>
-              <span className="text-white font-mono">
+              <span className="text-bifrost-subtle">Bytes Received</span>
+              <span className="text-bifrost-heading font-mono">
                 {formatBytes(stats?.bytes_received ?? 0)}
               </span>
             </div>
