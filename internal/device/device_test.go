@@ -332,20 +332,6 @@ func TestDefaultDeviceName(t *testing.T) {
 	})
 }
 
-func TestGenerateMAC(t *testing.T) {
-	mac := GenerateMAC()
-	assert.Len(t, mac, 6)
-
-	// Should be locally administered (bit 1 of first byte set)
-	assert.Equal(t, byte(0x02), mac[0]&0x02)
-
-	// Should be unicast (bit 0 of first byte clear)
-	assert.Equal(t, byte(0), mac[0]&0x01)
-
-	// Verify second byte is 0xBF for "BF" (Bifrost)
-	assert.Equal(t, byte(0xBF), mac[1])
-}
-
 func TestGenerateRandomMAC(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		mac1, err := GenerateRandomMAC()
@@ -952,9 +938,10 @@ func TestGenerateRandomMACConcurrent(t *testing.T) {
 	}
 }
 
-// Ensure GenerateMAC returns consistent format
-func TestGenerateMACFormat(t *testing.T) {
-	mac := GenerateMAC()
+// Ensure GenerateRandomMAC returns a consistently formatted address.
+func TestGenerateRandomMACFormat(t *testing.T) {
+	mac, err := GenerateRandomMAC()
+	require.NoError(t, err)
 
 	// Check format: should be colon-separated hex
 	str := mac.String()
