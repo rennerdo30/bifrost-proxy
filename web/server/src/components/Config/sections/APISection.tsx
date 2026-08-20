@@ -33,7 +33,7 @@ export function APISection({ config, onChange }: APISectionProps) {
   }
 
   return (
-    <Section title="REST API" badge="restart-required">
+    <Section sectionKey="api" title="REST API">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input

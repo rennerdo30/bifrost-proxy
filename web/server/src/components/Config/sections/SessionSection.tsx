@@ -48,8 +48,8 @@ export function SessionSection({ config, onChange }: SessionSectionProps) {
 
   return (
     <Section
+      sectionKey="session"
       title="Session Storage"
-      badge="restart-required"
       description="Where authenticated Web UI / API sessions are stored"
     >
       <div className="space-y-4">

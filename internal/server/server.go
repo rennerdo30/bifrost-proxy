@@ -290,6 +290,25 @@ func (s *Server) setupMITM() error {
 	return nil
 }
 
+// healthCheckConfig translates an operator-facing health check block into the
+// health package's runtime config. Every field the checker understands must be
+// forwarded here: a field that exists in both structs but is omitted from this
+// mapping is silently inert at runtime, which is how HTTPS health checks
+// (scheme/insecure_skip_verify) were previously impossible to configure.
+func healthCheckConfig(hc *config.HealthCheckConfig) health.Config {
+	return health.Config{
+		Type:               hc.Type,
+		Target:             hc.Target,
+		Interval:           hc.Interval.Duration(),
+		Timeout:            hc.Timeout.Duration(),
+		Path:               hc.Path,
+		Scheme:             hc.Scheme,
+		InsecureSkipVerify: hc.InsecureSkipVerify,
+		HealthyThreshold:   hc.HealthyThreshold,
+		UnhealthyThreshold: hc.UnhealthyThreshold,
+	}
+}
+
 func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
 	if s == nil || s.healthManager == nil || s.backends == nil {
 		return nil
@@ -320,13 +339,7 @@ func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
 			continue
 		}
 
-		checkCfg := health.Config{
-			Type:     hc.Type,
-			Target:   hc.Target,
-			Interval: hc.Interval.Duration(),
-			Timeout:  hc.Timeout.Duration(),
-			Path:     hc.Path,
-		}
+		checkCfg := healthCheckConfig(hc)
 		checker := health.New(checkCfg)
 
 		be, err := s.backends.Get(backendCfg.Name)
@@ -352,13 +365,12 @@ func (s *Server) setupHealthChecks(cfg *config.ServerConfig) error {
 
 		backendForCheck := be
 		// Honor de-bounce thresholds (defaults to 1/1 = immediate transitions).
-		healthyThreshold := hc.HealthyThreshold
-		unhealthyThreshold := hc.UnhealthyThreshold
-		s.healthManager.RegisterWithThresholds(backendCfg.Name, checker, checkCfg.Interval, healthyThreshold, unhealthyThreshold, func(name string, result health.Result) {
-			if ho, ok := backendForCheck.(backend.HealthOverride); ok {
-				ho.SetHealth(result)
-			}
-		})
+		s.healthManager.RegisterWithThresholds(backendCfg.Name, checker, checkCfg.Interval,
+			checkCfg.HealthyThreshold, checkCfg.UnhealthyThreshold, func(name string, result health.Result) {
+				if ho, ok := backendForCheck.(backend.HealthOverride); ok {
+					ho.SetHealth(result)
+				}
+			})
 	}
 
 	return nil

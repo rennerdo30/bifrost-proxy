@@ -173,7 +173,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
   )
 
   return (
-    <Section title="Authentication" badge="restart-required">
+    <Section sectionKey="auth" title="Authentication">
       <div className="space-y-4">
         <p className="text-sm text-bifrost-text">
           {providers.length === 0

@@ -46,8 +46,8 @@ export function MITMSection({ config, onChange }: MITMSectionProps) {
 
   return (
     <Section
+      sectionKey="mitm"
       title="HTTPS Interception (MITM)"
-      badge="restart-required"
       description="Opt-in TLS interception for traffic debugging"
     >
       <div className="space-y-4">

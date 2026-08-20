@@ -14,9 +14,8 @@ export function AccessControlSection({ config, onChange }: AccessControlSectionP
 
   return (
     <Section
+      sectionKey="access_control"
       title="Access Control"
-      badge="hot-reload"
-      id="section-access-control"
       description="IP-based whitelist and blacklist for connection filtering"
     >
       <div className="space-y-6">

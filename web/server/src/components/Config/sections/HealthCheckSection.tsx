@@ -2,7 +2,15 @@ import { Section } from '../Section'
 import { ValidatedInput, ValidatedSelect } from '../../ui/ValidatedInput'
 import { useValidation } from '../../../hooks/useValidation'
 import { validators } from '../../../utils/validation'
-import type { HealthCheckConfig } from '../../../api/types'
+import {
+  DEFAULT_HEALTH_CHECK,
+  HEALTH_CHECK_SCHEME_HTTP,
+  HEALTH_CHECK_SCHEME_HTTPS,
+  HEALTH_CHECK_TYPE_HTTP,
+  withHealthCheckScheme,
+  withHealthCheckType,
+} from '../healthCheck'
+import type { HealthCheckConfig, HealthCheckScheme } from '../../../api/types'
 
 interface HealthCheckSectionProps {
   config?: HealthCheckConfig
@@ -27,17 +35,8 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
   })
 
   const toggleEnabled = (enable: boolean) => {
-    if (enable) {
-      clearErrors()
-      onChange({
-        type: 'tcp',
-        interval: '10s',
-        timeout: '5s',
-      })
-    } else {
-      clearErrors()
-      onChange(undefined)
-    }
+    clearErrors()
+    onChange(enable ? { ...DEFAULT_HEALTH_CHECK } : undefined)
   }
 
   const update = (field: string, value: unknown) => {
@@ -49,8 +48,19 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
     }
   }
 
+  // Type and scheme changes go through the shared normalisation so this form and
+  // the per-backend HealthCheckForm cannot drift apart, and so switching the
+  // check type never leaves behind a field the server rejects as inert.
+  const updateType = (type: HealthCheckConfig['type']) => {
+    if (config) onChange(withHealthCheckType(config, type))
+  }
+
+  const updateScheme = (scheme: HealthCheckScheme) => {
+    if (config) onChange(withHealthCheckScheme(config, scheme))
+  }
+
   return (
-    <Section title="Global Health Checks" badge="restart-required">
+    <Section sectionKey="health_check" title="Global Health Checks">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input
@@ -70,7 +80,7 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
             <ValidatedSelect
               label="Type"
               value={config.type || 'tcp'}
-              onChange={(e) => update('type', e.target.value)}
+              onChange={(e) => updateType(e.target.value as HealthCheckConfig['type'])}
             >
               <option value="tcp">TCP</option>
               <option value="http">HTTP</option>
@@ -100,8 +110,8 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
               error={errors.target}
               helpText="Health check endpoint (optional)"
             />
-            {config.type === 'http' && (
-              <div className="md:col-span-2">
+            {config.type === HEALTH_CHECK_TYPE_HTTP && (
+              <>
                 <ValidatedInput
                   label="HTTP Path"
                   value={config.path || ''}
@@ -110,7 +120,38 @@ export function HealthCheckSection({ config, onChange }: HealthCheckSectionProps
                   error={errors.path}
                   helpText="URL path for HTTP health checks"
                 />
-              </div>
+                <ValidatedSelect
+                  label="Scheme"
+                  value={config.scheme || HEALTH_CHECK_SCHEME_HTTP}
+                  onChange={(e) => updateScheme(e.target.value as HealthCheckScheme)}
+                  helpText="Use HTTPS to probe a TLS-terminating backend"
+                >
+                  <option value={HEALTH_CHECK_SCHEME_HTTP}>HTTP</option>
+                  <option value={HEALTH_CHECK_SCHEME_HTTPS}>HTTPS</option>
+                </ValidatedSelect>
+                {config.scheme === HEALTH_CHECK_SCHEME_HTTPS && (
+                  <div className="md:col-span-2">
+                    <label className="flex items-start gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!config.insecure_skip_verify}
+                        onChange={(e) => update('insecure_skip_verify', e.target.checked)}
+                        className="mt-0.5 w-4 h-4 rounded border-bifrost-border bg-bifrost-bg text-bifrost-accent focus:ring-bifrost-accent"
+                      />
+                      <span>
+                        <span className="text-sm font-medium text-bifrost-text">
+                          Skip TLS certificate verification
+                        </span>
+                        <span className="block text-xs text-bifrost-muted mt-0.5">
+                          Accepts self-signed and expired backend certificates. The health
+                          probe no longer authenticates the backend &mdash; only enable it for
+                          backends you control on a trusted network.
+                        </span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </>
             )}
             <ValidatedInput
               label="Healthy Threshold"

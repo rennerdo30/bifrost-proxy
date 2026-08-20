@@ -179,11 +179,20 @@ Fired when configuration is saved to disk.
   "type": "config.saved",
   "timestamp": "2024-01-15T10:00:00Z",
   "data": {
-    "changed_sections": ["backends"],
+    "changed_sections": ["server", "access_control"],
+    "hot_reloaded_sections": ["access_control"],
+    "restart_required_sections": ["server"],
     "requires_restart": true
   }
 }
 ```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `changed_sections` | string[] | Config sections that changed |
+| `hot_reloaded_sections` | string[] | Changed sections applied to the running server immediately |
+| `restart_required_sections` | string[] | Changed sections that take effect after a restart |
+| `requires_restart` | boolean | True exactly when `restart_required_sections` is non-empty |
 
 ---
 
