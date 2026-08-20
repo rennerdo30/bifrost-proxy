@@ -137,7 +137,7 @@ export function ServerSection({ config, onChange }: ServerSectionProps) {
   }
 
   return (
-    <Section title="Server Settings" badge="restart-required">
+    <Section sectionKey="server" title="Server Settings">
       <div className="space-y-6">
         {/* HTTP Listener */}
         <div>

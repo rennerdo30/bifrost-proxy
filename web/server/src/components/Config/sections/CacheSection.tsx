@@ -153,7 +153,7 @@ export function CacheSection({ config, onChange }: CacheSectionProps) {
   }
 
   return (
-    <Section title="Cache" badge="restart-required">
+    <Section sectionKey="cache" title="Cache">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input

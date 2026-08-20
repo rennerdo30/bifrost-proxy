@@ -57,7 +57,7 @@ export function BackendsSection({ backends, onChange }: BackendsSectionProps) {
   const existingNames = backends.map((b) => b.name)
 
   return (
-    <Section title="Backends" badge="restart-required">
+    <Section sectionKey="backends" title="Backends">
       <div className="space-y-4">
         <p className="text-xs text-bifrost-muted">
           Backends configured here are persisted to the config file and survive restarts.

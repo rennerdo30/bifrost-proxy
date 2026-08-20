@@ -30,7 +30,7 @@ export function MetricsSection({ config, onChange }: MetricsSectionProps) {
   }
 
   return (
-    <Section title="Prometheus Metrics" badge="restart-required">
+    <Section sectionKey="metrics" title="Prometheus Metrics">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input

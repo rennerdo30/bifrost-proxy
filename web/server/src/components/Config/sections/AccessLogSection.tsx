@@ -13,7 +13,7 @@ export function AccessLogSection({ config, onChange }: AccessLogSectionProps) {
   }
 
   return (
-    <Section title="Access Logging" badge="restart-required">
+    <Section sectionKey="access_log" title="Access Logging">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input

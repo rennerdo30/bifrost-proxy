@@ -28,7 +28,7 @@ export function WebUISection({ config, onChange }: WebUISectionProps) {
   }
 
   return (
-    <Section title="Web UI" badge="restart-required">
+    <Section sectionKey="web_ui" title="Web UI">
       <div className="space-y-4">
         <label className="flex items-center gap-3 cursor-pointer">
           <input
