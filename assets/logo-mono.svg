@@ -1,0 +1,21 @@
+<!--
+  Single-colour Bifrost mark for small UI chrome, print and stencils: one
+  continuous path, no fills, no gradients. Inlined in a page it inherits the
+  surrounding text colour (currentColor), so it works on any background.
+
+  The svg:root rule only matches when this file is rendered as its own document
+  (favicon, <img>, direct open), where there is no text colour to inherit; it
+  never overrides the host page's colour when the SVG is inlined.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" width="256" height="160"
+     role="img" aria-labelledby="bifrost-logo-mono-title">
+  <title id="bifrost-logo-mono-title">Bifrost Proxy</title>
+  <style>
+    svg:root { color: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      svg:root { color: #e2e8f0; }
+    }
+  </style>
+  <path d="M4 32H20V14L26 8H38L44 14V32H60" fill="none" stroke="currentColor" stroke-width="8"
+        stroke-linecap="butt" stroke-linejoin="miter"/>
+</svg>
