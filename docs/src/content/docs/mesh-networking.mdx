@@ -100,21 +100,21 @@ sequenceDiagram
     A->>B: Try Direct (server-reflexive candidates)
 
     alt Direct Connection Succeeds
-        A<-->B: Encrypted P2P Connection
+        A<<->>B: Encrypted P2P Connection
     else Direct Fails (Symmetric NAT)
         A->>T: TURN Allocate
         T-->>A: Relay Address
         A->>T: Create Permission for B
         A->>B: Exchange relay candidates
-        A<-->T: Data via TURN
-        T<-->B: Data via TURN
+        A<<->>T: Data via TURN
+        T<<->>B: Data via TURN
     end
 
     Note over A,B: 4. Handshake & Encryption
     A->>B: Handshake Init (public key + random)
     B-->>A: Handshake Response (public key + random)
     Note over A,B: Derive shared secret via Curve25519
-    A<-->B: Encrypted data (ChaCha20-Poly1305)
+    A<<->>B: Encrypted data (ChaCha20-Poly1305)
 ```
 
 ## STUN/TURN/ICE Implementation
