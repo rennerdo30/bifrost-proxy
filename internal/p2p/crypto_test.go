@@ -81,12 +81,13 @@ func TestCryptoSessionHandshake(t *testing.T) {
 	initMsg, err := initiator.CreateHandshakeInit(responder.LocalPublicKey())
 	require.NoError(t, err)
 	assert.Equal(t, msgTypeHandshakeInit, initMsg[0])
-	assert.Len(t, initMsg, 1+PublicKeySize+32)
+	assert.Len(t, initMsg, handshakeMsgSize)
 
 	// Responder processes init and creates response
 	response, err := responder.ProcessHandshakeInit(initMsg)
 	require.NoError(t, err)
 	assert.Equal(t, msgTypeHandshakeResponse, response[0])
+	assert.Len(t, response, handshakeMsgSize)
 	assert.True(t, responder.handshakeComplete.Load())
 
 	// Initiator processes response
