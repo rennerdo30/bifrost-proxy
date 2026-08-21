@@ -34,7 +34,6 @@ graph TB
 
     subgraph "Identity Infrastructure"
         KDC[Kerberos KDC]
-        DC[Domain Controller]
         CA[Certificate Authority]
     end
 
@@ -306,6 +305,10 @@ auth:
 
 # Route authenticated users through VPN
 backends:
+  - name: direct
+    type: direct
+    enabled: true
+
   - name: corporate-vpn
     type: wireguard
     enabled: true
@@ -896,19 +899,16 @@ logging:
 
 access_log:
   enabled: true
-  format: json
+  format: json          # "json" or "apache"
   output: "/var/log/bifrost/access.log"
-  fields:
-    - timestamp
-    - username
-    - auth_type
-    - source_ip
-    - method
-    - host
-    - path
-    - status
-    - duration
 ```
+
+> The access log has a fixed schema — `enabled`, `format` and `output` are its
+> only settings. There is no `fields` option to select which columns are written.
+> The `json` format emits the whole record: `timestamp`, `client_ip`, `username`,
+> `method`, `host`, `path`, `protocol`, `status_code`, `bytes_sent`,
+> `bytes_received`, `duration_ms`, `backend`, `error`, `request_id` and
+> `user_agent`. The `apache` format emits the combined-log-format equivalent.
 
 ### Troubleshooting SPNEGO
 
@@ -954,6 +954,14 @@ Kerberos is the only working Negotiate mechanism:
 
 ```yaml
 auth:
+  providers:
+    - name: kerberos
+      type: kerberos
+      enabled: true
+      priority: 1
+      config:
+        keytab_file: "/etc/bifrost/server.keytab"
+        service_principal: "HTTP/proxy.example.com"
   negotiate:
     enabled: true
     kerberos_provider: kerberos
@@ -1028,31 +1036,26 @@ type UserInfo struct {
 | Auth Type | Metadata Fields |
 |-----------|-----------------|
 | Kerberos | `auth_type=kerberos`, `realm` |
-| NTLM | `auth_type=ntlm`, `domain` |
 | mTLS | `auth_type=mtls`, `cert_subject`, `cert_issuer`, `cert_serial` |
+| mTLS (anonymous, `allow_anonymous: true`) | `auth_type=mtls`, `cert_auth=none` |
 
-### HTTP Headers
+NTLM never produces a `UserInfo` — it rejects every request — so it contributes
+no metadata.
 
-The proxy sets headers with authentication information for upstream applications:
+### Identity Propagation
 
-| Header | Description |
-|--------|-------------|
-| `X-Authenticated-User` | Username from authentication |
-| `X-Auth-Method` | Authentication method used |
-| `X-User-Groups` | Comma-separated list of groups |
-
-```yaml
-# Enable authentication headers
-server:
-  http:
-    forward_auth_headers: true
-```
+The authenticated identity stays inside Bifrost: it is attached to the request
+context, written to the access log (`username`) and used for per-user rate
+limiting. **The proxy does not inject identity headers into the upstream
+request** — there is no `X-Authenticated-User` / `X-Auth-Method` / `X-User-Groups`
+header and no `forward_auth_headers` setting. If an upstream application needs
+the identity, terminate authentication there as well (or read it from the access
+log).
 
 ---
 
 ## See Also
 
 - [Authentication Guide](/authentication) - Basic authentication methods
-- [Security Guide](/security) - Security best practices
-- [Access Control](/access-control) - Authorization and access rules
+- [Security Guide](/security) - Security best practices, including IP access control
 - [Configuration Guide](/configuration) - Full configuration reference

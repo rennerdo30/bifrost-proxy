@@ -45,6 +45,8 @@ The problems cluster into four themes:
 2. **Silent config-save/reload defects** — the server's `detectChangedSections()` omits `access_control`, `cache`, and several restart-required sections, so security-relevant changes are written to disk, reported as `requires_restart=false`, yet never applied to the running server.
 3. **Broken/fabricated crypto material in two VPN providers** *(in fact three — see the status update above: PIA's embedded CA was corrupted too, in a way that still parses)* — ProtonVPN's and Mullvad's embedded OpenVPN CA certificates are corrupted (fail x509 parsing), ProtonVPN ships a fabricated tls-auth key, and the P2P mesh session crypto reuses deterministic keys with a nonce that restarts at 0 (ChaCha20-Poly1305 nonce reuse) plus a fail-open inbound-peer path.
 4. **Observability & documentation drift** — the entire cache Prometheus subsystem is dead code, monitoring docs describe a metric schema that doesn't exist (alerts that silently never fire), and six auth docs still teach a config syntax the server hard-rejects at startup.
+3. **Broken/fabricated crypto material in two VPN providers** — ProtonVPN's and Mullvad's embedded OpenVPN CA certificates are corrupted (fail x509 parsing), ProtonVPN ships a fabricated tls-auth key, and the P2P mesh session crypto reuses deterministic keys with a nonce that restarts at 0 (ChaCha20-Poly1305 nonce reuse) plus a fail-open inbound-peer path.
+4. **Observability & documentation drift** — the entire cache Prometheus subsystem is dead code, monitoring docs describe a metric schema that doesn't exist (alerts that silently never fire), and six auth docs still teach a config syntax the server hard-rejects at startup. *(All three since remediated: the cache collectors are wired in `internal/server/server.go:212`, and §10 below tracks the documentation reconciliation.)*
 
 ### The three maintainer questions, answered directly
 
@@ -187,7 +189,7 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 ## 6. Unimplemented / Stub / TODO Inventory
 
 **Dead code / never instantiated**
-- `internal/cache/metrics.go:44` (`NewMetrics`) + `internal/cache/cache.go:15` — entire cache Prometheus subsystem never called from production; `Manager` has no `*Metrics` field.
+- ~~`internal/cache/metrics.go:44` (`NewMetrics`) + `internal/cache/cache.go:15` — entire cache Prometheus subsystem never called from production; `Manager` has no `*Metrics` field.~~ **No longer true (verified 2026-08-21):** `internal/server/server.go:212` wires `cacheManager.SetMetrics(cache.NewMetrics(m.Registry()))` whenever `cache.enabled` is set, and the manager/memory/disk stores record hits, misses, evictions, storage gauges and operation latency. `ObserveOperation` is called for `get` and `put` only, and the `lru` / `disabled` reason constants are still unused.
 - `internal/p2p/ice.go:99-105,394-444` — `ICEAgent` fully implemented + unit-tested but never wired; `checkConnectivity` uses a plaintext `BIFROST_ICE_PROBE` echo, not STUN.
 - `internal/p2p/relay.go:542-638` (`RelayRouter`, `PeerRelay`, `PeerRelayedConnection`) — multi-hop peer relay never wired; `wrapRelayMessage`/`unwrapRelayMessage` never set `SrcPeerID`/TTL; rejected by config (`internal/mesh/config.go:247-248`).
 - `internal/api/server/config_handlers.go:255-264` (`handleGetConfigTimestamp`) — unrouted; returns `time.Now()` not the config file mtime.
@@ -246,17 +248,89 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 
 ## 10. Doc-vs-Code Mismatches (severity-ordered)
 
+> **Status as of 2026-08-21: all eleven items below are resolved.** Line/file
+> references in the original findings are from 2026-07-02 and are mostly stale;
+> each item now carries a `**Resolved:**` annotation describing what the code
+> actually does and how the docs were reconciled. Verification: every fenced YAML
+> block in `docs/src/content/docs/` (225 blocks) is strict-decoded against
+> `config.ServerConfig` / `config.ClientConfig` and every `auth.providers[]` entry
+> (59 of them) is run through the real plugin `ValidateConfig`; zero failures. The
+> sweep also caught a further batch of invented config keys outside the original
+> eleven — see "Additional mismatches found during remediation" at the end of this
+> section.
+
 1. **[high] Documented auth config examples are rejected by the server (legacy `auth.mode`).** `docs/src/content/docs/security.mdx:102-141` (+ `configuration.mdx:58`, `troubleshooting/connections.mdx:300`, `troubleshooting/authentication.mdx:89`, `troubleshooting/faq.mdx`). `AuthConfig.Validate` (`internal/config/server.go:494-499`) hard-rejects any `mode:` and any top-level `native/system/ldap/oauth` block, via `LoadAndValidate` at startup (`cmd/server/main.go`). Copying these guides yields a server that exits with "legacy auth.mode is no longer supported". Six docs affected.
+   **Resolved.** No `auth.mode` key and no top-level `auth.native/system/ldap/oauth` block remains anywhere in `docs/`; every example uses `auth.providers[]` with a nested `config` map. `authentication.mdx` carries an explicit schema note that the legacy shapes are rejected at startup. Verified by running `AuthConfig.Validate` over every extracted `auth:` block.
 2. **[high] Entire `configuration/authentication.mdx` uses rejected `mode:` syntax (kerberos/mtls/negotiate).** `authentication.mdx:156,272,356,496,612,725,784`. All 7 config blocks fail to load; `auth.kerberos:`/`auth.mtls:` aren't even fields (silently dropped by non-strict unmarshal). The dedicated Kerberos/mTLS/Negotiate guide is 100% non-functional. (`auth.negotiate:` *is* a real field, but blocks still set `mode: negotiate`.)
+   **Resolved.** The guide now uses `auth.providers[]` throughout plus the real `auth.negotiate` middleware block. Residual defects found and fixed in this pass: the AD-integration example routed to a `direct` backend it never declared (`ServerConfig.Validate` → "route references unknown backend: direct"), the SPNEGO example set `access_log.fields` (not a field), and one troubleshooting snippet referenced a `kerberos_provider` that the same block did not declare.
 3. **[high] monitoring.mdx documents a Prometheus schema that doesn't match the code.** `docs/src/content/docs/monitoring.mdx:46-126` vs `internal/metrics/prometheus.go:56-207`. Nonexistent series (`bifrost_connections_errors_total`, `bifrost_bytes_total`, `bifrost_backend_healthy`, `bifrost_backend_connections_active`, `bifrost_bandwidth_bytes_per_second`, `bifrost_memory_bytes`); wrong labels (`bifrost_requests_total` is `{protocol,method,status}` not `{method,backend,status}`; `bifrost_request_size_bytes` label is `protocol` not `direction`). Copy-paste alerts `BifrostHighErrorRate` and critical `BifrostBackendDown` evaluate against missing metrics and **silently never fire**; panels render empty. Doc-only, caps at high.
+   **Resolved.** The metric tables now match `internal/metrics/prometheus.go` name-for-name and label-for-label, and `BifrostHighErrorRate` / `BifrostBackendDown` evaluate against `bifrost_requests_total{status=~"5.."}` and `bifrost_backend_health == 0`. Two further corrections in this pass, both caused by code moving on since the audit: (a) the cache Prometheus subsystem is **no longer dead** — `internal/server/server.go:212` calls `cacheManager.SetMetrics(cache.NewMetrics(m.Registry()))` when `cache.enabled` is true, so the eleven `bifrost_cache_*` series are now documented (the doc previously asserted they were *not* exported); (b) `bifrost_connections_active` is registered with a `backend` label but `Collector.RecordConnection` only ever increments it at protocol scope, so the label is always empty — documented, with a pointer to `bifrost_backend_connections` for a live per-backend view.
 4. **[medium] Two contradictory authentication docs; AUDIT calls the broken set "authoritative".** `authentication.mdx` (correct `providers[]`) vs `configuration/authentication.mdx` (rejected `mode:`); `AUDIT.md:98`. Readers can't tell which syntax is valid.
+   **Resolved.** Both pages now use `auth.providers[]`, and the division of labour is stated at the top of `authentication.mdx`: it owns the provider/`config` schema, `configuration/authentication.mdx` owns enterprise deployment (keytabs, CA setup, browser/`curl` clients, `auth.negotiate`, troubleshooting). The advanced page was orphaned from the sidebar and is now listed under Configuration → Advanced Authentication. `AUDIT.md`'s "Notes" section was rewritten: the code is authoritative for the config schema (`internal/config/` plus each plugin's `parseConfig`/`ValidateConfig`), and it records that the two auth pages exist by design and must not disagree. The genuine remaining contradiction — `authentication.mdx` documented mTLS as `ca_cert`/`require_cn`/`allowed_cns`/`username_from` while the plugin accepts `ca_cert_file`/`ca_cert_pem`/`require_client_cert`/`subject_mapping`/`allowed_subjects` — was fixed against the code.
 5. **[medium] Docs advertise mesh `relay_via_peers: true`, but config validation rejects it.** `internal/mesh/config.go:247-248` vs `docs/.../mesh-networking.mdx:421,579`. Copying the full config example produces a fatal (but loud, self-remediating) startup error.
+   **Resolved.** Both occurrences are `relay_via_peers: false` with an inline comment and a note that multi-hop peer relaying is unimplemented and `true` is rejected at startup. Additionally the `stun:`, `turn:` and `connection:` examples were bare fragments that would have been silently dropped if pasted at the top level; they are now nested under `mesh:` so the block loads as written.
 6. **[medium] `system` (PAM) offered as a working UI option but fails closed in default/Docker builds.** `pam_stub.go:40-45`; `AuthSection.tsx:23` (see §4).
+   **Resolved on the documentation side.** `authentication.mdx` already carried the fail-closed warning and the platform matrix; `security.mdx`'s provider-selection table previously rated `system` "Medium-High" with no caveat and now carries the warning inline (release binaries and the Docker image are built without `CGO_ENABLED=1 -tags pam`, so `type: system` rejects every login on Linux). The UI-side gap (`AuthSection.tsx` offering it without a warning) is a web change and remains open.
 7. **[low] Docs show `mode: negotiate` although negotiate is not a registered plugin.** `configuration/authentication.mdx:356,725,784`; `AUDIT.md:78-79`. Doubly broken (`mode:` rejected AND unregistered); SPNEGO SSO *is* supported via `auth.negotiate.enabled` middleware, so only the syntax is wrong.
+   **Resolved.** No `mode: negotiate` remains. The docs present the real `auth.negotiate` block (`enabled`, `kerberos_provider`, `ntlm_provider`, `prefer_kerberos`, `allow_ntlm`, `realm`) and explain that it is middleware referencing a named `type: kerberos` provider, not a plugin type. `AUDIT.md`'s "the negotiate auth mode is not a registered plugin — do not configure it" bullet was misleading in the other direction and now describes the supported middleware form.
 8. **[low] Docs architecture diagram claims NTLM validates against a Domain Controller.** `docs/.../configuration/authentication.mdx:50` (`NTLMAuth -->|Validate| DC`) + stale `docs/dist/.../authentication/index.html:132`. Contradicts the same file's honest "fails closed" note (`:371-382`) and the always-reject code.
+   **Resolved.** The edge now reads `NTLMAuth -.->|Always rejected: no verification| Reject[Fails closed]`. This pass also removed the now-orphaned `DC[Domain Controller]` node the retargeted edge left behind. The `NTLM | auth_type=ntlm, domain` row in the metadata table was likewise fiction (NTLM never returns a `UserInfo`) and was replaced. `docs/dist/` is gitignored build output and is not hand-edited.
 9. **[low] Built-in log rotation is fully implemented but undocumented; docs steer users to external logrotate.** `internal/logging/rotate.go` + `logging.go:22-26,111-130` vs `deployment.mdx:253`; `CLAUDE.md` even asserts "No built-in log rotation". `max_size_mb`/`max_backups` are valid config keys documented nowhere.
+   **Resolved.** `deployment.mdx` documents built-in rotation first and external `logrotate` as the alternative (`copytruncate`, because the process keeps the file handle); `CLAUDE.md` is corrected. This pass added a `logging` field-reference table to `configuration.mdx`, surfaced the two keys in `monitoring.mdx`, and corrected the rotated-file suffix, which is `YYYYMMDD-HHMMSS.mmm` (`rotate.go` uses layout `20060102-150405.000`), not the ISO-like form the doc showed.
 10. **[low] AUDIT understates VPN userspace TCP: claims "in-order only (no reassembly)" but out-of-order reassembly exists.** `AUDIT.md:92-93` vs `internal/vpn/tcpreasm.go` + `vpn.go:495`. Code is stronger than documented (windowing/SACK/congestion control genuinely absent).
+    **Resolved.** `AUDIT.md` now states that the userspace TCP proxy performs bounded out-of-order reassembly (default caps 256 KiB / 1024 segments per connection, drained once the gap fills) and that a full receive window, SACK and congestion control are still absent.
 11. **[low] NordVPN WireGuard uses hardcoded client address/DNS + out-of-band private key.** `internal/vpnprovider/nordvpn/client.go:337-367`. Inherent to NordVPN's lack of a public NordLynx key-registration API; documented in-code.
+    **Resolved / no action needed.** Inherent to NordVPN's API and disclosed in-code; `vpn-providers.mdx` documents the operator-supplied private key.
+
+Additionally, the SOCKS5 feature limitation from §6 (`internal/proxy/socks5.go`: `BIND` and `UDP ASSOCIATE` answered with reply `0x07`) is now stated in `configuration.mdx`, together with the supported authentication methods (no-auth `0x00` and username/password `0x02`; GSSAPI `0x01` is not offered).
+
+### Additional mismatches found during remediation
+
+Validating every YAML block mechanically surfaced a second class of defect the
+original audit did not enumerate: config keys that do not exist in any struct or
+`config["…"]` lookup. Because the loader is non-strict these were silently
+dropped, so each documented setting simply did nothing — and a handful of blocks
+had duplicate YAML mapping keys, which makes `yaml.Unmarshal` hard-fail so the
+server would refuse to start. All are now fixed.
+
+- **Duplicate mapping keys** (hard startup failure if pasted): LDAP `url` /
+  `user_filter` / `group_filter` and a doubled top-level `auth:` in
+  `troubleshooting/authentication.mdx`; a tripled top-level `server:` in
+  `troubleshooting/connections.mdx`; doubled `mode:` and doubled `type:`/`target:`
+  in `troubleshooting/vpn-tunnels.mdx`. Blocks that were showing alternatives were
+  split into separate fenced blocks.
+- **Invented auth-plugin keys**: mTLS `ca_cert` / `require_cn` / `allowed_cns` /
+  `username_from`; JWT `signing_key` and `allowed_algorithms`; apikey `header`
+  (the real key is `header_name`); TOTP/HOTP `secrets` written as a
+  username→secret map when the plugin requires an array of
+  `{username, secret, …}` objects; OAuth `redirect_url` (the plugin validates a
+  bearer token, it never runs a redirect flow); `mfa_wrapper` `otp_header` (the
+  OTP is only ever read out of the password field) and blocks with `primary:` but
+  no `secondary:`, which fall into the unsupported by-name path.
+- **Invented server keys**: `access_log.fields`; `server.http.forward_auth_headers`
+  together with the `X-Authenticated-User` / `X-Auth-Method` / `X-User-Groups`
+  headers, none of which the proxy sets; `cache.memory` / `cache.disk` (both live
+  under `cache.storage`); `rate_limit.burst` (`burst_size`); listener
+  `connect_timeout` / `enabled` / `address` / `max_idle_conns*` /
+  `idle_conn_timeout` (outbound pooling is not configurable at all); top-level
+  `websocket:` and `connection_limits:` in `internals/architecture.mdx`
+  (`api.websocket_max_clients`, `server.<listener>.max_connections`,
+  `network.max_connections`).
+- **Invented client keys**: `vpn.mode`, `vpn.interface_name`, `vpn.mtu`,
+  `vpn.split` (`vpn.tun.*` and `vpn.split_tunnel`), `vpn.dns.servers`
+  (`upstream`), `vpn.dns.intercept_port` (no such setting — the port is part of
+  `listen`), `debug.log_level` (log level is top-level `logging.level`),
+  split-tunnel `bundle_id` app rules (`AppRule` has only `name` and `path`).
+- **Env-var interpolation**: `${VAR:-default}` was shown as "with default", but
+  expansion is `os.ExpandEnv`, which treats `VAR:-default` as the whole variable
+  name and yields the empty string — so `listen: ":${HTTP_PORT:-8080}"` silently
+  becomes `listen: ":"`. Both occurrences fixed and the limitation documented.
+- **Fabricated API/Go surfaces**: the custom-auth-plugin Go example implemented a
+  `Name`/`Init`/`Authenticate(ctx, creds)`/`Close` interface that does not exist
+  (the real `auth.Plugin` is `Type`/`Description`/`Create`/`ValidateConfig`/
+  `DefaultConfig`/`ConfigSchema`, producing an `auth.Authenticator`); several
+  `/api/v1/vpn/*` response fields and three `/api/v1/p2p/*` endpoints that are not
+  registered anywhere.
 
 ---
 
