@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,9 @@ const (
 
 	// NonceSize is the size of a nonce.
 	NonceSize = 12
+
+	// keySize is the size of a derived symmetric key (ChaCha20-Poly1305).
+	keySize = 32
 
 	// TagSize is the size of the authentication tag.
 	TagSize = 16
@@ -182,6 +186,12 @@ func nextHandshakeTimestamp() uint64 {
 // static-static X25519 shared secret. Both peers derive the same key; either
 // can authenticate messages to the other. This is peer authentication, not
 // non-repudiation, which is all the handshake requires.
+//
+// The symmetry also means the scheme offers no key-compromise impersonation
+// resistance: an attacker holding A's static private key can impersonate B to A
+// as well as A to anyone. That is inherent to authenticating solely from a
+// static-static shared secret and is accepted here — a stolen static key already
+// means full impersonation of its owner.
 func handshakeMACKey(staticShared []byte) []byte {
 	return deriveKey(staticShared, nil, []byte(kdfInfoHandshakeMAC))
 }
@@ -208,8 +218,11 @@ type CryptoSession struct {
 	remotePublic [PublicKeySize]byte
 	sharedSecret [32]byte
 
-	// localEphemeral is this side's per-session ephemeral key pair; its private
-	// half is discarded (dropped with the session) after the handshake.
+	// localEphemeral is this side's per-session ephemeral key pair. Its private
+	// half is never reused across handshakes and is released when the session is
+	// dropped; note that it is not zeroized, so forward secrecy holds against
+	// later compromise of a *static* key, not against memory disclosure of a
+	// live session.
 	localEphemeral *KeyPair
 	// remoteEphemeral is the peer's per-session ephemeral public key, retained
 	// so it can be bound into the key-derivation transcript.
@@ -492,7 +505,9 @@ func (cs *CryptoSession) initializeCiphers() error {
 	// by sendNonce.Add(1)-1, so it is unique per frame; and the keys are unique
 	// per handshake, so a nonce is never reused under a given key across
 	// sessions either. Any change that reuses keys across handshakes, or resets
-	// sendNonce within a session, breaks ChaCha20-Poly1305 catastrophically.
+	// sendNonce within a session, breaks ChaCha20-Poly1305 catastrophically. The
+	// hard cap is 2^64 frames per session (the counter width); there is no
+	// rekeying, so a session must not be used beyond that.
 	salt := cs.ephemeralShared[:]
 	transcript := cs.handshakeTranscript()
 
@@ -558,6 +573,15 @@ func (cs *CryptoSession) Decrypt(msg []byte) ([]byte, error) {
 	nonce := msg[1:13]
 	ciphertext := msg[13:]
 
+	// Encrypt only ever writes a 64-bit counter into the low 8 bytes, leaving
+	// the upper 4 zero. Requiring that here keeps the 96-bit nonce space in
+	// one-to-one correspondence with the 64-bit value the replay filter tracks;
+	// otherwise a peer could vary the upper bytes to produce distinct nonces
+	// that alias the same replay-filter slot.
+	if nonce[8] != 0 || nonce[9] != 0 || nonce[10] != 0 || nonce[11] != 0 {
+		return nil, ErrInvalidNonce
+	}
+
 	plaintext, err := cs.recvCipher.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, ErrAuthenticationFailed
@@ -579,16 +603,17 @@ func (cs *CryptoSession) Decrypt(msg []byte) ([]byte, error) {
 // deriveKey derives a key from shared secret, salt and label using HKDF. The
 // salt binds the derived key to per-session handshake randomness so that keys
 // are unique per session even when sharedSecret is deterministic.
+//
+// HKDF-SHA256 can emit up to 255*32 = 8160 bytes and this reads 32, so the read
+// cannot fail for any input — the lengths of the secret, salt and label do not
+// affect it. It therefore fails fast rather than falling back to a second,
+// weaker construction: a fallback that hashed the inputs by plain concatenation
+// would silently undercut the domain separation the callers rely on.
 func deriveKey(sharedSecret, salt, label []byte) []byte {
 	kdf := hkdf.New(sha256.New, sharedSecret, salt, label)
-	key := make([]byte, 32)
+	key := make([]byte, keySize)
 	if _, err := io.ReadFull(kdf, key); err != nil {
-		// HKDF with valid params should never fail; fall back to SHA-256
-		h := sha256.New()
-		h.Write(sharedSecret)
-		h.Write(salt)
-		h.Write(label)
-		return h.Sum(nil)
+		panic(fmt.Sprintf("p2p: HKDF-SHA256 failed for a %d-byte read, which is impossible: %v", keySize, err))
 	}
 	return key
 }

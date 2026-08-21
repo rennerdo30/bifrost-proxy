@@ -47,8 +47,9 @@ type P2PManager struct {
 
 	// lastHandshake maps a base64-encoded remote public key to the greatest
 	// handshake timestamp accepted from it, rejecting replayed initiations. Only
-	// keys that already passed authorization are recorded, so with the
-	// fail-closed default the map is bounded by the number of known peers.
+	// keys that already passed authorization are recorded, and entries are
+	// dropped by UnregisterPeerID, so with the fail-closed default the map stays
+	// bounded by the number of currently authorized peers.
 	lastHandshake map[string]uint64
 
 	conn   net.PacketConn
@@ -508,6 +509,10 @@ func (pm *P2PManager) receiveWorker() {
 		}
 
 		if err := pm.conn.SetReadDeadline(time.Now().Add(time.Second)); err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				slog.Debug("receive worker stopping: socket closed")
+				return
+			}
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				slog.Debug("failed to set read deadline in receive worker", "error", err)
 			} else {
@@ -518,6 +523,12 @@ func (pm *P2PManager) receiveWorker() {
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				continue
+			}
+			// A closed socket never recovers, and retrying it busy-spins this
+			// goroutine (which is the sole reader of the socket). Stop instead.
+			if errors.Is(err, net.ErrClosed) {
+				slog.Debug("receive worker stopping: socket closed")
+				return
 			}
 			continue
 		}
@@ -700,6 +711,12 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 	if _, exists := pm.connections[peerID]; exists {
 		pm.mu.Unlock()
 		slog.Debug("already connected to peer (race)", "peer_id", peerID)
+		// The losing connection was already started, so it must be closed or it
+		// leaks its worker goroutines and channels. This is safe now that Close
+		// no longer touches the manager's shared socket.
+		if err := conn.Close(); err != nil {
+			slog.Debug("failed to close raced incoming connection", "peer_id", peerID, "error", err)
+		}
 		return
 	}
 	pm.connections[peerID] = conn
@@ -744,9 +761,11 @@ func (pm *P2PManager) UnregisterPeerKey(publicKey []byte) {
 // discovery would last for the lifetime of the process, and a departed peer's
 // (non-secret) public key would still be accepted for inbound sessions.
 //
-// The handshake replay high-water marks are deliberately retained, so that
-// re-authorizing a peer later does not reopen the window for initiations
-// captured before it left.
+// The handshake replay high-water mark is dropped along with the key. Retaining
+// it would buy nothing — a revoked key is refused by the authorization gate
+// before its timestamp is ever examined — while making the map grow without
+// bound under peer churn and risking a lasting lockout of a peer that rejoins
+// after its clock stepped backwards.
 func (pm *P2PManager) UnregisterPeerID(peerID string) {
 	if peerID == "" {
 		return
@@ -756,6 +775,7 @@ func (pm *P2PManager) UnregisterPeerID(peerID string) {
 	for key, id := range pm.keyToPeer {
 		if id == peerID {
 			delete(pm.keyToPeer, key)
+			delete(pm.lastHandshake, key)
 		}
 	}
 }
@@ -765,11 +785,12 @@ func (pm *P2PManager) UnregisterPeerID(peerID string) {
 // Handshake timestamps are strictly increasing per initiator process, so
 // requiring a strict increase rejects verbatim replays.
 //
-// The high-water marks are in-memory only: after a restart the first initiation
-// from each peer is accepted unconditionally. WireGuard's timestamp greeting has
-// the same property without persistent state; the residual exposure is a single
-// replayed initiation immediately after a restart, which the authenticator
-// still constrains to a genuine peer's captured message.
+// The high-water marks are in-memory only, and are dropped when a peer's
+// authorization is revoked: after a restart (or a leave/rejoin) the first
+// initiation from a peer is accepted unconditionally. WireGuard's timestamp
+// greeting has the same property without persistent state; the residual exposure
+// is a single replayed initiation at that moment, which the authenticator still
+// constrains to a genuine peer's captured message.
 func (pm *P2PManager) acceptHandshakeTimestamp(publicKey []byte, ts uint64) bool {
 	key := base64.StdEncoding.EncodeToString(publicKey)
 

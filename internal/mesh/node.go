@@ -979,10 +979,9 @@ func (n *MeshNode) onPeerLeft(peerID string) {
 	// Revoke this peer's inbound authorization. Public keys are distributed by
 	// discovery and are not secret, so leaving authorization in place after a
 	// peer leaves would let anyone holding its key keep opening sessions and
-	// injecting frames into the local device.
-	if n.p2pManager != nil {
-		n.p2pManager.UnregisterPeerID(peerID)
-	}
+	// injecting frames into the local device. No nil guard: the Disconnect call
+	// above already dereferences n.p2pManager.
+	n.p2pManager.UnregisterPeerID(peerID)
 
 	// Remove routes
 	n.protocol.NotifyPeerDisconnected(peerID)
