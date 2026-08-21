@@ -384,11 +384,28 @@ func (n *MeshNode) initializeP2PManager() error {
 		DirectConnectEnabled: n.config.Connection.DirectConnect,
 		RelayEnabled:         n.config.Connection.RelayEnabled,
 		PeerRelayEnabled:     n.config.Connection.RelayViaPeers,
+		// AllowUnknownPeers is deliberately left false and is not exposed as a
+		// YAML setting: inbound sessions are only accepted from public keys this
+		// node learned from discovery (and, when configured, that also appear in
+		// security.allowed_peers). There is no supported way to reopen the
+		// fail-open behaviour, because a public key is not a secret.
 	}
 
 	pm, err := p2p.NewP2PManager(pmConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create P2P manager: %w", err)
+	}
+
+	// Make the authorization posture explicit in the log, since "no allowlist"
+	// and "allowlist of N keys" are materially different security stances.
+	if len(n.config.Security.AllowedPeers) == 0 {
+		slog.Info("mesh peer authorization: no explicit allowlist; accepting peers announced by discovery only",
+			"allowed_peers", 0,
+		)
+	} else {
+		slog.Info("mesh peer authorization: allowlist enforced; peers outside it are ignored",
+			"allowed_peers", len(n.config.Security.AllowedPeers),
+		)
 	}
 
 	n.p2pManager = pm
@@ -928,9 +945,17 @@ func (n *MeshNode) onPeerDiscovered(info PeerInfo) {
 
 // isPeerAllowed reports whether a peer with the given base64-encoded public key
 // is permitted to join. When Security.AllowedPeers is empty the allowlist is not
-// enforced (any discovered peer is allowed); otherwise only public keys present
-// in the list are permitted. The comparison is on the exact base64 encoding as
-// distributed via discovery.
+// enforced (any peer announced by discovery is allowed); otherwise only public
+// keys present in the list are permitted. The comparison is on the exact base64
+// encoding as distributed via discovery.
+//
+// Empty means "no allowlist", not "deny all", deliberately: flipping the default
+// would silently disconnect every existing deployment, and the empty case is not
+// fail-open in the sense the audit described — the P2P manager still refuses
+// inbound handshakes from keys this node never learned from discovery, and each
+// handshake is authenticated against the peer's static private key. The
+// allowlist narrows trust from "whatever discovery announces" to "these exact
+// keys"; it is the right setting when the discovery server is not fully trusted.
 func (n *MeshNode) isPeerAllowed(publicKey string) bool {
 	allowed := n.config.Security.AllowedPeers
 	if len(allowed) == 0 {
@@ -950,6 +975,14 @@ func (n *MeshNode) onPeerLeft(peerID string) {
 
 	// Disconnect if connected
 	_ = n.p2pManager.Disconnect(peerID) //nolint:errcheck // Best effort disconnect
+
+	// Revoke this peer's inbound authorization. Public keys are distributed by
+	// discovery and are not secret, so leaving authorization in place after a
+	// peer leaves would let anyone holding its key keep opening sessions and
+	// injecting frames into the local device.
+	if n.p2pManager != nil {
+		n.p2pManager.UnregisterPeerID(peerID)
+	}
 
 	// Remove routes
 	n.protocol.NotifyPeerDisconnected(peerID)
