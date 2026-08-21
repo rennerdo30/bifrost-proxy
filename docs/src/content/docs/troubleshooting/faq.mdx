@@ -313,8 +313,10 @@ auth:
    ```yaml
    cache:
      enabled: true
-     memory:
-       max_size: "256MB"
+     storage:
+       type: memory
+       memory:
+         max_size: "256MB"
    ```
 
 2. **Optimize connection reuse:**
@@ -322,6 +324,9 @@ auth:
    server:
      http:
        idle_timeout: "120s"
+
+   network:
+     keepalive: "30s"
    ```
 
 3. **Reduce logging:**
@@ -351,7 +356,7 @@ Check:
 1. Backend latency: `curl -s http://localhost:7082/api/v1/backends | jq '.[] | .stats.avg_latency_ms'`
 2. DNS resolution time
 3. TLS handshake overhead
-4. Connection pool exhaustion
+4. Connection ceilings being hit (`server.http.max_connections`, `network.max_connections`)
 
 ---
 
@@ -379,7 +384,8 @@ sudo setcap cap_net_admin+ep ./bifrost-client
 
 ```yaml
 vpn:
-  split:
+  enabled: true
+  split_tunnel:
     mode: exclude
     apps:
       - name: "Slack"
