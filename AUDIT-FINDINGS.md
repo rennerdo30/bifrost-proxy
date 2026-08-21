@@ -2,6 +2,31 @@
 
 > Documentation only. No fixes were applied. Findings below are drawn from a verified multi-area audit; refuted claims were discarded and partials are annotated "(overstated)". Severities shown are the adjudicated final severities.
 
+> [!IMPORTANT]
+> **Line numbers in this document are from 2026-07-02 and are stale.** Several
+> findings have since been fixed. Items resolved by the API/auth surface work are
+> marked **[FIXED]** inline below, with what actually changed. Everything not so
+> marked was still open at the time of that pass — but re-verify before acting on
+> any of it.
+>
+> Corrections to the audit's own claims, found while fixing:
+> - §4 **JWT HMAC** was already fixed before this pass: `jwt_config.hmac_secret`
+>   exists, key selection is algorithm-confusion safe, and listing an HMAC
+>   algorithm without a secret is rejected at config validation. No change needed.
+> - §4 **`mfa_wrapper`**: the claim that `DefaultConfig`/`ConfigSchema` advertise
+>   a by-name format was already stale — both advertise the inline format. The
+>   real residual defect was the reverse of what was reported: `ValidateConfig`
+>   *accepted* the by-name format that `Create()` rejects, so the Web UI could
+>   save a config that could not start.
+> - §2.2 / §2.3 / §9 **`api.token` breaks both dashboards**: also already fixed
+>   before this pass. Both dashboards have a token entry dialog, send
+>   `Authorization: Bearer` on REST, and append `?token=` to the WebSocket / SSE
+>   URLs; the server additionally grew a `POST /api/v1/login` session-cookie flow.
+>   Verified end-to-end. What the audit missed is that `?token=` was being written
+>   to the request log on every WebSocket and SSE connection — see below.
+> - §8 does not list the WebSocket origin gap at all, which was the most
+>   exploitable issue in the API surface.
+
 ---
 
 ## 1. Executive Summary
@@ -59,11 +84,13 @@ Same file/build artifact. No `box-sizing:border-box`, no default margin/padding 
 
 ### 2.2 Server dashboard — auth/token integration
 
-**Server Web UI never populates the API token; dashboard 401s when auth enabled.** [medium]
+**Server Web UI never populates the API token; dashboard 401s when auth enabled.** [medium] **[FIXED]**
+_Resolved before this pass: `ApiTokenButton.tsx` (in `Header.tsx`) stores the token and `fetchJSON` sends `Authorization: Bearer`. Verified end-to-end by `TestAuthFlow_RESTAndWebSocketWithAPIToken`._
 `web/server/src/api/client.ts:59,256-266`; `internal/api/server/server.go:280-307`.
 `fetchJSON` only adds `Authorization: Bearer` if `localStorage['bifrost_api_token']` exists, but `setApiToken`/`getApiToken`/`clearApiToken` are exported and never imported anywhere; there is no login/token-entry component. `APISection.tsx` edits only the server-side config value, not localStorage. With `api.token` set, the SPA shell loads (static assets are unauthenticated) but every `/api/v1/*` call returns 401. Workaround only via devtools console or upstream reverse proxy. Fail-closed, opt-in-only, hence medium.
 
-**WebSocket connections never send the auth token; live updates fail when `api.token` is set.** [medium]
+**WebSocket connections never send the auth token; live updates fail when `api.token` is set.** [medium] **[FIXED]**
+_Resolved before this pass: `useWebSocket.ts` appends `?token=`, and the server also accepts the `POST /api/v1/login` session cookie (which is what a browser should prefer). **New finding while verifying:** `?token=` was written verbatim to the request log by chi's formatter, leaking the token on every upgrade — now stripped from the URL before logging._
 `web/server/src/hooks/useWebSocket.ts:23-24`; `web/server/src/components/Mesh/MeshEventLog.tsx:94-98`; server route `internal/api/server/server.go:189-199`.
 WS URL is `…/api/v1/ws` with no `?token=`. When a token is configured the WS handler is inside the auth group and `authMiddleware` accepts a token only via header or `?token=` — which the UI never provides, and browsers can't set the Authorization header on a WS handshake. The stats WS then reconnects every 3s forever (spamming 401s) but degrades gracefully to REST polling; the **mesh event log does not reconnect** and simply shows nothing with no fallback (audit's "same reconnect spam" for mesh is *overstated*, but the "shows nothing" conclusion holds).
 
@@ -73,7 +100,8 @@ The claimed "silent no-op" is refuted: `Config.tsx:151-161` fires a toast per va
 
 ### 2.3 Client dashboard
 
-**Client Web UI has no API-token support; setting `api.token` breaks the entire client dashboard.** [high]
+**Client Web UI has no API-token support; setting `api.token` breaks the entire client dashboard.** [high] **[FIXED]**
+_Resolved before this pass: `ApiTokenDialog.tsx` (opens automatically on the first 401) plus `logStreamUrl()`, which appends the `?token=` fallback to the SSE URL. Verified by `TestAuthFlow_ClientRESTAndSSEWithAPIToken`. Same log-leak fix applied._
 `web/client/src/api/client.ts:35-67`; `internal/api/client/server.go:491-518`.
 Client `fetchJSON` sends only `Content-Type` + `X-Requested-With`, no Authorization; grep for token-sending code in `web/client/src` returns zero. Yet the client UI itself offers an API Token field (`WebUISection.tsx:58`) and the server enforces it with a constant-time compare returning 401. Setting the token makes every REST call and the SSE log stream (`Logs.tsx` `new EventSource('/api/v1/logs/stream')`, which never appends the supported `?token=` fallback) return 401, with no login prompt to recover. Rated high because it fully bricks the client dashboard the moment the operator uses a field the UI advertises.
 
@@ -121,16 +149,16 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 | `native` | **Functional** | Real credential validation; no allow-all. |
 | `ldap` | **Functional** | |
 | `oauth` | **Functional** | |
-| `jwt` | **Partial** | RSA/EC verification works; HS256/384/512 accepted in alg list + verify switch but no symmetric-key source, so HMAC always fails with "invalid key type for HMAC" (`jwt.go:462-468,191-201,628-645`). Not exploitable (alg allowlist blocks RS↔HS confusion). |
+| `jwt` | **Functional** — the audit's claim is stale | *Audit (2026-07-02, now wrong):* "HS256/384/512 accepted in alg list but no symmetric-key source, so HMAC always fails". *Actual:* `hmac_secret` is a real config key, key selection is algorithm-confusion safe (HMAC and JWKS keys are never interchanged), and listing an HMAC algorithm without a secret is rejected at config validation. Fixed before this pass; no change needed. |
 | `mtls` | **Functional** | Provider works; but listener-level mTLS cannot be enabled from the UI. |
 | `kerberos` | **Functional** (password path) | Chain provider does password auth; SPNEGO/Windows-domain only via the negotiate middleware (`kerberos.go:231-244,333`). |
 | `apikey` | **Functional** | |
 | `hotp` | **Functional but not UI-configurable** | Registered (`cmd/server/main.go`), fully implemented; absent from UI auth-type list. |
 | `totp` | **Functional but not UI-configurable** | Same as hotp. |
-| `mfa_wrapper` | **Partial / metadata-broken** | Works only with inline `primary`/`secondary` blocks; `DefaultConfig`/`ConfigSchema` advertise a by-name format that `Create()` hard-errors (`internal/auth/mfa/plugin.go:45-48,80-88,91-139`). Correct format IS documented externally (authentication.mdx:429-459), so "unusable without source" is *overstated*. Not in UI. |
-| `ntlm` | **Fail-closed (dead end)** | `handleType3` and `ValidateAuthenticate` unconditionally return `ErrVerificationUnsupported`; rejects 100% of clients (`internal/auth/plugin/ntlm/ntlm.go:200-203,268-281,566`). Still selectable in UI with full form and no warning. |
-| `system` (PAM) | **Fail-closed in default/Docker build** | `pam_stub.go:40-45` `validateLinux` logs a warn and returns false unless built with `linux && cgo && pam`. Docker (`CGO_ENABLED=0`, no `-tags pam`) and `make build` both omit it. Offered as "System (PAM)" with a PAM Service field, no UI warning. |
-| `negotiate` | **Not a plugin (middleware)** | Not registered via `RegisterPlugin`; real SPNEGO/NTLM handshake lives in `internal/server/negotiate.go` driven by `auth.negotiate.*`, which has no UI. Docs `mode: negotiate` examples are doubly broken (see §9). |
+| `mfa_wrapper` | **[FIXED]** | *Audit claim was already stale:* `DefaultConfig`/`ConfigSchema` advertise the **inline** format, not the by-name one. The real defect was the reverse — `ValidateConfig` *accepted* the by-name format `Create()` rejects, so the UI could save a config that could not start. Both now refuse it identically. `ValidateConfig` also resolves the inline `primary`/`secondary` blocks against the registry (it previously only checked that a `mode` was named). Now present in the UI provider list. |
+| `ntlm` | **[FIXED]** | Audit was correct: `handleType3` and `ValidateAuthenticate` unconditionally return `ErrVerificationUnsupported`, rejecting 100% of clients, and it was selectable in the UI with a full form and no warning. It now reports `unimplemented`; `ValidateConfig` refuses every config and the factory refuses the provider type, so it can be neither selected in the UI nor saved. The verification path itself is still unimplemented — the change is that this is no longer silent. Consequence: an `auth.negotiate` block naming an `ntlm_provider` is now a startup failure (Kerberos SSO was working in those setups; only the NTLM fallback was dead). |
+| `system` (PAM) | **[FIXED]** (surfaced, not refused) | Audit was correct: `validateLinux` returns false unless built with `linux && cgo && pam`, and both Docker (`CGO_ENABLED=0`) and `make build` omit it. It now reports `build_disabled`, surfaced by a startup warning and a UI badge fed by `GET /api/v1/auth/plugins`. Deliberately *not* refused at validation: the identical config is correct on Windows, on macOS via `dscl`, and in a `-tags pam` Linux build. |
+| `negotiate` | **[FIXED]** (not a plugin, by design) | Audit was correct that it is middleware, not a plugin — that remains true and intended. `type: negotiate` under `auth.providers` is now refused with an error pointing at the `auth.negotiate.*` section, and that refusal is reachable from the UI's save/validate endpoints. The `auth.negotiate` block's own provider references are validated there too, and it now has a UI form (`NegotiateForm.tsx`). Docs still show `mode: negotiate` (see §10). |
 
 ---
 
@@ -194,6 +222,11 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 
 ## 8. Security Issues (severity-ordered)
 
+> **Missing from the original audit, added on 2026-08-21: [FIXED]**
+> **[high] `/api/v1/ws` performed no meaningful origin check, and has no auth when `api.token` is unset.** `internal/api/server/websocket.go` passed `InsecureSkipVerify: true` to `websocket.Accept`. WebSockets are exempt from the same-origin policy *and* CORS, so any web page loaded in a browser that could reach a Bifrost instance could open a socket and read the live traffic stream. Not a regression: the previous `x/net/websocket` implementation only checked that `Origin` parsed as a URL and never compared it to the host. Now same-Host-or-allowlisted (`api.allowed_origins`), 403 otherwise, with `"*"` as a startup-warned opt-out.
+>
+> **[medium] `api.token` was written to the request log.** Both dashboards authenticate WebSocket/SSE with `?token=` (browsers cannot set headers there) and chi's logger prints `r.RequestURI` verbatim. Now stripped from the URL before any middleware observes it.
+
 1. **[high] P2P session keys are deterministic + nonce restarts at 0 → ChaCha20-Poly1305 nonce reuse across every reconnect.** `internal/p2p/crypto.go:229-277`; handshake randomness at `:154,:193` is transmitted but never mixed into key derivation. `sharedSecret = X25519(static priv, static pub)`, keys via `deriveKey(secret,"send"/"recv")` with nil HKDF salt, `sendNonce` starts at 0 each session, `NewCryptoSession` recreated on every `Connect` (`connection.go:262`). Any peer pair observed across a reconnect leaks plaintext XOR and the Poly1305 one-time key, enabling frame forgery on the mesh data plane. No forward secrecy. `AUDIT.md:38-41` presents this as a completed fix. (Minor: reconnection is driven by the higher-layer connect path, not `connectionMonitor` alone.)
 2. **[high] Responder accepts inbound P2P handshakes from unknown/unauthorized public keys and injects their frames into the tunnel device.** `internal/p2p/manager.go:586-592,653` → `internal/mesh/node.go:1031-1045`. Unknown keys get a synthetic `incoming-<addr>` ID and proceed through `ProcessHandshakeInit`; decrypted `markerData` payloads flow straight to `writeToDevice`/`macTable.Learn`. A `mesh.SecurityConfig.AllowedPeers` field exists but is never read (dead config). Any host that can reach the mesh UDP port and knows the (non-secret, discovery-distributed) public key can inject arbitrary IP/Ethernet frames. Fail-open authorization gap not disclosed in `AUDIT.md`.
 3. **[medium] Replay protection accepts replayed frames within a 1024-nonce window (effectively inert).** `internal/p2p/crypto.go:301-310`. Single `atomic.Uint64`, no sliding-window bitmap; exact replays and any nonce ≤1024 behind max are accepted, and a low nonce drags the counter backward. Compounds #1.
@@ -204,8 +237,8 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 
 ## 9. Broken / Placeholder Endpoints & Surfaces
 
-- **[high] Client dashboard fully broken under `api.token`** — every REST call + SSE stream 401s (see §2.3).
-- **[high] Server dashboard `/api/v1/*` 401s under `api.token`** — no token-entry UI (see §2.2). *(Rated high in-UI impact; adjudicated medium as opt-in/fail-closed.)*
+- ~~**[high] Client dashboard fully broken under `api.token`** — every REST call + SSE stream 401s (see §2.3).~~ **[FIXED]**
+- ~~**[high] Server dashboard `/api/v1/*` 401s under `api.token`** — no token-entry UI (see §2.2).~~ **[FIXED]** Both dashboards authenticate REST, SSE and WS with `api.token` set; covered by round-trip tests.
 - **[medium] Client "Reload" button → always HTTP 503** (`ConfigReloader` unwired; §2.3).
 - **[medium] Server mesh coordinator API is always-on, in-memory only; `MeshConfig.Enabled` is dead; networks never persisted.** `internal/api/server/mesh.go:35-45,159-169`; `server.go:94,275-277`. `NewMeshAPI()` takes no config and is always mounted; `grep MeshConfig` finds no references. Every mesh network + peer is lost on restart, no operator toggle. (Routes are token-authenticated when a token is set.)
 - **[low] Dead/stub API code** — unrouted `handleGetConfigTimestamp` returns fake time; unused `setWebSocketHub`/`AddWebSocketRoutes`/partial `Router()` (§6).
@@ -308,8 +341,8 @@ server would refuse to start. All are now fixed.
 2. **P2P session crypto: deterministic keys + nonce-from-0 → ChaCha20-Poly1305 nonce reuse** — mix handshake randomness/ephemeral keys into KDF, use unique nonces per (key) lifetime; add forward secrecy. (`p2p/crypto.go:229-277`)
 3. **P2P inbound handshake accepts unauthorized peers and injects frames into TUN/TAP** — enforce `SecurityConfig.AllowedPeers`/known-key allowlist before accepting. (`p2p/manager.go:586-592`)
 4. **ProtonVPN OpenVPN CA malformed → default path never connects** — replace/validate the embedded CA; fail fast at config-gen. (`protonvpn/servers.go:261`)
-5. **Client dashboard fully broken when `api.token` set** — add token entry + Authorization/`?token=` on REST, SSE, and WS. (`web/client/src/api/client.ts:35-67`)
-6. **Server dashboard 401s when `api.token` set** — wire `setApiToken`/login UI and send WS `?token=`. (`web/server/src/api/client.ts`, `useWebSocket.ts:23-24`)
+5. ~~**Client dashboard fully broken when `api.token` set**~~ **[DONE]**
+6. ~~**Server dashboard 401s when `api.token` set**~~ **[DONE]** — and the `?token=` credential is no longer logged.
 7. **Six auth docs teach server-rejected `auth.mode` syntax** — rewrite all `mode:`/top-level-block examples to `auth.providers[]`. (`security.mdx`, `configuration/authentication.mdx`, troubleshooting docs)
 8. **monitoring.mdx alerts/panels reference nonexistent metrics** — reconcile doc schema with `internal/metrics/prometheus.go`; fix alert queries.
 

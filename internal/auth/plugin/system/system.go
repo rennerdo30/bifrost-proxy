@@ -49,9 +49,7 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 	// authenticate on Linux (the default/Docker build compiles the fail-closed
 	// PAM stub), so operators are not misled into believing it works.
 	if runtime.GOOS == "linux" && !pamCompiled {
-		slog.Warn("system auth plugin created on Linux without the PAM backend: " +
-			"all authentication will fail closed. Rebuild with CGO_ENABLED=1 -tags pam " +
-			"(and libpam headers) to enable PAM-based system authentication.")
+		slog.Warn("system auth provider will reject every login: " + buildDisabledReason)
 	}
 
 	allowedUsers := make(map[string]bool)
@@ -71,7 +69,40 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 	}, nil
 }
 
+// buildDisabledReason explains why system auth cannot work in a Linux build
+// without the PAM backend. Shared by the availability report and the startup
+// warning so they cannot drift apart.
+const buildDisabledReason = "this binary was built without the PAM backend, so system authentication " +
+	"fails closed on Linux: every login is rejected regardless of the password. The default `make build` " +
+	"and the Docker image both build with CGO_ENABLED=0 and without `-tags pam`. Rebuild with " +
+	"CGO_ENABLED=1 -tags pam (requires libpam development headers) to enable it, or use the 'ldap' or " +
+	"'native' provider instead."
+
+// Availability reports whether system authentication can work in this binary.
+//
+// The audit's finding was that `system` is offered in the dashboard as
+// "System (PAM)" with a PAM Service field, while the default and Docker builds
+// compile the fail-closed stub — so it accepts configuration and then rejects
+// every user. This makes that build-tag reality visible instead of implicit.
+//
+// It reports AvailabilityBuildDisabled rather than AvailabilityUnimplemented, so
+// the provider is flagged but NOT refused at config validation: on Windows, on
+// macOS (dscl), and in a `-tags pam` Linux build the very same configuration is
+// correct, and refusing it would break those deployments.
+func (p *plugin) Availability() auth.Availability {
+	if runtime.GOOS == "linux" && !pamCompiled {
+		return auth.Availability{
+			State:  auth.AvailabilityBuildDisabled,
+			Reason: buildDisabledReason,
+		}
+	}
+	return auth.Availability{State: auth.AvailabilityAvailable}
+}
+
 // ValidateConfig validates the configuration.
+//
+// It deliberately does not reject a config just because this build lacks PAM:
+// see Availability for why that is surfaced rather than refused.
 func (p *plugin) ValidateConfig(config map[string]any) error {
 	_, err := parseConfig(config)
 	return err
