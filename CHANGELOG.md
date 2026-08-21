@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- `/api/v1/ws` now verifies the WebSocket `Origin`. WebSockets are exempt from
+  both the same-origin policy and CORS, so any web page loaded in a browser that
+  could reach a Bifrost instance was previously able to open a socket and read
+  the live traffic stream — and when no `api.token` is configured that route has
+  no authentication either. An `Origin` whose host matches the request `Host` is
+  always accepted (the dashboard Bifrost itself serves, needing no
+  configuration); anything else must be named in the new `api.allowed_origins`;
+  a request with no `Origin` header at all is still accepted, since non-browser
+  clients do not send one and a web page cannot suppress its own. This was a
+  long-standing gap rather than a regression: the previous implementation only
+  checked that `Origin` parsed as a URL and never compared it to the host
+- The `api.token` is no longer written to the request log. Both dashboards
+  authenticate their WebSocket and SSE connections with `?token=`, because
+  browsers cannot set headers on those transports, and the request logger printed
+  the URL verbatim — so the token was logged on every WebSocket upgrade and every
+  log-stream reconnect. The parameter is now lifted out of the URL before any
+  logging happens; it still authenticates the request
+
+### Added
+- `api.allowed_origins`: browser origins permitted to open `/api/v1/ws`, for
+  reverse proxies that rewrite `Host` (Home Assistant Ingress, Traefik, nginx,
+  Cloudflare Tunnel). Entries are host or `scheme://host` patterns with
+  shell-style wildcards; unusable entries are rejected at startup. A single `"*"`
+  disables the check entirely as a documented, startup-warned escape hatch,
+  replacing what used to be the silent default
+- `GET /api/v1/auth/plugins` reports every registered auth plugin with an
+  availability state (`available`, `build_disabled`, `unimplemented`) and a
+  reason. The server dashboard uses it to label providers honestly instead of
+  hard-coding a list that had drifted from the code and could not express
+  build-dependent truths
+- The server dashboard's auth provider list gained `mfa_wrapper`, which was
+  registered and working but missing from the UI entirely, with a default config
+  in the inline `primary`/`secondary` format the server actually accepts
+
+### Changed
+- **Breaking:** an **enabled** auth provider whose plugin can never authenticate
+  is now refused at config validation instead of being accepted and then
+  rejecting every login. This affects `ntlm` (no credential source exists to
+  verify a client response), a provider of `type: negotiate` (SPNEGO is
+  middleware under `auth.negotiate.*`, not a provider), and `mfa_wrapper` using
+  the by-name `primary_provider`/`mfa_provider` format. Each error explains what
+  to use instead. Consequently an `auth.negotiate` block with an `ntlm_provider`
+  now fails at startup rather than serving SSO that rejects every client — set
+  `allow_ntlm: false` and remove `ntlm_provider`, keeping Kerberos. Disabled
+  providers are not checked, so disabling a bad provider in the dashboard remains
+  a way out
+- The `system` (PAM) provider now reports at startup, and in the dashboard, that
+  it cannot authenticate when the binary was built without the PAM backend — the
+  default `make build` and the Docker image both are. It is deliberately *not*
+  refused, because the same configuration is correct on Windows, on macOS, and in
+  a `-tags pam` Linux build
+- `POST /api/v1/config/validate` and `PUT /api/v1/config` now validate auth
+  providers against the plugin registry. Previously only the config shape was
+  checked, so the dashboard could save a provider that broke the next restart and
+  still report success
+
 ### Added
 - HTTPS health checks are now configurable: `health_check.scheme` (`http`/`https`)
   and `health_check.insecure_skip_verify`, on both the global block and

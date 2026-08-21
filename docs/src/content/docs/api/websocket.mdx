@@ -22,6 +22,71 @@ ws://localhost:7082/api/v1/ws
 ws://localhost:7082/api/v1/ws?token=your-api-token
 ```
 
+A browser cannot set an `Authorization` header on a WebSocket handshake, which is
+why `?token=` is accepted. The server strips the parameter out of the URL before
+anything logs the request, so the token does not appear in Bifrost's own request
+log — but a reverse proxy in front of Bifrost will still log the full URL. From a
+browser, prefer the session cookie: `POST /api/v1/login` exchanges the token for
+an `HttpOnly` cookie, which the handshake then carries automatically and which no
+URL ever contains.
+
+### Origin Restrictions
+
+WebSockets are exempt from both the same-origin policy and CORS, so — unlike a
+`fetch()` — any web page loaded in a browser can attempt to open a socket to any
+address that browser can reach, including `localhost`. Without an origin check, a
+random page could connect to a local Bifrost and read the live traffic stream.
+When no `api.token` is configured, `/api/v1/ws` has no authentication either.
+
+The upgrade is therefore accepted only when one of the following holds:
+
+| Condition | Result |
+|---|---|
+| The `Origin` header's host matches the request `Host` | **Accepted** — this is the dashboard Bifrost itself serves, and needs no configuration |
+| The origin matches an entry in `api.allowed_origins` | **Accepted** |
+| No `Origin` header is sent at all | **Accepted** — non-browser clients (CLI, `curl`, scripts) do not send one, and a web page cannot suppress its own `Origin` |
+| Anything else | **Rejected with HTTP 403** |
+
+#### Reverse proxies that rewrite `Host`
+
+If a proxy in front of Bifrost rewrites `Host`, the browser's `Origin` no longer
+matches it and the handshake is refused. This is the common case for Home
+Assistant Ingress, and also applies to Traefik, nginx and Cloudflare Tunnel
+setups that do not preserve the original `Host`. Name the browser-visible origin
+explicitly:
+
+```yaml
+api:
+  enabled: true
+  listen: "0.0.0.0:7082"
+  allowed_origins:
+    # The origin the browser sees, NOT Bifrost's own listen address.
+    - "https://bifrost.example.com"
+    # Home Assistant Ingress: the Home Assistant origin.
+    - "http://homeassistant.local:8123"
+```
+
+Each entry is either a host pattern (`bifrost.example.com`,
+`homeassistant.local:8123`) or a scheme-qualified origin
+(`https://bifrost.example.com`). Matching is case-insensitive and supports
+shell-style wildcards, so `*.example.com` covers every subdomain. Entries
+carrying a path, an invalid wildcard, or stray whitespace are rejected at startup
+rather than silently never matching.
+
+#### Disabling the check
+
+A single `"*"` entry turns origin verification off completely:
+
+```yaml
+api:
+  allowed_origins: ["*"]
+```
+
+This is an escape hatch for setups whose origin cannot be predicted. It logs a
+warning at startup, and it means any web page opened in a browser that can reach
+this server may connect to `/api/v1/ws` and read the live traffic stream. Name
+the real origins instead wherever you can.
+
 ### Connection Limits
 
 | Setting | Default | Description |
