@@ -69,9 +69,23 @@ api:
 Each entry is either a host pattern (`bifrost.example.com`,
 `homeassistant.local:8123`) or a scheme-qualified origin
 (`https://bifrost.example.com`). Matching is case-insensitive and supports
-shell-style wildcards, so `*.example.com` covers every subdomain. Entries
-carrying a path, an invalid wildcard, or stray whitespace are rejected at startup
-rather than silently never matching.
+shell-style wildcards. Entries carrying a path, an invalid wildcard, or stray
+whitespace are rejected at startup rather than silently never matching.
+
+Two matching rules are worth knowing, because getting them wrong produces a 403
+with no other symptom:
+
+- **Ports are part of the host and are matched literally.** `bifrost.example.com`
+  does **not** match an origin of `http://bifrost.example.com:8080`. Include the
+  port whenever the browser's URL shows one — i.e. anything other than plain
+  `:80` for `http` or `:443` for `https`.
+- **`*` spans dots but not the port separator.** `*.example.com` matches
+  `a.example.com` and `a.b.example.com`, but not `a.example.com:1234`. Use
+  `*.example.com:8080` for that, or list the origin in full.
+
+Wildcards cannot be tricked into matching a longer suffix: `bifrost.example.com`
+does not match `bifrost.example.com.evil.com`, because a pattern must match the
+whole host.
 
 #### Disabling the check
 

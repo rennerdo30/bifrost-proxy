@@ -125,6 +125,101 @@ func TestWebSocket_AllowlistSupportsWildcardHostPatterns(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, status)
 }
 
+// TestWebSocket_AllowlistMatchingRules pins the two matching behaviours an
+// operator is most likely to trip over — a missing port and the reach of `*` —
+// and the suffix-extension attack a sloppy matcher would allow. These are
+// documented in docs/src/content/docs/api/websocket.mdx; the test exists so the
+// docs cannot quietly become wrong.
+func TestWebSocket_AllowlistMatchingRules(t *testing.T) {
+	tests := []struct {
+		name    string
+		pattern string
+		origin  string
+		allowed bool
+	}{
+		{
+			name:    "exact host matches",
+			pattern: "bifrost.example.com",
+			origin:  "https://bifrost.example.com",
+			allowed: true,
+		},
+		{
+			// Ports are part of the host and are matched literally, so a pattern
+			// without one does not cover an origin with one.
+			name:    "host pattern does not cover a non-default port",
+			pattern: "bifrost.example.com",
+			origin:  "http://bifrost.example.com:8080",
+			allowed: false,
+		},
+		{
+			name:    "host pattern with the port matches",
+			pattern: "bifrost.example.com:8080",
+			origin:  "http://bifrost.example.com:8080",
+			allowed: true,
+		},
+		{
+			// `*` spans dots...
+			name:    "wildcard spans multiple labels",
+			pattern: "*.example.com",
+			origin:  "https://a.b.example.com",
+			allowed: true,
+		},
+		{
+			// ...but not the port separator.
+			name:    "wildcard does not span the port separator",
+			pattern: "*.example.com",
+			origin:  "https://a.example.com:1234",
+			allowed: false,
+		},
+		{
+			// The attack a suffix-match implementation would permit.
+			name:    "pattern cannot be extended into an attacker domain",
+			pattern: "bifrost.example.com",
+			origin:  "https://bifrost.example.com.evil.example.net",
+			allowed: false,
+		},
+		{
+			name:    "matching is case-insensitive",
+			pattern: "bifrost.example.com",
+			origin:  "https://BIFROST.Example.COM",
+			allowed: true,
+		},
+		{
+			// A scheme-qualified pattern pins the scheme too.
+			name:    "scheme-qualified pattern rejects the other scheme",
+			pattern: "https://bifrost.example.com",
+			origin:  "http://bifrost.example.com",
+			allowed: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newOriginTestServer(t, []string{tc.pattern})
+
+			err, status := tryDialWithOrigin(t, srv, tc.origin)
+			if tc.allowed {
+				require.NoError(t, err)
+				return
+			}
+			require.Error(t, err)
+			assert.Equal(t, http.StatusForbidden, status)
+		})
+	}
+}
+
+// TestWebSocket_RejectsOpaqueOrigin covers the sandboxed-iframe / data-URL case.
+// Such contexts send the literal string "null" as their Origin, which has no
+// host and so must not be treated like the "no Origin header" carve-out.
+func TestWebSocket_RejectsOpaqueOrigin(t *testing.T) {
+	srv := newOriginTestServer(t, nil)
+
+	err, status := tryDialWithOrigin(t, srv, "null")
+
+	require.Error(t, err, "an opaque origin must not be accepted")
+	assert.Equal(t, http.StatusForbidden, status)
+}
+
 // TestWebSocket_AcceptsMissingOriginHeader documents the deliberate carve-out:
 // non-browser clients (the CLI, curl, integration tests) send no Origin header
 // and are not subject to the browser-driven attack this check defends against.
