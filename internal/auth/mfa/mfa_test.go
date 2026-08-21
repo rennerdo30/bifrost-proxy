@@ -72,10 +72,11 @@ func TestMFAWrapperPlugin_ValidateConfig(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "valid config with primary_provider",
+			name: "valid inline config",
 			config: map[string]any{
-				"primary_provider": "ldap-main",
-				"mfa_type":         "totp",
+				"primary":   map[string]any{"mode": "ldap"},
+				"secondary": map[string]any{"mode": "totp"},
+				"mfa_type":  "totp",
 			},
 			wantErr: false,
 		},
@@ -454,19 +455,45 @@ func TestByNameProviders_FailClosed(t *testing.T) {
 	assert.Contains(t, err.Error(), "inline")
 }
 
-// A valid by-name config still fails at Create, but only after passing
-// configuration validation (i.e. the error is about the unsupported mode, not
-// about a malformed config).
-func TestByNameProviders_ValidatesBeforeFailing(t *testing.T) {
+// ValidateConfig and Create must agree about the by-name format.
+//
+// The audit found them disagreeing: ValidateConfig accepted a by-name config
+// that Create then hard-rejected, so the Web UI could save an mfa_wrapper
+// provider that made the next restart fail. Both now refuse it with the same
+// message.
+func TestByNameProviders_ValidateAgreesWithCreate(t *testing.T) {
 	plugin, ok := auth.GetPlugin("mfa_wrapper")
 	require.True(t, ok)
 
-	// Missing primary_provider is a config error and should be reported as such.
+	byName := map[string]any{
+		"primary_provider": "ldap-main",
+		"mfa_type":         "totp",
+	}
+
+	err := plugin.ValidateConfig(byName)
+	require.Error(t, err, "validation must not accept a format Create rejects")
+	assert.Contains(t, err.Error(), "not supported")
+	assert.Contains(t, err.Error(), "inline")
+
+	_, createErr := plugin.Create(byName)
+	require.Error(t, createErr)
+	assert.Equal(t, err.Error(), createErr.Error(), "both paths must report the same reason")
+}
+
+// The unsupported format must be reported for its own sake, not as a
+// side-effect of a missing field. A by-name config that merely omits
+// primary_provider used to be told "'primary_provider' is required" — advice
+// pointing further down a road that is a dead end.
+func TestByNameProviders_ReportsFormatNotMissingField(t *testing.T) {
+	plugin, ok := auth.GetPlugin("mfa_wrapper")
+	require.True(t, ok)
+
 	_, err := plugin.Create(map[string]any{
 		"mfa_type": "totp",
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "primary_provider")
+	assert.Contains(t, err.Error(), "inline")
+	assert.NotContains(t, err.Error(), "'primary_provider' is required")
 }
 
 // Test parsePluginConfig edge cases
@@ -475,9 +502,10 @@ func TestParsePluginConfig_MFAGroups(t *testing.T) {
 	require.True(t, ok)
 
 	err := plugin.ValidateConfig(map[string]any{
-		"primary_provider": "ldap-main",
-		"mfa_required":     "group_based",
-		"mfa_groups":       []any{"admins", "developers", "security"},
+		"primary":      map[string]any{"mode": "ldap"},
+		"secondary":    map[string]any{"mode": "totp"},
+		"mfa_required": "group_based",
+		"mfa_groups":   []any{"admins", "developers", "security"},
 	})
 	assert.NoError(t, err)
 }
@@ -488,8 +516,9 @@ func TestParsePluginConfig_MFACodeLengthFloat64(t *testing.T) {
 
 	// JSON unmarshaling often converts numbers to float64
 	err := plugin.ValidateConfig(map[string]any{
-		"primary_provider": "ldap-main",
-		"mfa_code_length":  float64(8),
+		"primary":         map[string]any{"mode": "ldap"},
+		"secondary":       map[string]any{"mode": "totp"},
+		"mfa_code_length": float64(8),
 	})
 	assert.NoError(t, err)
 }
@@ -499,8 +528,9 @@ func TestParsePluginConfig_InvalidPasswordFormat(t *testing.T) {
 	require.True(t, ok)
 
 	err := plugin.ValidateConfig(map[string]any{
-		"primary_provider": "ldap-main",
-		"password_format":  "invalid_format",
+		"primary":         map[string]any{"mode": "ldap"},
+		"secondary":       map[string]any{"mode": "totp"},
+		"password_format": "invalid_format",
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid password_format")
@@ -511,8 +541,9 @@ func TestParsePluginConfig_InvalidMFARequired(t *testing.T) {
 	require.True(t, ok)
 
 	err := plugin.ValidateConfig(map[string]any{
-		"primary_provider": "ldap-main",
-		"mfa_required":     "invalid_mode",
+		"primary":      map[string]any{"mode": "ldap"},
+		"secondary":    map[string]any{"mode": "totp"},
+		"mfa_required": "invalid_mode",
 	})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid mfa_required")
@@ -522,36 +553,29 @@ func TestParsePluginConfig_MFAProvider(t *testing.T) {
 	plugin, ok := auth.GetPlugin("mfa_wrapper")
 	require.True(t, ok)
 
-	// A by-name config with mfa_provider is well-formed (ValidateConfig passes)
-	// but Create fails closed because by-name resolution is unsupported.
+	// mfa_provider overrides mfa_type; an inline config carrying it must
+	// validate cleanly.
 	cfg := map[string]any{
-		"primary_provider": "ldap-main",
-		"mfa_type":         "totp",
-		"mfa_provider":     "custom-totp",
+		"primary":      map[string]any{"mode": "ldap"},
+		"secondary":    map[string]any{"mode": "totp"},
+		"mfa_type":     "totp",
+		"mfa_provider": "custom-totp",
 	}
 	require.NoError(t, plugin.ValidateConfig(cfg))
-
-	_, err := plugin.Create(cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not supported")
 }
 
 func TestParsePluginConfig_CustomSeparator(t *testing.T) {
 	plugin, ok := auth.GetPlugin("mfa_wrapper")
 	require.True(t, ok)
 
-	// A by-name config with a custom separator is well-formed but Create still
-	// fails closed (by-name resolution is unsupported).
+	// The "separated" password format with a custom separator must validate.
 	cfg := map[string]any{
-		"primary_provider": "ldap-main",
-		"password_format":  "separated",
-		"separator":        "|",
+		"primary":         map[string]any{"mode": "ldap"},
+		"secondary":       map[string]any{"mode": "totp"},
+		"password_format": "separated",
+		"separator":       "|",
 	}
 	require.NoError(t, plugin.ValidateConfig(cfg))
-
-	_, err := plugin.Create(cfg)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not supported")
 }
 
 func TestParsePluginConfig_AllMFAModes(t *testing.T) {
@@ -573,8 +597,9 @@ func TestParsePluginConfig_AllMFAModes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.mode, func(t *testing.T) {
 			err := plugin.ValidateConfig(map[string]any{
-				"primary_provider": "ldap-main",
-				"mfa_required":     tt.mode,
+				"primary":      map[string]any{"mode": "ldap"},
+				"secondary":    map[string]any{"mode": "totp"},
+				"mfa_required": tt.mode,
 			})
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -602,8 +627,9 @@ func TestParsePluginConfig_AllPasswordFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.format, func(t *testing.T) {
 			err := plugin.ValidateConfig(map[string]any{
-				"primary_provider": "ldap-main",
-				"password_format":  tt.format,
+				"primary":         map[string]any{"mode": "ldap"},
+				"secondary":       map[string]any{"mode": "totp"},
+				"password_format": tt.format,
 			})
 			if tt.wantErr {
 				assert.Error(t, err)

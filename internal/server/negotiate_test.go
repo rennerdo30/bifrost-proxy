@@ -22,7 +22,15 @@ func TestBuildNegotiateHandler_Disabled(t *testing.T) {
 	assert.Nil(t, h)
 }
 
-func TestBuildNegotiateHandler_NTLMOnly(t *testing.T) {
+// TestBuildNegotiateHandler_NTLMOnlyIsRefused pins the consequence of refusing
+// the NTLM provider outright.
+//
+// An NTLM-only Negotiate setup was previously accepted and started fine, then
+// rejected every single client, because the NTLM plugin has no way to verify a
+// client's response. That is now a startup failure with an explanation instead of
+// a silently non-working SSO deployment. The remedy is Kerberos: the error says
+// so, and points at the two settings to change.
+func TestBuildNegotiateHandler_NTLMOnlyIsRefused(t *testing.T) {
 	cfg := config.AuthConfig{
 		Providers: []config.AuthProvider{
 			{Name: "ntlm", Type: "ntlm", Enabled: true, Config: map[string]any{"domain": "EXAMPLE"}},
@@ -33,10 +41,12 @@ func TestBuildNegotiateHandler_NTLMOnly(t *testing.T) {
 			AllowNTLM:    true,
 		},
 	}
-	h, err := buildNegotiateHandler(cfg)
-	require.NoError(t, err)
-	require.NotNil(t, h)
-	t.Cleanup(func() { _ = h.Close() })
+	_, err := buildNegotiateHandler(cfg)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not implemented")
+	assert.Contains(t, err.Error(), "allow_ntlm",
+		"the error must tell the operator which settings to change")
+	assert.Contains(t, err.Error(), "kerberos")
 }
 
 func TestBuildNegotiateHandler_UnknownProvider(t *testing.T) {

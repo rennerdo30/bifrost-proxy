@@ -77,6 +77,26 @@ type PluginInfo struct {
 	Description   string         `json:"description"`
 	DefaultConfig map[string]any `json:"default_config,omitempty"`
 	ConfigSchema  string         `json:"config_schema,omitempty"`
+
+	// Availability reports whether this plugin can actually authenticate in the
+	// running binary. Being registered is not the same as being usable: NTLM
+	// rejects every login, and `system` (PAM) is a stub unless the binary was
+	// built with the `pam` tag. Exposing this lets the dashboard label such
+	// providers honestly instead of offering a config form that can only fail.
+	Availability Availability `json:"availability"`
+}
+
+// newPluginInfo builds a PluginInfo for a registered plugin. Callers must hold
+// registryMu.
+func newPluginInfo(name string, p Plugin) PluginInfo {
+	return PluginInfo{
+		Name:          name,
+		Type:          p.Type(),
+		Description:   p.Description(),
+		DefaultConfig: p.DefaultConfig(),
+		ConfigSchema:  p.ConfigSchema(),
+		Availability:  PluginAvailability(p),
+	}
 }
 
 // GetPluginInfo returns information about a specific plugin.
@@ -89,13 +109,8 @@ func GetPluginInfo(name string) (*PluginInfo, bool) {
 		return nil, false
 	}
 
-	return &PluginInfo{
-		Name:          name,
-		Type:          p.Type(),
-		Description:   p.Description(),
-		DefaultConfig: p.DefaultConfig(),
-		ConfigSchema:  p.ConfigSchema(),
-	}, true
+	info := newPluginInfo(name, p)
+	return &info, true
 }
 
 // ListPluginInfo returns information about all registered plugins.
@@ -105,13 +120,7 @@ func ListPluginInfo() []PluginInfo {
 
 	infos := make([]PluginInfo, 0, len(plugins))
 	for name, p := range plugins {
-		infos = append(infos, PluginInfo{
-			Name:          name,
-			Type:          p.Type(),
-			Description:   p.Description(),
-			DefaultConfig: p.DefaultConfig(),
-			ConfigSchema:  p.ConfigSchema(),
-		})
+		infos = append(infos, newPluginInfo(name, p))
 	}
 
 	// Sort by name for consistent ordering

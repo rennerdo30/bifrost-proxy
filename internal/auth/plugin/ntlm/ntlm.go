@@ -83,9 +83,35 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 	return authenticator, nil
 }
 
-// ValidateConfig validates the configuration.
+// unavailableReason is the single operator-facing explanation for why NTLM is
+// refused. It is used for the availability report, the config-validation error
+// and the UI badge, so they cannot drift apart.
+const unavailableReason = "NTLM response verification is not implemented: there is no credential " +
+	"source (NT-hash store or domain-controller pass-through) to verify a client's NTLMv2 response " +
+	"against, so every login is rejected. Use the 'kerberos' provider for Windows-domain SSO, or " +
+	"'ldap' against Active Directory. If SPNEGO/Negotiate is enabled, set auth.negotiate.allow_ntlm " +
+	"to false and remove auth.negotiate.ntlm_provider."
+
+// Availability reports NTLM as permanently unimplemented, which makes the auth
+// factory refuse any provider of this type at config validation.
+//
+// Fail closed, but never silently: the plugin previously accepted a full
+// configuration — and was offered in the dashboard's provider dropdown with a
+// complete form — and then rejected 100% of logins with a generic failure. An
+// operator had no way to distinguish that from a wrong password or a broken
+// domain controller.
+func (p *plugin) Availability() auth.Availability {
+	return auth.Availability{
+		State:  auth.AvailabilityUnimplemented,
+		Reason: unavailableReason,
+	}
+}
+
+// ValidateConfig rejects every NTLM configuration. The plugin cannot
+// authenticate anyone (see Availability), so accepting a config here would let
+// the Web UI save a provider that only fails later, at restart.
 func (p *plugin) ValidateConfig(_ map[string]any) error {
-	return nil
+	return errors.New(unavailableReason)
 }
 
 // DefaultConfig returns the default configuration.
