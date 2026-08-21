@@ -95,6 +95,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `device.GenerateRandomMAC`, which the production paths already used
 
 ### Changed
+- Redrawn logo, favicons, tray icons and app icons. The mark is now an actual
+  bridge instead of a single span that read as an archway: a through-arch
+  bridge whose three-band spectral arch springs from the ground on both realms
+  and rises through a deck that crosses it and carries on into both sides, with
+  hangers at the crown, end piers, and a ground line broken exactly where the
+  arch opens. Two stroke weights (8 and 4) on a 4-unit grid, four flat colours
+  from the dashboard palette, no gradients or filters. `assets/icon.svg` is a
+  separate, deliberately simplified square cut for small sizes rather than the
+  full mark shrunk down, and `assets/logo-mono.svg` no longer picks its
+  standalone colour from `prefers-color-scheme` - it uses one neutral mid-tone
+  that clears 4:1 contrast on both light and dark surfaces, so an
+  `<img src="logo-mono.svg">` can no longer come out nearly invisible on a
+  background that disagrees with the viewer's OS theme
 - `API.Router()` now registers the same routes as `RouterWithWebSocket` instead
   of a hand-maintained subset that silently omitted the cache and mesh routes
 - Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
