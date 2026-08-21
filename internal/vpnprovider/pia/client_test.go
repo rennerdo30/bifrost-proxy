@@ -393,7 +393,8 @@ func TestGenerateOpenVPNConfig(t *testing.T) {
 		},
 	}
 
-	config := client.buildOpenVPNConfig(server, region)
+	config, err := client.buildOpenVPNConfig(server, region)
+	require.NoError(t, err)
 
 	assert.Contains(t, config, "client")
 	assert.Contains(t, config, "dev tun")
@@ -1095,7 +1096,8 @@ func TestBuildOpenVPNConfigTCPOnly(t *testing.T) {
 		},
 	}
 
-	config := client.buildOpenVPNConfig(vpnServer, nil)
+	config, err := client.buildOpenVPNConfig(vpnServer, nil)
+	require.NoError(t, err)
 	assert.Contains(t, config, "proto tcp")
 	assert.Contains(t, config, "remote test.example.com 443")
 }
@@ -1113,12 +1115,14 @@ func TestBuildOpenVPNConfigNoDNS(t *testing.T) {
 	}
 
 	// Nil region (no DNS)
-	config := client.buildOpenVPNConfig(vpnServer, nil)
+	config, err := client.buildOpenVPNConfig(vpnServer, nil)
+	require.NoError(t, err)
 	assert.NotContains(t, config, "dhcp-option DNS")
 
 	// Region with empty DNS
 	region := &Region{DNS: ""}
-	config = client.buildOpenVPNConfig(vpnServer, region)
+	config, err = client.buildOpenVPNConfig(vpnServer, region)
+	require.NoError(t, err)
 	assert.NotContains(t, config, "dhcp-option DNS")
 }
 

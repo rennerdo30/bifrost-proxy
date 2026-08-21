@@ -100,7 +100,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
   reporting success while changing nothing but an in-memory field
 
+### Security
+- The PIA provider's embedded OpenVPN CA certificate was not PIA's. It parsed as
+  X.509 with the right structure and subject, but 711 of its 1967 DER bytes had
+  been replaced — 300 bytes at the tail of the RSA modulus and 414 of the 512
+  signature bytes — so its self-signature did not verify and its public key was
+  not the one PIA signs with. That constant is both the `<ca>`
+  block of generated PIA OpenVPN profiles and the TLS trust root for PIA's
+  `/addKey` and port-forwarding endpoints, so PIA OpenVPN, WireGuard key
+  registration and port forwarding could not have worked. Replaced with PIA's
+  published `ca.rsa.4096.crt`, now fingerprint-pinned and signature-checked by
+  tests
+- ProtonVPN API-mode login now verifies the PGP signature of the SRP modulus
+  returned by `/auth/info` against Proton's modulus-signing key. Previously the
+  modulus was taken on trust (and mis-parsed), so a tampered response could have
+  substituted an attacker-chosen SRP group
+- Provider OpenVPN CA certificates and `tls-auth` keys are validated fail-closed
+  wherever they are used: a PEM block that is not a parseable X.509 CA, a
+  self-issued certificate whose signature does not verify, an expired
+  certificate, or a placeholder `tls-auth` key is now refused instead of being
+  written into a profile
+
 ### Fixed
+- ProtonVPN API authentication (required for ProtonVPN WireGuard) could not
+  succeed against the live API. `/auth/info` returns the SRP modulus as a PGP
+  clear-signed message, which was decoded as plain base64, and the proofs used
+  textbook SRP-6a over big-endian SHA-512 instead of Proton's little-endian,
+  2048-bit expanded-hash, bcrypt-verifier scheme. The exchange now uses Proton's
+  own SRP implementation and is pinned to Proton's published test vectors.
+  Note: end-to-end verification against the live API was not possible without
+  real account credentials
+- VPN provider OpenVPN CA certificates supplied via `ca_cert` were only checked
+  with `pem.Decode`, so a PEM block containing anything that is not valid DER
+  produced a profile the `openvpn` subprocess rejected with an opaque "cannot
+  load CA certificate". `ca_cert` and `tls_auth_key` are now validated at
+  config-load time (backend construction) and again at profile generation, with
+  an actionable error naming the field
 - Documentation: every YAML example in the docs is now one the server/client
   actually accepts. Removed config keys that do not exist and were therefore
   silently dropped by the loader (`access_log.fields`,
