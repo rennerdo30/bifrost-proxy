@@ -424,6 +424,25 @@ POST /api/v1/config/validate
 }
 ```
 
+Validation covers the auth providers as well as the config shape. An **enabled**
+provider whose type cannot authenticate in this build is reported invalid here
+and refused by `PUT /api/v1/config` — so a configuration that would fail at the
+next restart is never saved. Disabled providers are not checked, which keeps
+"disable it and save" a way out of a bad configuration.
+
+```json
+{
+  "valid": false,
+  "message": "Configuration validation failed",
+  "errors": [
+    {
+      "section": "auth",
+      "message": "provider \"corp-ntlm\": auth provider type \"ntlm\" cannot authenticate anyone and is refused: NTLM response verification is not implemented..."
+    }
+  ]
+}
+```
+
 ---
 
 ### Reload Config
@@ -441,6 +460,64 @@ POST /api/v1/config/reload
   "time": "2024-01-15T10:00:00Z"
 }
 ```
+
+---
+
+## Authentication Plugins
+
+### List Auth Plugins
+
+Report every auth plugin registered in this server binary, together with whether
+it can actually authenticate. The Web UI uses this to label providers instead of
+hard-coding the list, which cannot be correct for build-dependent plugins.
+
+```http
+GET /api/v1/auth/plugins
+```
+
+**Response:**
+```json
+{
+  "plugins": [
+    {
+      "name": "native",
+      "type": "native",
+      "description": "Built-in user database with bcrypt passwords",
+      "availability": { "state": "available" }
+    },
+    {
+      "name": "system",
+      "type": "system",
+      "description": "System/PAM authentication (macOS via dscl; on Linux requires building with CGO_ENABLED=1 -tags pam...)",
+      "availability": {
+        "state": "build_disabled",
+        "reason": "this binary was built without the PAM backend, so system authentication fails closed on Linux..."
+      }
+    },
+    {
+      "name": "ntlm",
+      "type": "ntlm",
+      "description": "NTLM authentication (NON-FUNCTIONAL: fails closed...)",
+      "availability": {
+        "state": "unimplemented",
+        "reason": "NTLM response verification is not implemented: there is no credential source..."
+      }
+    }
+  ]
+}
+```
+
+**Availability states:**
+
+| State | Meaning | Configuration |
+|---|---|---|
+| `available` | Works normally | Accepted |
+| `build_disabled` | This binary lacks the support the plugin needs (a build tag, cgo, a platform library), so it fails closed here but works in a build that includes it | Accepted, with a warning at startup and in the UI |
+| `unimplemented` | Cannot authenticate anyone in any build | **Refused** at config validation |
+
+`negotiate` never appears here: SPNEGO/Negotiate is HTTP middleware configured
+under `auth.negotiate.*`, not a provider. A provider of `type: negotiate` is
+refused with an error pointing at the correct section.
 
 ---
 
