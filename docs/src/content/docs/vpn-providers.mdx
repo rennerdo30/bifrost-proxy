@@ -71,8 +71,9 @@ again when a profile is generated. A value is rejected unless:
   otherwise parses fine and only fails inside the TLS handshake);
 - the first certificate is a CA (`basicConstraints: CA:TRUE`);
 - the certificate is currently within its validity window;
-- `tls_auth_key`, if set, is a well-formed 2048-bit OpenVPN static key (16 lines
-  of 32 hex characters) and is not placeholder material.
+- `tls_auth_key`, if set, is an OpenVPN static key block carrying 2048 bits of
+  hex key material (canonically 16 lines of 32 hex characters; comments and
+  line breaks are tolerated) and is not placeholder material.
 
 Typical errors and what they mean:
 

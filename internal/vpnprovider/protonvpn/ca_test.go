@@ -130,6 +130,39 @@ func TestOpenVPNConfigEmitsUsableCA(t *testing.T) {
 	assert.NotContains(t, config, "/etc/openvpn")
 }
 
+// TestImportOpenVPNConfigValidatesInlineCA asserts an imported profile carrying
+// an unusable inline <ca> block is rejected, while a profile whose CA is
+// referenced out of line is passed through.
+func TestImportOpenVPNConfigValidatesInlineCA(t *testing.T) {
+	client := NewClient(WithManualCredentials("user", "pass", TierPlus))
+	const header = "client\ndev tun\nproto udp\nremote test.protonvpn.net 1194\n"
+
+	t.Run("valid inline CA", func(t *testing.T) {
+		profile := header + "<ca>\n" + testCACertPEM + "\n</ca>\n"
+
+		config, err := client.ImportOpenVPNConfig(profile, "user", "pass")
+		require.NoError(t, err)
+		assert.Equal(t, profile, config.ConfigContent)
+	})
+
+	t.Run("malformed inline CA", func(t *testing.T) {
+		profile := header + "<ca>\n" + pemWithGarbageDER() + "</ca>\n"
+
+		_, err := client.ImportOpenVPNConfig(profile, "user", "pass")
+		require.Error(t, err)
+		assert.ErrorIs(t, err, vpnprovider.ErrConfigGenerationFailed)
+		assert.ErrorIs(t, err, vpnprovider.ErrCACertMalformed)
+	})
+
+	t.Run("out-of-line CA is passed through", func(t *testing.T) {
+		profile := header + "ca /etc/openvpn/proton.crt\n"
+
+		config, err := client.ImportOpenVPNConfig(profile, "user", "pass")
+		require.NoError(t, err)
+		assert.Equal(t, profile, config.ConfigContent)
+	})
+}
+
 // TestOpenVPNConfigProtocolSelection covers the TCP variant of the template,
 // which selects the TCP port instead of the UDP one.
 func TestOpenVPNConfigProtocolSelection(t *testing.T) {

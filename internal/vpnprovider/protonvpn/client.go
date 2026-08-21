@@ -29,6 +29,11 @@ const (
 	// apiCodeSuccess is the Proton API's success code; any other value in a
 	// 200 response body indicates a logical error.
 	apiCodeSuccess = 1000
+
+	// caBlockOpenTag and caBlockCloseTag delimit an inline CA certificate in an
+	// OpenVPN profile.
+	caBlockOpenTag  = "<ca>"
+	caBlockCloseTag = "</ca>"
 )
 
 // Client implements the vpnprovider.Provider interface for ProtonVPN.
@@ -409,12 +414,12 @@ func (c *Client) generateOpenVPNConfigContent(server *vpnprovider.Server, protoc
 	sb.WriteString("auth-user-pass\n")
 
 	// CA certificate (supplied via configuration, validated above).
-	sb.WriteString("<ca>\n")
+	sb.WriteString(caBlockOpenTag + "\n")
 	sb.WriteString(caCert)
 	if !strings.HasSuffix(caCert, "\n") {
 		sb.WriteString("\n")
 	}
-	sb.WriteString("</ca>\n")
+	sb.WriteString(caBlockCloseTag + "\n")
 
 	// Optional tls-auth static key (only emitted when operator-supplied).
 	if tlsAuth := strings.TrimSpace(creds.TLSAuthKey); tlsAuth != "" {
@@ -683,8 +688,14 @@ func (c *Client) GetAvailableCountries(ctx context.Context) ([]vpnprovider.Count
 	return countries, nil
 }
 
-// ImportOpenVPNConfig allows importing a user-provided OpenVPN config.
-// This is useful when users want to use a specific config downloaded from ProtonVPN.
+// ImportOpenVPNConfig allows importing a user-provided OpenVPN config, e.g. a
+// profile downloaded from account.protonvpn.com.
+//
+// An inline <ca> block, if present, is held to the same standard as an
+// operator-supplied ca_cert: a profile carrying unusable CA material is rejected
+// here rather than at connect time. A profile that references its CA out of line
+// (a `ca <file>` directive) is passed through as-is; that file is the operator's
+// to manage.
 func (c *Client) ImportOpenVPNConfig(configContent string, username, password string) (*vpnprovider.OpenVPNConfig, error) {
 	if configContent == "" {
 		return nil, fmt.Errorf("%w: config content is empty", vpnprovider.ErrConfigGenerationFailed)
@@ -695,9 +706,33 @@ func (c *Client) ImportOpenVPNConfig(configContent string, username, password st
 		return nil, fmt.Errorf("%w: config does not appear to be an OpenVPN client config", vpnprovider.ErrConfigGenerationFailed)
 	}
 
+	if caCert, ok := inlineCABlock(configContent); ok {
+		if err := vpnprovider.ValidateCACertPEMAt(caCert, time.Now()); err != nil {
+			return nil, fmt.Errorf("%w: imported profile has an unusable <ca> block: %w",
+				vpnprovider.ErrConfigGenerationFailed, err)
+		}
+	}
+
 	return &vpnprovider.OpenVPNConfig{
 		ConfigContent: configContent,
 		Username:      username,
 		Password:      password,
 	}, nil
+}
+
+// inlineCABlock returns the contents of the profile's <ca> block and whether one
+// was present.
+func inlineCABlock(configContent string) (string, bool) {
+	start := strings.Index(configContent, caBlockOpenTag)
+	if start < 0 {
+		return "", false
+	}
+	start += len(caBlockOpenTag)
+
+	end := strings.Index(configContent[start:], caBlockCloseTag)
+	if end < 0 {
+		return "", false
+	}
+
+	return configContent[start : start+end], true
 }

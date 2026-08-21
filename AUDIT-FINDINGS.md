@@ -22,8 +22,9 @@
 >   was still not possible (needs real Proton credentials).
 > - **Audit was wrong about PIA.** §1 credits the PIA client as working
 >   end-to-end and treats `mustParsePIACertPool` as the reference fail-closed
->   pattern. In fact PIA's *embedded* CA was also unusable: it parsed, but the
->   tail of its RSA public key and its entire signature had been replaced, so its
+>   pattern. In fact PIA's *embedded* CA was also unusable: it parsed, with the
+>   right structure and subject, but 711 of its 1967 DER bytes had been replaced
+>   (300 at the tail of the RSA modulus, 414 of the 512 signature bytes), so its
 >   self-signature did not verify and its public key was not PIA's.
 >   `x509.CertPool.AppendCertsFromPEM` accepts such a certificate, which is why
 >   the init guard passed. Because that constant is the trust root for PIA's

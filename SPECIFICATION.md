@@ -409,11 +409,14 @@ Validation is applied at backend construction (config load) and again at profile
 generation. `ca_cert` is accepted only if every PEM block is a `CERTIFICATE`
 that parses as X.509, every self-issued certificate's signature verifies under
 its own public key, the first certificate is a CA, and the certificate is inside
-its validity window. `tls_auth_key`, when present, must be a well-formed
-2048-bit OpenVPN static key and not placeholder material. No code path emits a
-profile containing unparseable material, and no path substitutes a weaker
-verification mode when material is missing — generation fails with an error
-naming the offending field.
+its validity window. `tls_auth_key`, when present, must carry 2048 bits of hex
+key material inside an OpenVPN static key block and must not be placeholder
+material (all-zero, or a single repeated line). No provider path emits generated
+or imported material without running these checks first — including the inline
+`<ca>` block of a profile imported wholesale — and no path substitutes a weaker
+verification mode when material is missing: generation fails with an error
+naming the offending field. Material referenced out of line by an imported
+profile (a `ca <file>` directive) remains the operator's responsibility.
 
 **ProtonVPN authentication modes**
 
