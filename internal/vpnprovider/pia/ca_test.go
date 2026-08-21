@@ -48,7 +48,13 @@ func TestEmbeddedCACertIsUsable(t *testing.T) {
 func TestMustParsePIACertPool(t *testing.T) {
 	pool := mustParsePIACertPool()
 	require.NotNil(t, pool)
-	assert.Len(t, pool.Subjects(), 1) //nolint:staticcheck // pool is built from explicit certs
+
+	// Compare against a pool built from the embedded constant rather than
+	// counting pool.Subjects(), which is deprecated. Equal also proves the pool
+	// holds *that* certificate, not merely one certificate.
+	want := x509.NewCertPool()
+	require.True(t, want.AppendCertsFromPEM([]byte(piaOpenVPNCA)))
+	assert.True(t, pool.Equal(want))
 
 	// The package-level pool is the one used for TLS and must be equivalent.
 	require.NotNil(t, piaCertPool)

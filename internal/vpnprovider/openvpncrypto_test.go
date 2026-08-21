@@ -212,7 +212,13 @@ func TestMustParseEmbeddedCACertPool(t *testing.T) {
 		ca := testCertPEM(t, "Embedded CA", true, now.Add(-time.Hour), now.Add(time.Hour))
 		pool := MustParseEmbeddedCACertPool("test", ca)
 		require.NotNil(t, pool)
-		assert.Len(t, pool.Subjects(), 1) //nolint:staticcheck // Subjects() is fine for a pool built from explicit certs
+
+		// Compare against a pool built from the same PEM rather than counting
+		// pool.Subjects(), which is deprecated. Equal is also the stronger
+		// assertion: it checks the pool holds that cert, not just one of any.
+		want := x509.NewCertPool()
+		require.True(t, want.AppendCertsFromPEM([]byte(ca)))
+		assert.True(t, pool.Equal(want))
 	})
 
 	t.Run("expired material still loads", func(t *testing.T) {
