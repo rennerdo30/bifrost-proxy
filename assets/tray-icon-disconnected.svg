@@ -1,13 +1,27 @@
 <!--
-  Tray icon, disconnected: the span is missing its crown and the mark is muted,
-  so the state reads from the silhouette as well as the colour.
-  Same grid as assets/icon.svg without the plate, transparent canvas.
+  Tray icon, disconnected: the deck is missing between x=24 and x=40 - exactly
+  the void the bridge is meant to span - and the mark is muted, so the state
+  reads from the silhouette as well as from the colour. The arch is left whole:
+  the route exists, the crossing does not.
+
+  Same geometry as assets/icon.svg without the plate, transparent canvas - see
+  that file for the construction notes.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
      role="img" aria-labelledby="tray-disconnected-title">
   <title id="tray-disconnected-title">Bifrost: disconnected</title>
-  <g fill="none" stroke="#94a3b8" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
-    <path d="M8 44H20V26L26 20H29"/>
-    <path d="M35 20H38L44 26V44H56"/>
+  <g fill="none" stroke="#94a3b8" stroke-linecap="butt" stroke-linejoin="miter">
+    <g stroke-width="4">
+      <path d="M22 28A10 10 0 0 1 32 18A10 10 0 0 1 42 28"/>
+      <path d="M14 28A18 18 0 0 1 32 10A18 18 0 0 1 50 28"/>
+    </g>
+    <g stroke-width="8">
+      <path d="M8 32H24"/>
+      <path d="M40 32H56"/>
+      <path d="M20 32V52"/>
+      <path d="M44 32V52"/>
+      <path d="M8 52H24"/>
+      <path d="M40 52H56"/>
+    </g>
   </g>
 </svg>

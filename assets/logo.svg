@@ -1,42 +1,103 @@
 <!--
-  Bifrost mark: a faceted span crossing between two realms.
+  Bifrost mark - the rainbow bridge, drawn as a through-arch bridge: the
+  spectral arch springs from the ground on both realms, rises through the deck,
+  and the roadway crosses it and carries on into both realms.
 
-  Hand-built on a 4-unit grid inside a 64x40 viewBox, artwork bounds 4,4-60,36,
-  so every horizontal and vertical stroke edge lands on a whole pixel at 16px.
-  Three flat colours, no gradients: the two landings (cyan / violet) and the
-  span itself in the product accent blue. The span is drawn first and the two
-  landings overlap it, which puts the colour seams on straight runs of the leg
-  - butt caps there mean the seams are clean lines, not lobes.
+  CONSTRUCTION
+  viewBox 0 0 192 88. Every coordinate is a multiple of 4; artwork bounds are
+  4,4-188,84, a 4-unit margin on all four sides. Two weights only:
 
-  Colours come from the dashboard palette (web/server/src/index.css) and follow
-  the viewer's colour scheme. The stroke="..." presentation attributes are the
-  fallback for renderers that ignore the stylesheet; assets/logo-light.svg and
-  assets/logo-dark.svg pin one palette each for contexts that cannot resolve
-  prefers-color-scheme, and assets/logo-mono.svg is the single-colour cut.
+    weight 8   arch bands, deck, piers, ground - the primary structure
+    weight 4   hangers - secondary members, deliberately half the primary weight
+
+  The arch is three concentric circular bands about one centre, 96,76, which is
+  the *top surface* of the ground, so every band foot butts flat onto the ground
+  instead of sinking into it. Centreline radii 44 / 56 / 68 at stroke 8 leave
+  4-unit gaps, so the banding is real negative space rather than a colour seam
+  and it survives being flattened to a single ink (assets/logo-mono.svg).
+
+    inner band  r=44  radial 40-48  crown y=32  foot x=48-56  / 136-144
+    mid   band  r=56  radial 52-60  crown y=20  foot x=36-44  / 148-156
+    outer band  r=68  radial 64-72  crown y=8   foot x=24-32  / 160-168
+
+  The deck (y=52) sits 24 units above the arch centre, which is what puts it
+  *through* the arch rather than on top of it: above the deck you see the crown
+  and the hangers, below it the three band feet run on down to the ground. The
+  deck is drawn last, so it passes in front of the bands - the one place in the
+  mark where members cross.
+
+  The ground (y=80) is broken between x=56 and x=136. That is not an arbitrary
+  gap: 56 and 136 are exactly the arch's inner surface, so the void the bridge
+  spans is precisely the arch's opening, and the two remaining ground runs are
+  the two realms. Each carries all three band feet plus one end pier (x=12,
+  x=180) that picks up the deck where it reaches past the arch.
+
+  Five hangers (x=80 / 88 / 96 / 104 / 112) drop from the arch's inner surface
+  to the deck. They are drawn before the bands so the bands cover their upper
+  ends, which is why the outer pair reads shorter than the inner three: each
+  one stops against the curve above it.
+
+  COLOUR
+  Four flat colours. No gradients, no filters, no glows. The spectral run is
+  the cool end of a rainbow taken from the dashboard palette
+  (web/server/src/index.css): cyan outside, accent blue in the middle, violet
+  inside - true rainbow order, truncated so it stays disciplined instead of
+  going garish. Every structural member is one neutral steel tone, so the arch
+  is the only colour event and the mark still reads with colour removed.
+
+  Values follow the viewer's colour scheme; the stroke="..." presentation
+  attributes are the fallback for renderers that ignore the stylesheet.
+  assets/logo-light.svg and assets/logo-dark.svg pin one palette each for
+  contexts that cannot resolve prefers-color-scheme (e.g. a GitHub <picture>),
+  and assets/icon.svg is the simplified square cut for small sizes.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" width="256" height="160"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 88" width="384" height="176"
      class="bifrost-mark" role="img" aria-labelledby="bifrost-logo-title">
   <title id="bifrost-logo-title">Bifrost Proxy</title>
   <style>
     .bifrost-mark {
-      --bifrost-span: #2563eb;
-      --bifrost-realm-in: #0891b2;
-      --bifrost-realm-out: #7c3aed;
+      --bifrost-steel: #4b5563;
+      --bifrost-band-inner: #7c3aed;
+      --bifrost-band-mid: #2563eb;
+      --bifrost-band-outer: #0891b2;
     }
     @media (prefers-color-scheme: dark) {
       .bifrost-mark {
-        --bifrost-span: #3b82f6;
-        --bifrost-realm-in: #22d3ee;
-        --bifrost-realm-out: #8b5cf6;
+        --bifrost-steel: #9ca3af;
+        --bifrost-band-inner: #8b5cf6;
+        --bifrost-band-mid: #3b82f6;
+        --bifrost-band-outer: #22d3ee;
       }
     }
-    .bifrost-mark .bifrost-span { stroke: var(--bifrost-span); }
-    .bifrost-mark .bifrost-realm-in { stroke: var(--bifrost-realm-in); }
-    .bifrost-mark .bifrost-realm-out { stroke: var(--bifrost-realm-out); }
+    .bifrost-mark .bifrost-steel { stroke: var(--bifrost-steel); }
+    .bifrost-mark .bifrost-band-inner { stroke: var(--bifrost-band-inner); }
+    .bifrost-mark .bifrost-band-mid { stroke: var(--bifrost-band-mid); }
+    .bifrost-mark .bifrost-band-outer { stroke: var(--bifrost-band-outer); }
   </style>
-  <g fill="none" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
-    <path class="bifrost-span" stroke="#2563eb" d="M20 24V14L26 8H38L44 14V24"/>
-    <path class="bifrost-realm-in" stroke="#0891b2" d="M4 32H20V20"/>
-    <path class="bifrost-realm-out" stroke="#7c3aed" d="M44 20V32H60"/>
+  <g fill="none" stroke-linecap="butt" stroke-linejoin="miter">
+    <!-- Hangers first: the arch bands cover their upper ends. -->
+    <g class="bifrost-steel" stroke="#4b5563" stroke-width="4">
+      <path d="M80 36V52"/>
+      <path d="M88 32V52"/>
+      <path d="M96 32V52"/>
+      <path d="M104 32V52"/>
+      <path d="M112 36V52"/>
+    </g>
+    <g stroke-width="8">
+      <path class="bifrost-band-inner" stroke="#7c3aed"
+            d="M52 76A44 44 0 0 1 96 32A44 44 0 0 1 140 76"/>
+      <path class="bifrost-band-mid" stroke="#2563eb"
+            d="M40 76A56 56 0 0 1 96 20A56 56 0 0 1 152 76"/>
+      <path class="bifrost-band-outer" stroke="#0891b2"
+            d="M28 76A68 68 0 0 1 96 8A68 68 0 0 1 164 76"/>
+    </g>
+    <!-- Deck last: it crosses in front of the arch. -->
+    <g class="bifrost-steel" stroke="#4b5563" stroke-width="8">
+      <path d="M4 52H188"/>     <!-- deck -->
+      <path d="M12 52V80"/>     <!-- end pier, near realm -->
+      <path d="M180 52V80"/>    <!-- end pier, far realm -->
+      <path d="M4 80H56"/>      <!-- ground, near realm -->
+      <path d="M136 80H188"/>   <!-- ground, far realm -->
+    </g>
   </g>
 </svg>
