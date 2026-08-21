@@ -104,8 +104,10 @@ curl -s http://localhost:7082/api/v1/backends | jq '.[] | {name, healthy, latenc
    ```yaml
    cache:
      enabled: true
-     memory:
-       max_size: "256MB"
+     storage:
+       type: memory
+       memory:
+         max_size: "256MB"
    ```
 
 ### Cause 2: DNS Resolution Slow
@@ -159,14 +161,27 @@ curl -x http://localhost:7080 https://example.com https://example.com/path -v 2>
 
 **Solution:**
 
-Enable and tune keep-alive settings:
+Keep inbound connections alive longer so clients can reuse them:
 
 ```yaml
 server:
   http:
-    idle_timeout: "120s"  # Keep connections alive longer
-    max_idle_conns_per_host: 100
+    idle_timeout: "120s"  # Keep client connections alive longer
 ```
+
+Outbound keep-alive is tuned in the top-level `network` section:
+
+```yaml
+network:
+  keepalive: "30s"  # TCP keep-alive period for outbound dials
+```
+
+:::note[Outbound pooling is not configurable]
+Bifrost does not expose connection-pool knobs (idle connection counts, per-host
+limits, idle connection lifetime) for outbound requests — Go's HTTP transport
+defaults apply. Tune `idle_timeout` on the listener and `network.keepalive`
+instead.
+:::
 
 ### Cause 4: TLS Handshake Overhead
 
@@ -212,7 +227,7 @@ curl -s http://localhost:7090/metrics | grep bifrost_requests_total
    rate_limit:
      enabled: true
      requests_per_second: 100
-     burst: 200
+     burst_size: 200
    ```
 
 2. **Use connection limits:**
@@ -332,36 +347,53 @@ curl -s http://localhost:7090/metrics | grep bifrost_cache
 
 **Solution:**
 
-Limit cache memory usage:
+Limit cache memory usage. All memory and disk settings live under
+`cache.storage`; use `tiered` storage to keep small objects in RAM and spill
+larger ones to disk:
 
 ```yaml
 cache:
-  memory:
-    max_size: "128MB"  # Limit memory cache
-    max_items: 10000
-
-  # Use disk cache for larger storage
-  disk:
-    enabled: true
-    path: "/var/cache/bifrost"
-    max_size: "1GB"
+  enabled: true
+  storage:
+    type: tiered
+    memory:
+      max_size: "128MB"  # Limit memory cache
+      max_entries: 10000
+    disk:
+      path: "/var/cache/bifrost"
+      max_size: "1GB"
+    tiered:
+      memory_threshold: "1MB"  # Larger objects go to disk
 ```
 
-### Cause 3: Connection Pool Growth
+:::caution[`storage.type` decides what is required]
+`type: memory` requires a `memory` block, `type: disk` requires a `disk` block
+with a `path`, and `type: tiered` requires both. Any other value is rejected at
+startup.
+:::
 
-Connection pools growing unbounded.
+### Cause 3: Connection Growth
+
+Too many simultaneous connections inflate memory usage.
 
 **Solution:**
 
-Configure connection pool limits:
+Cap concurrent connections per listener and process-wide:
 
 ```yaml
 server:
   http:
-    max_idle_conns: 100
-    max_idle_conns_per_host: 10
-    idle_conn_timeout: "90s"
+    max_connections: 10000  # Per listener, 0 = unlimited
+
+network:
+  max_connections: 20000  # Across all listeners, 0 = unlimited
 ```
+
+:::note[No pool tuning]
+Idle connection pooling for outbound requests is not configurable — Go's HTTP
+transport defaults apply. Only the connection ceilings above and the listener
+timeouts are exposed.
+:::
 
 ### Cause 4: Memory Leak (Rare)
 
@@ -409,17 +441,23 @@ netstat -s | grep -i fragment
 
 **Solution:**
 
+For a WireGuard backend (server config):
+
 ```yaml
-# For WireGuard
 backends:
   - name: wg-vpn
     type: wireguard
     config:
       mtu: 1280  # Conservative value
+```
 
-# For VPN mode
+For client VPN mode, the MTU belongs to the TUN device:
+
+```yaml
 vpn:
-  mtu: 1280
+  enabled: true
+  tun:
+    mtu: 1280
 ```
 
 ### Cause 2: Buffer Sizes Too Small
@@ -495,17 +533,25 @@ server:
     idle_timeout: "120s"
     max_connections: 50000
 
+network:
+  keepalive: "30s"
+  max_connections: 50000
+
 api:
   enable_request_log: false  # Disable for performance
 
 cache:
   enabled: true
-  memory:
-    max_size: "256MB"
-  disk:
-    enabled: true
-    path: "/var/cache/bifrost"
-    max_size: "2GB"
+  storage:
+    type: tiered
+    memory:
+      max_size: "256MB"
+      max_entries: 10000
+    disk:
+      path: "/var/cache/bifrost"
+      max_size: "2GB"
+    tiered:
+      memory_threshold: "1MB"
 ```
 
 ### Monitoring Configuration

@@ -9,12 +9,15 @@ This guide covers issues with VPN backends, tunnel configurations, and VPN mode.
 
 ## Quick Diagnostics
 
+Backend endpoints live on the server API (default `:7082`); VPN and mesh endpoints live on the
+client API (default `127.0.0.1:7383`).
+
 ```bash
-# Check backend health
+# Check backend health (server API)
 curl -s http://localhost:7082/api/v1/backends | jq '.[] | {name, type, healthy}'
 
-# Check VPN status (client)
-curl -s http://localhost:7082/api/v1/vpn/status | jq
+# Check VPN status (client API)
+curl -s http://localhost:7383/api/v1/vpn/status | jq
 
 # Test connectivity through tunnel
 curl -x http://localhost:7080 https://ipinfo.io/ip
@@ -382,7 +385,7 @@ sudo bifrost-client -c config.yaml
 ip addr show bifrost0
 
 # Check VPN status
-curl -s http://localhost:7082/api/v1/vpn/status | jq
+curl -s http://localhost:7383/api/v1/vpn/status | jq
 ```
 
 **Solution:**
@@ -392,15 +395,18 @@ Verify VPN configuration:
 ```yaml
 vpn:
   enabled: true
-  interface_name: bifrost0
-  # IP should be assigned automatically
+  tun:
+    name: bifrost0
+    # Address is assigned to the interface on startup
+    address: "10.255.0.1/24"
+    mtu: 1400
 ```
 
 Manually assign if needed:
 
 ```bash
 # Linux
-sudo ip addr add 10.0.0.2/24 dev bifrost0
+sudo ip addr add 10.255.0.1/24 dev bifrost0
 sudo ip link set bifrost0 up
 ```
 
@@ -426,10 +432,12 @@ Enable DNS interception:
 vpn:
   dns:
     enabled: true
-    servers:
+    listen: "10.255.0.1:53"
+    upstream:
       - "1.1.1.1"
       - "8.8.8.8"
-    cache_ttl: "5m"
+    cache_ttl: 5m
+    intercept_mode: all
 ```
 
 Flush DNS cache:
@@ -463,13 +471,20 @@ curl https://ipinfo.io/ip  # Should show VPN IP
 
 **Solution:**
 
-1. Check split tunnel configuration:
+1. Check split tunnel configuration. `mode` is the only switch, and it takes one of two values:
+
    ```yaml
+   # All traffic goes through the VPN except the destinations listed below
    vpn:
-     split:
-       mode: exclude  # All traffic through VPN except matching
-       # Or
-       mode: include  # Only matching traffic through VPN
+     split_tunnel:
+       mode: exclude
+   ```
+
+   ```yaml
+   # Only the destinations listed below go through the VPN
+   vpn:
+     split_tunnel:
+       mode: include
    ```
 
 2. Verify routes are set:
@@ -486,7 +501,7 @@ curl https://ipinfo.io/ip  # Should show VPN IP
 
 ```bash
 # Check split tunnel rules
-curl -s http://localhost:7082/api/v1/vpn/split/rules | jq
+curl -s http://localhost:7383/api/v1/vpn/split/rules | jq
 ```
 
 **Solution:**
@@ -495,7 +510,7 @@ Verify rule configuration:
 
 ```yaml
 vpn:
-  split:
+  split_tunnel:
     mode: exclude  # Traffic to these destinations bypasses VPN
 
     # Domain-based
@@ -508,10 +523,14 @@ vpn:
       - "192.168.0.0/16"
       - "10.0.0.0/8"
 
-    # App-based
+    # App-based (process name, optional full path)
     apps:
       - name: "Slack"
       - name: "Zoom"
+
+    # Checked before everything else, in either mode
+    always_bypass:
+      - "127.0.0.0/8"
 ```
 
 ---
@@ -612,15 +631,24 @@ backends:
 
 **Solution:**
 
-Use a reliable health check target:
+Use a reliable health check target. For `type: http` the probe URL is built as
+`<scheme>://<target><path>`, so put the host in `target` and keep the scheme and path in their own
+fields — a full URL in `target` does not work:
 
 ```yaml
 health_check:
   type: http
-  target: "https://www.google.com/generate_204"  # Google's connectivity check
-  # Or
+  scheme: https
+  target: "www.google.com"
+  path: "/generate_204"   # Google's connectivity check
+```
+
+For `type: tcp` the target is a plain `host:port`:
+
+```yaml
+health_check:
   type: tcp
-  target: "1.1.1.1:443"  # Cloudflare
+  target: "1.1.1.1:443"   # Cloudflare
 ```
 
 ---
@@ -634,26 +662,29 @@ health_check:
 **Diagnosis:**
 
 ```bash
-# Check NAT type
-curl -s http://localhost:7082/api/v1/p2p/nat | jq
+# Check mesh node status (peer ID, virtual IP, direct vs relayed connections)
+curl -s http://localhost:7383/api/v1/mesh/status | jq
 
 # Check discovered peers
-curl -s http://localhost:7082/api/v1/mesh/networks/my-network/peers | jq
+curl -s http://localhost:7383/api/v1/mesh/peers | jq
 
-# Check connection status
-curl -s http://localhost:7082/api/v1/p2p/connections | jq
+# Check which peers are actually connected
+curl -s http://localhost:7383/api/v1/mesh/peers/connected | jq
 ```
 
 **Solution:**
 
-1. **Symmetric NAT detected**: Enable TURN relay
+1. **Symmetric NAT detected**: Enable TURN relay. STUN and TURN are subsections of `mesh`, not
+   top-level keys:
+
    ```yaml
-   turn:
-     enabled: true
-     servers:
-       - url: "turn:turn.example.com:3478"
-         username: "${TURN_USER}"
-         password: "${TURN_PASS}"
+   mesh:
+     turn:
+       enabled: true
+       servers:
+         - url: "turn:turn.example.com:3478"
+           username: "${TURN_USER}"
+           password: "${TURN_PASS}"
    ```
 
 2. **Firewall blocking**: Allow UDP traffic
@@ -677,12 +708,13 @@ nc -u -z -v stun.l.google.com 19302
 Add multiple STUN servers:
 
 ```yaml
-stun:
-  servers:
-    - "stun:stun.l.google.com:19302"
-    - "stun:stun1.l.google.com:19302"
-    - "stun:stun.cloudflare.com:3478"
-  timeout: 5s
+mesh:
+  stun:
+    servers:
+      - "stun:stun.l.google.com:19302"
+      - "stun:stun1.l.google.com:19302"
+      - "stun:stun.cloudflare.com:3478"
+    timeout: 5s
 ```
 
 ### TURN Relay Not Working
@@ -701,12 +733,13 @@ turnutils_stunclient -p 3478 turn.example.com
 Verify TURN configuration:
 
 ```yaml
-turn:
-  enabled: true
-  servers:
-    - url: "turn:turn.example.com:3478"
-      username: "user"
-      password: "password"
+mesh:
+  turn:
+    enabled: true
+    servers:
+      - url: "turn:turn.example.com:3478"
+        username: "user"
+        password: "password"
 ```
 
 ---
@@ -718,7 +751,7 @@ turn:
 curl -s http://localhost:7082/api/v1/backends | jq
 
 # VPN status
-curl -s http://localhost:7082/api/v1/vpn/status | jq
+curl -s http://localhost:7383/api/v1/vpn/status | jq
 
 # WireGuard interface
 sudo wg show
@@ -738,9 +771,9 @@ curl -x http://localhost:7080 https://ipinfo.io/ip
 # DNS test
 nslookup example.com
 
-# NAT type (mesh)
-curl -s http://localhost:7082/api/v1/p2p/nat | jq
+# Mesh status (includes direct vs relayed connection counts)
+curl -s http://localhost:7383/api/v1/mesh/status | jq
 
 # Mesh peers
-curl -s http://localhost:7082/api/v1/mesh/status | jq
+curl -s http://localhost:7383/api/v1/mesh/peers | jq
 ```

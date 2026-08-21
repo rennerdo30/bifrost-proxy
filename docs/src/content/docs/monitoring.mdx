@@ -51,6 +51,13 @@ These are the exact series exported by the server (see
 | `bifrost_connections_active` | Gauge | `protocol`, `backend` | Current active connections |
 | `bifrost_connection_duration_seconds` | Histogram | `protocol`, `backend` | Connection duration |
 
+> **`backend` on the active gauge is always empty.** A connection is accepted
+> before routing picks a backend, so `bifrost_connections_active` is only ever
+> tracked at protocol scope and its `backend` label is the empty string. The
+> resolved backend name is recorded on `bifrost_connections_total` and
+> `bifrost_connection_duration_seconds` once the connection finishes. For a live
+> per-backend breakdown use `bifrost_backend_connections` instead.
+
 #### Request Metrics
 
 | Metric | Type | Labels | Description |
@@ -89,6 +96,30 @@ These are the exact series exported by the server (see
 | `bifrost_auth_attempts_total` | Counter | `method` | Total authentication attempts |
 | `bifrost_auth_failures_total` | Counter | `method`, `reason` | Total authentication failures |
 
+#### Cache Metrics
+
+Exported **only when `cache.enabled: true`** — the cache collectors are
+registered together with the cache manager at startup, so on a server with
+caching off the `bifrost_cache_*` series are absent rather than zero.
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `bifrost_cache_hits_total` | Counter | `domain` | Cache hits, by request host |
+| `bifrost_cache_misses_total` | Counter | `domain`, `reason` | Cache misses; `reason` is `no_rule`, `not_found` or `expired` |
+| `bifrost_cache_bytes_served_total` | Counter | `source` | Bytes served, `source="cache"` or `source="origin"` |
+| `bifrost_cache_bytes_cached_total` | Counter | — | Bytes written into the cache |
+| `bifrost_cache_storage_size_bytes` | Gauge | `tier` | Current storage size per tier |
+| `bifrost_cache_storage_entries` | Gauge | `tier` | Current entry count per tier |
+| `bifrost_cache_storage_usage_percent` | Gauge | `tier` | Storage usage as a percentage of `max_size` |
+| `bifrost_cache_evictions_total` | Counter | `tier`, `reason` | Evictions; `reason` is `size` or `ttl` |
+| `bifrost_cache_operation_duration_seconds` | Histogram | `operation` | Latency of `get` and `put` operations |
+| `bifrost_cache_active_rules` | Gauge | — | Number of active cache rules |
+| `bifrost_cache_active_presets` | Gauge | — | Number of enabled cache presets |
+
+The `tier` label is `memory` or `disk` for those storage types; a `tiered`
+cache reports both. `bifrost_cache_storage_usage_percent` is only set when the
+tier has a non-zero `max_size`.
+
 #### System Metrics
 
 | Metric | Type | Description |
@@ -98,9 +129,6 @@ These are the exact series exported by the server (see
 
 > **Note:** There is no `bifrost_memory_bytes` gauge — use the standard
 > `process_resident_memory_bytes` (from the process collector) for memory usage.
-> Prometheus-format cache metrics (`bifrost_cache_*`) are **not** exported; cache
-> statistics are available through the REST API (`/api/v1/cache/stats`) and the
-> Web UI instead.
 
 ### Example Queries
 
@@ -125,6 +153,17 @@ bifrost_backend_health == 0
 
 # Backend error rate
 sum(rate(bifrost_backend_errors_total[5m])) by (backend)
+
+# Cache hit ratio (requires cache.enabled: true)
+sum(rate(bifrost_cache_hits_total[5m]))
+  / (sum(rate(bifrost_cache_hits_total[5m])) + sum(rate(bifrost_cache_misses_total[5m])))
+
+# Share of bytes served from cache rather than origin
+sum(rate(bifrost_cache_bytes_served_total{source="cache"}[5m]))
+  / sum(rate(bifrost_cache_bytes_served_total[5m]))
+
+# Disk cache fill level
+bifrost_cache_storage_usage_percent{tier="disk"}
 
 # Resident memory (from the process collector)
 process_resident_memory_bytes
@@ -360,8 +399,15 @@ groups:
 logging:
   level: info
   format: json
-  output: stdout  # or file path
+  output: stdout      # stdout, stderr, or a file path
+  time_format: "2006-01-02T15:04:05.000Z07:00"
+  max_size_mb: 100    # File outputs only: rotate above this size (<= 0 disables rotation)
+  max_backups: 14     # Rotated files to retain (<= 0 keeps all)
 ```
+
+`max_size_mb` and `max_backups` drive Bifrost's built-in size-based rotation and
+apply only when `output` is a file path — see
+[Log Rotation](/deployment#log-rotation) in the deployment guide.
 
 ### Log Levels
 
