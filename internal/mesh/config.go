@@ -4,6 +4,7 @@ package mesh
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"time"
 
@@ -134,10 +135,19 @@ type SecurityConfig struct {
 	// If empty, a new key pair will be generated.
 	PrivateKey string `yaml:"private_key,omitempty" json:"private_key,omitempty"`
 
-	// AllowedPeers is a list of allowed peer public keys (empty = allow all).
+	// AllowedPeers restricts which peer public keys (base64, as distributed by
+	// discovery) may join. When empty there is no explicit allowlist and any
+	// peer announced by discovery is accepted; inbound sessions are still
+	// limited to keys learned from discovery and are individually authenticated,
+	// so empty is not "accept anyone on the network". Set it when the discovery
+	// server is not fully trusted.
 	AllowedPeers []string `yaml:"allowed_peers,omitempty" json:"allowed_peers,omitempty"`
 
-	// RequireEncryption controls whether all connections must be encrypted (default: true).
+	// RequireEncryption is retained for compatibility and is always effectively
+	// true: mesh traffic is unconditionally encrypted and authenticated with
+	// ChaCha20-Poly1305 over an authenticated X25519 handshake, and there is no
+	// plaintext transport to fall back to. Validate normalizes false to true and
+	// warns, so the field can never imply a mode that does not exist.
 	RequireEncryption bool `yaml:"require_encryption" json:"require_encryption"`
 }
 
@@ -246,6 +256,15 @@ func (c *Config) Validate() error {
 	// drops traffic.
 	if c.Connection.RelayViaPeers {
 		return errors.New("mesh: relay_via_peers is not yet supported (multi-hop peer relaying is unimplemented); set it to false")
+	}
+
+	// There is no unencrypted mesh transport: every data frame is sealed with
+	// ChaCha20-Poly1305 under per-session keys. Normalize rather than reject, so
+	// existing configs (and API callers that post a zero-valued security block)
+	// keep starting, but never leave the impression that encryption is optional.
+	if !c.Security.RequireEncryption {
+		slog.Warn("mesh: require_encryption=false is not supported and has been ignored; mesh traffic is always encrypted and authenticated")
+		c.Security.RequireEncryption = true
 	}
 
 	return nil
