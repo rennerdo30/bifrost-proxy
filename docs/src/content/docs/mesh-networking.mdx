@@ -111,9 +111,10 @@ sequenceDiagram
     end
 
     Note over A,B: 4. Handshake & Encryption
-    A->>B: Handshake Init (public key + random)
-    B-->>A: Handshake Response (public key + random)
-    Note over A,B: Derive shared secret via Curve25519
+    A->>B: Handshake Init (static + ephemeral public key, timestamp, MAC)
+    Note over B: Authorize key, verify MAC, reject replays
+    B-->>A: Handshake Response (static + ephemeral public key, timestamp, MAC)
+    Note over A,B: Derive per-session keys from the handshake transcript
     A<<->>B: Encrypted data (ChaCha20-Poly1305)
 ```
 
@@ -470,26 +471,43 @@ connection:
 
 All P2P connections use:
 
-- **Key Generation**: Curve25519 key pairs
-- **Key Exchange**: ECDH (Elliptic Curve Diffie-Hellman)
+- **Key Generation**: X25519 (Curve25519) static key pairs, plus a fresh
+  ephemeral key pair per handshake
+- **Key Exchange**: static-static X25519 for peer authentication,
+  ephemeral-ephemeral X25519 for per-session key material and forward secrecy
+- **Handshake Authentication**: HMAC-SHA256 over every handshake message, keyed
+  from the static-static shared secret
 - **Encryption**: ChaCha20-Poly1305 AEAD
-- **Key Derivation**: Separate send/receive keys
+- **Key Derivation**: HKDF-SHA256, separate send/receive keys, bound to the full
+  handshake transcript
+- **Replay Protection**: strictly increasing handshake timestamps, plus a
+  sliding-window bitmap over data-frame nonces
 
 **Handshake Protocol:**
+
+Both handshake messages are a fixed 105 bytes:
+
+```
+[0]        message type (0x01 init, 0x02 response)
+[1:33]     sender's static X25519 public key
+[33:65]    sender's per-session ephemeral X25519 public key
+[65:73]    handshake timestamp (chosen by the initiator, echoed by the responder)
+[73:105]   HMAC-SHA256 authenticator over bytes [0:73]
+```
 
 ```mermaid
 sequenceDiagram
     participant A as Initiator
     participant B as Responder
 
-    Note over A: Generate ephemeral keypair
-    A->>B: Handshake Init<br/>[0x01 | PublicKey | Random]
+    Note over A: Generate ephemeral keypair<br/>Compute static-static secret<br/>Derive MAC key
+    A->>B: Handshake Init<br/>[0x01 | StaticPub | EphPub | Timestamp | MAC]
 
-    Note over B: Generate ephemeral keypair<br/>Compute shared secret
-    B-->>A: Handshake Response<br/>[0x02 | PublicKey | Random]
+    Note over B: Verify MAC (proves A holds<br/>its static private key)<br/>Reject replayed timestamp<br/>Generate ephemeral keypair
+    B-->>A: Handshake Response<br/>[0x02 | StaticPub | EphPub | EchoedTimestamp | MAC]
 
-    Note over A: Compute shared secret
-    Note over A,B: Derive send/receive keys
+    Note over A: Verify MAC and timestamp echo
+    Note over A,B: Compute ephemeral-ephemeral secret<br/>Derive send/receive keys from transcript
 
     A->>B: Encrypted Data<br/>[0x03 | Nonce | Ciphertext | Tag]
     B-->>A: Encrypted Data<br/>[0x03 | Nonce | Ciphertext | Tag]
@@ -498,15 +516,73 @@ sequenceDiagram
 **Key Derivation:**
 
 ```go
-// Simplified - production uses HKDF
-sendKey = H(sharedSecret || "send")
-recvKey = H(sharedSecret || "recv")
+staticShared    = X25519(localStaticPriv, remoteStaticPub)   // authenticates the peer
+ephemeralShared = X25519(localEphPriv,    remoteEphPub)      // fresh every handshake
+
+// Both static public keys, both ephemeral public keys (initiator first) and the
+// handshake timestamp. Binding the transcript means the two ends derive matching
+// keys only if they agree on every handshake input.
+transcript = initStaticPub || respStaticPub || initEphPub || respEphPub || timestamp
+
+sendKey = HKDF-SHA256(ikm: staticShared, salt: ephemeralShared, info: "send" || transcript)
+recvKey = HKDF-SHA256(ikm: staticShared, salt: ephemeralShared, info: "recv" || transcript)
 
 // Direction determined by public key comparison
 if localPubKey > remotePubKey {
     sendKey, recvKey = recvKey, sendKey
 }
 ```
+
+Because `ephemeralShared` is fresh for every handshake, session keys are unique
+per connection even though `staticShared` is fixed for a peer pair. This is what
+makes it safe for the frame nonce counter to restart at 0 on each reconnect: a
+`(key, nonce)` pair is never reused. Discarding the ephemeral private keys after
+the handshake also gives each session forward secrecy — compromising a static
+private key later does not decrypt recorded traffic.
+
+### Peer Authorization
+
+Inbound sessions are authorized **before** the handshake is accepted, and fail
+closed. A peer must clear all of the following:
+
+1. **Known to discovery.** Only public keys this node learned from the discovery
+   server can open an inbound session. A host that merely knows a peer's public
+   key — which is not a secret, since discovery distributes it — is refused and
+   logged as `rejecting handshake from unknown peer`.
+2. **On the allowlist**, when `security.allowed_peers` is set. See below.
+3. **Proves possession of the static private key**, via the handshake
+   authenticator. A spoofed identity is refused and logged as
+   `rejecting unauthenticated handshake`.
+4. **Presents a fresh handshake timestamp.** A replayed initiation is refused and
+   logged as `rejecting replayed handshake initiation`. Without this check an
+   attacker could resend a captured handshake, take over the victim's connection
+   slot, and blackhole it.
+
+Authorization is revoked when a peer leaves the mesh, so a departed peer's key
+cannot be reused to open new sessions.
+
+Only frames from a peer that cleared all four checks are decrypted and written to
+the local TUN/TAP device.
+
+#### `allowed_peers`
+
+`security.allowed_peers` narrows trust from "whatever the discovery server
+announces" to an explicit set of base64 public keys. **An empty list means "no
+explicit allowlist", not "allow anybody"**: peers still have to be announced by
+discovery and still have to authenticate. Set it when you do not fully trust the
+discovery server — a compromised coordinator can otherwise announce a peer of its
+choosing.
+
+```yaml
+  security:
+    allowed_peers:
+      - "Uy8x5m2Nc0h1a2b3c4d5e6f7g8h9i0j1k2l3m4n5o6p="
+      - "9dJk3Lm4Np5Qr6St7Uv8Wx9Yz0Ab1Cd2Ef3Gh4Ij5K="
+```
+
+Peers outside the list are ignored at discovery time and logged as
+`ignoring peer not in allowed_peers list`. At startup the node logs which stance
+is in effect (`mesh peer authorization: ...`).
 
 ## Routing Protocol
 
@@ -621,8 +697,10 @@ mesh:
 
   security:
     private_key: ""           # Auto-generated if empty
-    require_encryption: true
-    allowed_peers: []         # Empty = allow all
+    require_encryption: true  # Always on; false is ignored with a warning
+    allowed_peers: []         # Empty = no explicit allowlist (discovery-announced
+                              # peers only, each still authenticated). See
+                              # "Peer Authorization" above.
 ```
 
 ### Self-Hosted TURN Server
@@ -685,6 +763,19 @@ sudo iptables -L -n | grep -i drop
 1. Increase `connect_timeout`
 2. Add more STUN servers
 3. Check corporate firewall/proxy
+
+#### Problem: Handshake is rejected
+
+The inbound handshake path fails closed, so a peer that cannot be authorized is
+dropped rather than connected. The log line names the reason:
+
+| Log message | Meaning | Fix |
+| --- | --- | --- |
+| `rejecting handshake from unknown peer` | The peer's public key was never announced by discovery, or was revoked when the peer left | Confirm both peers use the same `network_id` and discovery server, and that the peer is currently registered |
+| `ignoring peer not in allowed_peers list` | `security.allowed_peers` is set and does not contain the peer's key | Add the peer's base64 public key to the list, or clear the list |
+| `rejecting unauthenticated handshake` | The sender does not hold the static private key for the public key it claimed — a spoofing attempt, or mismatched `private_key` config | Verify the peer's `security.private_key` matches the key it publishes via discovery |
+| `rejecting replayed handshake initiation` | A handshake initiation was seen twice, which is a replay | Expected when traffic is being replayed; otherwise check for a middlebox duplicating UDP |
+| `invalid handshake init: unexpected length (incompatible peer version?)` | The peer speaks an older, incompatible handshake format | Upgrade all mesh peers to the same version |
 
 ### TURN Relay Issues
 

@@ -100,6 +100,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
   reporting success while changing nothing but an in-memory field
 
+### Security
+- **Mesh P2P handshakes are now authenticated.** Each handshake message carries an
+  HMAC-SHA256 authenticator keyed from the static-static X25519 secret, so a host
+  must prove it holds the static private key for the public key it claims. Peer
+  public keys are distributed by discovery and are not secrets, so previously
+  anyone who could reach the mesh UDP port and knew a peer's key could complete a
+  handshake in its name, take over that peer's connection slot and endpoint, and
+  blackhole it
+- **Replayed mesh handshakes are rejected.** Handshake initiations carry a
+  strictly increasing timestamp and are refused if not newer than the last one
+  accepted for that public key, and handshake responses must echo the timestamp
+  of the initiation they answer, so a captured handshake cannot be replayed to
+  hijack a connection slot or resurrect old key material
+- **Mesh session keys are bound to the handshake transcript.** Key derivation now
+  mixes both static public keys, both ephemeral public keys and the handshake
+  timestamp into the HKDF info string, so the two ends derive matching keys only
+  if they agree on every handshake input
+- **Peer authorization is revoked when a peer leaves the mesh.** It previously
+  lasted for the lifetime of the process, leaving a departed peer's (non-secret)
+  public key able to open new inbound sessions and inject frames into the local
+  TUN/TAP device
+- `mesh.security.require_encryption: false` was silently ignored; it is now
+  normalized to `true` with a warning, so the setting cannot imply a plaintext
+  mesh transport that does not exist
+- The startup log now states which peer-authorization stance is in effect
+  (`allowed_peers` enforced, or discovery-announced peers only), and each inbound
+  rejection is logged with its reason
+
+> [!IMPORTANT]
+> The mesh handshake wire format changed (both messages are now a fixed 105
+> bytes). Mesh peers must be upgraded together: a peer running an older build
+> cannot complete a handshake with an upgraded one, and logs
+> `invalid handshake init: unexpected length (incompatible peer version?)`. The
+> handshake has no version-negotiation field, so there is no mixed-version
+> fallback. Nothing outside the mesh data plane is affected.
+
 ### Fixed
 - A config save that changed both a hot-reloadable and a restart-required section
   skipped the hot-reload entirely, so e.g. a new `access_control` blocklist saved
