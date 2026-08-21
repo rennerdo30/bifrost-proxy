@@ -1,10 +1,18 @@
 import { useState, useCallback, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Section } from '../Section'
 import { NativeUsersForm } from '../auth-forms/NativeUsersForm'
 import { ApiKeysForm } from '../auth-forms/ApiKeysForm'
 import { AuthProviderConfigForm } from '../auth-forms/AuthProviderConfigForm'
 import { NegotiateForm } from '../auth-forms/NegotiateForm'
-import type { AuthConfig, AuthProvider, AuthProviderConfig, AuthProviderType } from '../../../api/types'
+import { api } from '../../../api/client'
+import type {
+  AuthConfig,
+  AuthProvider,
+  AuthProviderConfig,
+  AuthProviderType,
+  AuthPluginAvailability,
+} from '../../../api/types'
 
 interface AuthSectionProps {
   config: AuthConfig
@@ -15,39 +23,59 @@ interface AuthTypeOption {
   value: AuthProviderType
   label: string
   description: string
-  // warning marks provider types that are known not to authenticate in the
-  // default/Docker server build so operators are not misled into relying on
-  // them. The type is still selectable (it may work in a custom build).
-  warning?: string
 }
 
-// All registered auth plugin types (see internal/auth/plugin).
+// Display metadata for the registered auth plugin types (see
+// internal/auth/plugin). Whether a type actually WORKS is deliberately not
+// listed here — it is fetched from the server, because it can depend on how the
+// binary was built (`system` needs `-tags pam`) and this list has drifted from
+// the code before.
 const authTypes: AuthTypeOption[] = [
   { value: 'none', label: 'None', description: 'Allow all requests (no authentication)' },
   { value: 'native', label: 'Native', description: 'Built-in user database with bcrypt passwords' },
-  {
-    value: 'system',
-    label: 'System (PAM)',
-    description: 'Authenticate against OS users via PAM',
-    warning:
-      'PAM is compiled out of the default and Docker builds and fails closed (rejects all logins). It only works in a build made with the "pam" tag on Linux with cgo enabled.',
-  },
+  { value: 'system', label: 'System (PAM)', description: 'Authenticate against OS users via PAM' },
   { value: 'ldap', label: 'LDAP', description: 'Authenticate against LDAP/Active Directory' },
   { value: 'oauth', label: 'OAuth/OIDC', description: 'Authenticate via OAuth 2.0 / OpenID Connect' },
-  { value: 'jwt', label: 'JWT', description: 'Verify JWT bearer tokens via JWKS or a static key' },
+  { value: 'jwt', label: 'JWT', description: 'Verify JWT bearer tokens via JWKS, a static key, or an HMAC secret' },
   { value: 'apikey', label: 'API Key', description: 'Authenticate via API keys in a request header' },
   { value: 'mtls', label: 'mTLS', description: 'Authenticate via client TLS certificates' },
   { value: 'kerberos', label: 'Kerberos (SPNEGO)', description: 'Negotiate authentication via Kerberos' },
-  {
-    value: 'ntlm',
-    label: 'NTLM',
-    description: 'Negotiate authentication via NTLM',
-    warning:
-      'NTLM Type 3 validation is not implemented on the server and fails closed (rejects every client). Selecting it will block all requests routed through it.',
-  },
+  { value: 'ntlm', label: 'NTLM', description: 'Negotiate authentication via NTLM' },
   { value: 'hotp', label: 'HOTP (counter-based OTP)', description: 'One-time passwords using an HMAC counter' },
   { value: 'totp', label: 'TOTP (time-based OTP)', description: 'One-time passwords using a time counter (authenticator apps)' },
+  {
+    value: 'mfa_wrapper',
+    label: 'MFA Wrapper',
+    description: 'Combine a primary provider with TOTP/HOTP as a second factor',
+  },
 ]
+
+// How long the plugin availability list is considered fresh. It only changes
+// when the server binary changes, so it does not need frequent refetching.
+const AUTH_PLUGINS_STALE_MS = 5 * 60 * 1000
+
+// useAuthPluginAvailability reports, per provider type, whether the connected
+// server can actually authenticate with it.
+//
+// Returns an empty map while loading or if the endpoint is unavailable (an older
+// server), in which case nothing is flagged — the UI must not invent warnings it
+// cannot substantiate, and the server still refuses unusable providers on save.
+function useAuthPluginAvailability(): Record<string, AuthPluginAvailability> {
+  const { data } = useQuery({
+    queryKey: ['auth-plugins'],
+    queryFn: () => api.getAuthPlugins(),
+    staleTime: AUTH_PLUGINS_STALE_MS,
+    retry: false,
+  })
+
+  return useMemo(() => {
+    const byType: Record<string, AuthPluginAvailability> = {}
+    for (const plugin of data?.plugins ?? []) {
+      byType[plugin.name] = plugin.availability
+    }
+    return byType
+  }, [data])
+}
 
 // Sensible starting config map per plugin type. Empty maps are fine for
 // types whose required fields the user must fill in.
@@ -65,19 +93,59 @@ function getDefaultProviderConfig(type: AuthProviderType): AuthProviderConfig {
       return { issuer: 'Bifrost Proxy', digits: 6, period: 30, algorithm: 'SHA1', skew: 1 }
     case 'hotp':
       return { digits: 6, algorithm: 'SHA1', look_ahead: 10 }
+    case 'mfa_wrapper':
+      // Only the inline primary/secondary block format works; the server refuses
+      // the by-name (primary_provider/mfa_provider) format outright.
+      return {
+        primary: { mode: 'native', config: { users: [] } },
+        secondary: { mode: 'totp', config: { secrets: {} } },
+        mfa_required: 'always',
+        password_format: 'separated',
+        separator: ':',
+        mfa_code_length: 6,
+      }
     default:
       return {}
   }
 }
 
-function AuthTypeWarning({ type }: { type: AuthProviderType }) {
-  const warning = authTypes.find((t) => t.value === type)?.warning
-  if (!warning) return null
+// AuthTypeWarning states plainly that a provider cannot authenticate, using the
+// server's own reason. A provider that rejects every login used to be offered
+// with a full config form and no indication that it was a dead end.
+function AuthTypeWarning({ availability }: { availability?: AuthPluginAvailability }) {
+  if (!availability || availability.state === 'available') return null
+
+  const unimplemented = availability.state === 'unimplemented'
+  // 'unimplemented' is an error: the server refuses to save it at all.
+  // 'build_disabled' is a warning: the config is valid, this build just cannot
+  // honour it.
+  const tone = unimplemented
+    ? 'bg-bifrost-error/10 border-bifrost-error/30 text-bifrost-error'
+    : 'bg-bifrost-warning/10 border-bifrost-warning/30 text-bifrost-warning'
+
   return (
-    <div className="mt-3 p-3 bg-bifrost-warning/10 border border-bifrost-warning/30 rounded-lg text-xs text-bifrost-warning">
-      <strong>Not functional in this build:</strong> {warning}
+    <div className={`mt-3 p-3 border rounded-lg text-xs ${tone}`} role="alert">
+      <strong>
+        {unimplemented
+          ? 'Not functional — the server will refuse this configuration:'
+          : 'Not functional in this server build:'}
+      </strong>{' '}
+      {availability.reason}
     </div>
   )
+}
+
+// typeOptionLabel appends the availability state to the dropdown label so the
+// list itself is honest, not just the panel below it.
+function typeOptionLabel(option: AuthTypeOption, availability?: AuthPluginAvailability): string {
+  switch (availability?.state) {
+    case 'unimplemented':
+      return `${option.label} — not functional`
+    case 'build_disabled':
+      return `${option.label} — unavailable in this build`
+    default:
+      return option.label
+  }
 }
 
 function ProviderConfigEditor({
@@ -108,6 +176,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
   const [newProviderName, setNewProviderName] = useState('')
 
   const providers = useMemo(() => config.providers || [], [config.providers])
+  const availabilityByType = useAuthPluginAvailability()
 
   const handleAddProvider = useCallback(() => {
     if (!newProviderName.trim()) return
@@ -206,6 +275,18 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                         {provider.name}
                       </span>
                       <span className="badge badge-info text-xs">{provider.type}</span>
+                      {/* Flag a dead-end provider in the collapsed row too, so it
+                          is visible without expanding the form. */}
+                      {availabilityByType[provider.type]?.state === 'unimplemented' && (
+                        <span className="badge badge-error text-xs" title={availabilityByType[provider.type]?.reason}>
+                          Not functional
+                        </span>
+                      )}
+                      {availabilityByType[provider.type]?.state === 'build_disabled' && (
+                        <span className="badge badge-warning text-xs" title={availabilityByType[provider.type]?.reason}>
+                          Unavailable in this build
+                        </span>
+                      )}
                       <span className="text-xs text-bifrost-muted">Priority: {provider.priority}</span>
                     </div>
                   </div>
@@ -295,8 +376,19 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                         className="input"
                       >
                         {authTypes.map((t) => (
-                          <option key={t.value} value={t.value}>
-                            {t.label}
+                          <option
+                            key={t.value}
+                            value={t.value}
+                            // A type that can never authenticate must not be
+                            // selectable. The provider's CURRENT type stays
+                            // selectable so an existing bad config still renders
+                            // (and can be disabled or removed) instead of being
+                            // silently rewritten to something else.
+                            disabled={
+                              availabilityByType[t.value]?.state === 'unimplemented' && t.value !== provider.type
+                            }
+                          >
+                            {typeOptionLabel(t, availabilityByType[t.value])}
                           </option>
                         ))}
                       </select>
@@ -306,7 +398,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                     </div>
                   </div>
 
-                  <AuthTypeWarning type={provider.type} />
+                  <AuthTypeWarning availability={availabilityByType[provider.type]} />
 
                   <ProviderConfigEditor
                     type={provider.type}
@@ -343,8 +435,15 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                   className="input"
                 >
                   {authTypes.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
+                    <option
+                      key={t.value}
+                      value={t.value}
+                      // Adding a provider that rejects every login is never what
+                      // the operator wants, and the server would refuse to save
+                      // it anyway — so it cannot be picked here.
+                      disabled={availabilityByType[t.value]?.state === 'unimplemented'}
+                    >
+                      {typeOptionLabel(t, availabilityByType[t.value])}
                     </option>
                   ))}
                 </select>
@@ -353,7 +452,7 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                 </p>
               </div>
             </div>
-            <AuthTypeWarning type={newProviderType} />
+            <AuthTypeWarning availability={availabilityByType[newProviderType]} />
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setShowAddForm(false)} className="btn btn-ghost">
                 Cancel
