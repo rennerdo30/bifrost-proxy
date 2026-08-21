@@ -58,7 +58,7 @@ func TestConfigValidate(t *testing.T) {
 	})
 
 	// There is no plaintext mesh transport, so require_encryption: false must be
-	// normalized rather than honoured or rejected — honouring it would imply a
+	// normalized rather than honored or rejected — honoring it would imply a
 	// mode that does not exist, and rejecting it would break configs that arrive
 	// with a zero-valued security block.
 	t.Run("require_encryption false is normalized to true", func(t *testing.T) {

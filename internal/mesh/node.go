@@ -388,7 +388,7 @@ func (n *MeshNode) initializeP2PManager() error {
 		// YAML setting: inbound sessions are only accepted from public keys this
 		// node learned from discovery (and, when configured, that also appear in
 		// security.allowed_peers). There is no supported way to reopen the
-		// fail-open behaviour, because a public key is not a secret.
+		// fail-open behavior, because a public key is not a secret.
 	}
 
 	pm, err := p2p.NewP2PManager(pmConfig)
