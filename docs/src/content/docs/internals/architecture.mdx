@@ -446,6 +446,12 @@ graph TB
         MACExpiry[MAC Table Expiry]
     end
 
+    subgraph "Shared State"
+        BackendMgr[Backend Manager]
+        Router[Router]
+        ActiveConns[Active Connection Count]
+    end
+
     subgraph "Synchronization"
         WG[sync.WaitGroup]
         Mutex[sync.RWMutex]
@@ -472,9 +478,9 @@ graph TB
 
     WG -.->|Track| HTTPServe
     WG -.->|Track| SOCKSServe
-    Mutex -.->|Protect| Backend Manager
+    Mutex -.->|Protect| BackendMgr
     Mutex -.->|Protect| Router
-    Atomic -.->|Count| Active Connections
+    Atomic -.->|Count| ActiveConns
 
     style Main fill:#4a90e2,stroke:#2c5aa0,color:#fff
     style WG fill:#7b68ee,stroke:#5a4fcf,color:#fff
@@ -756,7 +762,7 @@ graph LR
         Interface[Backend Interface]
     end
 
-    subgraph "Factory"
+    subgraph "Construction"
         Factory[Backend Factory]
         Create[Create Method]
     end
@@ -1034,14 +1040,22 @@ sequenceDiagram
 ```yaml
 # Low-power device optimizations
 metrics:
-  collection_interval: "60s"  # Reduce from 15s default
+  collection_interval: "60s"    # Reduce from the 15s default
 
-websocket:
-  max_clients: 10  # Reduce from 100 default
+api:
+  websocket_max_clients: 10     # Reduce from the 100 default
 
-connection_limits:
-  max_connections: 1000  # Reduce from 10000
+server:
+  http:
+    max_connections: 1000       # Per-listener ceiling (0 = unlimited)
+
+network:
+  max_connections: 1000         # Process-wide ceiling across all listeners
 ```
+
+The connection ceilings live on the listener (`server.http.max_connections`,
+`server.socks5.max_connections`) and process-wide under `network`; there is no
+`connection_limits` or top-level `websocket` section.
 
 ## Context and Request Tracing
 

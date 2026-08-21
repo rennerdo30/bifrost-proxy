@@ -146,13 +146,15 @@ sequenceDiagram
 **Default STUN Servers:**
 
 ```yaml
-stun:
-  servers:
-    - "stun:stun.l.google.com:19302"
-    - "stun:stun1.l.google.com:19302"
-    - "stun:stun2.l.google.com:19302"
-    - "stun:stun3.l.google.com:19302"
-    - "stun:stun4.l.google.com:19302"
+mesh:
+  stun:
+    servers:
+      - "stun:stun.l.google.com:19302"
+      - "stun:stun1.l.google.com:19302"
+      - "stun:stun2.l.google.com:19302"
+      - "stun:stun3.l.google.com:19302"
+      - "stun:stun4.l.google.com:19302"
+    timeout: 5s
 ```
 
 ### TURN (Traversal Using Relays around NAT)
@@ -179,12 +181,13 @@ TURN provides relay services when direct connections are impossible (e.g., symme
 **Configuration:**
 
 ```yaml
-turn:
-  enabled: true
-  servers:
-    - url: "turn:turn.example.com:3478"
-      username: "user"
-      password: "secret"
+mesh:
+  turn:
+    enabled: true
+    servers:
+      - url: "turn:turn.example.com:3478"
+        username: "user"
+        password: "secret"
 ```
 
 ### ICE (Interactive Connectivity Establishment)
@@ -450,12 +453,13 @@ flowchart LR
 **Configuration:**
 
 ```yaml
-connection:
-  direct_connect: true      # Try direct first
-  relay_enabled: true       # Enable TURN relay
-  relay_via_peers: false    # Multi-hop peer relaying is NOT implemented; setting true is rejected at startup
-  connect_timeout: 30s
-  keep_alive_interval: 25s
+mesh:
+  connection:
+    direct_connect: true      # Try direct first
+    relay_enabled: true       # Enable TURN relay
+    relay_via_peers: false    # Multi-hop peer relaying is NOT implemented; setting true is rejected at startup
+    connect_timeout: 30s
+    keep_alive_interval: 25s
 ```
 
 > **Note:** `relay_via_peers` (multi-hop relaying through other mesh peers) is

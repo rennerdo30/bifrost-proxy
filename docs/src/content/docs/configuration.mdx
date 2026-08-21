@@ -96,6 +96,33 @@ logging:
 | `server.socks5.listen` | string | `:7180` | SOCKS5 proxy listen address |
 | `server.graceful_period` | duration | `30s` | Graceful shutdown period |
 
+A listener is active when its `listen` address is set; there is no per-listener
+`enabled` flag. At least one of the two listeners must be configured.
+
+#### SOCKS5 protocol support
+
+The SOCKS5 listener implements the `CONNECT` command only. `BIND` (0x02) and
+`UDP ASSOCIATE` (0x03) are answered with reply code `0x07`
+("command not supported"), so inbound-connection and UDP relaying — QUIC/HTTP-3,
+DNS-over-UDP, WebRTC media, some BitTorrent and FTP-active flows — cannot be
+proxied over SOCKS5. Use the HTTP listener, or [VPN mode](/vpn-mode) for a TUN
+device that carries UDP. Supported authentication methods are no-auth (0x00) and
+username/password (0x02); GSSAPI (0x01) is not offered.
+
+### Logging Settings
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `logging.level` | string | `info` | `debug`, `info`, `warn` or `error` |
+| `logging.format` | string | `text` | `json` or `text` |
+| `logging.output` | string | `stdout` | `stdout`, `stderr` or a file path |
+| `logging.time_format` | string | RFC3339 with ms | Go time layout for the timestamp |
+| `logging.max_size_mb` | int | `0` | File outputs only: rotate above this size; `<= 0` disables built-in rotation |
+| `logging.max_backups` | int | `0` | Rotated files to retain; `<= 0` keeps all |
+
+See [Log Rotation](/deployment#log-rotation) for the rotation behaviour and the
+external-`logrotate` alternative.
+
 ### Backend Types
 
 - `direct` - Direct connection
@@ -103,6 +130,8 @@ logging:
 - `openvpn` - OpenVPN tunnel
 - `http_proxy` - Upstream HTTP proxy
 - `socks5_proxy` - Upstream SOCKS5 proxy
+- `nordvpn`, `mullvad`, `pia`, `protonvpn` - Commercial VPN providers (see
+  [VPN Providers](/vpn-providers))
 
 ### Route Configuration
 
@@ -178,7 +207,7 @@ Use `${VAR_NAME}` syntax for environment variable expansion:
 ```yaml
 server:
   http:
-    listen: ":${HTTP_PORT:-8080}"  # With default
+    listen: ":${HTTP_PORT}"
 auth:
   providers:
     - name: native
@@ -190,3 +219,11 @@ auth:
           - username: admin
             password_hash: "${ADMIN_PASSWORD_HASH}"
 ```
+
+> **No default-value syntax.** Expansion uses Go's `os.ExpandEnv`, which
+> understands `${VAR}` and `$VAR` only. Shell-style forms such as
+> `${VAR:-fallback}` are **not** supported: the whole `VAR:-fallback` string is
+> treated as the variable name, no such variable exists, and the value expands to
+> the empty string — which for something like `listen: ":${HTTP_PORT:-8080}"`
+> silently yields `listen: ":"`. Set the variable explicitly, or rely on the
+> config file's own literal value.

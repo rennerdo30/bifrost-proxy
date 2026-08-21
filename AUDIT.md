@@ -71,8 +71,10 @@ React dashboards are complete and call only endpoints that exist.
 ## 3. Remaining / gated / infrastructure-bound
 
 A follow-up re-audit (2026-07-02) is recorded in
-[`AUDIT-FINDINGS.md`](AUDIT-FINDINGS.md); it is the authoritative, itemized
-backlog and prioritized ranking. It surfaced a further batch of UI/config
+[`AUDIT-FINDINGS.md`](AUDIT-FINDINGS.md); it is the itemized backlog and
+prioritized ranking, annotated in place with what has since been remediated —
+treat the annotations, not the original findings, as current. It surfaced a
+further batch of UI/config
 integration gaps, config-save/reload detection bugs, and VPN-provider crypto
 defects that are being remediated across follow-up work (e.g. `access_control`
 save not hot-applied, per-backend Prometheus labels empty, cache hits logged as
@@ -96,8 +98,13 @@ therefore cannot be "finished" purely in-repo. None is a silent fail-open.
   `pam` tag on a host with `libpam` headers (see the System (PAM) item below).
 - **NTLM is unsupported by design** — fails closed; no working configuration
   exists. Retained only so a misconfiguration does not fall through.
-- **The `negotiate` auth mode is not a registered plugin.** A handler package
-  exists with tests, but no plugin registers `"negotiate"`. Do not configure it.
+- **`negotiate` is middleware, not an auth plugin.** No plugin registers
+  `"negotiate"`, so there is no `type: negotiate` provider. HTTP Negotiate
+  (SPNEGO/Kerberos) SSO *is* supported and wired: enable it through the
+  `auth.negotiate` block (`enabled`, `kerberos_provider`, `prefer_kerberos`,
+  `allow_ntlm`, `ntlm_provider`, `realm`), which drives the challenge/response
+  handshake in `internal/server/negotiate.go` and delegates token validation to a
+  named `type: kerberos` provider. NTLM fallback remains non-functional.
 - **OpenVPN backend egress isolation is opt-in and runtime-unvalidated.**
   `LeakProofRouting` (Linux policy-routing/netns) defaults **off** and requires
   root; with it off there is a known IP/DNS leak risk documented in
@@ -120,6 +127,16 @@ therefore cannot be "finished" purely in-repo. None is a silent fail-open.
 ## 4. Notes
 
 - `SPECIFICATION.md` historically drifted from the code; the user-facing
-  Starlight docs under `docs/src/content` are the authoritative reference.
+  Starlight docs under `docs/src/content` are the reference to read and to keep
+  current. For the config schema specifically the **code is authoritative** —
+  `internal/config/` for the file layout and each plugin's `parseConfig` /
+  `ValidateConfig` for provider options. The YAML loader is non-strict, so an
+  unknown key is silently dropped rather than reported; a documented option that
+  does not exist in a struct or a `config["…"]` lookup simply does nothing.
+- On authentication there are two pages by design and they must not disagree:
+  `docs/src/content/docs/authentication.mdx` is the provider/`config` schema
+  reference, and `docs/src/content/docs/configuration/authentication.mdx` is the
+  enterprise deployment guide (Kerberos/mTLS/SPNEGO setup, clients,
+  troubleshooting). Both use `auth.providers[]`; neither documents `auth.mode`.
 - File:line references in older revisions of this document may be stale; verify
   against current code before acting.

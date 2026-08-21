@@ -44,23 +44,34 @@ graph TB
 ```yaml
 vpn:
   enabled: true
-  mode: tun
-  interface_name: bifrost0
-  mtu: 1420
+  tun:
+    # Interface name (Linux: "bifrost0", macOS: "utun", Windows: "Bifrost")
+    name: bifrost0
+    # IP address and prefix for the TUN interface
+    address: "10.255.0.1/24"
+    # MTU (default 1400, valid range 576-65535)
+    mtu: 1400
 ```
 
 ### DNS Configuration
+
+The built-in DNS server listens on a full `host:port` address — there is no separate port
+setting, so change the port in `listen` if 53 is already taken.
 
 ```yaml
 vpn:
   enabled: true
   dns:
     enabled: true
-    servers:
+    # Listen address (should match the TUN address)
+    listen: "10.255.0.1:53"
+    # Upstream resolvers queries are forwarded to
+    upstream:
       - "1.1.1.1"
       - "8.8.8.8"
-    cache_ttl: "5m"
-    intercept_port: 53
+    cache_ttl: 5m
+    # "all" intercepts every query, "tunnel_only" only tunneled destinations
+    intercept_mode: all
 ```
 
 ### Split Tunneling
@@ -73,7 +84,7 @@ All traffic goes through VPN except matching rules:
 
 ```yaml
 vpn:
-  split:
+  split_tunnel:
     mode: exclude
 
     # These will bypass VPN
@@ -88,6 +99,11 @@ vpn:
     ips:
       - "192.168.0.0/16"
       - "10.0.0.0/8"
+
+    # Always bypass, regardless of mode (checked before every other rule)
+    always_bypass:
+      - "127.0.0.0/8"
+      - "169.254.0.0/16"
 ```
 
 #### Include Mode
@@ -96,7 +112,7 @@ Only matching traffic goes through VPN:
 
 ```yaml
 vpn:
-  split:
+  split_tunnel:
     mode: include
 
     # Only these will use VPN
@@ -112,31 +128,34 @@ vpn:
 
 ### App-Based Rules
 
-Route traffic based on the application generating it.
+Route traffic based on the application generating it. A rule has two fields: `name` (process
+name, matched case-insensitively) and the optional `path` (full executable path, more specific).
 
 ```yaml
 vpn:
-  split:
+  split_tunnel:
     apps:
       # By process name
       - name: "Slack"
 
-      # By full path (more specific)
+      # By full path (more specific — checked before the name)
       - name: "Microsoft Teams"
-        path: "/Applications/Microsoft Teams.app"
-
-      # By bundle ID (macOS)
-      - name: "Zoom"
-        bundle_id: "us.zoom.xos"
+        path: "/Applications/Microsoft Teams.app/Contents/MacOS/Teams"
 ```
+
+Rule names must be unique: a second rule with the same `name` is rejected as a duplicate.
 
 **Platform Support:**
 
-| Platform | Match Method |
-|----------|-------------|
-| macOS | Bundle ID, process name, path |
-| Linux | Process name, path, cgroup |
-| Windows | Process name, executable path |
+Matching is always by process name or executable path. What differs per platform is how the
+owning process of a connection is identified.
+
+| Platform | Process lookup |
+|----------|----------------|
+| macOS | `lsof` on the socket, executable path via the PID |
+| Linux | `/proc/net/{tcp,udp}` plus `/proc/*/fd` |
+| Windows | TCP/UDP owner-PID tables (IP Helper API) |
+| Other | Not supported — app rules never match |
 
 ### Domain-Based Rules
 
@@ -144,7 +163,7 @@ Route traffic based on destination domain.
 
 ```yaml
 vpn:
-  split:
+  split_tunnel:
     domains:
       # Exact match
       - "example.com"
@@ -162,7 +181,7 @@ Route traffic based on destination IP or CIDR range.
 
 ```yaml
 vpn:
-  split:
+  split_tunnel:
     ips:
       # Single IP
       - "192.168.1.1"
@@ -188,20 +207,22 @@ Response:
 ```json
 {
   "status": "connected",
-  "enabled": true,
-  "tunnel_type": "WireGuard",
-  "interface_name": "bifrost0",
-  "local_ip": "10.0.0.2",
-  "gateway": "10.0.0.1",
-  "dns_servers": ["1.1.1.1", "8.8.8.8"],
-  "mtu": 1420,
-  "port": 51820,
-  "encryption": "ChaCha20-Poly1305",
+  "uptime": 9240000000000,
   "bytes_sent": 1048576,
   "bytes_received": 2097152,
-  "connected_since": "2024-01-15T10:00:00Z"
+  "packets_sent": 4096,
+  "packets_received": 8192,
+  "active_connections": 12,
+  "tunneled_connections": 10,
+  "bypassed_connections": 2,
+  "dns_queries": 340,
+  "dns_cache_hits": 275
 }
 ```
+
+`status` is one of `disabled`, `connecting`, `connected`, `disconnected` or `error`, and `uptime`
+is a duration in nanoseconds. When the VPN stopped because of an error, `last_error` and
+`last_error_time` are also present.
 
 ### Enable/Disable VPN
 
@@ -221,10 +242,18 @@ Response:
 [
   {
     "id": "conn-123",
-    "remote_addr": "example.com:443",
-    "local_addr": "10.0.0.2:54321",
     "protocol": "tcp",
-    "started_at": "2024-01-15T10:00:00Z",
+    "local_addr": "10.255.0.2:54321",
+    "remote_addr": "93.184.216.34:443",
+    "remote_host": "example.com",
+    "action": "tunnel",
+    "matched_by": "default",
+    "process_info": {
+      "pid": 4242,
+      "name": "curl",
+      "path": "/usr/bin/curl"
+    },
+    "start_time": "2024-01-15T10:00:00Z",
     "bytes_sent": 1024,
     "bytes_received": 2048
   }
@@ -293,17 +322,17 @@ Content-Type: application/json
 
 ### macOS
 
-- Uses `utun` interface (e.g., `utun0`)
+- Uses `utun` interface (e.g., `utun0`); set `tun.name` to `utun` and the system assigns the number
 - Requires TUN/TAP kernel extension or Network Extension
-- App rules use Bundle ID for accurate matching
+- App rules resolve the owning process with `lsof`, then match its name or executable path
 - DNS changes may require flushing: `sudo dscacheutil -flushcache`
 
 ### Linux
 
-- Uses standard TUN device
+- Uses standard TUN device (default name `bifrost0`)
 - Requires `CAP_NET_ADMIN` capability or root
 - iptables/nftables rules for routing
-- cgroup-based app matching available
+- App rules resolve the owning process from `/proc`, then match its name or executable path
 
 ```bash
 # Grant capability to binary
@@ -340,8 +369,8 @@ sudo setcap cap_net_admin+ep ./bifrost-client
 
 ### DNS Issues
 
-1. Check DNS interception is enabled
-2. Verify upstream DNS servers are reachable
+1. Check DNS interception is enabled (`vpn.dns.enabled`)
+2. Verify the `vpn.dns.upstream` resolvers are reachable
 3. Flush system DNS cache
 
 ```bash
@@ -370,6 +399,6 @@ route print    # Windows
 
 ### Performance Issues
 
-1. Reduce MTU if fragmentation occurs
-2. Disable DNS caching if stale
+1. Reduce `vpn.tun.mtu` if fragmentation occurs (minimum 576)
+2. Shorten `vpn.dns.cache_ttl` if answers go stale — leaving it at `0` keeps the 5m default
 3. Check for conflicting VPN software

@@ -83,11 +83,9 @@ Enable system proxy in your client configuration:
 # Client proxy listeners
 proxy:
   http:
-    address: "127.0.0.1:8080"
-    enabled: true
+    listen: "127.0.0.1:8080"
   socks5:
-    address: "127.0.0.1:1080"
-    enabled: true
+    listen: "127.0.0.1:1080"
 
 # System proxy configuration
 system_proxy:
@@ -98,7 +96,14 @@ system_proxy:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `enabled` | bool | `false` | Enable automatic OS proxy configuration |
+| `system_proxy.enabled` | bool | `false` | Enable automatic OS proxy configuration |
+| `proxy.http.listen` | string | — | HTTP listener address; the listener is active when this is set |
+| `proxy.socks5.listen` | string | — | SOCKS5 listener address; the listener is active when this is set |
+
+:::note[No per-listener `enabled` flag]
+Listeners have no `enabled` field. A listener runs when its `listen` address is
+set and is skipped when the address is empty or omitted.
+:::
 
 When enabled, the client will:
 
@@ -108,10 +113,10 @@ When enabled, the client will:
 
 ### Listener Priority
 
-When both HTTP and SOCKS5 listeners are configured, the system proxy uses this priority:
+When both HTTP and SOCKS5 listeners have a `listen` address, the system proxy uses this priority:
 
-1. **HTTP listener** (if enabled) - Most compatible with system applications
-2. **SOCKS5 listener** (if HTTP disabled) - Fallback option
+1. **HTTP listener** (`proxy.http.listen`) - Most compatible with system applications
+2. **SOCKS5 listener** (`proxy.socks5.listen`) - Used only when `proxy.http.listen` is empty
 
 :::note[HTTP Preferred]
 Most operating systems and applications have better support for HTTP proxies. If both protocols are available, the HTTP listener is used for system proxy configuration.
@@ -433,14 +438,13 @@ stateDiagram-v2
 
 **Log message**: `system proxy enabled but no listeners configured`
 
-**Cause**: System proxy is enabled but neither HTTP nor SOCKS5 listener is running.
+**Cause**: System proxy is enabled but neither HTTP nor SOCKS5 listener is running — that is, neither has a `listen` address.
 
-**Solution**: Enable at least one proxy listener:
+**Solution**: Give at least one proxy listener an address:
 ```yaml
 proxy:
   http:
-    address: "127.0.0.1:8080"
-    enabled: true
+    listen: "127.0.0.1:8080"
 ```
 
 #### Proxy Not Cleared on Crash
