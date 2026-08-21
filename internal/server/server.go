@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -553,6 +554,23 @@ func (s *Server) Start(ctx context.Context) error {
 			wsMaxClients = apiserver.MaxWebSocketClients
 		}
 		s.wsHub = apiserver.NewWebSocketHubWithMaxClients(wsMaxClients)
+
+		// Restrict which browser origins may open the live event socket. The
+		// server's own Host is always allowed; api.allowed_origins is only needed
+		// when a reverse proxy rewrites Host.
+		s.wsHub.SetAllowedOrigins(s.config.API.AllowedOrigins)
+		if s.wsHub.SkipsOriginCheck() {
+			slog.Warn("WebSocket origin verification is disabled by api.allowed_origins: [\"*\"]; "+
+				"any web page opened in a browser that can reach this server may connect to /api/v1/ws "+
+				"and read the live traffic stream. List the real origins instead.",
+				"listen", s.config.API.Listen,
+			)
+		} else if len(s.config.API.AllowedOrigins) > 0 {
+			slog.Info("WebSocket origin allowlist configured",
+				"allowed_origins", s.config.API.AllowedOrigins,
+			)
+		}
+
 		go s.wsHub.Run()
 
 		// Periodically broadcast stats and backend health over the WebSocket so

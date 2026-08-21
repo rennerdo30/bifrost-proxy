@@ -3,6 +3,8 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"path"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -278,6 +280,66 @@ type APIConfig struct {
 	EnableRequestLog    bool   `yaml:"enable_request_log" json:"enable_request_log"`       // Enable request logging for Web UI
 	RequestLogSize      int    `yaml:"request_log_size" json:"request_log_size"`           // Max number of requests to keep (default 1000)
 	WebSocketMaxClients int    `yaml:"websocket_max_clients" json:"websocket_max_clients"` // Default: 100, for low-power devices use 5-10
+
+	// AllowedOrigins extends the set of browser origins permitted to open a
+	// WebSocket to /api/v1/ws. The request's own Host is ALWAYS allowed, so the
+	// dashboard served by this server needs no configuration here; entries are
+	// only needed when a reverse proxy rewrites Host so that the browser's
+	// Origin no longer matches it (Home Assistant Ingress, Traefik, nginx).
+	//
+	// Each entry is a host pattern ("bifrost.example.com", "*.example.com",
+	// "homeassistant.local:8123") or a scheme-qualified origin
+	// ("https://bifrost.example.com"), matched case-insensitively with shell-style
+	// wildcards. A bare "*" (AllowedOriginsWildcard) disables origin checking
+	// entirely and is logged as a warning at startup — it lets any web page the
+	// operator's browser visits open a socket and read the live traffic stream,
+	// so prefer naming the real origins.
+	//
+	// WebSockets are exempt from the same-origin policy and CORS, which is why
+	// this check exists at all: without it any page could connect to a Bifrost
+	// reachable from the victim's browser.
+	AllowedOrigins []string `yaml:"allowed_origins,omitempty" json:"allowed_origins,omitempty"`
+}
+
+// AllowedOriginsWildcard is the explicit opt-out value for APIConfig.AllowedOrigins
+// that disables WebSocket origin verification.
+const AllowedOriginsWildcard = "*"
+
+// originSchemeSeparator separates an optional scheme from the host in an
+// allowed_origins entry.
+const originSchemeSeparator = "://"
+
+// validateAllowedOrigin reports whether one APIConfig.AllowedOrigins entry can
+// ever match a browser Origin. The matcher compares the pattern against either
+// "host[:port]" or "scheme://host[:port]" — never against a path — so an entry
+// carrying a path (or an invalid glob) is a silent dead entry and is rejected.
+func validateAllowedOrigin(origin string) error {
+	if strings.TrimSpace(origin) != origin {
+		return fmt.Errorf("must not contain leading or trailing whitespace (got %q)", origin)
+	}
+	if origin == "" {
+		return fmt.Errorf("must not be empty; remove the entry or use %q to disable origin checking", AllowedOriginsWildcard)
+	}
+
+	hostPattern := origin
+	if scheme, rest, found := strings.Cut(origin, originSchemeSeparator); found {
+		if scheme == "" {
+			return fmt.Errorf("missing scheme before %q in %q", originSchemeSeparator, origin)
+		}
+		hostPattern = rest
+	}
+	if hostPattern == "" {
+		return fmt.Errorf("missing host in %q", origin)
+	}
+	if strings.Contains(hostPattern, "/") {
+		return fmt.Errorf("must be a host or scheme://host without a path (got %q)", origin)
+	}
+
+	// path.Match is the matcher used at handshake time; ask it to vet the glob.
+	if _, err := path.Match(origin, ""); err != nil {
+		return fmt.Errorf("invalid wildcard pattern %q: %w", origin, err)
+	}
+	return nil
 }
 
 // HealthCheckConfig contains health check settings.
@@ -516,6 +578,16 @@ func (c *ServerConfig) Validate() error {
 	// worst-case memory predictable and to reject obvious misconfiguration.
 	if c.API.RequestLogSize > MaxRingBufferEntries {
 		return fmt.Errorf("api request_log_size must not exceed %d", MaxRingBufferEntries)
+	}
+
+	// Reject unusable allowed_origins entries here rather than letting them fail
+	// silently at handshake time: an entry with a path or a bad glob would never
+	// match any origin, so the operator would see WebSocket rejections with no
+	// hint that their allowlist is the cause.
+	for i, origin := range c.API.AllowedOrigins {
+		if err := validateAllowedOrigin(origin); err != nil {
+			return fmt.Errorf("api allowed_origins[%d]: %w", i, err)
+		}
 	}
 
 	if err := c.Auth.Validate(); err != nil {
