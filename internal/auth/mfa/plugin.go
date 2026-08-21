@@ -2,6 +2,7 @@
 package mfa
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -25,54 +26,59 @@ func (p *plugin) Description() string {
 	return "Multi-factor authentication wrapper for combining primary auth with TOTP/HOTP"
 }
 
+// errByNameUnsupported is returned for the by-name provider format. Resolving
+// providers by name (primary_provider / mfa_provider) needs a registry of
+// already-constructed, named authenticators that this plugin has no access to at
+// Create time. Returning a wrapper that then rejects every login would be a
+// silent failure, so the configuration is refused with instructions instead.
+//
+// Both Create and ValidateConfig return this so the two cannot disagree: the
+// audit's finding was that the by-name format passed validation and was only
+// hard-rejected later by Create, which let the Web UI save a config that could
+// not start.
+var errByNameUnsupported = errors.New("mfa_wrapper: referencing auth providers by name " +
+	"(primary_provider/mfa_provider) is not supported; configure the wrapper with inline " +
+	"'primary' and 'secondary' blocks instead, each carrying its own 'mode' and 'config'")
+
 // Create creates a new MFA wrapper from the configuration.
 func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 	if hasInlineProviders(config) {
 		return p.createInlineWrapper(config)
 	}
 
-	// Validate the by-name configuration so misconfigurations are reported,
-	// then fail closed: resolving providers by name (primary_provider /
-	// mfa_provider) requires a registry of already-constructed, named
-	// authenticators that this plugin does not have access to at Create time.
-	// Returning a wrapper that rejects every login would be a silent, surprising
-	// failure, so we reject the configuration explicitly and tell the operator
-	// how to make it work (inline primary/secondary blocks).
-	if _, err := parsePluginConfig(config, true); err != nil {
-		return nil, err
-	}
-
-	return nil, fmt.Errorf("mfa_wrapper: referencing auth providers by name " +
-		"(primary_provider/mfa_provider) is not supported; configure the wrapper " +
-		"with inline 'primary' and 'secondary' blocks instead")
+	// Report the unsupported format before parsing the by-name fields. Parsing
+	// first meant a by-name config that merely omitted primary_provider got
+	// "'primary_provider' is required" — advice pointing further down a road that
+	// is a dead end — instead of being told the format itself is unsupported.
+	return nil, errByNameUnsupported
 }
 
-// ValidateConfig validates the configuration.
+// ValidateConfig validates the configuration. It accepts exactly what Create
+// accepts: the inline 'primary'/'secondary' block format.
 func (p *plugin) ValidateConfig(config map[string]any) error {
-	if hasInlineProviders(config) {
-		_, _, err := parseInlineAuthenticatorConfig(config, "primary")
-		if err != nil {
-			return err
-		}
-		secondaryMode, _, err := parseInlineAuthenticatorConfig(config, "secondary")
-		if err != nil {
-			return err
-		}
-		wrapperCfg := copyMap(config)
-		if _, ok := wrapperCfg["primary_provider"]; !ok {
-			wrapperCfg["primary_provider"] = "primary"
-		}
-		if _, ok := wrapperCfg["mfa_type"]; !ok {
-			wrapperCfg["mfa_type"] = secondaryMode
-		}
-		if _, ok := wrapperCfg["mfa_provider"]; !ok {
-			wrapperCfg["mfa_provider"] = secondaryMode
-		}
-		_, err = parsePluginConfig(wrapperCfg, false)
-		return err
+	if !hasInlineProviders(config) {
+		return errByNameUnsupported
 	}
 
-	_, err := parsePluginConfig(config, true)
+	_, _, err := parseInlineAuthenticatorConfig(config, "primary")
+	if err != nil {
+		return err
+	}
+	secondaryMode, _, err := parseInlineAuthenticatorConfig(config, "secondary")
+	if err != nil {
+		return err
+	}
+	wrapperCfg := copyMap(config)
+	if _, ok := wrapperCfg["primary_provider"]; !ok {
+		wrapperCfg["primary_provider"] = "primary"
+	}
+	if _, ok := wrapperCfg["mfa_type"]; !ok {
+		wrapperCfg["mfa_type"] = secondaryMode
+	}
+	if _, ok := wrapperCfg["mfa_provider"]; !ok {
+		wrapperCfg["mfa_provider"] = secondaryMode
+	}
+	_, err = parsePluginConfig(wrapperCfg, false)
 	return err
 }
 

@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	apiserver "github.com/rennerdo30/bifrost-proxy/internal/api/server"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth"
+	"github.com/rennerdo30/bifrost-proxy/internal/auth/negotiate"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
 
@@ -94,18 +96,16 @@ func TestServer_ConcurrentReloadAndTraffic(t *testing.T) {
 // handler's cleanup goroutine when one is configured. A second Close on the same
 // handler panics (closing an already-closed channel), proving Stop closed it.
 func TestServer_StopClosesNegotiateHandler(t *testing.T) {
-	negCfg := config.AuthConfig{
-		Providers: []config.AuthProvider{
-			{Name: "ntlm", Type: "ntlm", Enabled: true, Config: map[string]any{"domain": "EXAMPLE"}},
-		},
-		Negotiate: &config.NegotiateConfig{
-			Enabled:      true,
-			NTLMProvider: "ntlm",
-			AllowNTLM:    true,
-		},
-	}
-	h, err := buildNegotiateHandler(negCfg)
+	// Construct the handler directly rather than through buildNegotiateHandler:
+	// this test is about Stop releasing the handler, and the only provider types
+	// Negotiate accepts are kerberos (needs a KDC) and ntlm (now refused outright
+	// because it can never authenticate).
+	nonePlugin, ok := auth.GetPlugin("none")
+	require.True(t, ok)
+	stubAuth, err := nonePlugin.Create(nil)
 	require.NoError(t, err)
+
+	h := negotiate.NewHandler(negotiate.DefaultHandlerConfig(), stubAuth, nil)
 	require.NotNil(t, h)
 
 	cfg := config.DefaultServerConfig()

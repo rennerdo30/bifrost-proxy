@@ -425,6 +425,7 @@ func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 		if err != nil {
 			return nil, err
 		}
+		reportProviderAvailability(providers)
 		return factory.CreateChain(providers)
 	}
 
@@ -435,6 +436,38 @@ func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 		Enabled:  true,
 		Priority: 1,
 	})
+}
+
+// reportProviderAvailability logs a warning for every enabled auth provider
+// that cannot actually authenticate in this binary.
+//
+// "Fail closed, but never silently": a provider whose plugin compiles to a
+// fail-closed stub — `system` on a build without `-tags pam` being the live
+// example — accepts its configuration and then rejects every login with a
+// generic failure, which an operator cannot tell apart from a wrong password or
+// a broken directory server. Saying so once, loudly, at startup is the
+// difference between a diagnosable deployment and a mystery.
+//
+// Providers that can never work in any build are refused outright by the
+// factory, so they never reach this point.
+func reportProviderAvailability(providers []auth.ProviderConfig) {
+	for _, p := range providers {
+		if !p.Enabled {
+			continue
+		}
+		plugin, ok := auth.GetPlugin(p.Type)
+		if !ok {
+			continue // reported as an unknown type by the factory
+		}
+		if availability := auth.PluginAvailability(plugin); !availability.Usable() {
+			slog.Warn("auth provider cannot authenticate in this build; every login through it will be rejected",
+				"provider", p.Name,
+				"type", p.Type,
+				"state", string(availability.State),
+				"reason", availability.Reason,
+			)
+		}
+	}
 }
 
 // ValidateAuthConfig validates authentication configuration against registered plugins.

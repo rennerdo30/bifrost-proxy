@@ -323,6 +323,11 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		r.Post("/reload", a.handleReloadConfig)
 	})
 
+	// Auth plugin discovery. Reports which providers this binary can actually
+	// authenticate with, so the dashboard does not offer a config form for a
+	// provider that rejects every login.
+	r.Get("/api/v1/auth/plugins", a.handleListAuthPlugins)
+
 	// Request log routes
 	r.Route("/api/v1/requests", func(r chi.Router) {
 		r.Get("/", a.handleGetRequests)
