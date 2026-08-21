@@ -55,22 +55,35 @@ ss -tlnp | grep bifrost
 
 **Solution:**
 
+Wrong — only localhost can connect:
+
 ```yaml
-# Wrong: Only localhost can connect
 server:
   http:
     listen: "127.0.0.1:7080"
+```
 
-# Correct: All interfaces
+Correct — all interfaces:
+
+```yaml
 server:
   http:
     listen: ":7080"
+```
 
-# Correct: Specific interface
+Correct — one specific interface:
+
+```yaml
 server:
   http:
     listen: "192.168.1.100:7080"
 ```
+
+:::caution[One `server:` key per file]
+These are three alternatives, not one config. Repeating a top-level key such as
+`server:` in the same YAML file is a duplicate mapping key and the server
+refuses to start.
+:::
 
 ### Cause 3: Firewall Blocking
 
@@ -217,7 +230,8 @@ Default timeouts may be too short for your network conditions.
 
 **Solution:**
 
-Increase timeout values:
+Increase the listener timeouts. Each listener supports `read_timeout`,
+`write_timeout` and `idle_timeout`:
 
 ```yaml
 server:
@@ -227,7 +241,21 @@ server:
     idle_timeout: "300s"
 
   socks5:
-    connect_timeout: "60s"
+    read_timeout: "120s"
+    write_timeout: "120s"
+    idle_timeout: "300s"
+```
+
+Outbound dial timeouts are a property of the backend, not the listener, and are
+set in the backend's `config` block:
+
+```yaml
+backends:
+  - name: upstream
+    type: http_proxy
+    config:
+      address: "upstream-proxy:3128"
+      connect_timeout: "60s"
 ```
 
 ### Cause 4: Network Routing Issues
@@ -490,9 +518,11 @@ curl --socks5 localhost:7180 https://example.com
 curl --socks5 user:pass@localhost:7180 https://example.com
 ```
 
-### Cause 2: SOCKS5 Listener Not Enabled
+### Cause 2: SOCKS5 Listener Not Configured
 
-The SOCKS5 listener may not be configured.
+The SOCKS5 listener may not be configured. There is no `enabled` flag on a
+listener — a listener is active when its `listen` address is set, and omitting
+`listen` (or leaving it empty) disables it.
 
 **Diagnosis:**
 
@@ -503,12 +533,11 @@ netstat -tlnp | grep 7180
 
 **Solution:**
 
-Enable SOCKS5 listener:
+Give the SOCKS5 listener an address:
 
 ```yaml
 server:
   socks5:
-    enabled: true
     listen: ":7180"
 ```
 
