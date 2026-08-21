@@ -15,7 +15,13 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth/mfa"
+
+	// ValidateConfig now resolves inline sub-provider blocks against the plugin
+	// registry, so the types used below (and in DefaultConfig) must be registered
+	// here as they are in the server binary.
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/ldap"
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/native"
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/ntlm"
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/totp"
 )
 
@@ -74,8 +80,8 @@ func TestMFAWrapperPlugin_ValidateConfig(t *testing.T) {
 		{
 			name: "valid inline config",
 			config: map[string]any{
-				"primary":   map[string]any{"mode": "ldap"},
-				"secondary": map[string]any{"mode": "totp"},
+				"primary":   validInlinePrimary(),
+				"secondary": validInlineSecondary(),
 				"mfa_type":  "totp",
 			},
 			wantErr: false,
@@ -92,6 +98,85 @@ func TestMFAWrapperPlugin_ValidateConfig(t *testing.T) {
 			}
 		})
 	}
+}
+
+// validInlinePrimary and validInlineSecondary return inline sub-provider blocks
+// that pass their own plugin's validation. ValidateConfig resolves these blocks
+// against the plugin registry, so a block naming a mode without the config that
+// mode requires is (correctly) rejected.
+func validInlinePrimary() map[string]any {
+	return map[string]any{"mode": "native", "config": map[string]any{"users": []any{}}}
+}
+
+func validInlineSecondary() map[string]any {
+	return map[string]any{"mode": "totp", "config": map[string]any{"secrets": map[string]any{}}}
+}
+
+// TestInlineProviders_ValidateResolvesSubProviders closes the one-level-down
+// version of the bug this change set exists to remove.
+//
+// ValidateConfig used to check only that a `primary`/`secondary` block existed
+// and named some `mode`, while Create resolved the block for real. So a wrapper
+// naming a bogus mode — or a mode without the config that mode requires —
+// validated clean, was saved by the dashboard, and then failed at startup.
+func TestInlineProviders_ValidateResolvesSubProviders(t *testing.T) {
+	plugin, ok := auth.GetPlugin("mfa_wrapper")
+	require.True(t, ok)
+
+	t.Run("unknown sub-provider mode is refused", func(t *testing.T) {
+		err := plugin.ValidateConfig(map[string]any{
+			"primary":   map[string]any{"mode": "definitely-not-a-plugin"},
+			"secondary": validInlineSecondary(),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "primary.mode")
+		assert.Contains(t, err.Error(), "not a registered auth plugin type")
+	})
+
+	t.Run("sub-provider missing its required config is refused", func(t *testing.T) {
+		// `ldap` needs a URL. Naming the mode alone used to validate and then
+		// fail at Create with "URL is required".
+		err := plugin.ValidateConfig(map[string]any{
+			"primary":   map[string]any{"mode": "ldap"},
+			"secondary": validInlineSecondary(),
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "primary")
+		assert.Contains(t, err.Error(), "URL is required")
+	})
+
+	t.Run("secondary block is validated too", func(t *testing.T) {
+		err := plugin.ValidateConfig(map[string]any{
+			"primary":   validInlinePrimary(),
+			"secondary": map[string]any{"mode": "definitely-not-a-plugin"},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "secondary.mode")
+	})
+
+	// Nesting a provider that can never authenticate is no more workable than
+	// using it directly, so the wrapper must refuse it as well.
+	t.Run("a sub-provider that can never authenticate is refused", func(t *testing.T) {
+		err := plugin.ValidateConfig(map[string]any{
+			"primary":   map[string]any{"mode": "ntlm", "config": map[string]any{"domain": "CORP"}},
+			"secondary": validInlineSecondary(),
+		})
+		require.Error(t, err)
+		var unimplemented *auth.ErrPluginUnimplemented
+		require.ErrorAs(t, err, &unimplemented)
+		assert.Equal(t, "ntlm", unimplemented.Type)
+	})
+
+	// And validation must agree with Create for a config that IS good.
+	t.Run("a fully specified inline config validates and creates", func(t *testing.T) {
+		cfg := map[string]any{
+			"primary":   validInlinePrimary(),
+			"secondary": validInlineSecondary(),
+		}
+		require.NoError(t, plugin.ValidateConfig(cfg))
+		_, err := plugin.Create(cfg)
+		assert.NoError(t, err, "validation and creation must agree")
+	})
 }
 
 func TestMFAWrapperPlugin_DefaultConfig(t *testing.T) {
@@ -502,8 +587,8 @@ func TestParsePluginConfig_MFAGroups(t *testing.T) {
 	require.True(t, ok)
 
 	err := plugin.ValidateConfig(map[string]any{
-		"primary":      map[string]any{"mode": "ldap"},
-		"secondary":    map[string]any{"mode": "totp"},
+		"primary":      validInlinePrimary(),
+		"secondary":    validInlineSecondary(),
 		"mfa_required": "group_based",
 		"mfa_groups":   []any{"admins", "developers", "security"},
 	})
@@ -516,8 +601,8 @@ func TestParsePluginConfig_MFACodeLengthFloat64(t *testing.T) {
 
 	// JSON unmarshaling often converts numbers to float64
 	err := plugin.ValidateConfig(map[string]any{
-		"primary":         map[string]any{"mode": "ldap"},
-		"secondary":       map[string]any{"mode": "totp"},
+		"primary":         validInlinePrimary(),
+		"secondary":       validInlineSecondary(),
 		"mfa_code_length": float64(8),
 	})
 	assert.NoError(t, err)
@@ -528,8 +613,8 @@ func TestParsePluginConfig_InvalidPasswordFormat(t *testing.T) {
 	require.True(t, ok)
 
 	err := plugin.ValidateConfig(map[string]any{
-		"primary":         map[string]any{"mode": "ldap"},
-		"secondary":       map[string]any{"mode": "totp"},
+		"primary":         validInlinePrimary(),
+		"secondary":       validInlineSecondary(),
 		"password_format": "invalid_format",
 	})
 	assert.Error(t, err)
@@ -541,8 +626,8 @@ func TestParsePluginConfig_InvalidMFARequired(t *testing.T) {
 	require.True(t, ok)
 
 	err := plugin.ValidateConfig(map[string]any{
-		"primary":      map[string]any{"mode": "ldap"},
-		"secondary":    map[string]any{"mode": "totp"},
+		"primary":      validInlinePrimary(),
+		"secondary":    validInlineSecondary(),
 		"mfa_required": "invalid_mode",
 	})
 	assert.Error(t, err)
@@ -556,8 +641,8 @@ func TestParsePluginConfig_MFAProvider(t *testing.T) {
 	// mfa_provider overrides mfa_type; an inline config carrying it must
 	// validate cleanly.
 	cfg := map[string]any{
-		"primary":      map[string]any{"mode": "ldap"},
-		"secondary":    map[string]any{"mode": "totp"},
+		"primary":      validInlinePrimary(),
+		"secondary":    validInlineSecondary(),
 		"mfa_type":     "totp",
 		"mfa_provider": "custom-totp",
 	}
@@ -570,8 +655,8 @@ func TestParsePluginConfig_CustomSeparator(t *testing.T) {
 
 	// The "separated" password format with a custom separator must validate.
 	cfg := map[string]any{
-		"primary":         map[string]any{"mode": "ldap"},
-		"secondary":       map[string]any{"mode": "totp"},
+		"primary":         validInlinePrimary(),
+		"secondary":       validInlineSecondary(),
 		"password_format": "separated",
 		"separator":       "|",
 	}
@@ -597,8 +682,8 @@ func TestParsePluginConfig_AllMFAModes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.mode, func(t *testing.T) {
 			err := plugin.ValidateConfig(map[string]any{
-				"primary":      map[string]any{"mode": "ldap"},
-				"secondary":    map[string]any{"mode": "totp"},
+				"primary":      validInlinePrimary(),
+				"secondary":    validInlineSecondary(),
 				"mfa_required": tt.mode,
 			})
 			if tt.wantErr {
@@ -627,8 +712,8 @@ func TestParsePluginConfig_AllPasswordFormats(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.format, func(t *testing.T) {
 			err := plugin.ValidateConfig(map[string]any{
-				"primary":         map[string]any{"mode": "ldap"},
-				"secondary":       map[string]any{"mode": "totp"},
+				"primary":         validInlinePrimary(),
+				"secondary":       validInlineSecondary(),
 				"password_format": tt.format,
 			})
 			if tt.wantErr {

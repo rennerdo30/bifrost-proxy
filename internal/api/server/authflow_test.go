@@ -24,7 +24,7 @@ const authFlowToken = "round-trip-token"
 
 // newAuthFlowServer starts the full server-dashboard handler (REST + WebSocket)
 // with api.token configured, mirroring what the binary serves.
-func newAuthFlowServer(t *testing.T) (*httptest.Server, *WebSocketHub) {
+func newAuthFlowServer(t *testing.T) *httptest.Server {
 	t.Helper()
 
 	api := New(Config{
@@ -39,7 +39,7 @@ func newAuthFlowServer(t *testing.T) (*httptest.Server, *WebSocketHub) {
 
 	srv := httptest.NewServer(api.RouterWithWebSocket(hub))
 	t.Cleanup(srv.Close)
-	return srv, hub
+	return srv
 }
 
 // TestAuthFlow_RESTAndWebSocketWithAPIToken is the end-to-end check that setting
@@ -56,7 +56,7 @@ func newAuthFlowServer(t *testing.T) (*httptest.Server, *WebSocketHub) {
 //
 // and that an unauthenticated caller still gets 401 on all of them.
 func TestAuthFlow_RESTAndWebSocketWithAPIToken(t *testing.T) {
-	srv, _ := newAuthFlowServer(t)
+	srv := newAuthFlowServer(t)
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + wsTestPath
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -192,7 +192,7 @@ func TestAuthFlow_QueryTokenIsNotWrittenToTheRequestLog(t *testing.T) {
 // another origin that has somehow obtained the token (or an operator's browser
 // replaying a cookie) must still be refused the upgrade.
 func TestAuthFlow_CrossOriginWebSocketRejectedEvenWhenAuthenticated(t *testing.T) {
-	srv, _ := newAuthFlowServer(t)
+	srv := newAuthFlowServer(t)
 	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + wsTestPath
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

@@ -49,22 +49,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verify a client response), a provider of `type: negotiate` (SPNEGO is
   middleware under `auth.negotiate.*`, not a provider), and `mfa_wrapper` using
   the by-name `primary_provider`/`mfa_provider` format. Each error explains what
-  to use instead. Consequently an `auth.negotiate` block with an `ntlm_provider`
-  now fails at startup rather than serving SSO that rejects every client — set
-  `allow_ntlm: false` and remove `ntlm_provider`, keeping Kerberos. Disabled
-  providers are not checked, so disabling a bad provider in the dashboard remains
-  a way out
+  to use instead. Consequently an `auth.negotiate` block naming an
+  `ntlm_provider` now fails at startup. Kerberos SSO was working in those
+  deployments — it was only the NTLM *fallback* that silently rejected every
+  client — so the fix is to set `allow_ntlm: false` and remove `ntlm_provider`,
+  keeping `kerberos_provider` as it was. Disabled providers are not checked, so
+  disabling a bad provider in the dashboard remains a way out
 - The `system` (PAM) provider now reports at startup, and in the dashboard, that
   it cannot authenticate when the binary was built without the PAM backend — the
   default `make build` and the Docker image both are. It is deliberately *not*
   refused, because the same configuration is correct on Windows, on macOS, and in
   a `-tags pam` Linux build
 - `POST /api/v1/config/validate` and `PUT /api/v1/config` now validate auth
-  providers against the plugin registry. Previously only the config shape was
-  checked, so the dashboard could save a provider that broke the next restart and
-  still report success
+  providers against the plugin registry, and check the `auth.negotiate` block's
+  provider references. Previously only the config shape was checked, so the
+  dashboard could save an auth config that broke the next restart and still
+  report success
+- `mfa_wrapper` now validates its inline `primary`/`secondary` blocks against the
+  plugin registry instead of only checking that a `mode` was named. A block
+  naming an unknown mode, or a mode without the config that mode requires, used
+  to validate cleanly and then fail at startup
 
-### Added
 - HTTPS health checks are now configurable: `health_check.scheme` (`http`/`https`)
   and `health_check.insecure_skip_verify`, on both the global block and
   per-backend overrides, editable from the server dashboard (the per-backend
@@ -135,7 +140,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - AST-based YAML updates to maintain comments and formatting
   - Preserves user-added documentation in configuration files
 
-### Added
 - Server `mesh` config block for the mesh coordinator API: `mesh.enabled`
   (default `true`) mounts or removes the `/api/v1/mesh/*` routes, and
   `mesh.state_path` persists coordinator networks and peers across restarts

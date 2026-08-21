@@ -888,7 +888,7 @@ func TestParseConfig_AllOptions(t *testing.T) {
 	}
 
 	// ValidateConfig refuses every NTLM config (see TestNTLMPlugin_ValidateConfig),
-	// so parse behaviour is exercised through Create directly.
+	// so parse behavior is exercised through Create directly.
 	authenticator, err := plugin.Create(config)
 	require.NoError(t, err)
 

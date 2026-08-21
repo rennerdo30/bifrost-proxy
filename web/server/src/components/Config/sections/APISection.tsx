@@ -121,6 +121,41 @@ export function APISection({ config, onChange }: APISectionProps) {
                 </div>
               )}
             </div>
+
+            <div className="p-4 bg-bifrost-bg rounded-lg space-y-2">
+              <label htmlFor="api-allowed-origins" className="block text-sm font-medium text-bifrost-text">
+                WebSocket Allowed Origins
+              </label>
+              <textarea
+                id="api-allowed-origins"
+                rows={3}
+                value={(config.allowed_origins || []).join('\n')}
+                onChange={(e) =>
+                  update(
+                    'allowed_origins',
+                    e.target.value
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter((line) => line.length > 0)
+                  )
+                }
+                placeholder={'https://bifrost.example.com\nhomeassistant.local:8123'}
+                spellCheck={false}
+                className="input font-mono text-sm"
+              />
+              <p className="text-xs text-bifrost-muted">
+                One origin per line. Only needed when a reverse proxy rewrites <code className="font-mono">Host</code>{' '}
+                (Home Assistant Ingress, Traefik, nginx) — this server&apos;s own address is always allowed. Include the
+                port if the browser URL shows one. A single <code className="font-mono">*</code> disables the origin
+                check for the live event stream. Requires a restart.
+              </p>
+              {(config.allowed_origins || []).includes('*') && (
+                <p className="text-xs text-bifrost-warning" role="alert">
+                  Origin checking is disabled. Any web page opened in a browser that can reach this server may connect
+                  to the event stream and read live traffic. Prefer naming the real origins.
+                </p>
+              )}
+            </div>
           </div>
         )}
       </div>

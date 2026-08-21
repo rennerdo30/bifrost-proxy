@@ -90,7 +90,7 @@ const unavailableReason = "NTLM response verification is not implemented: there 
 	"source (NT-hash store or domain-controller pass-through) to verify a client's NTLMv2 response " +
 	"against, so every login is rejected. Use the 'kerberos' provider for Windows-domain SSO, or " +
 	"'ldap' against Active Directory. If SPNEGO/Negotiate is enabled, set auth.negotiate.allow_ntlm " +
-	"to false and remove auth.negotiate.ntlm_provider."
+	"to false and remove auth.negotiate.ntlm_provider"
 
 // Availability reports NTLM as permanently unimplemented, which makes the auth
 // factory refuse any provider of this type at config validation.

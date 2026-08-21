@@ -76,15 +76,31 @@ type AvailabilityReporter interface {
 
 // PluginAvailability returns p's availability, defaulting to available for
 // plugins that do not report one.
+//
+// Unrecognized states are normalized to AvailabilityBuildDisabled rather than to
+// available: a plugin that went to the trouble of reporting something other than
+// "available" should not be silently treated as working because the value did
+// not match a known constant. Reporting it as unusable-but-not-refused is the
+// safe reading — loud, but it cannot take down a config that used to load.
 func PluginAvailability(p Plugin) Availability {
-	if reporter, ok := p.(AvailabilityReporter); ok {
-		a := reporter.Availability()
-		if a.State == "" {
-			a.State = AvailabilityAvailable
+	reporter, ok := p.(AvailabilityReporter)
+	if !ok {
+		return Availability{State: AvailabilityAvailable}
+	}
+
+	a := reporter.Availability()
+	switch a.State {
+	case "", AvailabilityAvailable:
+		return Availability{State: AvailabilityAvailable}
+	case AvailabilityBuildDisabled, AvailabilityUnimplemented:
+		return a
+	default:
+		a.State = AvailabilityBuildDisabled
+		if a.Reason == "" {
+			a.Reason = "the plugin reported an unrecognized availability state"
 		}
 		return a
 	}
-	return Availability{State: AvailabilityAvailable}
 }
 
 // ErrPluginUnimplemented is returned when a configuration selects an auth

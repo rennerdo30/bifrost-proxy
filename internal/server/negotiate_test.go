@@ -1,14 +1,62 @@
 package server
 
 import (
+	"encoding/base64"
 	"testing"
+	"time"
 
+	"github.com/jcmturner/gokrb5/v8/keytab"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/kerberos"
 	_ "github.com/rennerdo30/bifrost-proxy/internal/auth/plugin/ntlm"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
+
+// aes256CTSHMACSHA1 is the Kerberos encryption type used for the test keytab.
+const aes256CTSHMACSHA1 = 18
+
+// TestBuildNegotiateHandler_KerberosSucceeds is the success path.
+//
+// It matters because `ntlm` is now refused outright, and the NTLM-only test that
+// used to cover construction became a refusal test — leaving buildNegotiateHandler's
+// handler-config wiring (PreferKerberos, AllowNTLM, Realm, NewHandler) untested.
+// Kerberos is the only provider type Negotiate still accepts.
+func TestBuildNegotiateHandler_KerberosSucceeds(t *testing.T) {
+	// A real (if throwaway) keytab: the provider loads and parses it eagerly.
+	// This test is about handler wiring, not SPNEGO verification.
+	kt := keytab.New()
+	require.NoError(t, kt.AddEntry("HTTP/proxy.example.com", "EXAMPLE.COM", "test-password",
+		time.Now(), 1, aes256CTSHMACSHA1))
+	ktData, err := kt.Marshal()
+	require.NoError(t, err)
+
+	cfg := config.AuthConfig{
+		Providers: []config.AuthProvider{
+			{Name: "krb", Type: "kerberos", Enabled: true, Config: map[string]any{
+				"realm":             "EXAMPLE.COM",
+				"service_principal": "HTTP/proxy.example.com",
+				"keytab_base64":     base64.StdEncoding.EncodeToString(ktData),
+				// Inline krb5.conf so the test does not depend on /etc/krb5.conf
+				// existing on the machine running it.
+				"krb5_config": "[libdefaults]\n  default_realm = EXAMPLE.COM\n\n" +
+					"[realms]\n  EXAMPLE.COM = {\n    kdc = kdc.example.com\n  }\n",
+			}},
+		},
+		Negotiate: &config.NegotiateConfig{
+			Enabled:          true,
+			KerberosProvider: "krb",
+			PreferKerberos:   true,
+			Realm:            "EXAMPLE.COM",
+		},
+	}
+
+	h, err := buildNegotiateHandler(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, h)
+	t.Cleanup(func() { _ = h.Close() })
+}
 
 func TestBuildNegotiateHandler_Disabled(t *testing.T) {
 	h, err := buildNegotiateHandler(config.AuthConfig{})

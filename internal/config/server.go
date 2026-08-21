@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 	"time"
+	"unicode"
 
 	"gopkg.in/yaml.v3"
 
@@ -321,6 +322,12 @@ func validateAllowedOrigin(origin string) error {
 		return fmt.Errorf("must not be empty; remove the entry or use %q to disable origin checking", AllowedOriginsWildcard)
 	}
 
+	// The explicit opt-out. It is routed through a separate code path that logs a
+	// warning at startup, which is the whole point of spelling it "*".
+	if origin == AllowedOriginsWildcard {
+		return nil
+	}
+
 	hostPattern := origin
 	if scheme, rest, found := strings.Cut(origin, originSchemeSeparator); found {
 		if scheme == "" {
@@ -335,11 +342,29 @@ func validateAllowedOrigin(origin string) error {
 		return fmt.Errorf("must be a host or scheme://host without a path (got %q)", origin)
 	}
 
+	// Reject patterns that match every host without being the explicit "*".
+	// "**", "?*", "*:*", "https://*" and friends all match anything, but would
+	// take the ordinary allowlist path — disabling the origin check with no
+	// startup warning at all. Turning the check off must stay loud and singular,
+	// so there is exactly one spelling for it.
+	if !strings.ContainsFunc(hostPattern, isHostIdentifyingRune) {
+		return fmt.Errorf("pattern %q identifies no host and would match every origin; "+
+			"use %q on its own to disable origin checking (which is logged at startup), "+
+			"or name the actual origins", origin, AllowedOriginsWildcard)
+	}
+
 	// path.Match is the matcher used at handshake time; ask it to vet the glob.
 	if _, err := path.Match(origin, ""); err != nil {
 		return fmt.Errorf("invalid wildcard pattern %q: %w", origin, err)
 	}
 	return nil
+}
+
+// isHostIdentifyingRune reports whether r contributes to naming a specific host,
+// as opposed to being a wildcard or a separator. Every real hostname contains at
+// least one such rune, so a pattern with none of them cannot be selective.
+func isHostIdentifyingRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // HealthCheckConfig contains health check settings.

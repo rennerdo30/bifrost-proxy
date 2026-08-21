@@ -19,9 +19,9 @@ import (
 const originTestTimeout = 5 * time.Second
 
 // tryDialWithOrigin attempts a WebSocket upgrade with the given Origin header
-// (empty string means "send no Origin header at all") and reports the handshake
-// error plus the HTTP status the server replied with.
-func tryDialWithOrigin(t *testing.T, srv *httptest.Server, origin string) (error, int) { //nolint:revive // (error, status) reads better than the reverse here
+// (empty string means "send no Origin header at all") and reports the HTTP
+// status the server replied with plus the handshake error.
+func tryDialWithOrigin(t *testing.T, srv *httptest.Server, origin string) (int, error) {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), originTestTimeout)
@@ -43,7 +43,7 @@ func tryDialWithOrigin(t *testing.T, srv *httptest.Server, origin string) (error
 	if conn != nil {
 		_ = conn.Close(websocket.StatusNormalClosure, "")
 	}
-	return err, status
+	return status, err
 }
 
 // newOriginTestServer starts a hub-backed test server with the given
@@ -74,7 +74,7 @@ func newOriginTestServer(t *testing.T, allowedOrigins []string) *httptest.Server
 func TestWebSocket_RejectsCrossOriginUpgrade(t *testing.T) {
 	srv := newOriginTestServer(t, nil)
 
-	err, status := tryDialWithOrigin(t, srv, "https://evil.example.com")
+	status, err := tryDialWithOrigin(t, srv, "https://evil.example.com")
 
 	require.Error(t, err, "a cross-origin upgrade must be refused")
 	assert.Equal(t, http.StatusForbidden, status, "origin rejection should be a 403")
@@ -86,7 +86,7 @@ func TestWebSocket_RejectsCrossOriginUpgrade(t *testing.T) {
 func TestWebSocket_AcceptsSameOriginUpgrade(t *testing.T) {
 	srv := newOriginTestServer(t, nil)
 
-	err, _ := tryDialWithOrigin(t, srv, srv.URL)
+	_, err := tryDialWithOrigin(t, srv, srv.URL)
 
 	require.NoError(t, err, "a same-origin upgrade must succeed without any allowlist")
 }
@@ -100,13 +100,13 @@ func TestWebSocket_AcceptsAllowlistedProxyOrigin(t *testing.T) {
 	const proxyOrigin = "http://homeassistant.local:8123"
 	srv := newOriginTestServer(t, []string{proxyOrigin})
 
-	err, _ := tryDialWithOrigin(t, srv, proxyOrigin)
+	_, err := tryDialWithOrigin(t, srv, proxyOrigin)
 
 	require.NoError(t, err, "an allowlisted proxy origin must be accepted")
 
 	// The allowlist must be an allowlist, not an off switch: a different origin
-	// is still refused while the entry above is honoured.
-	err, status := tryDialWithOrigin(t, srv, "https://evil.example.com")
+	// is still refused while the entry above is honored.
+	status, err := tryDialWithOrigin(t, srv, "https://evil.example.com")
 	require.Error(t, err, "allowlisting one origin must not allow all origins")
 	assert.Equal(t, http.StatusForbidden, status)
 }
@@ -117,15 +117,15 @@ func TestWebSocket_AcceptsAllowlistedProxyOrigin(t *testing.T) {
 func TestWebSocket_AllowlistSupportsWildcardHostPatterns(t *testing.T) {
 	srv := newOriginTestServer(t, []string{"*.bifrost.example.com"})
 
-	err, _ := tryDialWithOrigin(t, srv, "https://dash.bifrost.example.com")
+	_, err := tryDialWithOrigin(t, srv, "https://dash.bifrost.example.com")
 	require.NoError(t, err, "wildcard host pattern should match a subdomain")
 
-	err, status := tryDialWithOrigin(t, srv, "https://bifrost.example.net")
+	status, err := tryDialWithOrigin(t, srv, "https://bifrost.example.net")
 	require.Error(t, err, "wildcard must not match an unrelated domain")
 	assert.Equal(t, http.StatusForbidden, status)
 }
 
-// TestWebSocket_AllowlistMatchingRules pins the two matching behaviours an
+// TestWebSocket_AllowlistMatchingRules pins the two matching behaviors an
 // operator is most likely to trip over — a missing port and the reach of `*` —
 // and the suffix-extension attack a sloppy matcher would allow. These are
 // documented in docs/src/content/docs/api/websocket.mdx; the test exists so the
@@ -197,7 +197,7 @@ func TestWebSocket_AllowlistMatchingRules(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := newOriginTestServer(t, []string{tc.pattern})
 
-			err, status := tryDialWithOrigin(t, srv, tc.origin)
+			status, err := tryDialWithOrigin(t, srv, tc.origin)
 			if tc.allowed {
 				require.NoError(t, err)
 				return
@@ -214,7 +214,7 @@ func TestWebSocket_AllowlistMatchingRules(t *testing.T) {
 func TestWebSocket_RejectsOpaqueOrigin(t *testing.T) {
 	srv := newOriginTestServer(t, nil)
 
-	err, status := tryDialWithOrigin(t, srv, "null")
+	status, err := tryDialWithOrigin(t, srv, "null")
 
 	require.Error(t, err, "an opaque origin must not be accepted")
 	assert.Equal(t, http.StatusForbidden, status)
@@ -228,7 +228,7 @@ func TestWebSocket_RejectsOpaqueOrigin(t *testing.T) {
 func TestWebSocket_AcceptsMissingOriginHeader(t *testing.T) {
 	srv := newOriginTestServer(t, nil)
 
-	err, _ := tryDialWithOrigin(t, srv, "")
+	_, err := tryDialWithOrigin(t, srv, "")
 
 	require.NoError(t, err, "a client that sends no Origin header must still connect")
 }
@@ -248,7 +248,7 @@ func TestWebSocket_WildcardDisablesOriginCheck(t *testing.T) {
 	srv := httptest.NewServer(hub)
 	t.Cleanup(srv.Close)
 
-	err, _ := tryDialWithOrigin(t, srv, "https://evil.example.com")
+	_, err := tryDialWithOrigin(t, srv, "https://evil.example.com")
 	require.NoError(t, err, "the explicit wildcard opt-out must accept any origin")
 }
 

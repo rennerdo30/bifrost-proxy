@@ -30,6 +30,16 @@ func TestValidateAllowedOrigin(t *testing.T) {
 		{name: "path is rejected", origin: "https://example.com/dashboard", wantErr: "without a path"},
 		{name: "bare host with path", origin: "example.com/x", wantErr: "without a path"},
 		{name: "bad glob", origin: "exa[mple.com", wantErr: "invalid wildcard pattern"},
+
+		// Turning the origin check off must have exactly one spelling, because
+		// only the literal "*" takes the code path that warns at startup. These
+		// all match every host, so accepting them would disable the check
+		// silently — the precise failure the wildcard was designed to avoid.
+		{name: "double star", origin: "**", wantErr: "identifies no host"},
+		{name: "question star", origin: "?*", wantErr: "identifies no host"},
+		{name: "star colon star", origin: "*:*", wantErr: "identifies no host"},
+		{name: "star dot star", origin: "*.*", wantErr: "identifies no host"},
+		{name: "scheme with bare star host", origin: "https://*", wantErr: "identifies no host"},
 	}
 
 	for _, tc := range tests {

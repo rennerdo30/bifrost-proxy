@@ -135,6 +135,24 @@ function AuthTypeWarning({ availability }: { availability?: AuthPluginAvailabili
   )
 }
 
+// AvailabilityBadge marks a provider in the collapsed list. The full reason is
+// rendered as visually-hidden text rather than living only in a `title`
+// attribute, which never reaches keyboard or screen-reader users.
+function AvailabilityBadge({ availability }: { availability?: AuthPluginAvailability }) {
+  if (!availability || availability.state === 'available') return null
+
+  const unimplemented = availability.state === 'unimplemented'
+  return (
+    <span
+      className={`badge text-xs ${unimplemented ? 'badge-error' : 'badge-warning'}`}
+      title={availability.reason}
+    >
+      {unimplemented ? 'Not functional' : 'Unavailable in this build'}
+      {availability.reason && <span className="sr-only">: {availability.reason}</span>}
+    </span>
+  )
+}
+
 // typeOptionLabel appends the availability state to the dropdown label so the
 // list itself is honest, not just the panel below it.
 function typeOptionLabel(option: AuthTypeOption, availability?: AuthPluginAvailability): string {
@@ -276,17 +294,10 @@ export function AuthSection({ config, onChange }: AuthSectionProps) {
                       </span>
                       <span className="badge badge-info text-xs">{provider.type}</span>
                       {/* Flag a dead-end provider in the collapsed row too, so it
-                          is visible without expanding the form. */}
-                      {availabilityByType[provider.type]?.state === 'unimplemented' && (
-                        <span className="badge badge-error text-xs" title={availabilityByType[provider.type]?.reason}>
-                          Not functional
-                        </span>
-                      )}
-                      {availabilityByType[provider.type]?.state === 'build_disabled' && (
-                        <span className="badge badge-warning text-xs" title={availabilityByType[provider.type]?.reason}>
-                          Unavailable in this build
-                        </span>
-                      )}
+                          is visible without expanding the form. The reason is in
+                          the markup rather than only in a title attribute, which
+                          a keyboard or screen-reader user never sees. */}
+                      <AvailabilityBadge availability={availabilityByType[provider.type]} />
                       <span className="text-xs text-bifrost-muted">Priority: {provider.priority}</span>
                     </div>
                   </div>
