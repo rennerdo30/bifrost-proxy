@@ -1,18 +1,63 @@
 <!--
-  Bifrost app icon / favicon: the mark on a plate, so it keeps its contrast on
-  any tab strip, dock or launcher, light or dark.
+  Bifrost app icon / favicon - the small-size cut of the mark, on a plate so it
+  keeps its contrast on any tab strip, dock or launcher, light or dark.
 
-  Same 4-unit grid and construction as assets/logo.svg, re-centred for a square
-  64x64 box: the mark spans 8,16-56,48, which keeps every horizontal and
-  vertical stroke edge on a whole pixel at 16px.
+  This is a deliberately simplified cut, not the full mark scaled down. In a
+  64-unit box rendered at 16px one 4-unit grid step is exactly one pixel, so
+  anything the detailed mark draws at 4 units - its band gaps, its hangers -
+  is at the resolution floor here, and its 24-unit-deep through-arch crossing
+  is below it. What survives is the silhouette and the banding.
+
+  CONSTRUCTION
+  viewBox 0 0 64 64, artwork bounds 8,8-56,56: an 8-unit margin all round, so
+  the mark sits inside the plate rather than bleeding into its corners. Stroke
+  widths are 8 and 4, the same two weights as the full mark, and both are
+  multiples of 4 - which is what keeps every axis-aligned edge on a whole pixel
+  at 16px, 32px and 64px.
+
+    arch    two concentric bands about 32,28 - the deck's top surface - at
+            stroke 4, centreline radii 10 and 18, so the bands occupy radial
+            8-12 and 16-20 with the same 4-unit gap the full mark uses. The
+            gap matters: it is what lets the banding survive being flattened to
+            one ink for the tray icons, where two touching bands would fuse
+            into a solid dome. Silhouette edges land on the grid - crown at
+            y=8, opening at y=20, arch feet at x=12 and x=52.
+    deck    y=32, x=8-56, overhanging the arch by 4 units at each end. That
+            overhang is the cue that keeps this a bridge and not an archway.
+    piers   x=20 and x=44, 8 wide, standing on the lip of the void directly
+            under the arch's foot.
+    ground  y=52, broken between x=24 and x=40. That break is exactly the
+            arch's opening at deck level - the same rule the full mark follows,
+            where the void the bridge spans is the arch's own opening - and
+            what is left of the line is the two realms.
+
+  WHAT THIS CUT DROPS, and why
+    - the mid (accent blue) band. Two bands at this size need maximum hue
+      separation to stay apart, so the cut keeps the spectrum's two ends.
+    - the five hangers: 4-wide members inside a 24-unit opening are legible in
+      the full mark and noise here.
+    - the through-arch crossing. Here the arch's feet stop on the deck's top
+      surface and two steel piers carry the line on below it, in the places the
+      arch's own feet occupy in the full mark.
+
+  Same palette as assets/logo.svg with the dark-theme values pinned, because
+  the plate is always dark.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
      role="img" aria-labelledby="bifrost-icon-title">
   <title id="bifrost-icon-title">Bifrost Proxy</title>
   <rect width="64" height="64" rx="14" fill="#0a0e17"/>
-  <g fill="none" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
-    <path stroke="#3b82f6" d="M20 36V26L26 20H38L44 26V36"/>
-    <path stroke="#22d3ee" d="M8 44H20V32"/>
-    <path stroke="#8b5cf6" d="M44 32V44H56"/>
+  <g fill="none" stroke-linecap="butt" stroke-linejoin="miter">
+    <g stroke-width="4">
+      <path stroke="#8b5cf6" d="M22 28A10 10 0 0 1 32 18A10 10 0 0 1 42 28"/>
+      <path stroke="#22d3ee" d="M14 28A18 18 0 0 1 32 10A18 18 0 0 1 50 28"/>
+    </g>
+    <g stroke="#9ca3af" stroke-width="8">
+      <path d="M8 32H56"/>   <!-- deck -->
+      <path d="M20 32V52"/>  <!-- pier, near realm -->
+      <path d="M44 32V52"/>  <!-- pier, far realm -->
+      <path d="M8 52H24"/>   <!-- ground, near realm -->
+      <path d="M40 52H56"/>  <!-- ground, far realm -->
+    </g>
   </g>
 </svg>
