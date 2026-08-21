@@ -156,10 +156,17 @@ auth:
 Enable the user account:
 
 ```yaml
-users:
-  - username: myuser
-    password_hash: "$2a$12$..."
-    disabled: false  # Must be false or omitted
+auth:
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: myuser
+            password_hash: "$2a$12$..."
+            disabled: false  # Must be false or omitted
 ```
 
 ---
@@ -187,6 +194,8 @@ telnet ldap.example.com 389
 2. Check firewall rules
 3. Verify URL format:
 
+Standard LDAP:
+
 ```yaml
 auth:
   providers:
@@ -195,10 +204,26 @@ auth:
       enabled: true
       priority: 1
       config:
-        url: "ldap://ldap.example.com:389"  # Standard LDAP
-        # or
-        url: "ldaps://ldap.example.com:636"  # LDAP over TLS
+        url: "ldap://ldap.example.com:389"
+        base_dn: "dc=example,dc=com"
 ```
+
+LDAP over TLS:
+
+```yaml
+auth:
+  providers:
+    - name: ldap
+      type: ldap
+      enabled: true
+      priority: 1
+      config:
+        url: "ldaps://ldap.example.com:636"
+        base_dn: "dc=example,dc=com"
+```
+
+Both `url` and `base_dn` are required — the provider is rejected at startup if
+either is missing.
 
 ### Bind Failed
 
@@ -223,6 +248,8 @@ auth:
       enabled: true
       priority: 1
       config:
+        url: "ldap://ldap.example.com:389"
+        base_dn: "dc=example,dc=com"
         bind_dn: "cn=service,dc=example,dc=com"
         bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
 ```
@@ -250,15 +277,17 @@ auth:
       enabled: true
       priority: 1
       config:
-        # For Unix-style LDAP
+        url: "ldap://ldap.example.com:389"
+        base_dn: "dc=example,dc=com"
+        # Unix-style LDAP (posixAccount)
         user_filter: "(uid=%s)"
-
-        # For Active Directory
-        user_filter: "(sAMAccountName=%s)"
-
-        # For email-based lookup
-        user_filter: "(mail=%s)"
+        # For Active Directory:      user_filter: "(sAMAccountName=%s)"
+        # For email-based lookup:    user_filter: "(mail=%s)"
 ```
+
+Pick exactly one `user_filter`. A YAML mapping cannot define the same key twice —
+listing several variants in one block makes the configuration file unparseable and
+the server refuses to start.
 
 ### Group Membership Check Failing
 
@@ -283,15 +312,17 @@ auth:
       enabled: true
       priority: 1
       config:
+        url: "ldap://ldap.example.com:389"
+        base_dn: "dc=example,dc=com"
         # For groupOfNames (member DN)
         group_filter: "(member=uid=%s,ou=users,dc=example,dc=com)"
+        # For posixGroup (member UID): group_filter: "(memberUid=%s)"
 
-        # For posixGroup (member UID)
-        group_filter: "(memberUid=%s)"
-
-        # Require specific group
+        # Require specific group (omit or leave empty to drop the requirement)
         require_group: "cn=proxy-users,ou=groups,dc=example,dc=com"
 ```
+
+As with `user_filter`, only one `group_filter` may be present per provider.
 
 ### LDAP TLS Issues
 
@@ -318,6 +349,7 @@ auth:
       priority: 1
       config:
         url: "ldaps://ldap.example.com:636"
+        base_dn: "dc=example,dc=com"
         tls: true
         # For testing only (trusts any server certificate):
         insecure_skip_verify: true  # Never use in production!
@@ -335,8 +367,9 @@ auth:
 
 System authentication only works on Linux and macOS. Use an alternative:
 
+On Windows, use native authentication instead:
+
 ```yaml
-# For Windows, use native authentication instead:
 auth:
   providers:
     - name: native
@@ -347,8 +380,11 @@ auth:
         users:
           - username: admin
             password_hash: "$2a$12$..."
+```
 
-# Or LDAP for Active Directory:
+Or LDAP against a domain controller for Active Directory:
+
+```yaml
 auth:
   providers:
     - name: ldap
@@ -360,6 +396,10 @@ auth:
         base_dn: "dc=domain,dc=com"
         user_filter: "(sAMAccountName=%s)"
 ```
+
+Each option is a complete configuration file on its own — `auth:` may appear only
+once. To run both providers, list them side by side under the same `providers:`
+array and order them with `priority`.
 
 ### Every login rejected / "PAM password validation is not compiled in" (Linux)
 
@@ -448,15 +488,26 @@ auth:
       config:
         client_id: "${OAUTH_CLIENT_ID}"
         client_secret: "${OAUTH_CLIENT_SECRET}"
+        issuer_url: "https://auth.example.com"
 ```
+
+`client_id` is required. So is at least one endpoint — `introspect_url`,
+`userinfo_url`, or an `issuer_url` from which Bifrost discovers them.
 
 ### Redirect URI Mismatch
 
-**Symptoms:** "redirect_uri_mismatch" error.
+**Symptoms:** "redirect_uri_mismatch" error while obtaining a token.
+
+**Cause:** The Bifrost OAuth provider validates bearer tokens by introspection or
+via the userinfo endpoint — it never runs an authorization-code flow, so it has no
+redirect URI and accepts no `redirect_url` setting. A `redirect_uri_mismatch`
+therefore comes from the application that obtained the token, not from Bifrost.
 
 **Solution:**
 
-Ensure redirect URL exactly matches what's registered with the provider:
+Fix the redirect URI in the client application and in its registration with the
+identity provider. On the Bifrost side, only the introspection endpoint and
+credentials matter:
 
 ```yaml
 auth:
@@ -466,7 +517,9 @@ auth:
       enabled: true
       priority: 1
       config:
-        redirect_url: "http://localhost:7081/callback"  # Must match provider config
+        client_id: "${OAUTH_CLIENT_ID}"
+        client_secret: "${OAUTH_CLIENT_SECRET}"
+        introspect_url: "https://auth.example.com/oauth/introspect"
 ```
 
 ### Token Validation Failed
@@ -492,7 +545,11 @@ auth:
       enabled: true
       priority: 1
       config:
+        client_id: "${OAUTH_CLIENT_ID}"
+        client_secret: "${OAUTH_CLIENT_SECRET}"
         issuer_url: "https://auth.example.com"  # Must match token's 'iss' claim
+        required_claims:
+          aud: "bifrost-proxy"
 ```
 
 ---
@@ -525,7 +582,7 @@ echo "your.jwt.token" | cut -d. -f2 | base64 -d | jq
            jwks_url: "https://auth.example.com/.well-known/jwks.json"
    ```
 
-2. **Using static key:**
+2. **Using a static public key** (RSA/EC tokens, `RS*`/`ES*` algorithms):
    ```yaml
    auth:
      providers:
@@ -534,8 +591,30 @@ echo "your.jwt.token" | cut -d. -f2 | base64 -d | jq
          enabled: true
          priority: 1
          config:
-           signing_key: "${JWT_SIGNING_KEY}"
+           public_key_pem: |
+             -----BEGIN PUBLIC KEY-----
+             MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A...
+             -----END PUBLIC KEY-----
    ```
+
+3. **Using a shared secret** (HMAC tokens, `HS256`/`HS384`/`HS512`):
+   ```yaml
+   auth:
+     providers:
+       - name: jwt
+         type: jwt
+         enabled: true
+         priority: 1
+         config:
+           hmac_secret: "${JWT_HMAC_SECRET}"
+           algorithms:
+             - HS256
+   ```
+
+Exactly one of `jwks_url`, `public_key_pem`, or `hmac_secret` must be present —
+without one the provider is rejected at startup. HMAC and asymmetric key material
+are never interchangeable: listing an `HS*` algorithm without `hmac_secret` is
+rejected at parse time rather than failing per request.
 
 ### Token Expired
 
@@ -557,7 +636,8 @@ echo "your.jwt.token" | cut -d. -f2 | base64 -d | jq
 
 **Solution:**
 
-Specify allowed algorithms:
+Specify the allowed algorithms with `algorithms` (defaults to `RS256` and
+`ES256`):
 
 ```yaml
 auth:
@@ -567,10 +647,13 @@ auth:
       enabled: true
       priority: 1
       config:
-        allowed_algorithms:
+        jwks_url: "https://auth.example.com/.well-known/jwks.json"
+        algorithms:
           - RS256
           - ES256
 ```
+
+Adding an `HS*` entry to the list also requires `hmac_secret` in the same block.
 
 ---
 
@@ -597,11 +680,14 @@ auth:
          enabled: true
          priority: 1
          config:
-           header: "X-API-Key"
+           header_name: "X-API-Key"
            keys:
              - name: "service-a"
                key_hash: "$2a$10$correcthash..."
    ```
+
+   `keys` is required and must contain at least one entry; every entry needs a
+   `name` plus either `key_hash` or `key_plain`.
 
 ### Wrong Header Name
 
@@ -609,7 +695,8 @@ auth:
 
 **Solution:**
 
-Ensure header name matches configuration:
+Ensure the header name the client sends matches `header_name` (default
+`X-API-Key`):
 
 ```yaml
 auth:
@@ -619,8 +706,15 @@ auth:
       enabled: true
       priority: 1
       config:
-        header: "X-API-Key"  # Client must use this exact header
+        header_name: "X-API-Key"  # Client must use this exact header
+        keys:
+          - name: "service-a"
+            key_hash: "$2a$10$correcthash..."
 ```
+
+The setting is `header_name`, not `header` — an unrecognised key in a provider's
+`config` block is silently ignored, so a misspelled name leaves the default
+`X-API-Key` in force.
 
 ```bash
 # Test with correct header
@@ -651,7 +745,8 @@ curl -H "X-API-Key: your-api-key" http://localhost:7080/...
    sudo timedatectl set-ntp true
    ```
 
-2. Verify secret format (must be Base32):
+2. Verify secret format (must be Base32) and shape — `secrets` is a list of
+   entries, not a username-to-secret mapping:
    ```yaml
    auth:
      providers:
@@ -660,9 +755,17 @@ curl -H "X-API-Key: your-api-key" http://localhost:7080/...
          enabled: true
          priority: 1
          config:
+           issuer: "Bifrost Proxy"
            secrets:
-             user1: "JBSWY3DPEHPK3PXP"  # Base32 encoded
+             - username: user1
+               secret: "JBSWY3DPEHPK3PXP"  # Base32 encoded
+               groups: ["users"]
    ```
+
+   A map-shaped `secrets:` block is rejected at startup with
+   `totp config: secrets must be an array`. Secrets can also be kept out of the
+   main config with `secrets_file`, which holds the same list under a top-level
+   `secrets:` key.
 
 ### Time Drift
 
@@ -690,7 +793,7 @@ sudo timedatectl set-ntp true
 
 **Solution:**
 
-Specify the CA certificate:
+Specify the CA certificate, either by path or inline:
 
 ```yaml
 auth:
@@ -700,8 +803,12 @@ auth:
       enabled: true
       priority: 1
       config:
-        ca_cert: "/path/to/ca.crt"
+        ca_cert_file: "/path/to/ca.crt"
+        require_client_cert: true
 ```
+
+One of `ca_cert_file` or `ca_cert_pem` (an inline PEM bundle) is required; the
+provider is rejected at startup if neither is present.
 
 ### Certificate Expired
 
@@ -718,13 +825,18 @@ openssl x509 -in client.crt -noout -dates
 
 Renew the client certificate.
 
-### CN Not Allowed
+### Subject Not Allowed
 
-**Symptoms:** "CN not in allowed list" error.
+**Symptoms:** `subject not allowed: CN=...` error.
+
+**Cause:** The client certificate's subject DN does not match any entry in
+`allowed_subjects`.
 
 **Solution:**
 
-Update allowed CNs:
+`allowed_subjects` holds regular expressions matched against the full subject DN —
+there is no separate CN list and no shell-style wildcards. Restrict by CN with an
+anchored pattern:
 
 ```yaml
 auth:
@@ -734,10 +846,21 @@ auth:
       enabled: true
       priority: 1
       config:
-        allowed_cns:
-          - "client1.example.com"
-          - "*.internal.example.com"  # Wildcard
+        ca_cert_file: "/path/to/ca.crt"
+        allowed_subjects:
+          - "^CN=client1\\.example\\.com,.*$"
+          - "^CN=[^,]+\\.internal\\.example\\.com,.*$"
 ```
+
+Print the exact subject DN of a certificate before writing a pattern:
+
+```bash
+openssl x509 -in client.crt -noout -subject
+```
+
+Issuers can be restricted the same way with `allowed_issuers`. To pick the
+username and groups out of the certificate, use `subject_mapping` with
+`username_field`, `groups_field`, and `email_field`.
 
 ---
 
@@ -749,7 +872,9 @@ auth:
 
 **Solution:**
 
-Check primary authentication configuration:
+Check the primary authenticator inside the wrapper. Both `primary:` and
+`secondary:` blocks are required — the wrapper fails to start if either is
+missing, so verify the primary factor in place:
 
 ```yaml
 auth:
@@ -765,7 +890,20 @@ auth:
             users:
               - username: admin
                 password_hash: "$2a$12$..."
+        secondary:
+          mode: totp
+          config:
+            secrets:
+              - username: admin
+                secret: "JBSWY3DPEHPK3PXP"
+        mfa_required: always
+        password_format: separated
+        separator: ":"
 ```
+
+Each block names a plugin type in `mode:` and passes that plugin's own settings in
+`config:`. Referring to providers by name instead of inlining them is not
+supported.
 
 ### OTP Not Provided
 
@@ -784,9 +922,12 @@ Provide OTP in one of these ways:
 
 2. **Appended to password:**
    ```bash
-   # If otp_separator is ":"
+   # With password_format "separated" and separator ":"
    curl -x http://user:password:123456@localhost:7080 https://example.com
    ```
+
+   The setting is `separator` (`otp_separator` is still accepted as an alias for
+   backwards compatibility).
 
 ---
 
