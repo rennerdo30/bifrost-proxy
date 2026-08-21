@@ -45,16 +45,17 @@ backends:
       password: "${PROTON_PASSWORD}"
       country: "CH"
       protocol: "openvpn"
-      # PEM CA certificate; required for protocol: openvpn
+      # PEM CA certificate; required for protocol: openvpn.
+      # Paste the provider's certificate here, in full, including the
+      # BEGIN/END CERTIFICATE lines.
       ca_cert: |
         -----BEGIN CERTIFICATE-----
-        MIIFozCCA4ugAwIBAgIBATANBgkqhkiG9w0BAQ0FADBAMQswCQYDVQQGEwJDSDEV
-        ... (rest of the certificate)
+        <the provider's CA certificate, base64, unmodified>
         -----END CERTIFICATE-----
-      # Optional: OpenVPN tls-auth static key, emitted with key-direction 1
+      # Optional: OpenVPN tls-auth static key, emitted with key-direction 1.
       tls_auth_key: |
         -----BEGIN OpenVPN Static key V1-----
-        ... 16 lines of 32 hex characters ...
+        <16 lines of 32 hex characters>
         -----END OpenVPN Static key V1-----
 ```
 
