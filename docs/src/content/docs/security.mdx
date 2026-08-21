@@ -71,15 +71,39 @@ chown bifrost:bifrost /etc/bifrost/certs/server.key
 
 ## Authentication
 
-### Choosing an Authentication Mode
+### Choosing a Provider Type
 
-| Mode | Use Case | Security Level |
-|------|----------|----------------|
+Authentication is configured as an ordered list under `auth.providers[]`, each
+entry naming a plugin `type`. (The legacy `auth.mode` key is rejected at
+startup — see the [Authentication Guide](/authentication).)
+
+| `type` | Use Case | Security Level |
+|--------|----------|----------------|
 | `none` | Internal networks only | Low |
 | `native` | Small deployments | Medium |
-| `system` | Unix/PAM integration | Medium-High |
+| `system` | Unix/PAM integration | Medium-High — **needs a custom build on Linux**, see below |
+| `apikey` | Service-to-service access | Medium-High |
 | `ldap` | Enterprise/AD integration | High |
-| `oauth` | SSO/Modern apps | High |
+| `oauth` | SSO / bearer-token validation | High |
+| `jwt` | Signed-token validation (JWKS or pinned key) | High |
+| `kerberos` | Active Directory SSO (with `auth.negotiate`) | High |
+| `mtls` | Certificate / smart-card authentication | High |
+| `totp`, `hotp`, `mfa_wrapper` | Second factor on top of a primary provider | High |
+| `ntlm` | **Non-functional — rejects every login** | n/a |
+
+> **Warning:** `system` (PAM) fails closed in the stock builds.
+> On Linux the PAM backend is compiled in only with `CGO_ENABLED=1` and the
+> `pam` build tag. The release binaries and the Docker image are built without
+> both, so `type: system` **rejects every login** there (it logs a warning and
+> returns false). Build from source with
+> `CGO_ENABLED=1 go build -tags pam ./...` (needs libpam headers) if you need it,
+> or use `native`/`ldap`/`oauth` instead. macOS uses `dscl -authonly` and needs no
+> special build; Windows is not supported.
+
+> **Warning:** `ntlm` can never succeed.
+> Bifrost has no credential source against which to verify an NTLM Type 3
+> response, so the plugin rejects every attempt by design rather than accepting
+> unverified credentials. Use `kerberos` for Windows domain SSO.
 
 ### Native Authentication
 
@@ -122,11 +146,16 @@ auth:
       priority: 1
       config:
         url: "ldaps://ldap.example.com:636"  # Use LDAPS
+        base_dn: "dc=example,dc=com"
         tls: true
         insecure_skip_verify: false  # Always verify in production
         bind_dn: "cn=bifrost-svc,ou=services,dc=example,dc=com"
         bind_password: "${LDAP_BIND_PASSWORD}"  # Use environment variable
+        group_lookup_fail_closed: true  # Reject the login if the group lookup fails
 ```
+
+`url` and `base_dn` are both required — the provider refuses to start without
+them.
 
 > **Tip:** LDAP Best Practices
 > - Use a dedicated service account with minimal permissions
@@ -147,11 +176,15 @@ auth:
         client_id: "${OAUTH_CLIENT_ID}"
         client_secret: "${OAUTH_CLIENT_SECRET}"  # Never commit to git
         issuer_url: "https://auth.example.com"
-        redirect_url: "https://bifrost.example.com/callback"
         scopes:
           - openid
           - profile
 ```
+
+Bifrost validates a bearer token the client already holds (supplied as the proxy
+password), so there is no browser redirect and no `redirect_url` setting. Obtain
+the token from your identity provider over TLS and keep the proxy listener on
+HTTPS so the token is never sent in the clear.
 
 ---
 
@@ -298,6 +331,9 @@ auth:
       enabled: true
       priority: 1
       config:
+        url: "ldaps://ldap.example.com:636"
+        base_dn: "dc=example,dc=com"
+        bind_dn: "cn=bifrost-svc,ou=services,dc=example,dc=com"
         bind_password: "${LDAP_PASSWORD}"
 
 api:

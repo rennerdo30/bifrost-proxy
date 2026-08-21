@@ -14,6 +14,14 @@ tried first), and a `config` map with the plugin-specific settings.
 > supported** and the server rejects them at startup. Use `auth.providers[]`
 > with an explicit `type` and a nested `config` map, as shown below.
 
+This page is the reference for every provider type and the shape of its `config`
+map. The companion [Advanced Authentication guide](/configuration/authentication)
+does not duplicate that schema — it covers the enterprise deployment side of
+Kerberos, NTLM, mTLS and SPNEGO: keytab and CA creation, `krb5.conf`, browser and
+`curl` client setup, the `auth.negotiate` middleware, and troubleshooting. Where
+the two pages describe the same option they use the same keys; if they ever
+disagree, the plugin source under `internal/auth/plugin/` is the authority.
+
 ## No Authentication
 
 Default behaviour - allows all connections.
@@ -90,15 +98,25 @@ auth:
 
 ### LDAP Configuration
 
-| Field | Description |
-|-------|-------------|
-| `url` | LDAP server URL |
-| `base_dn` | Base DN for searches |
-| `bind_dn` | DN for service account |
-| `bind_password` | Service account password |
-| `user_filter` | Filter to find users (`%s` = username) |
-| `group_filter` | Filter to find user groups |
-| `require_group` | Only allow users in this group |
+| Field | Default | Description |
+|-------|---------|-------------|
+| `url` | **required** | LDAP server URL |
+| `base_dn` | **required** | Base DN for searches |
+| `bind_dn` | - | DN for the service account |
+| `bind_password` | - | Service account password |
+| `user_filter` | `(uid=%s)` | Filter to find users (`%s` = username) |
+| `group_filter` | - | Filter to find user groups |
+| `require_group` | - | Only allow users in this group |
+| `user_attribute` | `uid` | Attribute holding the username |
+| `email_attribute` | `mail` | Attribute holding the email address |
+| `full_name_attribute` | `cn` | Attribute holding the display name |
+| `group_attribute` | `cn` | Attribute holding the group name |
+| `tls` | `false` | Use LDAPS/TLS |
+| `insecure_skip_verify` | `false` | Skip TLS certificate verification |
+| `group_lookup_fail_closed` | `false` | Reject the login when the group lookup itself fails |
+
+Both `url` and `base_dn` are required — the provider fails to start without
+them.
 
 ## System Authentication
 
@@ -168,15 +186,24 @@ auth:
       priority: 1
       config:
         provider: "generic"
-        client_id: "${OAUTH_CLIENT_ID}"
+        client_id: "${OAUTH_CLIENT_ID}"        # Required
         client_secret: "${OAUTH_CLIENT_SECRET}"
         issuer_url: "https://auth.example.com"
-        redirect_url: "http://localhost:7081/callback"
+        # Optional explicit endpoints; otherwise derived from issuer_url
+        # introspect_url: "https://auth.example.com/oauth2/introspect"
+        # userinfo_url: "https://auth.example.com/oauth2/userinfo"
         scopes:
           - openid
           - profile
           - email
+        # required_claims:
+        #   tid: "your-tenant-id"
 ```
+
+`client_id` is required, as is at least one of `issuer_url`, `introspect_url` or
+`userinfo_url`. There is no `redirect_url`: Bifrost validates a bearer token the
+client already holds (sent as the proxy password) rather than running a browser
+redirect flow, so no callback URL is involved.
 
 ## Multiple Providers
 
@@ -243,7 +270,7 @@ auth:
       enabled: true
       priority: 1
       config:
-        header: "X-API-Key"  # Header name to check
+        header_name: "X-API-Key"  # Header to read the key from (default: X-API-Key)
         keys:
           - name: "service-a"
             key_hash: "$2a$10$..."  # bcrypt hash of the API key
@@ -251,7 +278,20 @@ auth:
           - name: "service-b"
             key_hash: "$2a$10$..."
             groups: ["api-access", "admin"]
+            expires_at: "2027-01-01T00:00:00Z"  # Optional, RFC 3339
 ```
+
+### API Key Configuration
+
+| Field | Description |
+|-------|-------------|
+| `header_name` | Header to read the key from (default: `X-API-Key`) |
+| `keys` | Required, non-empty list of keys |
+| `keys[].name` | Required identifier, used as the authenticated username |
+| `keys[].key_hash` | bcrypt hash of the key (use this in production) |
+| `keys[].key_plain` | Plaintext key — accepted as an alternative to `key_hash` |
+| `keys[].groups` | Optional group memberships |
+| `keys[].expires_at` | Optional RFC 3339 expiry timestamp |
 
 ### Generating API Key Hashes
 
@@ -278,25 +318,37 @@ auth:
         issuer: "https://auth.example.com"
         audience: "bifrost-proxy"
         jwks_url: "https://auth.example.com/.well-known/jwks.json"
-        # Or use static key:
-        # signing_key: "${JWT_SIGNING_KEY}"
+        # Or pin a static verification key instead of JWKS:
+        # public_key_pem: "${JWT_PUBLIC_KEY_PEM}"   # RSA/EC public key
+        # hmac_secret: "${JWT_HMAC_SECRET}"         # required for HS* algorithms
         username_claim: "sub"
         groups_claim: "groups"
-        allowed_algorithms:
+        algorithms:
           - RS256
           - ES256
 ```
 
 ### JWT Configuration
 
-| Field | Description |
-|-------|-------------|
-| `issuer` | Expected issuer (iss claim) |
-| `audience` | Expected audience (aud claim) |
-| `jwks_url` | URL to fetch JSON Web Key Set |
-| `signing_key` | Static signing key (alternative to JWKS) |
-| `username_claim` | Claim to use as username |
-| `groups_claim` | Claim containing user groups |
+| Field | Default | Description |
+|-------|---------|-------------|
+| `jwks_url` | - | URL to fetch the JSON Web Key Set from |
+| `public_key_pem` | - | PEM-encoded RSA/EC public key (alternative to JWKS) |
+| `hmac_secret` | - | Symmetric secret for `HS256`/`HS384`/`HS512` |
+| `issuer` | - | Expected issuer (`iss` claim) |
+| `audience` | - | Expected audience (`aud` claim) |
+| `algorithms` | `["RS256"]` | Allowed signing algorithms |
+| `username_claim` | `sub` | Claim to use as username |
+| `groups_claim` | `groups` | Claim containing user groups |
+| `email_claim` | `email` | Claim containing the email address |
+| `leeway_seconds` | `60` | Clock-skew allowance for `exp`/`nbf` |
+| `jwks_refresh_interval` | `1h` | How often to refetch the JWKS |
+
+> Exactly one key source is required: the provider fails to start unless one of
+> `jwks_url`, `public_key_pem` or `hmac_secret` is set. The allow-list key is
+> `algorithms` — there is no `allowed_algorithms` and no `signing_key`. Listing an
+> HMAC algorithm without `hmac_secret` is rejected at startup rather than failing
+> on every request.
 
 ## TOTP Authentication
 
@@ -311,13 +363,24 @@ auth:
       priority: 1
       config:
         issuer: "Bifrost Proxy"
-        digits: 6
+        digits: 6              # 6 or 8
         period: 30
-        algorithm: "SHA1"
-        secrets:
-          user1: "JBSWY3DPEHPK3PXP"  # Base32-encoded secret
-          user2: "GEZDGNBVGY3TQOJQ"
+        algorithm: "SHA1"      # SHA1, SHA256 or SHA512
+        skew: 1                # Periods of clock skew to accept
+        secrets:               # A list, not a map
+          - username: user1
+            secret: "JBSWY3DPEHPK3PXP"   # Base32-encoded
+            groups: ["staff"]
+          - username: user2
+            secret: "GEZDGNBVGY3TQOJQ"
+            disabled: false
+        # Or keep secrets out of the main config:
+        # secrets_file: "/etc/bifrost/totp-secrets.yaml"
 ```
+
+> `secrets` must be a **list of objects** with `username` and `secret` keys. A
+> `username: secret` map is rejected at startup with "secrets must be an array",
+> and every `secret` has to be valid Base32.
 
 ### Setting Up TOTP
 
@@ -342,17 +405,21 @@ auth:
       enabled: true
       priority: 1
       config:
-        digits: 6
-        algorithm: "SHA1"
-        secrets:
-          user1:
-            secret: "JBSWY3DPEHPK3PXP"
+        digits: 6              # 6 or 8
+        algorithm: "SHA1"      # SHA1, SHA256 or SHA512
+        secrets:               # A list, not a map
+          - username: user1
+            secret: "JBSWY3DPEHPK3PXP"   # Base32-encoded
             counter: 0
-          user2:
+          - username: user2
             secret: "GEZDGNBVGY3TQOJQ"
             counter: 100
         look_ahead: 10  # Accept codes within this window
+        # secrets_file: "/etc/bifrost/hotp-secrets.yaml"
 ```
+
+> As with TOTP, `secrets` is a **list of objects** (`username`, `secret`, and for
+> HOTP the starting `counter`) — a map keyed by username is rejected at startup.
 
 ## mTLS Certificate Authentication
 
@@ -366,21 +433,37 @@ auth:
       enabled: true
       priority: 1
       config:
-        ca_cert: "/path/to/ca.crt"
-        # Optional: require specific certificate attributes
-        require_cn: true
-        allowed_cns:
-          - "client1.example.com"
-          - "*.internal.example.com"
-        # Map certificate subject to user
-        username_from: "cn"  # cn, email, or custom OID
+        ca_cert_file: "/path/to/ca.crt"   # or ca_cert_pem for an inline PEM
+        require_client_cert: true
+        verify_time: true
+        # Map certificate fields to the user identity
+        subject_mapping:
+          username_field: "CN"
+          groups_field: "OU"
+          email_field: "emailAddress"
+        # Optional: restrict which certificates are accepted.
+        # These are regular expressions matched against the full subject/issuer
+        # DN string — not shell globs.
+        allowed_subjects:
+          - "^CN=client1\\.example\\.com,.*$"
+          - ".*OU=Engineering.*"
+        allowed_issuers:
+          - ".*CN=Bifrost CA.*"
+        crl_file: "/path/to/crl.pem"
 ```
+
+Exactly one of `ca_cert_file` / `ca_cert_pem` is required — the provider fails to
+start without it. There is no `ca_cert`, `require_cn`, `allowed_cns` or
+`username_from` key; CN restrictions are expressed as an `allowed_subjects`
+regex. See the [Advanced Authentication guide](/configuration/authentication#mtls-mutual-tls-authentication)
+for the full option list, listener-level `client_auth` setup and certificate
+generation.
 
 ### Certificate Requirements
 
 - Client must present a valid certificate signed by the configured CA
-- Certificate must not be expired or revoked
-- Subject CN or email is used as username
+- Certificate must not be expired (`verify_time`) or listed in `crl_file`
+- The field named by `subject_mapping.username_field` (default `CN`) becomes the username
 
 ## Kerberos/SPNEGO Authentication
 
@@ -464,20 +547,54 @@ auth:
           config:
             issuer: "Bifrost"
             secrets:
-              admin: "JBSWY3DPEHPK3PXP"
-              user1: "GEZDGNBVGY3TQOJQ"
+              - username: admin
+                secret: "JBSWY3DPEHPK3PXP"
+              - username: user1
+                secret: "GEZDGNBVGY3TQOJQ"
 
-        # How to submit OTP
-        otp_header: "X-OTP"  # Or append to password with separator
-        otp_separator: ":"   # password:123456
+        # How the OTP is carried inside the password field
+        password_format: separated   # "separated" or "concatenated"
+        separator: ":"               # password:123456
+        mfa_code_length: 6           # Used by "concatenated" to split the tail
+        mfa_required: always         # always | per_user | group_based
 ```
+
+Both `primary` and `secondary` blocks are mandatory. If either is missing the
+plugin falls back to resolving providers by name — which it cannot do — and the
+server refuses to start with "referencing auth providers by name ... is not
+supported". Each block takes its own `mode` (the plugin type) and `config`, and
+the nested `config` must satisfy that plugin's own schema (note the list-shaped
+`secrets` above).
+
+### MFA Configuration
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `primary` | **required** | Inline first-factor authenticator (`mode` + `config`) |
+| `secondary` | **required** | Inline OTP authenticator; `mode` is `totp` or `hotp` |
+| `password_format` | `concatenated` | How the OTP is embedded in the password |
+| `separator` | `:` | Separator for `password_format: separated` |
+| `mfa_code_length` | `6` | OTP length, used to split a `concatenated` password |
+| `mfa_required` | `always` | `always`, `per_user` or `group_based` |
+| `mfa_users` | - | Usernames requiring MFA (`per_user` mode) |
+| `mfa_groups` | - | Groups requiring MFA (`group_based` mode) |
+
+`otp_separator` is accepted as a legacy alias for `separator` (it also implies
+`password_format: separated`).
 
 ### MFA Authentication Flow
 
-1. Client sends username and password
-2. If OTP header is present, validate both
-3. If OTP is appended to password (password:123456), split and validate
+1. The client sends the username and a password that carries the OTP
+2. The wrapper splits the OTP off the password using `password_format`
+   (`password:123456` when separated, or the trailing `mfa_code_length` digits
+   when concatenated)
+3. The primary provider validates the password half, the secondary provider
+   validates the OTP
 4. Both factors must pass for authentication to succeed
+
+> **There is no OTP header.** The code is read only out of the password field —
+> `X-OTP` and similar headers are not consulted, so the OTP has to be appended to
+> the proxy password.
 
 ## Session Management
 
@@ -510,30 +627,71 @@ session:
 
 ## Authentication Plugin System
 
-The authentication system uses a plugin architecture. Custom authentication providers can be registered:
+The authentication system uses a plugin architecture. A plugin is a factory: it
+validates a `config` map and builds an `auth.Authenticator`, which is the object
+that actually checks credentials. Register the plugin from an `init()` function
+so it is available by the time the config is loaded.
 
 ```go
-import "github.com/rennerdo30/bifrost-proxy/internal/auth"
+import (
+    "context"
+    "fmt"
+
+    "github.com/rennerdo30/bifrost-proxy/internal/auth"
+)
 
 func init() {
-    auth.RegisterPlugin("custom", &CustomAuthPlugin{})
+    auth.RegisterPlugin("custom", &customPlugin{})
 }
 
-type CustomAuthPlugin struct{}
+// customPlugin implements auth.Plugin.
+type customPlugin struct{}
 
-func (p *CustomAuthPlugin) Name() string { return "custom" }
+func (p *customPlugin) Type() string        { return "custom" }
+func (p *customPlugin) Description() string { return "Example custom authenticator" }
 
-func (p *CustomAuthPlugin) Init(config map[string]interface{}) error {
-    // Initialize plugin
+func (p *customPlugin) ValidateConfig(config map[string]any) error {
+    if _, ok := config["realm"].(string); !ok {
+        return fmt.Errorf("custom auth config: 'realm' is required")
+    }
     return nil
 }
 
-func (p *CustomAuthPlugin) Authenticate(ctx context.Context, creds auth.Credentials) (*auth.User, error) {
-    // Validate credentials
-    return &auth.User{Username: creds.Username}, nil
+func (p *customPlugin) Create(config map[string]any) (auth.Authenticator, error) {
+    if err := p.ValidateConfig(config); err != nil {
+        return nil, err
+    }
+    realm, _ := config["realm"].(string)
+    return &customAuthenticator{realm: realm}, nil
 }
 
-func (p *CustomAuthPlugin) Close() error {
-    return nil
+func (p *customPlugin) DefaultConfig() map[string]any {
+    return map[string]any{"realm": "example"}
 }
+
+func (p *customPlugin) ConfigSchema() string { return "" }
+
+// customAuthenticator implements auth.Authenticator.
+type customAuthenticator struct{ realm string }
+
+func (a *customAuthenticator) Name() string { return "custom" }
+func (a *customAuthenticator) Type() string { return "custom" }
+
+func (a *customAuthenticator) Authenticate(ctx context.Context, username, password string) (*auth.UserInfo, error) {
+    // Validate the credentials; return an error to reject.
+    return &auth.UserInfo{Username: username, Metadata: map[string]string{"realm": a.realm}}, nil
+}
+```
+
+Once registered, select it from the config like any built-in plugin:
+
+```yaml
+auth:
+  providers:
+    - name: custom
+      type: custom
+      enabled: true
+      priority: 1
+      config:
+        realm: example
 ```
