@@ -33,7 +33,7 @@ func pemWithGarbageDER() string {
 }
 
 // TestOpenVPNConfigRefusesUnusableCryptoMaterial asserts config generation fails
-// closed for every flavour of unusable CA / tls-auth material instead of
+// closed for every flavor of unusable CA / tls-auth material instead of
 // emitting a profile the OpenVPN subprocess would reject.
 func TestOpenVPNConfigRefusesUnusableCryptoMaterial(t *testing.T) {
 	server := &vpnprovider.Server{
