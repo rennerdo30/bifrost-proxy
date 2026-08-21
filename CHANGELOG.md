@@ -136,6 +136,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   load CA certificate". `ca_cert` and `tls_auth_key` are now validated at
   config-load time (backend construction) and again at profile generation, with
   an actionable error naming the field
+- Documentation: every YAML example in the docs is now one the server/client
+  actually accepts. Removed config keys that do not exist and were therefore
+  silently dropped by the loader (`access_log.fields`,
+  `server.http.forward_auth_headers`, `cache.memory`/`cache.disk` outside
+  `cache.storage`, `rate_limit.burst`, listener `enabled`/`address`/
+  `connect_timeout`/`max_idle_conns*`, top-level `websocket:`/`connection_limits:`,
+  `vpn.mode`/`vpn.interface_name`/`vpn.mtu`/`vpn.split`, `vpn.dns.servers`,
+  `vpn.dns.intercept_port`, `debug.log_level`), corrected auth-provider options to
+  the schema each plugin parses (mTLS `ca_cert_file`/`allowed_subjects`, JWT
+  `algorithms` plus a real key source, apikey `header_name`, list-shaped TOTP/HOTP
+  `secrets`, `mfa_wrapper` requiring both `primary` and `secondary`), and split
+  the blocks that contained duplicate YAML keys — those made the loader hard-fail,
+  so pasting them prevented startup
+- Documentation: `monitoring.mdx` now matches the Prometheus registry, including
+  the `bifrost_cache_*` series (exported whenever `cache.enabled` is set) and the
+  note that `bifrost_connections_active` always carries an empty `backend` label.
+  Two Mermaid diagrams in the architecture guide that failed to parse in the
+  browser now render
+- Documentation: `${VAR:-default}` was shown as supported env-var interpolation,
+  but expansion is `os.ExpandEnv`, so it silently yields an empty string
 - A config save that changed both a hot-reloadable and a restart-required section
   skipped the hot-reload entirely, so e.g. a new `access_control` blocklist saved
   alongside a listener change stayed unenforced until a restart. The

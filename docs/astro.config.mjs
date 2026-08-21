@@ -34,6 +34,7 @@ export default defineConfig({
             { label: "Backends", slug: "backends" },
             { label: "VPN Providers", slug: "vpn-providers" },
             { label: "Authentication", slug: "authentication" },
+            { label: "Advanced Authentication", slug: "configuration/authentication" },
             { label: "VPN Mode", slug: "vpn-mode" },
             { label: "Mesh Networking", slug: "mesh-networking" },
             { label: "HTTP Cache", slug: "cache" },
