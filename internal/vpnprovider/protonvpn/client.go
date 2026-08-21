@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
@@ -364,11 +363,13 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 // operator-supplied and only emitted when present.
 func (c *Client) generateOpenVPNConfigContent(server *vpnprovider.Server, protocol string, creds vpnprovider.Credentials) (string, error) {
 	caCert := strings.TrimSpace(creds.CACert)
-	if caCert == "" {
-		return "", fmt.Errorf("%w: ProtonVPN OpenVPN requires a CA certificate to be configured (credentials.ca_cert)", vpnprovider.ErrConfigGenerationFailed)
+	if err := vpnprovider.ValidateCACertPEMAt(caCert, time.Now()); err != nil {
+		return "", fmt.Errorf("%w: ProtonVPN OpenVPN requires a valid CA certificate (credentials.ca_cert): %w",
+			vpnprovider.ErrConfigGenerationFailed, err)
 	}
-	if block, _ := pem.Decode([]byte(caCert)); block == nil {
-		return "", fmt.Errorf("%w: configured ProtonVPN CA certificate is not valid PEM", vpnprovider.ErrConfigGenerationFailed)
+	if err := vpnprovider.ValidateTLSAuthKey(creds.TLSAuthKey); err != nil {
+		return "", fmt.Errorf("%w: configured ProtonVPN tls-auth key is unusable (credentials.tls_auth_key): %w",
+			vpnprovider.ErrConfigGenerationFailed, err)
 	}
 
 	port := server.OpenVPN.UDPPort
