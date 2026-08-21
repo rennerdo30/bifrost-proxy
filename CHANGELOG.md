@@ -102,9 +102,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - The PIA provider's embedded OpenVPN CA certificate was not PIA's. It parsed as
-  X.509, but roughly half of its DER — the tail of the RSA public key and the
-  whole signature — had been replaced, so its self-signature did not verify and
-  its public key was not the one PIA signs with. That constant is both the `<ca>`
+  X.509 with the right structure and subject, but 711 of its 1967 DER bytes had
+  been replaced — 300 bytes at the tail of the RSA modulus and 414 of the 512
+  signature bytes — so its self-signature did not verify and its public key was
+  not the one PIA signs with. That constant is both the `<ca>`
   block of generated PIA OpenVPN profiles and the TLS trust root for PIA's
   `/addKey` and port-forwarding endpoints, so PIA OpenVPN, WireGuard key
   registration and port forwarding could not have worked. Replaced with PIA's
