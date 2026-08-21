@@ -127,6 +127,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The startup log now states which peer-authorization stance is in effect
   (`allowed_peers` enforced, or discovery-announced peers only), and each inbound
   rejection is logged with its reason
+- Mesh data frames whose unused upper nonce bytes are non-zero are rejected, so a
+  peer cannot craft distinct nonces that alias a single replay-window slot
 
 > [!IMPORTANT]
 > The mesh handshake wire format changed (both messages are now a fixed 105
@@ -137,6 +139,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > fallback. Nothing outside the mesh data plane is affected.
 
 ### Fixed
+- **One peer leaving the mesh disabled networking for the whole node.**
+  `DirectConnection.Close` closed the P2P manager's shared UDP socket, which it
+  does not own, so the first disconnect left the node unable to send or receive
+  any datagram or accept any new peer — while the receive worker busy-spun on the
+  closed socket, logging in a hot loop. The socket is now closed only by the
+  manager, the receive worker stops instead of retrying a permanently closed
+  socket, and a connection that loses the inbound race is closed rather than
+  leaking its worker goroutines
 - A config save that changed both a hot-reloadable and a restart-required section
   skipped the hot-reload entirely, so e.g. a new `access_control` blocklist saved
   alongside a listener change stayed unenforced until a restart. The
