@@ -372,6 +372,9 @@ export interface OAuthAuth {
 }
 
 // Supported auth plugin types (must match registered plugins in internal/auth/plugin).
+// `negotiate` is deliberately absent: SPNEGO/Negotiate is HTTP middleware
+// configured under auth.negotiate.*, not a provider, and the server refuses a
+// provider of that type.
 export type AuthProviderType =
   | 'none'
   | 'native'
@@ -385,6 +388,39 @@ export type AuthProviderType =
   | 'ntlm'
   | 'hotp'
   | 'totp'
+  | 'mfa_wrapper'
+
+// Whether an auth plugin can actually authenticate in the running server binary.
+// Mirrors internal/auth.AvailabilityState.
+//
+//   available      - works normally
+//   build_disabled - this server build lacks the support the plugin needs (a
+//                    build tag, cgo, a platform library), so it fails closed
+//                    here but works in a build that includes it
+//   unimplemented  - cannot authenticate anyone in any build; the server refuses
+//                    a config that selects it
+export type AuthPluginAvailabilityState = 'available' | 'build_disabled' | 'unimplemented'
+
+export interface AuthPluginAvailability {
+  state: AuthPluginAvailabilityState
+  // Operator-facing explanation of why the plugin cannot work and what to use
+  // instead. Present whenever state is not 'available'.
+  reason?: string
+}
+
+// One registered auth plugin as reported by GET /api/v1/auth/plugins. Serving
+// this from the registry means the UI no longer has to hard-code which providers
+// work — which it cannot know, since `system` depends on how the binary was built.
+export interface AuthPluginInfo {
+  name: string
+  type: string
+  description: string
+  availability: AuthPluginAvailability
+}
+
+export interface AuthPluginsResponse {
+  plugins: AuthPluginInfo[]
+}
 
 // Plugin-specific configuration is an untyped map matching the server's
 // AuthProvider.Config (map[string]any). The server rejects the legacy
