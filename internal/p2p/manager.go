@@ -40,8 +40,16 @@ type P2PManager struct {
 
 	// keyToPeer maps a base64-encoded remote public key to its peer ID. It is
 	// populated via RegisterPeerKey from discovery so that NAT-traversed inbound
-	// connections resolve to the real peer ID instead of a synthetic one.
+	// connections resolve to the real peer ID instead of a synthetic one. It
+	// doubles as the inbound authorization set: a key that is not in this map is
+	// not allowed to open a session (unless AllowUnknownPeers is set).
 	keyToPeer map[string]string
+
+	// lastHandshake maps a base64-encoded remote public key to the greatest
+	// handshake timestamp accepted from it, rejecting replayed initiations. Only
+	// keys that already passed authorization are recorded, so with the
+	// fail-closed default the map is bounded by the number of known peers.
+	lastHandshake map[string]uint64
 
 	conn   net.PacketConn
 	ctx    context.Context
@@ -146,15 +154,16 @@ func NewP2PManager(config ManagerConfig) (*P2PManager, error) {
 	}
 
 	pm := &P2PManager{
-		config:       config,
-		localPeerID:  config.LocalPeerID,
-		localKeyPair: keyPair,
-		connections:  make(map[string]P2PConnection),
-		endpoints:    make(map[string][]netip.AddrPort),
-		pendingConns: make(map[netip.AddrPort]*DirectConnection),
-		keyToPeer:    make(map[string]string),
-		ctx:          ctx,
-		cancel:       cancel,
+		config:        config,
+		localPeerID:   config.LocalPeerID,
+		localKeyPair:  keyPair,
+		connections:   make(map[string]P2PConnection),
+		endpoints:     make(map[string][]netip.AddrPort),
+		pendingConns:  make(map[netip.AddrPort]*DirectConnection),
+		keyToPeer:     make(map[string]string),
+		lastHandshake: make(map[string]uint64),
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 
 	// Initialize NAT detector
@@ -580,16 +589,26 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 		return
 	}
 
-	// Handshake init message format: type (1) + public key (32) + random (32)
-	if len(data) < 1+32+32 {
-		slog.Debug("invalid handshake init: too short", "from", from.String())
+	// Handshake init framing is fixed-size; see the layout documented on
+	// handshakeMsgSize. A wrong length is either corruption or a peer speaking
+	// an older handshake format, which is not interoperable.
+	if len(data) != handshakeMsgSize {
+		slog.Debug("invalid handshake init: unexpected length (incompatible peer version?)",
+			"from", from.String(),
+			"length", len(data),
+			"expected", handshakeMsgSize,
+		)
 		return
 	}
 
 	slog.Debug("received connection request", "from", from.String())
 
-	// Extract remote public key from handshake init
-	remotePublicKey := data[1:33]
+	// Extract remote public key from handshake init. This is copied out rather
+	// than aliased: data points into receiveWorker's single reusable read
+	// buffer, which the next datagram overwrites, and the key outlives this call
+	// in the connection's config.
+	remotePublicKey := make([]byte, PublicKeySize)
+	copy(remotePublicKey, data[hsOffsetStaticPub:hsOffsetEphPub])
 
 	// Look up peer by public key. Only keys registered via RegisterPeerKey
 	// (populated from authenticated discovery) resolve to a real peer ID.
@@ -629,10 +648,31 @@ func (pm *P2PManager) handleNewConnection(from netip.AddrPort, data []byte) {
 		return
 	}
 
-	// Process the handshake init and create response
+	// Process the handshake init and create response. This verifies the
+	// initiation's authenticator, which proves the sender holds the static
+	// private key for the public key it claims — a host that only knows the
+	// (non-secret) public key cannot get past here.
 	response, err := crypto.ProcessHandshakeInit(data)
 	if err != nil {
+		if errors.Is(err, ErrHandshakeUnauthenticated) {
+			slog.Warn("rejecting unauthenticated handshake (spoofed peer identity?)",
+				"peer_id", peerID,
+				"from", from.String(),
+			)
+			return
+		}
 		slog.Debug("failed to process handshake init", "error", err)
+		return
+	}
+
+	// Reject replayed initiations. Without this, an attacker could resend a
+	// captured (validly authenticated) initiation from its own address, take
+	// over the peer's connection slot and endpoint, and blackhole the real peer.
+	if !pm.acceptHandshakeTimestamp(remotePublicKey, crypto.HandshakeTimestamp()) {
+		slog.Warn("rejecting replayed handshake initiation",
+			"peer_id", peerID,
+			"from", from.String(),
+		)
 		return
 	}
 
@@ -687,7 +727,8 @@ func (pm *P2PManager) RegisterPeerKey(publicKey []byte, peerID string) {
 	pm.mu.Unlock()
 }
 
-// UnregisterPeerKey removes a public-key-to-peer-ID mapping.
+// UnregisterPeerKey removes a public-key-to-peer-ID mapping, revoking that
+// key's authorization to open an inbound session.
 func (pm *P2PManager) UnregisterPeerKey(publicKey []byte) {
 	if len(publicKey) == 0 {
 		return
@@ -696,6 +737,58 @@ func (pm *P2PManager) UnregisterPeerKey(publicKey []byte) {
 	pm.mu.Lock()
 	delete(pm.keyToPeer, key)
 	pm.mu.Unlock()
+}
+
+// UnregisterPeerID revokes every public key that resolves to peerID. It is
+// called when a peer leaves the mesh: without it, authorization granted once by
+// discovery would last for the lifetime of the process, and a departed peer's
+// (non-secret) public key would still be accepted for inbound sessions.
+//
+// The handshake replay high-water marks are deliberately retained, so that
+// re-authorizing a peer later does not reopen the window for initiations
+// captured before it left.
+func (pm *P2PManager) UnregisterPeerID(peerID string) {
+	if peerID == "" {
+		return
+	}
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+	for key, id := range pm.keyToPeer {
+		if id == peerID {
+			delete(pm.keyToPeer, key)
+		}
+	}
+}
+
+// acceptHandshakeTimestamp reports whether an authenticated handshake
+// initiation carrying timestamp ts is fresh for publicKey, recording it if so.
+// Handshake timestamps are strictly increasing per initiator process, so
+// requiring a strict increase rejects verbatim replays.
+//
+// The high-water marks are in-memory only: after a restart the first initiation
+// from each peer is accepted unconditionally. WireGuard's timestamp greeting has
+// the same property without persistent state; the residual exposure is a single
+// replayed initiation immediately after a restart, which the authenticator
+// still constrains to a genuine peer's captured message.
+func (pm *P2PManager) acceptHandshakeTimestamp(publicKey []byte, ts uint64) bool {
+	key := base64.StdEncoding.EncodeToString(publicKey)
+
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	if last, ok := pm.lastHandshake[key]; ok && ts <= last {
+		return false
+	}
+	pm.lastHandshake[key] = ts
+	return true
+}
+
+// IsPeerAuthorized reports whether a static public key is currently allowed to
+// open an inbound session, i.e. whether it was registered from discovery and not
+// since revoked. Passing this check is necessary but not sufficient: the
+// handshake authenticator must also verify.
+func (pm *P2PManager) IsPeerAuthorized(publicKey []byte) bool {
+	return pm.lookupPeerByKey(publicKey) != ""
 }
 
 // lookupPeerByKey looks up a peer ID by their public key, using the registry
