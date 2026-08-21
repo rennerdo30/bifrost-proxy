@@ -2,6 +2,7 @@ package protonvpn
 
 import (
 	"encoding/pem"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -57,7 +58,7 @@ func TestNoEmbeddedCAMaterial(t *testing.T) {
 }
 
 // TestOpenVPNConfigRefusesUnusableCryptoMaterial asserts config generation fails
-// closed for every flavour of unusable CA / tls-auth material instead of
+// closed for every flavor of unusable CA / tls-auth material instead of
 // emitting a profile the OpenVPN subprocess would reject.
 func TestOpenVPNConfigRefusesUnusableCryptoMaterial(t *testing.T) {
 	client := NewClient(WithManualCredentials("user", "pass", TierPlus))
@@ -127,4 +128,21 @@ func TestOpenVPNConfigEmitsUsableCA(t *testing.T) {
 	assert.NotContains(t, config, "script-security")
 	assert.NotContains(t, config, "update-resolv-conf")
 	assert.NotContains(t, config, "/etc/openvpn")
+}
+
+// TestOpenVPNConfigProtocolSelection covers the TCP variant of the template,
+// which selects the TCP port instead of the UDP one.
+func TestOpenVPNConfigProtocolSelection(t *testing.T) {
+	client := NewClient(WithManualCredentials("user", "pass", TierPlus))
+	creds := vpnprovider.Credentials{CACert: testCACertPEM}
+
+	udpConfig, err := client.generateOpenVPNConfigContent(testOpenVPNServer(), "udp", creds)
+	require.NoError(t, err)
+	assert.Contains(t, udpConfig, "proto udp")
+	assert.Contains(t, udpConfig, fmt.Sprintf("remote test.protonvpn.net %d", OpenVPNUDPPort))
+
+	tcpConfig, err := client.generateOpenVPNConfigContent(testOpenVPNServer(), "tcp", creds)
+	require.NoError(t, err)
+	assert.Contains(t, tcpConfig, "proto tcp")
+	assert.Contains(t, tcpConfig, fmt.Sprintf("remote test.protonvpn.net %d", OpenVPNTCPPort))
 }

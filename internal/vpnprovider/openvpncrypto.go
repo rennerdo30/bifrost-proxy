@@ -156,8 +156,9 @@ func ParseCACertPEM(caCertPEM string) ([]*x509.Certificate, error) {
 			// CheckSignature (rather than CheckSignatureFrom) verifies the
 			// signature bytes alone, so a self-issued leaf still reports the
 			// more useful "not a CA" error below.
-			if err := cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature); err != nil {
-				return nil, fmt.Errorf("%w: subject %q: %w", ErrCACertBadSelfSignature, cert.Subject.String(), err)
+			sigErr := cert.CheckSignature(cert.SignatureAlgorithm, cert.RawTBSCertificate, cert.Signature)
+			if sigErr != nil {
+				return nil, fmt.Errorf("%w: subject %q: %w", ErrCACertBadSelfSignature, cert.Subject.String(), sigErr)
 			}
 		}
 		certs = append(certs, cert)
