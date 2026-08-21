@@ -1,6 +1,7 @@
 package p2p
 
 import (
+	"encoding/binary"
 	"net"
 	"net/netip"
 	"sync"
@@ -320,23 +321,77 @@ func TestHandshakeInitReplayRejected(t *testing.T) {
 }
 
 // TestHandshakeTimestampsStrictlyIncrease verifies the property the replay
-// check depends on: successive initiations from one process never repeat or
-// regress a timestamp, even when created faster than the clock's resolution.
+// check depends on: no two initiations from one process ever share a timestamp,
+// and each caller sees a strictly increasing sequence.
+//
+// This must be concurrent to be meaningful. A sequential loop passes even
+// without nextHandshakeTimestamp's compare-and-swap, because a key generation
+// plus an X25519 per iteration lets the wall clock advance every time; only
+// concurrent callers can read the same nanosecond.
 func TestHandshakeTimestampsStrictlyIncrease(t *testing.T) {
+	const (
+		goroutines  = 64
+		perRoutine  = 500
+		totalStamps = goroutines * perRoutine
+	)
+
+	var wg sync.WaitGroup
+	results := make([][]uint64, goroutines)
+
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(g int) {
+			defer wg.Done()
+			stamps := make([]uint64, perRoutine)
+			for i := range stamps {
+				stamps[i] = nextHandshakeTimestamp()
+			}
+			results[g] = stamps
+		}(g)
+	}
+	wg.Wait()
+
+	seen := make(map[uint64]struct{}, totalStamps)
+	for g, stamps := range results {
+		var prev uint64
+		for i, ts := range stamps {
+			if _, dup := seen[ts]; dup {
+				t.Fatalf("timestamp %d handed out twice (goroutine %d, index %d)", ts, g, i)
+			}
+			seen[ts] = struct{}{}
+
+			if i > 0 && ts <= prev {
+				t.Fatalf("timestamp regressed within one caller: %d after %d", ts, prev)
+			}
+			prev = ts
+		}
+	}
+	assert.Len(t, seen, totalStamps)
+}
+
+// TestHandshakeInitTimestampIsFresh verifies the timestamp actually reaches the
+// wire and advances between two initiations built from the same session state.
+func TestHandshakeInitTimestampIsFresh(t *testing.T) {
 	remote, err := GenerateKeyPair()
 	require.NoError(t, err)
 
-	var prev uint64
-	for i := 0; i < 1000; i++ {
-		cs, err := NewCryptoSession(nil)
-		require.NoError(t, err)
-		_, err = cs.CreateHandshakeInit(remote.PublicKey[:])
-		require.NoError(t, err)
+	first, err := NewCryptoSession(nil)
+	require.NoError(t, err)
+	firstMsg, err := first.CreateHandshakeInit(remote.PublicKey[:])
+	require.NoError(t, err)
 
-		ts := cs.HandshakeTimestamp()
-		require.Greater(t, ts, prev, "handshake timestamp must strictly increase")
-		prev = ts
+	second, err := NewCryptoSession(nil)
+	require.NoError(t, err)
+	secondMsg, err := second.CreateHandshakeInit(remote.PublicKey[:])
+	require.NoError(t, err)
+
+	onWire := func(msg []byte) uint64 {
+		return binary.LittleEndian.Uint64(msg[hsOffsetTimestamp:hsOffsetMAC])
 	}
+
+	assert.Equal(t, first.HandshakeTimestamp(), onWire(firstMsg),
+		"the timestamp used for derivation must be the one on the wire")
+	assert.Greater(t, onWire(secondMsg), onWire(firstMsg))
 }
 
 // TestHandshakeResponseTampering verifies the initiator rejects a response that
@@ -432,6 +487,50 @@ func TestUnregisterPeerIDRevokesAuthorization(t *testing.T) {
 	numConns := len(pm.connections)
 	pm.mu.RUnlock()
 	assert.Equal(t, 0, numConns, "revoked peer must not be able to reconnect")
+}
+
+// TestDisconnectKeepsManagerSocketUsable is the regression test for a
+// denial-of-service in the peer-revocation path: DirectConnection.Close used to
+// close the manager's single shared UDP socket, which it does not own. The first
+// peer to disconnect therefore tore down the whole node's P2P plane — no
+// datagram could be sent or received afterwards, and the receive worker spun on
+// the resulting ErrClosed. This sits directly under the mesh's onPeerLeft.
+func TestDisconnectKeepsManagerSocketUsable(t *testing.T) {
+	pm := newTestManager(t, false)
+
+	peer, err := NewCryptoSession(nil)
+	require.NoError(t, err)
+	pm.RegisterPeerKey(peer.LocalPublicKey(), "peer")
+
+	initMsg, err := peer.CreateHandshakeInit(pm.LocalPublicKey())
+	require.NoError(t, err)
+	pm.handleNewConnection(netip.MustParseAddrPort("127.0.0.1:40050"), initMsg)
+
+	pm.mu.RLock()
+	_, ok := pm.connections["peer"]
+	pm.mu.RUnlock()
+	require.True(t, ok)
+
+	require.NoError(t, pm.Disconnect("peer"))
+
+	// The shared socket must still be usable after a peer disconnects.
+	_, err = pm.conn.WriteTo([]byte("probe"), net.UDPAddrFromAddrPort(
+		netip.MustParseAddrPort("127.0.0.1:40051")))
+	require.NoError(t, err, "disconnecting one peer must not close the manager's socket")
+
+	// And a fresh peer must still be able to complete a handshake.
+	other, err := NewCryptoSession(nil)
+	require.NoError(t, err)
+	pm.RegisterPeerKey(other.LocalPublicKey(), "other")
+
+	otherInit, err := other.CreateHandshakeInit(pm.LocalPublicKey())
+	require.NoError(t, err)
+	pm.handleNewConnection(netip.MustParseAddrPort("127.0.0.1:40052"), otherInit)
+
+	pm.mu.RLock()
+	_, ok = pm.connections["other"]
+	pm.mu.RUnlock()
+	assert.True(t, ok, "a new peer must still connect after another disconnected")
 }
 
 // TestOldHandshakeFormatRejected documents that the wire format is not
