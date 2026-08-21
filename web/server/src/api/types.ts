@@ -577,6 +577,12 @@ export interface APIConfig {
   enable_request_log?: boolean
   request_log_size?: number
   websocket_max_clients?: number
+  // Browser origins allowed to open the /api/v1/ws event stream, in addition to
+  // the server's own Host (always allowed). Only needed when a reverse proxy
+  // rewrites Host — Home Assistant Ingress being the common case. Entries are
+  // host or scheme://host patterns with shell-style wildcards; a single "*"
+  // disables the origin check. Restart required.
+  allowed_origins?: string[]
 }
 
 // Access Control Configuration

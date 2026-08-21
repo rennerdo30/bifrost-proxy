@@ -7,13 +7,17 @@
 // That works, but a credential in a URL is a credential in every log: chi's
 // request logger formats r.RequestURI verbatim, so every WebSocket upgrade and
 // every log-stream subscription wrote the operator's api.token into the
-// process's own stdout log at info level, and into any reverse-proxy access log
-// in front of it.
+// process's own stdout log at info level.
 //
 // StripQueryMiddleware closes that off by lifting the token out of the URL into
 // the request context before any other middleware observes the request. The
 // credential keeps working, but nothing downstream — logger included — can see
 // it in the URL any more.
+//
+// This cannot help with logging that happens BEFORE Bifrost: the token is still
+// in the request line on the wire, so a reverse proxy in front of Bifrost will
+// still record it. From a browser, prefer the session-cookie flow
+// (POST /api/v1/login), which keeps the credential out of every URL.
 package apitoken
 
 import (

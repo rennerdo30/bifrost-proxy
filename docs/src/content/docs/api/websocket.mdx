@@ -87,6 +87,18 @@ Wildcards cannot be tricked into matching a longer suffix: `bifrost.example.com`
 does not match `bifrost.example.com.evil.com`, because a pattern must match the
 whole host.
 
+`allowed_origins` is read at startup, so changes require a **restart** — editing
+it in the dashboard and saving is not enough.
+
+#### What the check does not cover
+
+An origin check compares the browser's `Origin` against the request's `Host`, so
+it does not defend against **DNS rebinding**: an attacker who controls a
+hostname can point it at your Bifrost's address, at which point their page's
+`Origin` and the request's `Host` legitimately agree. Where that matters, put
+Bifrost behind authentication (`api.token`) and a proxy that rejects unexpected
+`Host` headers, rather than relying on the origin check alone.
+
 #### Disabling the check
 
 A single `"*"` entry turns origin verification off completely:

@@ -174,6 +174,91 @@ func TestConfigValidate_AcceptsWorkingAndDisabledProviders(t *testing.T) {
 	})
 }
 
+// TestConfigValidate_NegotiateBlock covers auth.negotiate, the one part of the
+// auth config that does not go through auth.Factory — SPNEGO is middleware wired
+// separately from the provider chain. Without an explicit check the save path
+// still accepted a negotiate block that fails at startup.
+func TestConfigValidate_NegotiateBlock(t *testing.T) {
+	cases := []struct {
+		name      string
+		providers []config.AuthProvider
+		negotiate *config.NegotiateConfig
+		wantMsg   string // empty means it must validate
+	}{
+		{
+			name:      "disabled negotiate is not checked",
+			negotiate: &config.NegotiateConfig{Enabled: false, KerberosProvider: "nope"},
+		},
+		{
+			name:      "enabled with no provider at all",
+			negotiate: &config.NegotiateConfig{Enabled: true},
+			wantMsg:   "neither kerberos_provider nor ntlm_provider",
+		},
+		{
+			name:      "allow_ntlm without an ntlm_provider",
+			negotiate: &config.NegotiateConfig{Enabled: true, KerberosProvider: "krb", AllowNTLM: true},
+			wantMsg:   "allow_ntlm",
+		},
+		{
+			name:      "reference to a provider that does not exist",
+			negotiate: &config.NegotiateConfig{Enabled: true, KerberosProvider: "missing"},
+			wantMsg:   "unknown provider",
+		},
+		{
+			name: "reference to a provider of the wrong type",
+			providers: []config.AuthProvider{
+				{Name: "krb", Type: "native", Enabled: true, Config: map[string]any{"users": []any{}}},
+			},
+			negotiate: &config.NegotiateConfig{Enabled: true, KerberosProvider: "krb"},
+			wantMsg:   "expected \"kerberos\"",
+		},
+		{
+			name: "reference to a disabled provider",
+			providers: []config.AuthProvider{
+				{Name: "krb", Type: "kerberos", Enabled: false},
+			},
+			negotiate: &config.NegotiateConfig{Enabled: true, KerberosProvider: "krb"},
+			wantMsg:   "not enabled",
+		},
+		{
+			// The headline case: NTLM fallback cannot work, so a negotiate block
+			// depending on it must fail here rather than at the next restart.
+			name: "reference to an ntlm provider",
+			providers: []config.AuthProvider{
+				{Name: "ntlm", Type: "ntlm", Enabled: true, Config: map[string]any{"domain": "CORP"}},
+			},
+			negotiate: &config.NegotiateConfig{Enabled: true, NTLMProvider: "ntlm", AllowNTLM: true},
+			wantMsg:   "not implemented",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			api := newAuthValidationAPI(t)
+			cfg := minimalValidConfig(tc.providers...)
+			cfg.Auth.Negotiate = tc.negotiate
+
+			w := postJSON(t, api, http.MethodPost, "/api/v1/config/validate", cfg)
+			require.Equal(t, http.StatusOK, w.Code)
+
+			var resp struct {
+				Valid  bool              `json:"valid"`
+				Errors []ValidationError `json:"errors"`
+			}
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+
+			if tc.wantMsg == "" {
+				assert.True(t, resp.Valid, "unexpected errors: %v", resp.Errors)
+				return
+			}
+			assert.False(t, resp.Valid)
+			require.NotEmpty(t, resp.Errors)
+			assert.Equal(t, authSection, resp.Errors[0].Section)
+			assert.Contains(t, resp.Errors[0].Message, tc.wantMsg)
+		})
+	}
+}
+
 // TestHandleListAuthPlugins covers the endpoint the dashboard uses to label
 // providers honestly instead of carrying a hand-maintained list that drifts from
 // the code and cannot express build-dependent truths.

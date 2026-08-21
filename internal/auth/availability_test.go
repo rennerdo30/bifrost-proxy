@@ -75,6 +75,23 @@ func TestPluginAvailability_EmptyStateIsNormalised(t *testing.T) {
 	assert.True(t, availability.Usable())
 }
 
+// TestPluginAvailability_UnknownStateIsNotTreatedAsWorking guards the fail-safe
+// direction. A plugin reporting a state this build does not recognize must not be
+// read as "available" just because the string did not match — but it must not be
+// escalated to a refusal either, since that could take down a config that loads
+// fine today.
+func TestPluginAvailability_UnknownStateIsNotTreatedAsWorking(t *testing.T) {
+	availability := PluginAvailability(&availabilityPlugin{
+		typeName:     "weird",
+		availability: &Availability{State: AvailabilityState("from-the-future")},
+	})
+
+	assert.Equal(t, AvailabilityBuildDisabled, availability.State)
+	assert.False(t, availability.Usable())
+	assert.False(t, availability.MustRefuse())
+	assert.NotEmpty(t, availability.Reason, "an unusable plugin must always carry a reason")
+}
+
 func TestAvailability_States(t *testing.T) {
 	buildDisabled := Availability{State: AvailabilityBuildDisabled, Reason: "no build tag"}
 	assert.False(t, buildDisabled.Usable(), "it cannot authenticate in this binary")

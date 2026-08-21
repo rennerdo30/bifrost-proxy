@@ -161,7 +161,7 @@ func TestWebSocket_UpgradeThroughProxiedHost(t *testing.T) {
 		srv := httptest.NewServer(hub)
 		defer srv.Close()
 
-		err, status := tryDialWithOrigin(t, srv, ingressOrigin)
+		status, err := tryDialWithOrigin(t, srv, ingressOrigin)
 		require.Error(t, err)
 		require.Equal(t, http.StatusForbidden, status)
 	})
