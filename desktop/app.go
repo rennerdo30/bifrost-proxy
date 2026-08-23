@@ -19,6 +19,11 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
 
+// serverProbeTimeout bounds the reachability probe GetStatus performs against
+// the configured Bifrost server. The frontend polls GetStatus, so the probe has
+// to fail fast rather than inherit the client's much longer dial timeout.
+const serverProbeTimeout = 2 * time.Second
+
 // App struct holds the application state and provides methods
 // that are exposed to the frontend via Wails bindings.
 type App struct {
@@ -309,38 +314,64 @@ func (a *App) Disconnect() error {
 }
 
 // GetStatus returns the current connection status.
+//
+// The connected flag comes from a real reachability probe against the configured
+// server, not from the presence of a configured address: the frontend turns this
+// field straight into the big green "Connected" shield, so reporting it from
+// configuration alone claimed a working tunnel that might not exist. The traffic
+// figures come from the client's live counters for the same reason.
 func (a *App) GetStatus() (*StatusResponse, error) {
+	// Snapshot the shared state under the lock, then release it: the
+	// reachability probe below performs a network dial and must not block
+	// Connect/Disconnect or any other writer while it runs.
 	a.mu.RLock()
-	defer a.mu.RUnlock()
+	c := a.client
+	ctx := a.ctx
+	startTime := a.startTime
+	var httpProxy, socks5Proxy, serverAddress string
+	if a.clientCfg != nil {
+		httpProxy = a.clientCfg.Proxy.HTTP.Listen
+		socks5Proxy = a.clientCfg.Proxy.SOCKS5.Listen
+		serverAddress = a.clientCfg.Server.Address
+	}
+	a.mu.RUnlock()
 
 	status := &StatusResponse{
 		Status:    "running",
 		Version:   version.Short(),
 		Timestamp: time.Now(),
-		Uptime:    time.Since(a.startTime).Round(time.Second).String(),
+		Uptime:    time.Since(startTime).Round(time.Second).String(),
 	}
 
-	if a.client == nil {
+	if c == nil {
 		status.Status = "not_initialized"
 		status.LastError = "client not initialized"
 		return status, nil
 	}
 
-	if !a.client.Running() {
+	if !c.Running() {
 		status.Status = "stopped"
 		return status, nil
 	}
 
 	// Get config info
-	if a.clientCfg != nil {
-		status.HTTPProxy = a.clientCfg.Proxy.HTTP.Listen
-		status.SOCKS5Proxy = a.clientCfg.Proxy.SOCKS5.Listen
-		status.ServerAddress = a.clientCfg.Server.Address
-		status.ServerConnected = a.clientCfg.Server.Address != ""
+	status.HTTPProxy = httpProxy
+	status.SOCKS5Proxy = socks5Proxy
+	status.ServerAddress = serverAddress
+
+	// Probe the server for real reachability. An empty address cannot be
+	// reachable, so skip the dial entirely in that case.
+	if serverAddress != "" {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, serverProbeTimeout)
+		status.ServerConnected = c.ServerConnected(probeCtx)
+		cancel()
 	}
 
 	// Get VPN status
-	if vpnMgr := a.client.VPNManager(); vpnMgr != nil {
+	if vpnMgr := c.VPNManager(); vpnMgr != nil {
 		vpnStatus := vpnMgr.Status()
 		status.VPNEnabled = vpnStatus.Status == vpn.StatusConnected
 		status.VPNStatus = string(vpnStatus.Status)
@@ -349,8 +380,14 @@ func (a *App) GetStatus() (*StatusResponse, error) {
 	}
 
 	// Get debug entries count
-	entries := a.client.GetDebugEntries()
+	entries := c.GetDebugEntries()
 	status.DebugEntries = len(entries)
+
+	// Traffic telemetry. These counters already existed on the client; the
+	// dashboard rendered hardcoded zeros as live data until they were wired up.
+	status.BytesSent = c.BytesSent()
+	status.BytesReceived = c.BytesReceived()
+	status.ActiveConns = c.ActiveConnections()
 
 	return status, nil
 }
