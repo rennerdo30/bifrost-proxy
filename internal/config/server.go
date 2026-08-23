@@ -613,6 +613,16 @@ func (c *ServerConfig) Validate() error {
 		if err := validateAllowedOrigin(origin); err != nil {
 			return fmt.Errorf("api allowed_origins[%d]: %w", i, err)
 		}
+		// "*" disables the check wholesale, so a list like
+		// ["https://a.example", "*"] reads as a narrow grant while actually
+		// granting everything. Require the opt-out to stand alone, so it cannot
+		// hide among entries that suggest the opposite.
+		if origin == AllowedOriginsWildcard && len(c.API.AllowedOrigins) > 1 {
+			return fmt.Errorf("api allowed_origins[%d]: %q disables origin checking entirely and "+
+				"must be the only entry; remove the other %d entr%s or drop the wildcard",
+				i, AllowedOriginsWildcard, len(c.API.AllowedOrigins)-1,
+				map[bool]string{true: "y", false: "ies"}[len(c.API.AllowedOrigins) == 2])
+		}
 	}
 
 	if err := c.Auth.Validate(); err != nil {

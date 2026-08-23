@@ -183,6 +183,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written into a profile
 
 ### Fixed
+- `/api/v1/ws` accepted a DNS-rebound `Host`. The origin check relies on the
+  WebSocket library's same-origin shortcut, which accepts any request whose
+  `Origin` host equals the request `Host`; an attacker controlling a DNS name
+  could serve a page from it, re-point the name at a Bifrost address, and arrive
+  with both headers agreeing. The `Host` must now itself be unforgeable by
+  rebinding — an IP literal, a loopback name, or listed in
+  `api.allowed_origins`. **Behaviour change:** reaching the dashboard by any
+  other hostname (an mDNS name such as `bifrost.local`, or an internal DNS
+  record) now requires that host in `api.allowed_origins`; the refusal names the
+  setting. `allowed_origins: ["*"]` still disables the check entirely
+- A `ca_cert` holding a valid certificate followed by `</ca>` and further
+  OpenVPN directives passed validation and was then written into the generated
+  profile verbatim, closing the `<ca>` element early and promoting the smuggled
+  lines to top-level directives. Profiles now embed the re-encoded certificates,
+  so what is emitted is exactly what was validated. No privilege boundary was
+  crossed — writing `ca_cert` already implies control of the backend's `binary`
+  and `extra_args` — but the guarantee the validator claims now holds
+- `api.allowed_origins` accepted `"*"` alongside specific entries, e.g.
+  `["https://app.example", "*"]`, which reads as a narrow grant while disabling
+  origin checking altogether. The wildcard must now be the only entry
 - ProtonVPN API authentication (required for ProtonVPN WireGuard) could not
   succeed against the live API. `/auth/info` returns the SRP modulus as a PGP
   clear-signed message, which was decoded as plain base64, and the proofs used

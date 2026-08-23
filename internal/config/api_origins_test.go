@@ -84,3 +84,35 @@ func TestServerConfig_Validate_AllowedOrigins(t *testing.T) {
 		assert.Contains(t, err.Error(), "without a path")
 	})
 }
+
+// TestAllowedOriginsWildcardMustStandAlone covers the footgun where "*" hides
+// among specific entries: it disables origin checking entirely, so a list like
+// ["https://app.example", "*"] reads as a narrow grant while granting
+// everything. The wildcard is only accepted as the sole entry.
+func wildcardTestConfig() ServerConfig {
+	return ServerConfig{
+		Server:   ServerSettings{HTTP: ListenerConfig{Listen: ":8080"}},
+		Backends: []BackendConfig{{Name: "default", Type: "direct"}},
+	}
+}
+
+func TestAllowedOriginsWildcardMustStandAlone(t *testing.T) {
+	t.Run("wildcard alone is accepted", func(t *testing.T) {
+		cfg := wildcardTestConfig()
+		cfg.API.AllowedOrigins = []string{AllowedOriginsWildcard}
+		require.NoError(t, cfg.Validate())
+	})
+
+	for name, origins := range map[string][]string{
+		"wildcard after a specific entry":  {"https://app.example", AllowedOriginsWildcard},
+		"wildcard before a specific entry": {AllowedOriginsWildcard, "https://app.example"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := wildcardTestConfig()
+			cfg.API.AllowedOrigins = origins
+			err := cfg.Validate()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "must be the only entry")
+		})
+	}
+}
