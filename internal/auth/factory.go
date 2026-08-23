@@ -44,6 +44,15 @@ func (f *Factory) Create(cfg ProviderConfig) (Authenticator, error) {
 			cfg.Type, ListPlugins(), guidanceForUnknownType(cfg.Type))
 	}
 
+	// Refuse plugins that can never authenticate anyone, before their own config
+	// validation gets a chance to report a merely-cosmetic problem. Creating one
+	// succeeds and then rejects every login, which is indistinguishable from a
+	// wrong password to whoever is trying to log in.
+	if availability := PluginAvailability(plugin); availability.MustRefuse() {
+		return nil, fmt.Errorf("provider %q: %w", cfg.Name,
+			&ErrPluginUnimplemented{Type: cfg.Type, Reason: availability.Reason})
+	}
+
 	// Validate the configuration
 	if err := plugin.ValidateConfig(cfg.Config); err != nil {
 		return nil, fmt.Errorf("invalid config for %s provider %q: %w", cfg.Type, cfg.Name, err)
@@ -152,6 +161,14 @@ func (f *Factory) ValidateProviders(providers []ProviderConfig) error {
 		if !ok {
 			return fmt.Errorf("provider %q: unknown type %q (available: %v)%s",
 				cfg.Name, cfg.Type, ListPlugins(), guidanceForUnknownType(cfg.Type))
+		}
+
+		// Same refusal as Create: a provider that can never authenticate anyone
+		// must not validate clean, or the Web UI happily saves a config that only
+		// fails later, at reload or restart.
+		if availability := PluginAvailability(plugin); availability.MustRefuse() {
+			return fmt.Errorf("provider %q: %w", cfg.Name,
+				&ErrPluginUnimplemented{Type: cfg.Type, Reason: availability.Reason})
 		}
 
 		// Validate config

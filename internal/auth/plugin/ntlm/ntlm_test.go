@@ -86,13 +86,9 @@ func createNTLMType3(domain, username string) []byte {
 
 func createNTLMAuthenticator(t *testing.T, cfg map[string]any) auth.Authenticator {
 	t.Helper()
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config:  cfg,
-	})
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(cfg)
 	require.NoError(t, err)
 	return authenticator
 }
@@ -134,51 +130,82 @@ func TestNTLMPlugin_Registration(t *testing.T) {
 	assert.NotEmpty(t, plugin.Description())
 }
 
+// TestNTLMPlugin_ValidateConfig asserts that EVERY NTLM configuration is
+// refused, however well-formed.
+//
+// ValidateConfig used to return nil unconditionally, so an operator could pick
+// "NTLM" from the dashboard's provider dropdown, fill in a complete form, save
+// it successfully — and then have every single login rejected with a generic
+// failure, indistinguishable from a wrong password. The plugin has no credential
+// source to verify an NTLMv2 response against, so the honest answer is to refuse
+// the configuration and say why.
 func TestNTLMPlugin_ValidateConfig(t *testing.T) {
 	plugin, ok := auth.GetPlugin("ntlm")
 	require.True(t, ok)
 
-	tests := []struct {
-		name    string
-		config  map[string]any
-		wantErr bool
+	configs := []struct {
+		name   string
+		config map[string]any
 	}{
+		{name: "nil config", config: nil},
+		{name: "empty config", config: map[string]any{}},
+		{name: "config with domain", config: map[string]any{"domain": "CORP"}},
 		{
-			name:    "nil config is valid",
-			config:  nil,
-			wantErr: false,
-		},
-		{
-			name:    "empty config is valid",
-			config:  map[string]any{},
-			wantErr: false,
-		},
-		{
-			name: "config with domain",
-			config: map[string]any{
-				"domain": "CORP",
-			},
-			wantErr: false,
-		},
-		{
-			name: "config with allowed_domains",
-			config: map[string]any{
-				"allowed_domains": []any{"CORP", "SALES"},
-			},
-			wantErr: false,
+			name:   "config with allowed_domains",
+			config: map[string]any{"allowed_domains": []any{"CORP", "SALES"}},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := plugin.ValidateConfig(tt.config)
-			if tt.wantErr {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-			}
+	for _, tc := range configs {
+		t.Run(tc.name, func(t *testing.T) {
+			err := plugin.ValidateConfig(tc.config)
+			require.Error(t, err, "NTLM must never validate as usable")
+			// The message has to be actionable, not just negative.
+			assert.Contains(t, err.Error(), "not implemented")
+			assert.Contains(t, err.Error(), "kerberos")
 		})
 	}
+}
+
+// TestNTLMPlugin_IsRefusedByTheFactory covers the config-validation gate that
+// operators actually hit: building a provider of type "ntlm" — whether at server
+// startup or through the Web UI's save/validate endpoints — must fail with a
+// clear explanation instead of succeeding and rejecting every user.
+func TestNTLMPlugin_IsRefusedByTheFactory(t *testing.T) {
+	provider := auth.ProviderConfig{
+		Name:    "corp-ntlm",
+		Type:    "ntlm",
+		Enabled: true,
+		Config:  map[string]any{"domain": "CORP"},
+	}
+
+	factory := auth.NewFactory()
+
+	_, err := factory.Create(provider)
+	require.Error(t, err)
+	var unimplemented *auth.ErrPluginUnimplemented
+	require.ErrorAs(t, err, &unimplemented, "callers must be able to distinguish a dead end from a typo")
+	assert.Equal(t, "ntlm", unimplemented.Type)
+	assert.Contains(t, err.Error(), "corp-ntlm")
+
+	// The same refusal must apply on the validate-only path the API uses, or the
+	// dashboard would save a config that cannot start.
+	err = factory.ValidateProviders([]auth.ProviderConfig{provider})
+	require.Error(t, err)
+	assert.ErrorAs(t, err, &unimplemented)
+}
+
+// TestNTLMPlugin_ReportsUnimplemented pins the availability report the startup
+// warning, the validation error and the dashboard badge are all derived from.
+func TestNTLMPlugin_ReportsUnimplemented(t *testing.T) {
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+
+	availability := auth.PluginAvailability(plugin)
+	assert.Equal(t, auth.AvailabilityUnimplemented, availability.State)
+	assert.False(t, availability.Usable())
+	assert.True(t, availability.MustRefuse())
+	assert.NotEmpty(t, availability.Reason, "an unusable plugin must explain itself")
 }
 
 func TestNTLMPlugin_DefaultConfig(t *testing.T) {
@@ -425,14 +452,10 @@ func TestNTLMAuthenticator_ShortBase64Password(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_GenerateChallenge(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"domain": "CORP",
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"domain": "CORP",
 	})
 	require.NoError(t, err)
 
@@ -517,13 +540,9 @@ func decodeUTF16LETest(b []byte) string {
 }
 
 func TestNTLMAuthenticator_Type2TargetInfo(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config:  map[string]any{"domain": "corp.example.com"},
-	})
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{"domain": "corp.example.com"})
 	require.NoError(t, err)
 
 	ntlmAuth, ok := authenticator.(*ntlm.Authenticator)
@@ -587,14 +606,10 @@ func TestNTLMAuthenticator_Type2TargetInfo(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_Type2TargetInfo_LongDomainTruncation(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		// Leading label longer than 15 chars exercises NetBIOS truncation.
-		Config: map[string]any{"domain": "verylongdomainname.example.com"},
-	})
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	// Leading label longer than 15 chars exercises NetBIOS truncation.
+	authenticator, err := plugin.Create(map[string]any{"domain": "verylongdomainname.example.com"})
 	require.NoError(t, err)
 
 	ntlmAuth, ok := authenticator.(*ntlm.Authenticator)
@@ -612,13 +627,9 @@ func TestNTLMAuthenticator_Type2TargetInfo_LongDomainTruncation(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_Type2TargetInfo_EmptyDomain(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config:  map[string]any{}, // no domain configured
-	})
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{}) // no domain configured
 	require.NoError(t, err)
 
 	ntlmAuth, ok := authenticator.(*ntlm.Authenticator)
@@ -638,14 +649,10 @@ func TestNTLMAuthenticator_Type2TargetInfo_EmptyDomain(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"domain": "CORP",
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"domain": "CORP",
 	})
 	require.NoError(t, err)
 
@@ -665,14 +672,10 @@ func TestNTLMAuthenticator_ValidateAuthenticate(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate_NoSession(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"domain": "CORP",
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"domain": "CORP",
 	})
 	require.NoError(t, err)
 
@@ -687,14 +690,10 @@ func TestNTLMAuthenticator_ValidateAuthenticate_NoSession(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate_InvalidMessage(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"domain": "CORP",
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"domain": "CORP",
 	})
 	require.NoError(t, err)
 
@@ -713,14 +712,10 @@ func TestNTLMAuthenticator_ValidateAuthenticate_InvalidMessage(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate_DomainNotAllowed(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"allowed_domains": []any{"CORP", "SALES"},
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"allowed_domains": []any{"CORP", "SALES"},
 	})
 	require.NoError(t, err)
 
@@ -892,11 +887,8 @@ func TestParseConfig_AllOptions(t *testing.T) {
 		"server_challenge_secret": "secret123",
 	}
 
-	// Validate the config
-	err := plugin.ValidateConfig(config)
-	require.NoError(t, err)
-
-	// Create authenticator and verify config was applied
+	// ValidateConfig refuses every NTLM config (see TestNTLMPlugin_ValidateConfig),
+	// so parse behavior is exercised through Create directly.
 	authenticator, err := plugin.Create(config)
 	require.NoError(t, err)
 
@@ -909,14 +901,10 @@ func TestParseConfig_AllOptions(t *testing.T) {
 
 func TestParseConfig_InvalidAllowedDomainsItem(t *testing.T) {
 	// Test that non-string items in allowed_domains are ignored
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"allowed_domains": []any{"VALID", 123, true, "ANOTHER"},
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"allowed_domains": []any{"VALID", 123, true, "ANOTHER"},
 	})
 	require.NoError(t, err)
 	assert.NotNil(t, authenticator)
@@ -950,14 +938,10 @@ func TestNTLMAuthenticator_NotNTLMSSPSignature(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate_AllowedDomain(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"allowed_domains": []any{"CORP"},
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"allowed_domains": []any{"CORP"},
 	})
 	require.NoError(t, err)
 
@@ -977,16 +961,12 @@ func TestNTLMAuthenticator_ValidateAuthenticate_AllowedDomain(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_ValidateAuthenticate_TransformUsername(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"domain":                "CORP",
-			"strip_domain":          false,
-			"username_to_lowercase": true,
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"domain":                "CORP",
+		"strip_domain":          false,
+		"username_to_lowercase": true,
 	})
 	require.NoError(t, err)
 
@@ -1006,14 +986,10 @@ func TestNTLMAuthenticator_ValidateAuthenticate_TransformUsername(t *testing.T) 
 }
 
 func TestNTLMAuthenticator_CleanupChallenges(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"domain": "CORP",
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"domain": "CORP",
 	})
 	require.NoError(t, err)
 
@@ -1040,14 +1016,10 @@ func TestNTLMAuthenticator_CleanupChallenges(t *testing.T) {
 }
 
 func TestNTLMAuthenticator_MultipleChallenges(t *testing.T) {
-	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
-		Name:    "ntlm-test",
-		Type:    "ntlm",
-		Enabled: true,
-		Config: map[string]any{
-			"domain": "CORP",
-		},
+	plugin, ok := auth.GetPlugin("ntlm")
+	require.True(t, ok)
+	authenticator, err := plugin.Create(map[string]any{
+		"domain": "CORP",
 	})
 	require.NoError(t, err)
 

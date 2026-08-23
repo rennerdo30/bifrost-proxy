@@ -258,6 +258,14 @@ web_ui:
 api:
   enabled: true
   listen: ":7082"
+  # token: "..."           # When set, every /api/v1/* call, the WebSocket and
+                           # the SSE stream require it.
+  # Browser origins allowed to open /api/v1/ws, in addition to the server's own
+  # Host (always allowed). Only needed when a reverse proxy rewrites Host.
+  # A single "*" disables the origin check and warns at startup.
+  # allowed_origins:
+  #   - "https://bifrost.example.com"
+  #   - "homeassistant.local:8123"
 ```
 
 ### 3.2 Client Configuration (`client-config.yaml`)
@@ -579,12 +587,54 @@ PUT    /api/v1/config               - Save config
 POST   /api/v1/config/validate      - Validate config
 POST   /api/v1/config/reload        - Reload config
 
+GET    /api/v1/auth/plugins         - Registered auth plugins + availability
+
 GET    /api/v1/requests             - Recent proxied requests
 GET    /api/v1/connections          - Active connections
 
 GET    /api/v1/cache/...            - Response cache control (only when cache.enabled)
 GET    /api/v1/mesh/...             - Mesh coordinator (only when mesh.enabled)
+
+POST   /api/v1/login                - Exchange api.token for a session cookie
+POST   /api/v1/logout               - Destroy the current session
+GET    /api/v1/ws                   - WebSocket event stream
 ```
+
+#### Authentication
+
+When `api.token` is set, a request authenticates with any one of:
+
+- `Authorization: Bearer <token>` — the normal path for REST clients.
+- `?token=<token>` — for transports that cannot set headers from a browser
+  (the WebSocket handshake, EventSource). The parameter is stripped from the URL
+  before the request logger runs, so the credential is not written to Bifrost's
+  own log.
+- A session cookie from `POST /api/v1/login`, which exchanges the token for an
+  `HttpOnly` cookie. A session can only be created by first presenting the
+  correct token, so it is an alternative credential rather than a bypass.
+
+`/api/v1/login` and `/api/v1/logout` are only mounted when `api.token` is set;
+without a token the API is unauthenticated and a session would gate nothing.
+
+`/api/v1/ws` additionally enforces an origin check, because WebSockets are exempt
+from the same-origin policy and CORS. An `Origin` whose host matches the request
+`Host` is always accepted; anything else must be listed in
+`api.allowed_origins`; a request with no `Origin` header (non-browser clients) is
+accepted. Everything else gets HTTP 403.
+
+#### Auth provider validation
+
+`POST /api/v1/config/validate` and `PUT /api/v1/config` validate the auth
+providers against the plugin registry, not just the config shape. An **enabled**
+provider whose plugin can never authenticate is refused, so such a configuration
+cannot be saved and then break the next restart. Plugins report one of three
+availability states via `GET /api/v1/auth/plugins`:
+
+| State | Meaning | Configuration |
+|---|---|---|
+| `available` | Works normally | Accepted |
+| `build_disabled` | This binary lacks the required build tag / cgo / platform library (e.g. `system` without `-tags pam`) | Accepted, warned about at startup and in the UI |
+| `unimplemented` | Cannot authenticate anyone in any build (e.g. `ntlm`) | Refused at validation |
 
 The `/api/v1/mesh/*` coordinator routes are mounted only when `mesh.enabled` is
 true (the default); with it set to false the paths return 404. When

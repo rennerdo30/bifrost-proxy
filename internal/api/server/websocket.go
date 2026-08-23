@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
 
 // MaxWebSocketClients is the maximum number of concurrent WebSocket connections.
@@ -65,6 +67,13 @@ type WebSocketHub struct {
 	stopCh     chan struct{}
 	mu         sync.RWMutex
 	maxClients int
+
+	// allowedOrigins are extra browser origins permitted to upgrade, on top of
+	// the request's own Host which is always allowed. See SetAllowedOrigins.
+	allowedOrigins []string
+	// skipOriginCheck disables origin verification entirely. Only set when the
+	// operator configures the explicit "*" wildcard.
+	skipOriginCheck bool
 }
 
 // NewWebSocketHub creates a new WebSocket hub with default max clients.
@@ -86,6 +95,35 @@ func NewWebSocketHubWithMaxClients(maxClients int) *WebSocketHub {
 		stopCh:     make(chan struct{}),
 		maxClients: maxClients,
 	}
+}
+
+// SetAllowedOrigins configures the operator-supplied WebSocket origin allowlist
+// (api.allowed_origins). It must be called before the hub starts serving.
+//
+// The upgrade always accepts an Origin whose host equals the request Host, so
+// the dashboard this server itself serves needs no allowlist. Entries are only
+// required when a reverse proxy rewrites Host — Home Assistant Ingress being the
+// case that originally caused the check to be disabled outright. Each entry is a
+// host pattern or a scheme://host pattern with shell-style wildcards.
+//
+// A single "*" entry turns origin verification off completely and is reported by
+// SkipsOriginCheck so the caller can warn about it.
+func (h *WebSocketHub) SetAllowedOrigins(origins []string) {
+	h.allowedOrigins = nil
+	h.skipOriginCheck = false
+	for _, origin := range origins {
+		if origin == config.AllowedOriginsWildcard {
+			h.skipOriginCheck = true
+			continue
+		}
+		h.allowedOrigins = append(h.allowedOrigins, origin)
+	}
+}
+
+// SkipsOriginCheck reports whether origin verification has been disabled via the
+// "*" wildcard, so the server can log that fact at startup.
+func (h *WebSocketHub) SkipsOriginCheck() bool {
+	return h.skipOriginCheck
 }
 
 // Run starts the hub's main loop. Call Stop() to terminate the loop.
@@ -180,18 +218,32 @@ func (h *WebSocketHub) Broadcast(eventType string, data interface{}) {
 // also only understood a literal text message "ping", which no standard client
 // sends. Migrated to github.com/coder/websocket (the successor x/net/websocket
 // itself points at), which handles control frames in the library.
+//
+// Origin enforcement: WebSockets are exempt from both the same-origin policy and
+// CORS, so without an Origin check any web page loaded in a browser that can
+// reach this server could open a socket and read the live traffic stream — and
+// when no api.token is configured this route has no auth either. Requests whose
+// Origin host matches the request Host are always accepted (the dashboard this
+// server serves); anything else must be named in api.allowed_origins. Requests
+// with no Origin header at all are accepted, because non-browser clients (the
+// CLI, curl, integration tests) do not send one and are not subject to the
+// browser-driven attack this check defends against.
 func (h *WebSocketHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		// The UI is served from the same origin as the API, but Home Assistant
-		// Ingress (and any reverse proxy) rewrites Host, so a strict same-origin
-		// check rejects legitimate traffic. Access to this endpoint is already
-		// governed by the API's auth middleware.
-		InsecureSkipVerify: true,
+		// OriginPatterns extends the implicit same-Host rule. A reverse proxy that
+		// rewrites Host (Home Assistant Ingress being the case that originally
+		// caused this check to be turned off wholesale) needs its public origin
+		// listed in api.allowed_origins — an explicit, per-deployment grant
+		// instead of a blanket bypass.
+		OriginPatterns: h.allowedOrigins,
+		// Only ever true when the operator sets api.allowed_origins: ["*"], which
+		// the server logs a warning about at startup.
+		InsecureSkipVerify: h.skipOriginCheck,
 		// Compression is negotiated per-connection; leaving it at the default
 		// avoids emitting RSV1-compressed frames to peers that did not agree.
 	})
 	if err != nil {
-		return // Accept already wrote the error response
+		return // Accept already wrote the error response (403 on origin failure)
 	}
 
 	client := &wsClient{conn: conn}

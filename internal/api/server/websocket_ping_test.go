@@ -141,21 +141,46 @@ func TestWebSocket_LegacyTextPing(t *testing.T) {
 }
 
 // TestWebSocket_UpgradeThroughProxiedHost covers the Home Assistant Ingress
-// shape: the proxy rewrites Host, so the Origin no longer matches. A strict
-// same-origin check rejected these upgrades outright.
+// shape: the proxy rewrites Host, so the browser's Origin no longer matches it
+// and a plain same-origin check refuses the upgrade.
+//
+// This used to be handled by disabling origin verification altogether, which
+// also let any web page connect (see TestWebSocket_RejectsCrossOriginUpgrade).
+// The supported answer is now an explicit api.allowed_origins entry, so this
+// asserts both halves of the contract: refused without the entry, accepted with
+// it. TestWebSocket_AcceptsAllowlistedProxyOrigin covers the allowlist in more
+// detail.
 func TestWebSocket_UpgradeThroughProxiedHost(t *testing.T) {
-	hub := NewWebSocketHub()
-	go hub.Run()
-	defer hub.Stop()
+	const ingressOrigin = "http://homeassistant.local:8123"
 
-	srv := httptest.NewServer(hub)
-	defer srv.Close()
+	t.Run("refused without an allowlist entry", func(t *testing.T) {
+		hub := NewWebSocketHub()
+		go hub.Run()
+		defer hub.Stop()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+		srv := httptest.NewServer(hub)
+		defer srv.Close()
 
-	conn := dialWS(ctx, t, srv, &websocket.DialOptions{
-		HTTPHeader: http.Header{"Origin": []string{"http://homeassistant.local:8123"}},
+		status, err := tryDialWithOrigin(t, srv, ingressOrigin)
+		require.Error(t, err)
+		require.Equal(t, http.StatusForbidden, status)
 	})
-	conn.Close(websocket.StatusNormalClosure, "")
+
+	t.Run("accepted when allowlisted", func(t *testing.T) {
+		hub := NewWebSocketHub()
+		hub.SetAllowedOrigins([]string{ingressOrigin})
+		go hub.Run()
+		defer hub.Stop()
+
+		srv := httptest.NewServer(hub)
+		defer srv.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		conn := dialWS(ctx, t, srv, &websocket.DialOptions{
+			HTTPHeader: http.Header{"Origin": []string{ingressOrigin}},
+		})
+		conn.Close(websocket.StatusNormalClosure, "")
+	})
 }

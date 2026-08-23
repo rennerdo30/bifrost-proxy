@@ -169,6 +169,19 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Plugin-aware auth validation. ServerConfig.Validate() cannot see the auth
+	// plugin registry, so without this a provider type that can never
+	// authenticate would be saved and reported valid, then break the next
+	// restart. See validateAuthProviders.
+	if authErrors := validateAuthProviders(&req.Config); len(authErrors) > 0 {
+		a.writeJSON(w, http.StatusBadRequest, ConfigSaveResponse{
+			Success: false,
+			Message: "Configuration validation failed",
+			Errors:  authErrors,
+		})
+		return
+	}
+
 	// Create backup if requested
 	var backupPath string
 	if req.CreateBackup && a.configPath != "" {
@@ -281,6 +294,18 @@ func (a *API) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 			"valid":   false,
 			"message": "Configuration validation failed",
 			"errors":  []ValidationError{{Section: "general", Message: err.Error()}},
+		})
+		return
+	}
+
+	// Plugin-aware auth validation (see validateAuthProviders): catches provider
+	// types that can never authenticate, `negotiate` used as a provider, and the
+	// unsupported mfa_wrapper by-name format.
+	if authErrors := validateAuthProviders(&cfg); len(authErrors) > 0 {
+		a.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"valid":   false,
+			"message": "Configuration validation failed",
+			"errors":  authErrors,
 		})
 		return
 	}

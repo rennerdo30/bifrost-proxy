@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/api/apitoken"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth"
 	"github.com/rennerdo30/bifrost-proxy/internal/auth/session"
 	"github.com/rennerdo30/bifrost-proxy/internal/backend"
@@ -177,6 +178,9 @@ func (a *API) Router() http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
+	// Lift any ?token= credential out of the URL before the request logger sees
+	// it — a token in a URL is a token in every access log. Must stay first.
+	r.Use(apitoken.StripQueryMiddleware)
 	r.Use(middleware.RequestID)
 	//lint:ignore SA1019 chi v5.3.0 deprecated RealIP (IP-spoofing advisory GHSA-3fxj-6jh8-hvhx); behavior unchanged pending a trusted-proxy-aware replacement
 	r.Use(middleware.RealIP) //nolint:staticcheck // see //lint:ignore above
@@ -208,6 +212,9 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
+	// Lift any ?token= credential out of the URL before the request logger sees
+	// it — a token in a URL is a token in every access log. Must stay first.
+	r.Use(apitoken.StripQueryMiddleware)
 	r.Use(middleware.RequestID)
 	//lint:ignore SA1019 chi v5.3.0 deprecated RealIP (IP-spoofing advisory GHSA-3fxj-6jh8-hvhx); behavior unchanged pending a trusted-proxy-aware replacement
 	r.Use(middleware.RealIP) //nolint:staticcheck // see //lint:ignore above
@@ -316,6 +323,11 @@ func (a *API) addAPIRoutes(r chi.Router) {
 		r.Post("/reload", a.handleReloadConfig)
 	})
 
+	// Auth plugin discovery. Reports which providers this binary can actually
+	// authenticate with, so the dashboard does not offer a config form for a
+	// provider that rejects every login.
+	r.Get("/api/v1/auth/plugins", a.handleListAuthPlugins)
+
 	// Request log routes
 	r.Route("/api/v1/requests", func(r chi.Router) {
 		r.Get("/", a.handleGetRequests)
@@ -357,8 +369,12 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 
 		token := r.Header.Get("Authorization")
 		if token == "" {
-			// Fallback to query parameter for WebSocket connections
-			token = r.URL.Query().Get("token")
+			// Fallback to the query parameter for transports that cannot set an
+			// Authorization header (WebSocket handshakes, EventSource). The value
+			// is read from the request context rather than the URL: it has already
+			// been stripped out of the URL by apitoken.StripQueryMiddleware so it
+			// never reaches the request logger.
+			token = apitoken.FromContext(r)
 		}
 
 		// Remove "Bearer " prefix if present
