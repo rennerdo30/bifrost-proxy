@@ -122,6 +122,39 @@ func ValidateCACertPEMAt(caCertPEM string, now time.Time) error {
 	return nil
 }
 
+// NormalizeCACertPEM validates a CA bundle and returns it re-encoded from the
+// parsed certificates, so what a profile embeds is exactly what was validated.
+//
+// Writing the operator's string into the profile verbatim does not give that
+// guarantee. ParseCACertPEM stops at the first non-PEM byte and ignores
+// whatever follows, so material like
+//
+//	<valid certificate>
+//	</ca>
+//	script-security 2
+//	up /tmp/script.sh
+//	<ca>
+//
+// passes validation and then closes the <ca> element early, promoting the
+// smuggled lines to top-level OpenVPN directives. That crosses no privilege
+// boundary today — anyone who can write ca_cert can already set the generic
+// openvpn backend's binary and extra_args — but it falsifies the guarantee
+// stated at the top of this file, and re-encoding costs nothing.
+func NormalizeCACertPEM(caCertPEM string) (string, error) {
+	certs, err := ParseCACertPEM(caCertPEM)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	for _, cert := range certs {
+		if err := pem.Encode(&buf, &pem.Block{Type: pemTypeCertificate, Bytes: cert.Raw}); err != nil {
+			return "", fmt.Errorf("failed to re-encode CA certificate: %w", err)
+		}
+	}
+	return buf.String(), nil
+}
+
 // ParseCACertPEM parses a PEM CA bundle and returns the certificates it
 // contains, in file order. It returns an error unless every PEM block is a
 // CERTIFICATE that parses as X.509, every self-issued certificate carries a

@@ -376,6 +376,14 @@ func (c *Client) generateOpenVPNConfigContent(server *vpnprovider.Server, protoc
 		return "", fmt.Errorf("%w: ProtonVPN OpenVPN requires a valid CA certificate (credentials.ca_cert): %w",
 			vpnprovider.ErrConfigGenerationFailed, err)
 	}
+	// Emit the certificates we just parsed rather than the operator string, so
+	// trailing content after the PEM cannot close <ca> early and smuggle
+	// directives into the profile.
+	caCert, err := vpnprovider.NormalizeCACertPEM(caCert)
+	if err != nil {
+		return "", fmt.Errorf("%w: ProtonVPN CA certificate could not be re-encoded: %w",
+			vpnprovider.ErrConfigGenerationFailed, err)
+	}
 	if err := vpnprovider.ValidateTLSAuthKey(creds.TLSAuthKey); err != nil {
 		return "", fmt.Errorf("%w: configured ProtonVPN tls-auth key is unusable (credentials.tls_auth_key): %w",
 			vpnprovider.ErrConfigGenerationFailed, err)

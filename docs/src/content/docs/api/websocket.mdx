@@ -47,6 +47,15 @@ The upgrade is therefore accepted only when one of the following holds:
 | No `Origin` header is sent at all | **Accepted** — non-browser clients (CLI, `curl`, scripts) do not send one, and a web page cannot suppress its own `Origin` |
 | Anything else | **Rejected with HTTP 403** |
 
+The request `Host` is checked as well, because the first rule above would
+otherwise be forgeable by DNS rebinding (see [below](#dns-rebinding)). A `Host`
+is accepted when it is an **IP literal** (`127.0.0.1:7082`, `[::1]:7082`,
+`192.168.1.10:7082`), a **loopback name** (`localhost`, anything under
+`.localhost`), or **named in `api.allowed_origins`**. Reaching the dashboard by
+any other hostname — an mDNS name like `bifrost.local`, or an internal DNS
+record — means adding that host to `api.allowed_origins`, the same entry a
+`Host`-rewriting proxy already needs.
+
 #### Reverse proxies that rewrite `Host`
 
 If a proxy in front of Bifrost rewrites `Host`, the browser's `Origin` no longer
@@ -90,14 +99,31 @@ whole host.
 `allowed_origins` is read at startup, so changes require a **restart** — editing
 it in the dashboard and saving is not enough.
 
-#### What the check does not cover
+#### DNS rebinding
 
-An origin check compares the browser's `Origin` against the request's `Host`, so
-it does not defend against **DNS rebinding**: an attacker who controls a
-hostname can point it at your Bifrost's address, at which point their page's
-`Origin` and the request's `Host` legitimately agree. Where that matters, put
-Bifrost behind authentication (`api.token`) and a proxy that rejects unexpected
-`Host` headers, rather than relying on the origin check alone.
+An `Origin`-only check would not survive **DNS rebinding**. An attacker who
+controls a hostname serves a page from it, re-points that name at your Bifrost's
+address, and their page then arrives with `Origin` and `Host` both reading
+`evil.example:7082` — which agree, so a same-origin comparison passes.
+
+Bifrost therefore also requires the `Host` itself to be one an attacker cannot
+forge that way. Rebinding fundamentally needs a *name* to re-point, so IP
+literals and the reserved loopback names are inherently safe; everything else
+must be named in `api.allowed_origins`. A rebound `Host` matches none of those
+and is refused with **HTTP 403**, logged as:
+
+```
+rejected WebSocket upgrade: request Host is neither an IP literal, a loopback
+name, nor listed in api.allowed_origins; add it there to allow this host
+```
+
+If you see that log line for a hostname you use legitimately, add it to
+`api.allowed_origins` and restart.
+
+This check only ever constrains **browser-driven** attacks. A process that can
+reach the port directly sets any header it likes, so it is unaffected — for that
+threat the control is `api.token`, and with no token configured `/api/v1/ws` is
+readable by anything that can reach it.
 
 #### Disabling the check
 
@@ -108,10 +134,14 @@ api:
   allowed_origins: ["*"]
 ```
 
-This is an escape hatch for setups whose origin cannot be predicted. It logs a
-warning at startup, and it means any web page opened in a browser that can reach
-this server may connect to `/api/v1/ws` and read the live traffic stream. Name
-the real origins instead wherever you can.
+This is an escape hatch for setups whose origin cannot be predicted. It disables
+the `Host` check as well, logs a warning at startup, and means any web page
+opened in a browser that can reach this server may connect to `/api/v1/ws` and
+read the live traffic stream. Name the real origins instead wherever you can.
+
+`"*"` must be the **only** entry. A list such as
+`["https://app.example", "*"]` is rejected at startup, because it reads as a
+narrow grant while actually disabling the check entirely.
 
 ### Connection Limits
 
