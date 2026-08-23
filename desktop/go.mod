@@ -13,9 +13,14 @@ replace github.com/rennerdo30/bifrost-proxy => ../
 require (
 	fyne.io/systray v1.12.2 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
+	github.com/ProtonMail/bcrypt v0.0.0-20210511135022-227b4adcab57 // indirect
+	github.com/ProtonMail/go-crypto v1.4.1 // indirect
+	github.com/ProtonMail/go-srp v0.0.7 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cloudflare/circl v1.6.3 // indirect
+	github.com/cronokirby/saferith v0.33.0 // indirect
 	github.com/go-chi/chi/v5 v5.3.1 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
