@@ -1,18 +1,18 @@
 <!--
-  Bifrost app icon / favicon: the mark on a plate, so it keeps its contrast on
-  any tab strip, dock or launcher, light or dark.
-
-  Same 4-unit grid and construction as assets/logo.svg, re-centred for a square
-  64x64 box: the mark spans 8,16-56,48, which keeps every horizontal and
-  vertical stroke edge on a whole pixel at 16px.
+  Simplified cut of the Bifrost mark, for favicons, app icons and the tray.
+  The full mark loses its detail below roughly 48px: at 16px its arch stroke
+  is 0.96px, its end nodes 1.92px and its packet dots 0.64px. This keeps the
+  plate, the rainbow and the two end nodes, drops the packets, flow dash and
+  hub ring, and thickens the arch to 26 units. The plate is a rounded square
+  rather than a circle because that is the app-icon idiom and it fills more
+  pixels at small sizes.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
-     role="img" aria-labelledby="bifrost-icon-title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="bifrost-icon-title">
   <title id="bifrost-icon-title">Bifrost Proxy</title>
-  <rect width="64" height="64" rx="14" fill="#0a0e17"/>
-  <g fill="none" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
-    <path stroke="#3b82f6" d="M20 36V26L26 20H38L44 26V36"/>
-    <path stroke="#22d3ee" d="M8 44H20V32"/>
-    <path stroke="#8b5cf6" d="M44 32V44H56"/>
-  </g>
+  <defs><linearGradient id="bifrostIconSpan" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#FF6B6B"/><stop offset="25%" stop-color="#FFE66D"/><stop offset="50%" stop-color="#96CEB4"/><stop offset="75%" stop-color="#4ECDC4"/><stop offset="100%" stop-color="#45B7D1"/></linearGradient><linearGradient id="bifrostIconPlate" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1a1a2e"/><stop offset="100%" stop-color="#16213e"/></linearGradient></defs>
+  <rect x="4" y="4" width="192" height="192" rx="44" fill="url(#bifrostIconPlate)"/>
+  <path d="M36 138Q100 44 164 138" fill="none" stroke="url(#bifrostIconSpan)" stroke-width="26"
+        stroke-linecap="round"/>
+  <circle cx="36" cy="138" r="17" fill="#FF6B6B"/>
+  <circle cx="164" cy="138" r="17" fill="#45B7D1"/>
 </svg>

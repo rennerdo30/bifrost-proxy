@@ -1,13 +1,7 @@
-<!--
-  Tray icon, disconnected: the span is missing its crown and the mark is muted,
-  so the state reads from the silhouette as well as the colour.
-  Same grid as assets/icon.svg without the plate, transparent canvas.
--->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
-     role="img" aria-labelledby="tray-disconnected-title">
-  <title id="tray-disconnected-title">Bifrost: disconnected</title>
-  <g fill="none" stroke="#94a3b8" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
-    <path d="M8 44H20V26L26 20H29"/>
-    <path d="M35 20H38L44 26V44H56"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="t-disconnected">
+  <title id="t-disconnected">Bifrost: disconnected</title>
+  <g fill="#8fa0b8">
+    <path d="M36 138Q100 44 164 138" fill="none" stroke="#8fa0b8" stroke-width="26" stroke-linecap="round"/>
+    <circle cx="36" cy="138" r="17"/><circle cx="164" cy="138" r="17"/>
   </g>
 </svg>

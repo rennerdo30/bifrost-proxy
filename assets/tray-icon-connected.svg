@@ -1,11 +1,7 @@
-<!--
-  Tray icon, connected: the Bifrost mark in a single status colour on a
-  transparent 64x64 canvas. Same grid as assets/icon.svg without the plate, so
-  the host tray composites it on light or dark chrome.
--->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"
-     role="img" aria-labelledby="tray-connected-title">
-  <title id="tray-connected-title">Bifrost: connected</title>
-  <path d="M8 44H20V26L26 20H38L44 26V44H56" fill="none" stroke="#22c55e" stroke-width="8"
-        stroke-linecap="butt" stroke-linejoin="miter"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="t-connected">
+  <title id="t-connected">Bifrost: connected</title>
+  <g fill="#96CEB4">
+    <path d="M36 138Q100 44 164 138" fill="none" stroke="#96CEB4" stroke-width="26" stroke-linecap="round"/>
+    <circle cx="36" cy="138" r="17"/><circle cx="164" cy="138" r="17"/>
+  </g>
 </svg>
