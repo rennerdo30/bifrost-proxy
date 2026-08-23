@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/device"
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -25,12 +26,12 @@ func TestDefaultConfig(t *testing.T) {
 	assert.Equal(t, 1400, config.Device.MTU)
 
 	// Discovery defaults
-	assert.Equal(t, 30*time.Second, config.Discovery.HeartbeatInterval)
-	assert.Equal(t, 90*time.Second, config.Discovery.PeerTimeout)
+	assert.Equal(t, duration.Duration(30*time.Second), config.Discovery.HeartbeatInterval)
+	assert.Equal(t, duration.Duration(90*time.Second), config.Discovery.PeerTimeout)
 
 	// STUN defaults
 	assert.Len(t, config.STUN.Servers, 2)
-	assert.Equal(t, 5*time.Second, config.STUN.Timeout)
+	assert.Equal(t, duration.Duration(5*time.Second), config.STUN.Timeout)
 
 	// TURN defaults
 	assert.True(t, config.TURN.Enabled)
@@ -41,8 +42,8 @@ func TestDefaultConfig(t *testing.T) {
 	assert.True(t, config.Connection.RelayEnabled)
 	// Peer relaying is not yet functional on the data plane; off by default.
 	assert.False(t, config.Connection.RelayViaPeers)
-	assert.Equal(t, 30*time.Second, config.Connection.ConnectTimeout)
-	assert.Equal(t, 25*time.Second, config.Connection.KeepAliveInterval)
+	assert.Equal(t, duration.Duration(30*time.Second), config.Connection.ConnectTimeout)
+	assert.Equal(t, duration.Duration(25*time.Second), config.Connection.KeepAliveInterval)
 
 	// Security defaults
 	assert.True(t, config.Security.RequireEncryption)
@@ -232,7 +233,7 @@ func TestConfigValidate(t *testing.T) {
 
 		err := config.Validate()
 		assert.NoError(t, err)
-		assert.Equal(t, 30*time.Second, config.Discovery.HeartbeatInterval)
+		assert.Equal(t, duration.Duration(30*time.Second), config.Discovery.HeartbeatInterval)
 	})
 
 	t.Run("peer timeout zero gets default", func(t *testing.T) {
@@ -244,7 +245,7 @@ func TestConfigValidate(t *testing.T) {
 
 		err := config.Validate()
 		assert.NoError(t, err)
-		assert.Equal(t, 90*time.Second, config.Discovery.PeerTimeout)
+		assert.Equal(t, duration.Duration(90*time.Second), config.Discovery.PeerTimeout)
 	})
 
 	t.Run("connect timeout zero gets default", func(t *testing.T) {
@@ -256,7 +257,7 @@ func TestConfigValidate(t *testing.T) {
 
 		err := config.Validate()
 		assert.NoError(t, err)
-		assert.Equal(t, 30*time.Second, config.Connection.ConnectTimeout)
+		assert.Equal(t, duration.Duration(30*time.Second), config.Connection.ConnectTimeout)
 	})
 
 	t.Run("keepalive interval zero gets default", func(t *testing.T) {
@@ -268,7 +269,7 @@ func TestConfigValidate(t *testing.T) {
 
 		err := config.Validate()
 		assert.NoError(t, err)
-		assert.Equal(t, 25*time.Second, config.Connection.KeepAliveInterval)
+		assert.Equal(t, duration.Duration(25*time.Second), config.Connection.KeepAliveInterval)
 	})
 
 	t.Run("valid complete config", func(t *testing.T) {
@@ -406,11 +407,11 @@ func TestSTUNConfig(t *testing.T) {
 			"stun:stun1.example.com:19302",
 			"stun:stun2.example.com:19302",
 		},
-		Timeout: 10 * time.Second,
+		Timeout: duration.Duration(10 * time.Second),
 	}
 
 	assert.Len(t, config.Servers, 2)
-	assert.Equal(t, 10*time.Second, config.Timeout)
+	assert.Equal(t, duration.Duration(10*time.Second), config.Timeout)
 }
 
 func TestConnectionConfig(t *testing.T) {
@@ -418,15 +419,15 @@ func TestConnectionConfig(t *testing.T) {
 		DirectConnect:     false,
 		RelayEnabled:      false,
 		RelayViaPeers:     false,
-		ConnectTimeout:    60 * time.Second,
-		KeepAliveInterval: 15 * time.Second,
+		ConnectTimeout:    duration.Duration(60 * time.Second),
+		KeepAliveInterval: duration.Duration(15 * time.Second),
 	}
 
 	assert.False(t, config.DirectConnect)
 	assert.False(t, config.RelayEnabled)
 	assert.False(t, config.RelayViaPeers)
-	assert.Equal(t, 60*time.Second, config.ConnectTimeout)
-	assert.Equal(t, 15*time.Second, config.KeepAliveInterval)
+	assert.Equal(t, duration.Duration(60*time.Second), config.ConnectTimeout)
+	assert.Equal(t, duration.Duration(15*time.Second), config.KeepAliveInterval)
 }
 
 func TestSecurityConfig(t *testing.T) {
@@ -444,13 +445,13 @@ func TestSecurityConfig(t *testing.T) {
 func TestDiscoveryConfig(t *testing.T) {
 	config := DiscoveryConfig{
 		Server:            "discovery.example.com:7080",
-		HeartbeatInterval: 45 * time.Second,
-		PeerTimeout:       120 * time.Second,
+		HeartbeatInterval: duration.Duration(45 * time.Second),
+		PeerTimeout:       duration.Duration(120 * time.Second),
 		Token:             "auth-token",
 	}
 
 	assert.Equal(t, "discovery.example.com:7080", config.Server)
-	assert.Equal(t, 45*time.Second, config.HeartbeatInterval)
-	assert.Equal(t, 120*time.Second, config.PeerTimeout)
+	assert.Equal(t, duration.Duration(45*time.Second), config.HeartbeatInterval)
+	assert.Equal(t, duration.Duration(120*time.Second), config.PeerTimeout)
 	assert.Equal(t, "auth-token", config.Token)
 }

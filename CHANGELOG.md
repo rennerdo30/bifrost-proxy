@@ -183,6 +183,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written into a profile
 
 ### Fixed
+- The VPN configuration was invisible over the API. `vpn.Config`, `TUNConfig`,
+  `SplitTunnelConfig`, `AppRule` and `DNSConfig` carried only YAML tags, so JSON
+  responses used Go field names (`{"Enabled":…,"TUN":…,"SplitTunnel":…}`) while
+  every client reads the documented snake_case keys. `GET /api/v1/vpn/split/rules`
+  returned `{"Mode":"","Apps":null,…}`, so the client dashboard's split-tunnel
+  panel highlighted no mode and always showed the `include` wording even when the
+  configured mode was `exclude`; the VPN Settings form was write-only, showing
+  hard-coded fallbacks while saves landed correctly and appeared to reset. All of
+  these structs now carry `json:` tags matching their YAML keys
+- Mesh and VPN duration settings serialised as raw nanosecond integers
+  (`heartbeat_interval: 30000000000`). The client dashboard's duration input calls
+  `String.match()` on the value, so the number threw a `TypeError` that replaced
+  the **entire** Settings page with an error boundary, not just the mesh section.
+  `mesh.discovery.heartbeat_interval`, `mesh.discovery.peer_timeout`,
+  `mesh.stun.timeout`, `mesh.connection.connect_timeout`,
+  `mesh.connection.keep_alive_interval` and `vpn.dns.cache_ttl` now serialise as
+  duration strings (`"30s"`, `"1m30s"`), matching the convention `internal/config`
+  already used for every other duration. Input still accepts a bare nanosecond
+  number, so payloads written against the old shape keep working
 - `/api/v1/ws` accepted a DNS-rebound `Host`. The origin check relies on the
   WebSocket library's same-origin shortcut, which accepts any request whose
   `Origin` host equals the request `Host`; an attacker controlling a DNS name
