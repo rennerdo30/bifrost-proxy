@@ -246,6 +246,16 @@ server:
     idle_timeout: "300s"
 ```
 
+Pick the one that matches the symptom — see
+[Listener timeouts](/configuration#listener-timeouts) for the exact meaning of
+each:
+
+| Symptom | Setting |
+|---------|---------|
+| A slow client's request is cut off before it finishes arriving | `read_timeout` |
+| A response to a slow or stalled client is cut off | `write_timeout` |
+| A `CONNECT` tunnel or SOCKS5 relay dies while sitting quiet | `idle_timeout` |
+
 Outbound dial timeouts are a property of the backend, not the listener, and are
 set in the backend's `config` block:
 
@@ -257,6 +267,23 @@ backends:
       address: "upstream-proxy:3128"
       connect_timeout: "60s"
 ```
+
+A process-wide default for backends that do not set their own is
+`network.dial_timeout`:
+
+```yaml
+network:
+  dial_timeout: "60s"
+```
+
+:::note[Raising `read_timeout` no longer affects backend connects]
+Up to and including v1.0.0 the HTTP listener's `read_timeout` was passed through
+as the outbound dial timeout, and neither `write_timeout` nor `idle_timeout` was
+applied at all. It is now the inbound read deadline it always claimed to be. If
+you had raised `read_timeout` to work around slow backend connects, move that
+value to `network.dial_timeout` (or the backend's own `connect_timeout`) —
+otherwise the effective dial timeout drops back to the 30s default.
+:::
 
 ### Cause 4: Network Routing Issues
 

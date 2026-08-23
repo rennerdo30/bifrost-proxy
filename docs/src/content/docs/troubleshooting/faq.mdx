@@ -319,15 +319,16 @@ auth:
          max_size: "256MB"
    ```
 
-2. **Optimize connection reuse:**
+2. **Tune outbound connection reuse:**
    ```yaml
-   server:
-     http:
-       idle_timeout: "120s"
-
    network:
      keepalive: "30s"
+     dial_timeout: "10s"
    ```
+   Inbound connections are not reused — the HTTP listener serves one request per
+   connection — so `idle_timeout` is not a connection-reuse knob. It bounds
+   connections with nothing in flight; see
+   [Listener timeouts](/configuration#listener-timeouts).
 
 3. **Reduce logging:**
    ```yaml

@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- Both proxy listeners now bound an idle client, closing a slowloris-style
+  resource exhaustion. A client could previously connect to the HTTP or SOCKS5
+  listener and either send nothing at all or trickle request headers forever,
+  pinning one goroutine and one file descriptor per connection with no timeout
+  of any kind to reclaim them — the configured `read_timeout` and `idle_timeout`
+  were never applied. Reaching the `max_connections` ceiling this way denied
+  service to legitimate clients. See the listener-timeout entry under *Changed*
 - `/api/v1/ws` now verifies the WebSocket `Origin`. WebSockets are exempt from
   both the same-origin policy and CORS, so any web page loaded in a browser that
   could reach a Bifrost instance was previously able to open a socket and read
@@ -27,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logging happens; it still authenticates the request
 
 ### Added
+- Default `read_timeout` (30s), `write_timeout` (30s) and `idle_timeout` (60s) on
+  the SOCKS5 listener, mirroring the HTTP listener, so its handshake is bounded
+  out of the box
+- `GET /api/v1/config` now reports `idle_timeout` for the HTTP listener and all
+  three timeouts for the SOCKS5 listener, which it previously omitted
 - `api.allowed_origins`: browser origins permitted to open `/api/v1/ws`, for
   reverse proxies that rewrite `Host` (Home Assistant Ingress, Traefik, nginx,
   Cloudflare Tunnel). Entries are host or `scheme://host` patterns with
@@ -43,6 +55,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the inline `primary`/`secondary` format the server actually accepts
 
 ### Changed
+- **Breaking:** the listener timeout triad now does what it says. `read_timeout`,
+  `write_timeout` and `idle_timeout` are declared on every listener, defaulted in
+  both shipped config templates, present in every example config and documented
+  across six pages — and none of them was applied. `idle_timeout` was read
+  nowhere in the codebase; `write_timeout` was read once, only so the config API
+  could echo it back; `read_timeout` was quietly passed through as the
+  **outbound** dial timeout, which the troubleshooting docs explicitly said it
+  was not. The SOCKS5 listener read no timeout at all, so a client could open a
+  connection, never send a handshake byte, and hold a goroutine and a file
+  descriptor for as long as it liked. All three are now real socket deadlines on
+  both listeners:
+  - `read_timeout` — an absolute bound on a complete inbound request arriving
+    (HTTP request line and headers, or the whole SOCKS5 handshake) measured from
+    the client's first byte, then a per-read bound for the request body
+  - `write_timeout` — a per-*write* deadline, deliberately not an absolute one
+    over the whole response, so a streaming response (server-sent events, a
+    chunked feed, a large download) is never truncated while it is still making
+    progress
+  - `idle_timeout` — a bound on a connection with nothing in flight: accepted
+    but silent, between exchanges on an intercepted tunnel, or an established
+    `CONNECT` tunnel / SOCKS5 relay in which *neither* direction has carried
+    data. Activity in either direction resets it, so an actively transferring
+    tunnel is never interrupted however long it lives
+
+  Two consequences to check before upgrading. **Outbound dials no longer follow
+  `read_timeout`**: they take `network.dial_timeout`, or a backend's own
+  `connect_timeout`, falling back to 30s. If you raised `read_timeout` to work
+  around slow backend connects, move that value to `network.dial_timeout`.
+  **Quiet tunnels are now reaped**: a protocol that holds a `CONNECT` tunnel open
+  without traffic (SSH, IMAP IDLE, a WebSocket with no keepalive pings) needs
+  `idle_timeout` raised above its quiet period, or set to `0` to disable reaping
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
   rejecting every login. This affects `ntlm` (no credential source exists to
