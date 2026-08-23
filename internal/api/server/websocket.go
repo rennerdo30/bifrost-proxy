@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"net"
 	"net/http"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,6 +16,11 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
+
+// localhostSuffix matches the reserved .localhost TLD (RFC 6761), which
+// resolvers are required to resolve to loopback and which therefore cannot be
+// pointed at another address by an attacker-controlled DNS zone.
+const localhostSuffix = ".localhost"
 
 // MaxWebSocketClients is the maximum number of concurrent WebSocket connections.
 const MaxWebSocketClients = 100
@@ -108,6 +117,61 @@ func NewWebSocketHubWithMaxClients(maxClients int) *WebSocketHub {
 //
 // A single "*" entry turns origin verification off completely and is reported by
 // SkipsOriginCheck so the caller can warn about it.
+// hostIsRebindSafe reports whether the request's Host header is one an attacker
+// cannot forge via DNS rebinding.
+//
+// The Origin check alone is not sufficient. github.com/coder/websocket accepts
+// any request where Origin's host equals the request Host (accept.go:239,
+// strings.EqualFold), which is the same same-origin shortcut gorilla makes. An
+// attacker who controls a DNS name can therefore serve a page from
+// evil.example, rebind that name to this server's address, and arrive with
+// Host and Origin both reading "evil.example:8080" — matching, and accepted.
+// With api.token unset the route has no auth either, so the live traffic stream
+// is readable by any browser that loads the attacker's page.
+//
+// Rebinding fundamentally requires a *name*: the attacker needs a DNS zone to
+// re-point. So a Host that is a bare IP literal cannot be forged this way, and
+// neither can loopback names, whose resolution is reserved. Everything else has
+// to be named explicitly in api.allowed_origins, which is the same per-
+// deployment grant a Host-rewriting reverse proxy already needs.
+func (h *WebSocketHub) hostIsRebindSafe(reqHost string) bool {
+	if reqHost == "" {
+		return false
+	}
+
+	hostname := reqHost
+	if h, _, err := net.SplitHostPort(reqHost); err == nil {
+		hostname = h
+	}
+	hostname = strings.ToLower(strings.TrimSuffix(hostname, "."))
+	// An IPv6 literal arrives bracketed when a port is present and bare when not.
+	hostname = strings.TrimSuffix(strings.TrimPrefix(hostname, "["), "]")
+
+	// IP literals are immune: there is no name for an attacker to re-point.
+	if net.ParseIP(hostname) != nil {
+		return true
+	}
+	if hostname == "localhost" || strings.HasSuffix(hostname, localhostSuffix) {
+		return true
+	}
+
+	// Otherwise the operator must have named this host. Match with the same
+	// semantics the library uses for Origin patterns (path.Match, lowercased) so
+	// one allowed_origins entry covers both checks.
+	for _, pattern := range h.allowedOrigins {
+		p := pattern
+		if i := strings.Index(p, "://"); i >= 0 {
+			p = p[i+len("://"):]
+		}
+		for _, candidate := range []string{reqHost, hostname} {
+			if ok, err := path.Match(strings.ToLower(p), strings.ToLower(candidate)); err == nil && ok {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (h *WebSocketHub) SetAllowedOrigins(origins []string) {
 	h.allowedOrigins = nil
 	h.skipOriginCheck = false
@@ -229,6 +293,17 @@ func (h *WebSocketHub) Broadcast(eventType string, data interface{}) {
 // CLI, curl, integration tests) do not send one and are not subject to the
 // browser-driven attack this check defends against.
 func (h *WebSocketHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Guard the same-Host shortcut the library grants, which is otherwise
+	// forgeable by DNS rebinding. Skipped only when the operator has explicitly
+	// opted out with api.allowed_origins: ["*"].
+	if !h.skipOriginCheck && !h.hostIsRebindSafe(r.Host) {
+		slog.Warn("rejected WebSocket upgrade: request Host is neither an IP literal, "+
+			"a loopback name, nor listed in api.allowed_origins; add it there to allow this host",
+			"host", r.Host)
+		http.Error(w, "forbidden: Host not permitted for WebSocket upgrade", http.StatusForbidden)
+		return
+	}
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		// OriginPatterns extends the implicit same-Host rule. A reverse proxy that
 		// rewrites Host (Home Assistant Ingress being the case that originally
