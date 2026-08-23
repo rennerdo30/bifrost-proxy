@@ -28,11 +28,14 @@ export function ServersScreen() {
     refetchInterval: 30000,
   })
 
+  // Servers are identified by name: `client.ServerInfo` has no `id` field.
   const selectMutation = useMutation({
-    mutationFn: (id: string) => api.selectServer(id),
-    onSuccess: (_data, id) => {
-      setSelectedServer(id)
+    mutationFn: (name: string) => api.selectServer(name),
+    onSuccess: (_data, name) => {
+      setSelectedServer(name)
       queryClient.invalidateQueries({ queryKey: ['servers'] })
+      queryClient.invalidateQueries({ queryKey: ['active-server'] })
+      queryClient.invalidateQueries({ queryKey: ['status'] })
     },
   })
 
@@ -41,22 +44,22 @@ export function ServersScreen() {
     if (servers && !selectedServer) {
       const defaultServer = servers.find((s) => s.is_default)
       if (defaultServer) {
-        setSelectedServer(defaultServer.id)
+        setSelectedServer(defaultServer.name)
       }
     }
   }, [servers, selectedServer])
 
-  const handleSelectServer = (id: string) => {
-    const server = servers?.find((s) => s.id === id)
+  const handleSelectServer = (name: string) => {
+    const server = servers?.find((s) => s.name === name)
     if (server?.status === 'offline') return
 
-    selectMutation.mutate(id)
+    selectMutation.mutate(name)
   }
 
   const renderServer = ({ item }: { item: ServerInfo }) => {
-    const isSelected = selectedServer === item.id
+    const isSelected = selectedServer === item.name
     const isDisabled = item.status === 'offline'
-    const isConnecting = selectMutation.isPending && selectMutation.variables === item.id
+    const isConnecting = selectMutation.isPending && selectMutation.variables === item.name
 
     // Build accessibility label with all relevant server info
     const statusText = isDisabled ? 'offline' : item.status
@@ -73,7 +76,7 @@ export function ServersScreen() {
           isSelected && styles.serverCardSelected,
           isDisabled && styles.serverCardDisabled,
         ]}
-        onPress={() => handleSelectServer(item.id)}
+        onPress={() => handleSelectServer(item.name)}
         disabled={isDisabled || selectMutation.isPending}
         activeOpacity={0.7}
         accessibilityRole="button"
@@ -168,7 +171,7 @@ export function ServersScreen() {
       <FlatList
         data={servers}
         renderItem={renderServer}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => item.name}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={

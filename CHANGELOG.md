@@ -38,6 +38,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason. The server dashboard uses it to label providers honestly instead of
   hard-coding a list that had drifted from the code and could not express
   build-dependent truths
+- Mobile app: API token entry in Settings. The app could previously only manage
+  an *unauthenticated* client — the bearer-token plumbing existed but nothing
+  ever set a token. The token is persisted with AsyncStorage, sent as
+  `Authorization: Bearer`, never displayed after saving and never logged, and can
+  be cleared from the same screen. A `401` is now reported as an authentication
+  failure rather than a generic error
+- Mobile app: `https://` client addresses. The base URL hardcoded the `http://`
+  scheme, making a TLS-terminated client unreachable. Addresses may now be a bare
+  `host:port` (HTTP), an explicit `http://`/`https://` URL, or a bracketed IPv6
+  literal; the implicit port is omitted for `https`
+- Mobile app: `npm test` runs service-layer unit tests on Node's built-in test
+  runner with no new dependencies, covering the CSRF header on every mutation,
+  the server-select route and body, token persistence and scheme handling
 - The server dashboard's auth provider list gained `mfa_wrapper`, which was
   registered and working but missing from the UI entirely, with a default config
   in the inline `primary`/`secondary` format the server actually accepts
@@ -183,6 +196,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written into a profile
 
 ### Fixed
+- Mobile app: every write failed with `403 CSRF validation failed`. The client
+  API requires `X-Requested-With: XMLHttpRequest` on `POST`/`PUT`/`DELETE`/
+  `PATCH`, which both web dashboards send and the app did not — so VPN
+  enable/disable, server selection, config updates, cache clearing and all eight
+  split-tunnel writes were silently inert. The header is now sent on every
+  request
+- Mobile app: server selection called `POST /servers/{id}/select`, which does not
+  exist, with an `id` that was always `undefined` because `ServerInfo` has no
+  such field. It now calls `POST /api/v1/server/select` with
+  `{"server": "<name>"}`, and the server list is keyed on `name`
+- Mobile app: the `StatusResponse` and `VPNStatus` types matched neither the Go
+  handlers nor the API docs, so the Stats screen showed a permanent `N/A` for
+  nine rows and the session duration, and "Server Status" was permanently
+  "Unknown". Both types now mirror what the handlers emit: `server_connected`
+  and `vpn_status` instead of the non-existent `server_status`, and `vpn.VPNStats`
+  (`uptime`, packet counters, tunneled/bypassed connections, DNS counters)
+  instead of ten fields the API never returned
+- Mobile app: an unreachable client was indistinguishable from an idle one. Home
+  and Stats rendered "Not Connected" with `0 B` on a failed fetch; both now
+  report the failure, name the address they could not reach, and offer a retry
+- Mobile app: the Settings server-address field could overwrite text as the user
+  typed it, because an effect copied the remote client's *upstream* server
+  address into the input on every config refetch
 - `/api/v1/ws` accepted a DNS-rebound `Host`. The origin check relies on the
   WebSocket library's same-origin shortcut, which accepts any request whose
   `Origin` host equals the request `Host`; an attacker controlling a DNS name
