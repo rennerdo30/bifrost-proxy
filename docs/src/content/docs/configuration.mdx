@@ -153,6 +153,93 @@ Pattern formats:
 - `.example.com` - Suffix match (matches domain and all subdomains)
 - `*` - Match all
 
+#### Load balancing across several backends
+
+A route may name several backends instead of one. With `load_balance: weighted`,
+`weights` sets the relative share each receives; a backend absent from the map
+gets a weight of 1.
+
+```yaml
+routes:
+  - name: "internal"
+    domains: ["*.internal.com"]
+    backends: ["wireguard-a", "wireguard-b"]
+    load_balance: weighted     # round_robin | least_conn | random | weighted
+    weights:
+      wireguard-a: 3           # receives 3 of every 4 requests
+      wireguard-b: 1
+```
+
+### Web UI Settings
+
+```yaml
+web_ui:
+  enabled: true
+  listen: "127.0.0.1:7081"
+  base_path: "/bifrost"        # serve the dashboard under a sub-path
+```
+
+Set `base_path` when a reverse proxy mounts the dashboard somewhere other than
+the root. If that proxy also rewrites `Host`, add the browser-visible origin to
+`api.allowed_origins` as well, or the dashboard's WebSocket will be refused.
+
+### Network Settings
+
+Process-wide tuning for outbound dials. Every field is optional; omitted values
+keep the Go and OS defaults. This section requires a restart.
+
+```yaml
+network:
+  ipv6: true                   # false restricts outbound dials to IPv4
+  prefer_ipv6: false           # prefer AAAA when a host resolves to both
+  keepalive: 30s               # TCP keep-alive on outbound dials; negative disables
+  max_connections: 0           # ceiling across all listeners; 0 = unlimited
+```
+
+`ipv6` is deliberately three-state: leaving it unset means dual-stack, exactly
+as `true` does, so an absent value never narrows the address family. Only an
+explicit `ipv6: false` restricts dialling to IPv4.
+
+`network.dial_timeout` is accepted by the parser but **has no effect today** —
+connection timeouts are still taken from the per-listener `server.http` and
+`server.socks5` settings. It is documented here only so that setting it and
+seeing nothing change is not a mystery.
+
+### API Settings
+
+```yaml
+api:
+  enabled: true
+  listen: "127.0.0.1:7082"
+  token: "..."                 # optional; when unset the API has no auth
+  allowed_origins:             # extra browser origins allowed to open a WebSocket
+    - "https://bifrost.example.com"
+```
+
+`allowed_origins` matters when a reverse proxy rewrites `Host`, and it also
+grants the `Host` check that blocks DNS rebinding. Both rules, the matching
+semantics, and the `["*"]` opt-out are documented in
+[the WebSocket API reference](/api/websocket/#origin-restrictions).
+
+### MITM Inspection
+
+Off by default. When enabled, the proxy terminates TLS with a certificate it
+mints per host from a CA you supply, so request bodies become visible to the
+traffic debugger. Both files are required, and the CA private key lets the proxy
+impersonate any host — treat it accordingly.
+
+```yaml
+mitm:
+  enabled: false
+  ca_cert_file: "/etc/bifrost/mitm-ca.pem"
+  ca_key_file: "/etc/bifrost/mitm-ca.key"
+  leaf_ttl: 24h                # lifetime of each minted host certificate
+  max_cached_certs: 100        # LRU bound on minted certificates held in memory
+```
+
+Clients must trust `ca_cert_file`, or every intercepted connection fails its
+certificate check. Changing this section requires a restart.
+
 ## Client Configuration
 
 ### Full Example

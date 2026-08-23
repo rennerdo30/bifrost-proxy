@@ -22,6 +22,51 @@ Kerberos, NTLM, mTLS and SPNEGO: keytab and CA creation, `krb5.conf`, browser an
 the two pages describe the same option they use the same keys; if they ever
 disagree, the plugin source under `internal/auth/plugin/` is the authority.
 
+## Providers that cannot authenticate
+
+A provider that accepts configuration and then rejects every login is
+indistinguishable, to the person trying to log in, from a wrong password. So
+Bifrost refuses to run one rather than let it fail quietly. Two states are
+treated differently, because they are different problems:
+
+| State | Meaning | Result |
+|---|---|---|
+| `unimplemented` | The plugin can never authenticate anyone in any build — `ntlm` cannot verify an NTLM response | **Server refuses to start** |
+| `build_disabled` | This binary lacks what the plugin needs (a build tag, cgo, a platform library), but another build has it — `system` without the `pam` tag on Linux | **Starts, with a warning** logged for that provider |
+
+Note *where* the refusal happens: the config file itself parses and validates
+normally, so `bifrost-server validate` and the dashboard's config editor accept
+it. The provider is rejected when the authenticator is constructed, which is
+during server start:
+
+```
+create authenticator: provider "corp-ntlm": auth provider type "ntlm" cannot
+authenticate anyone and is refused: NTLM response verification is not
+implemented: there is no credential source (NT-hash store or domain-controller
+pass-through) to verify a client's NTLMv2 response against, so every login is
+rejected. Use the 'kerberos' provider for Windows-domain SSO, or 'ldap' against
+Active Directory. [...]
+```
+
+The remedy is to remove the provider, or set `enabled: false` on it — a disabled
+provider is never constructed. For Windows domain single sign-on use `kerberos`
+with the `auth.negotiate` middleware, which is functional; see the
+[Advanced Authentication guide](/configuration/authentication).
+
+`build_disabled` deliberately does not block startup: the same configuration is
+valid on a build that includes the support, so refusing it would make one config
+file un-shareable across builds. It is logged at `WARN` instead:
+
+```
+auth provider cannot authenticate in this build; every login through it will be
+rejected  provider=sys type=system state=build_disabled
+```
+
+To see what the running binary actually supports, ask it — `GET /api/v1/auth/providers`
+reports an `availability` state per plugin, and `POST /api/v1/config/validate`
+reports a refused provider as a validation error. Both are documented in the
+[server API reference](/api/server).
+
 ## No Authentication
 
 Default behaviour - allows all connections.
