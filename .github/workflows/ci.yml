@@ -221,6 +221,52 @@ jobs:
         working-directory: desktop/frontend
         run: npm run build
 
+  # desktop/ is its own Go module, so `go build ./...` at the repo root never
+  # compiles it. Nothing did, which is how it came to reference the parent
+  # module's packages with a go.sum missing their dependencies and still pass CI.
+  desktop-go:
+    name: Desktop Go Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # desktop/main.go embeds frontend/dist, which is a build artifact and not
+      # in the tree. Without it the module cannot compile at all.
+      - name: Build desktop frontend for embed
+        working-directory: desktop/frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build desktop module
+        working-directory: desktop
+        run: go build ./...
+
+      - name: Vet desktop module
+        working-directory: desktop
+        run: go vet ./...
+
+      # A tidy go.sum is the specific thing that broke: the module compiled
+      # locally for anyone with a warm module cache and failed from clean.
+      - name: Verify desktop go.mod/go.sum are tidy
+        working-directory: desktop
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
   mobile:
     name: Mobile Typecheck & Doctor
     runs-on: ubuntu-latest

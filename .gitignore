@@ -70,3 +70,9 @@ node_modules
 docs/.astro
 docs/dist
 docs/node_modules
+
+# Local tool state. settings.local.json is per-developer, and worktrees/ holds
+# scratch git worktrees that would otherwise be swept in by `git add -A` as
+# embedded repositories.
+.claude/worktrees/
+.claude/settings.local.json
