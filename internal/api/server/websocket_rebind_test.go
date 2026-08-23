@@ -94,14 +94,14 @@ func TestWebSocket_AllowlistedHostAccepted(t *testing.T) {
 	assert.Equal(t, http.StatusSwitchingProtocols, status,
 		"an allowlisted proxy Host must be accepted")
 
-	// A neighbouring name must not be swept in by the same entry.
+	// A neighboring name must not be swept in by the same entry.
 	status = upgradeWithHost(t, srv, "evil-homeassistant.local:8123", "http://evil-homeassistant.local:8123")
 	assert.Equal(t, http.StatusForbidden, status)
 }
 
 // TestWebSocket_WildcardOptOutSkipsHostCheck confirms the documented escape
 // hatch still disables the whole check, so an operator who needs the old
-// behaviour has exactly one way to ask for it.
+// behavior has exactly one way to ask for it.
 func TestWebSocket_WildcardOptOutSkipsHostCheck(t *testing.T) {
 	srv := newOriginTestServer(t, []string{"*"})
 
