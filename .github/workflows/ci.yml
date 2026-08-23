@@ -238,6 +238,19 @@ jobs:
             go.sum
             desktop/go.sum
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # desktop/main.go embeds frontend/dist, which is a build artifact and not
+      # in the tree. Without it the module cannot compile at all.
+      - name: Build desktop frontend for embed
+        working-directory: desktop/frontend
+        run: |
+          npm ci
+          npm run build
+
       - name: Build desktop module
         working-directory: desktop
         run: go build ./...
