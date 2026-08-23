@@ -342,10 +342,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - System proxy support extended beyond Windows to macOS (`networksetup`) and
   Linux/GNOME (`gsettings`); unsupported desktops now return `ErrNotSupported`
   instead of reporting a successful no-op
-- Redesigned logo, favicons, tray icons and app icons around a single mark: a
-  faceted span crossing between two realms, drawn on a 4-unit grid so it stays
-  legible down to 16px. Light and dark variants plus a monochrome cut ship in
-  `assets/`; both dashboards and the docs site now use the same favicon
+- Repaired the original logo rather than replacing it. The rainbow span and the
+  plated circle are unchanged, as are all five gradient colours; six defects
+  were fixed. The packet dots straddled the arch's lower edge - they sat 4.7
+  units inside a band spanning 93.7-105.7 - and now sit on its centreline. The
+  dashed flow lines started below the arch and ended above it, cutting through
+  the span, and are now one curve concentric to it. The gradient ran red,
+  yellow, teal, blue, green, so hue reversed at the final stop and the
+  right-hand node disagreed with the arch end it attached to. The hub was a disc
+  whose centre was filled with the plate colour, showing as a dark blob on any
+  other surface, and is now a ring seated on the crown rather than floating over
+  it. The mark also had no accessible name. A separate simplified cut
+  (`assets/icon.svg`) backs favicons, app icons and the tray, because at 16px
+  the full mark's arch stroke is 0.96px and its packets and flow dashes vanish
+  entirely. `assets/logo-light.svg` and `assets/logo-dark.svg` are gone: the
+  mark carries its own plate, so surface variants served no purpose, and only
+  the README's `<picture>` referenced them
 
 ## [1.0.0] - 2026-01-16
 
