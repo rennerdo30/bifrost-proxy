@@ -25,6 +25,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the URL verbatim — so the token was logged on every WebSocket upgrade and every
   log-stream reconnect. The parameter is now lifted out of the URL before any
   logging happens; it still authenticates the request
+- Config values containing a dollar sign are no longer silently truncated. The
+  loader expanded environment variables by running `os.ExpandEnv` over the whole
+  file, so any `$` followed by word characters was read as a variable reference:
+  the password `p@ss$word123` loaded as `p@ss`, and the bcrypt hash
+  `$2a$10$N9qo…` loaded as `a0`. There was no escape syntax, and YAML quoting
+  could not help, because expansion ran on the raw bytes before parsing. Every
+  credential in a config file — proxy passwords, LDAP bind passwords, API keys,
+  `password_hash` values — was at risk of being corrupted into something that
+  then failed authentication with no indication why. Expansion now recognizes
+  only `${NAME}`, `${NAME:-fallback}` and the escape `$$`; every other dollar
+  sign is literal
 
 ### Added
 - `api.allowed_origins`: browser origins permitted to open `/api/v1/ws`, for
@@ -41,8 +52,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The server dashboard's auth provider list gained `mfa_wrapper`, which was
   registered and working but missing from the UI entirely, with a default config
   in the inline `primary`/`secondary` format the server actually accepts
+- Config files support `${NAME:-fallback}`, which uses the environment variable
+  when it is set and non-empty and the literal fallback otherwise. The
+  shell-style form previously looked supported and was not: `os.ExpandEnv` read
+  `NAME:-fallback` as one variable name, so `listen: ":${HTTP_PORT:-8080}"`
+  quietly became `listen: ":"`
+- Config files support `$$` as an escape for a literal dollar sign in front of a
+  `{` or another `$`. It is only needed for a value that must literally contain
+  `${`; a lone `$`, as in a bcrypt hash, needs no escaping
+- `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` downgrades unknown configuration keys
+  from a startup failure to a warning naming each key and its line. It exists so
+  an obsolete key cannot keep a previously running deployment from starting
+  during an upgrade, and it is transitional: fix the config file rather than
+  keeping the variable set
 
 ### Changed
+- **Breaking:** a configuration key that no setting corresponds to is now
+  rejected at load time, naming the key, its line and its config block, instead
+  of being ignored. A misspelled key (`listem` for `listen`) or an obsolete one
+  used to load without a word of complaint, leaving the operator to conclude that
+  the *setting* does not work — which is also why a long list of documented keys
+  that nothing reads went unnoticed for so long. This applies to every load path:
+  server and client startup, `config validate`, hot reload, and the dashboard's
+  config API. **Compatibility:** every shipped example config and both `init`
+  templates load cleanly, so a config file that matches the documentation is
+  unaffected; a hand-edited file carrying a typo or a key from an older release
+  will now fail to start. The error names the offending keys and the whole file
+  is checked in one pass, so the fix is one edit. If a deployment must come up
+  immediately, set `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` to turn the failure back
+  into warnings and clean up afterwards
+- **Breaking:** environment-variable expansion in config files no longer expands
+  bare `$NAME` references — only `${NAME}` and `${NAME:-fallback}`. This is what
+  makes a literal `$` in a value safe. A config file that relied on `$NAME` will
+  now keep the text verbatim; the loader logs a warning, with the line number,
+  whenever it leaves a bare `$NAME` that does name a variable set in the
+  environment. All documented examples already use the `${NAME}` form
+- A reference to a variable that is not set still expands to the empty string,
+  but now logs a warning naming the variable and the line instead of failing
+  silently. Use `${NAME:-fallback}` where an empty value is not acceptable
+- `config.Save` escapes dollar signs that would be read back as a reference, so a
+  value containing `${` survives a dashboard save and the reload that follows
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
   rejecting every login. This affects `ntlm` (no credential source exists to
