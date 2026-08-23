@@ -183,6 +183,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written into a profile
 
 ### Fixed
+- **Disconnecting and reconnecting the client crashed the process.** The client's
+  internal shutdown channel was allocated once, when the client was created, and
+  closed by every `Stop`, so a stop/start/stop sequence closed it twice and
+  panicked with "close of closed channel". Three clicks of the desktop app's
+  Connect/Disconnect button were enough. Before the crash the restart was also a
+  silent no-op: the second start reported success while every background loop
+  watching the already-closed channel exited immediately, so the server health
+  monitor never probed again. Each run now gets its own shutdown channel,
+  listeners and API server, and a stopped client can be started again cleanly
+- A client start that could not bind its HTTP or SOCKS5 listener left the client
+  reporting itself as running, so the desktop app's Connect button (which only
+  starts a client that is not already running) reported success from then on
+  while nothing was listening. A failed start now rolls back: listeners are
+  closed, background goroutines are joined, and the client reports not running
+- **The desktop app's connection indicator was fabricated.** It reported
+  "Connected", with the green shield, whenever a server address was configured —
+  reachable or not. It now performs a real, short reachability probe against the
+  configured server, the same check the client's own API already used
+- The desktop app's traffic panel rendered permanent zeros as live telemetry.
+  Bytes sent, bytes received and active connections are now read from the
+  client's existing counters
 - `/api/v1/ws` accepted a DNS-rebound `Host`. The origin check relies on the
   WebSocket library's same-origin shortcut, which accepts any request whose
   `Origin` host equals the request `Host`; an attacker controlling a DNS name

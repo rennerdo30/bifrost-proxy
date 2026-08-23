@@ -32,6 +32,25 @@ import (
 // timeout in the client config, unlike the HTTP listener.
 const clientSOCKS5DialTimeout = 30 * time.Second
 
+const (
+	// apiReadHeaderTimeout bounds how long the local API/Web UI server waits
+	// for a request's headers, mitigating Slowloris-style stalls.
+	apiReadHeaderTimeout = 10 * time.Second
+
+	// shutdownGracePeriod bounds how long Stop waits for in-flight connections
+	// and background goroutines to finish before giving up.
+	shutdownGracePeriod = 30 * time.Second
+
+	// defaultHealthCheckInterval and defaultHealthCheckTimeout are used when
+	// server.health_check omits (or zeroes) the corresponding field.
+	defaultHealthCheckInterval = 30 * time.Second
+	defaultHealthCheckTimeout  = 5 * time.Second
+
+	// defaultUpdateCheckInterval is used when auto_update.check_interval is
+	// unset or non-positive.
+	defaultUpdateCheckInterval = 24 * time.Hour
+)
+
 // Client is the Bifrost client.
 type Client struct {
 	config          *config.ClientConfig
@@ -52,7 +71,14 @@ type Client struct {
 	running bool
 	mu      sync.RWMutex
 	wg      sync.WaitGroup
-	done    chan struct{}
+
+	// done signals the background goroutines of the *current* run to exit. It
+	// has a per-run lifetime: Start allocates a fresh channel and Stop closes
+	// it, so a Start -> Stop -> Start -> Stop cycle no longer closes an already
+	// closed channel. Goroutines must never read this field directly; Start
+	// passes the channel it allocated to each goroutine so a subsequent Start
+	// cannot race with, or silently resurrect, the previous run's loops.
+	done chan struct{}
 
 	// Traffic counters exposed through the local API's /status endpoint. They
 	// are cumulative for bytes and instantaneous for connections, and are
@@ -161,11 +187,16 @@ func New(cfg *config.ClientConfig) (*Client, error) {
 		vpnManager:      vpnManager,
 		meshManager:     meshManager,
 		sysProxyManager: sysproxy.New(),
-		done:            make(chan struct{}),
+		// Placeholder so the field is never nil before the first Start; Start
+		// replaces it with this run's channel.
+		done: make(chan struct{}),
 	}, nil
 }
 
-// Start starts the client.
+// Start starts the client. A client that has been stopped can be started
+// again: each run gets its own done channel, listeners and API server, so the
+// Connect/Disconnect cycle exposed by the desktop app is safe to repeat.
+// Calling Start on an already-running client is a no-op.
 func (c *Client) Start(ctx context.Context) error {
 	c.mu.Lock()
 	if c.running {
@@ -173,6 +204,12 @@ func (c *Client) Start(ctx context.Context) error {
 		return nil
 	}
 	c.running = true
+	// Allocate this run's shutdown channel. Without this, a restarted client
+	// reused the channel Stop had already closed: every background loop
+	// selecting on it exited immediately (Start still reported success) and the
+	// next Stop panicked with "close of closed channel".
+	c.done = make(chan struct{})
+	done := c.done
 	c.mu.Unlock()
 
 	logging.Info("Starting Bifrost client")
@@ -186,26 +223,30 @@ func (c *Client) Start(ctx context.Context) error {
 	if c.config.Proxy.HTTP.Listen != "" {
 		listener, err := net.Listen("tcp", c.config.Proxy.HTTP.Listen)
 		if err != nil {
-			return fmt.Errorf("listen HTTP: %w", err)
+			return c.failStart(fmt.Errorf("listen HTTP: %w", err))
 		}
+		c.mu.Lock()
 		c.httpListener = listener
+		c.mu.Unlock()
 		logging.Info("HTTP proxy listening", "address", c.config.Proxy.HTTP.Listen)
 
 		c.wg.Add(1)
-		go c.serveHTTP(ctx)
+		go c.serveHTTP(ctx, listener, done)
 	}
 
 	// Start SOCKS5 listener
 	if c.config.Proxy.SOCKS5.Listen != "" {
 		listener, err := net.Listen("tcp", c.config.Proxy.SOCKS5.Listen)
 		if err != nil {
-			return fmt.Errorf("listen SOCKS5: %w", err)
+			return c.failStart(fmt.Errorf("listen SOCKS5: %w", err))
 		}
+		c.mu.Lock()
 		c.socks5Listener = listener
+		c.mu.Unlock()
 		logging.Info("SOCKS5 proxy listening", "address", c.config.Proxy.SOCKS5.Listen)
 
 		c.wg.Add(1)
-		go c.serveSOCKS5(ctx)
+		go c.serveSOCKS5(ctx, listener, done)
 	}
 
 	// Start API/Web UI server
@@ -214,7 +255,7 @@ func (c *Client) Start(ctx context.Context) error {
 			Router:   c.router,
 			Debugger: c.debugger,
 			ServerConnected: func() bool {
-				return c.serverConn.IsConnected(context.Background())
+				return c.ServerConnected(context.Background())
 			},
 			Token: c.config.API.Token,
 			VPNManager: func() apiclient.VPNManager {
@@ -244,17 +285,20 @@ func (c *Client) Start(ctx context.Context) error {
 			ActiveConns:   c.ActiveConnections,
 		})
 
-		c.apiServer = &http.Server{
+		apiServer := &http.Server{
 			Addr:              c.config.API.Listen,
 			Handler:           api.HandlerWithUI(),
-			ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
+			ReadHeaderTimeout: apiReadHeaderTimeout, // Prevent Slowloris attacks
 		}
+		c.mu.Lock()
+		c.apiServer = apiServer
+		c.mu.Unlock()
 
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
 			logging.Info("API/Web UI server listening", "address", c.config.API.Listen)
-			if err := c.apiServer.ListenAndServe(); err != http.ErrServerClosed {
+			if err := apiServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 				logging.Error("API server error", "error", err)
 			}
 		}()
@@ -322,13 +366,52 @@ func (c *Client) Start(ctx context.Context) error {
 	// Start the server health monitor if a health check is configured. This
 	// gives the previously-inert server.health_check block a runtime effect:
 	// it periodically probes server reachability and logs status transitions.
-	c.startHealthMonitor(ctx)
+	c.startHealthMonitor(ctx, done)
 
 	// Apply tray-driven startup behavior (auto-connect, start minimized).
 	c.applyStartupBehavior()
 
 	logging.Info("Bifrost client started")
 	return nil
+}
+
+// failStart rolls back the partial startup performed before err occurred, so a
+// Start that fails to bind a listener does not leave the client reporting
+// Running() == true with an open done channel and a dead accept loop. It closes
+// this run's done channel, shuts the already-bound listeners and waits for the
+// goroutines they spawned, then returns err unchanged for convenient tail calls.
+func (c *Client) failStart(err error) error {
+	c.mu.Lock()
+	if !c.running {
+		c.mu.Unlock()
+		return err
+	}
+	c.running = false
+	close(c.done)
+	httpLn, socks5Ln := c.httpListener, c.socks5Listener
+	c.httpListener, c.socks5Listener = nil, nil
+	c.mu.Unlock()
+
+	if httpLn != nil {
+		_ = httpLn.Close() //nolint:errcheck // Best effort rollback
+	}
+	if socks5Ln != nil {
+		_ = socks5Ln.Close() //nolint:errcheck // Best effort rollback
+	}
+	c.wg.Wait()
+
+	logging.Error("Bifrost client failed to start; rolled back partial startup", "error", err)
+	return err
+}
+
+// ServerConnected reports whether the configured Bifrost server is currently
+// reachable, by performing a short TCP probe with the server connection's
+// configured dial timeout. Callers should pass a context with their own deadline
+// when they need a tighter bound (a UI status poll, for instance). This is the
+// only honest source of "connected" state: the mere presence of a configured
+// server address says nothing about reachability.
+func (c *Client) ServerConnected(ctx context.Context) bool {
+	return c.serverConn.IsConnected(ctx)
 }
 
 // startUpdater constructs the auto-updater from the client's AutoUpdate config
@@ -338,7 +421,7 @@ func (c *Client) Start(ctx context.Context) error {
 func (c *Client) startUpdater(ctx context.Context) {
 	interval := c.config.AutoUpdate.CheckInterval.Duration()
 	if interval <= 0 {
-		interval = 24 * time.Hour
+		interval = defaultUpdateCheckInterval
 	}
 	channel := c.config.AutoUpdate.Channel
 	if channel == "" {
@@ -369,7 +452,11 @@ func (c *Client) startUpdater(ctx context.Context) {
 // configured Bifrost server for reachability. It consumes the previously-dead
 // server.health_check config block. Transitions between reachable/unreachable
 // are logged and, when a tray is present, reflected in the tray status.
-func (c *Client) startHealthMonitor(ctx context.Context) {
+//
+// done belongs to the Start that launched this monitor; taking it as a parameter
+// keeps a later Start (which allocates a fresh channel) from racing with, or
+// resurrecting, this goroutine.
+func (c *Client) startHealthMonitor(ctx context.Context, done <-chan struct{}) {
 	hc := c.config.Server.HealthCheck
 	if hc == nil {
 		return
@@ -383,11 +470,11 @@ func (c *Client) startHealthMonitor(ctx context.Context) {
 
 	interval := hc.Interval.Duration()
 	if interval <= 0 {
-		interval = 30 * time.Second
+		interval = defaultHealthCheckInterval
 	}
 	timeout := hc.Timeout.Duration()
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = defaultHealthCheckTimeout
 	}
 
 	c.wg.Add(1)
@@ -403,13 +490,13 @@ func (c *Client) startHealthMonitor(ctx context.Context) {
 
 		for {
 			select {
-			case <-c.done:
+			case <-done:
 				return
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				checkCtx, cancel := context.WithTimeout(ctx, timeout)
-				healthy := c.serverConn.IsConnected(checkCtx)
+				healthy := c.ServerConnected(checkCtx)
 				cancel()
 
 				if !first && healthy == lastHealthy {
@@ -478,7 +565,9 @@ func (c *Client) applyStartupBehavior() {
 	}
 }
 
-// Stop stops the client.
+// Stop stops the client. It is safe to call on a client that is not running
+// (it is then a no-op) and safe to interleave with Start: the run's done channel
+// is closed exactly once, under the same lock that guards c.running.
 func (c *Client) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	if !c.running {
@@ -487,21 +576,25 @@ func (c *Client) Stop(ctx context.Context) error {
 	}
 	c.running = false
 	close(c.done)
+	// Detach this run's listeners and API server so a subsequent Start installs
+	// fresh ones instead of having them torn down here a second time.
+	httpLn, socks5Ln, apiServer := c.httpListener, c.socks5Listener, c.apiServer
+	c.httpListener, c.socks5Listener, c.apiServer = nil, nil, nil
 	c.mu.Unlock()
 
 	logging.Info("Stopping Bifrost client")
 
 	// Close listeners
-	if c.httpListener != nil {
-		c.httpListener.Close()
+	if httpLn != nil {
+		_ = httpLn.Close() //nolint:errcheck // Best effort shutdown
 	}
-	if c.socks5Listener != nil {
-		c.socks5Listener.Close()
+	if socks5Ln != nil {
+		_ = socks5Ln.Close() //nolint:errcheck // Best effort shutdown
 	}
 
 	// Stop API server
-	if c.apiServer != nil {
-		_ = c.apiServer.Shutdown(ctx) //nolint:errcheck // Best effort shutdown
+	if apiServer != nil {
+		_ = apiServer.Shutdown(ctx) //nolint:errcheck // Best effort shutdown
 	}
 
 	// Stop VPN
@@ -540,31 +633,39 @@ func (c *Client) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Stop system tray
-	if c.tray != nil {
-		c.tray.Quit()
-		c.tray = nil
+	// Stop system tray. Detached under the lock so a later Start (which calls
+	// startTray under the same lock) creates a fresh tray instead of observing
+	// a half-torn-down one.
+	c.mu.Lock()
+	t := c.tray
+	c.tray = nil
+	c.mu.Unlock()
+	if t != nil {
+		t.Quit()
 	}
 
 	// Wait for connections
-	done := make(chan struct{})
+	waited := make(chan struct{})
 	go func() {
 		c.wg.Wait()
-		close(done)
+		close(waited)
 	}()
 
 	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		logging.Warn("Grace period exceeded")
+	case <-waited:
+	case <-time.After(shutdownGracePeriod):
+		logging.Warn("Grace period exceeded", "grace_period", shutdownGracePeriod)
 	}
 
 	logging.Info("Bifrost client stopped")
 	return nil
 }
 
-// serveHTTP handles HTTP proxy connections.
-func (c *Client) serveHTTP(ctx context.Context) {
+// serveHTTP handles HTTP proxy connections on the listener bound by the Start
+// that launched it. The listener and done channel are parameters rather than
+// fields so a restart cannot make this loop accept on a replaced listener or
+// watch a replaced done channel.
+func (c *Client) serveHTTP(ctx context.Context, listener net.Listener, done <-chan struct{}) {
 	defer c.wg.Done()
 
 	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
@@ -578,10 +679,10 @@ func (c *Client) serveHTTP(ctx context.Context) {
 	})
 
 	for {
-		conn, err := c.httpListener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			select {
-			case <-c.done:
+			case <-done:
 				return
 			default:
 				logging.Error("HTTP accept error", "error", err)
@@ -597,8 +698,9 @@ func (c *Client) serveHTTP(ctx context.Context) {
 	}
 }
 
-// serveSOCKS5 handles SOCKS5 proxy connections.
-func (c *Client) serveSOCKS5(ctx context.Context) {
+// serveSOCKS5 handles SOCKS5 proxy connections on the listener bound by the
+// Start that launched it. See serveHTTP for why both are parameters.
+func (c *Client) serveSOCKS5(ctx context.Context, listener net.Listener, done <-chan struct{}) {
 	defer c.wg.Done()
 
 	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
@@ -613,10 +715,10 @@ func (c *Client) serveSOCKS5(ctx context.Context) {
 	})
 
 	for {
-		conn, err := c.socks5Listener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			select {
-			case <-c.done:
+			case <-done:
 				return
 			default:
 				logging.Error("SOCKS5 accept error", "error", err)
