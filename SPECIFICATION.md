@@ -670,6 +670,13 @@ GET    /api/v1/config           - Get config
 POST   /api/v1/config/reload    - Reload config
 ```
 
+**JSON encoding of configuration.** Config structs serialize with the same
+snake_case names their YAML keys use, so a response body is a valid request body.
+Durations are duration strings in both directions (`"30s"`, `"1m30s"`), never
+nanosecond counts; a bare number is still accepted on input and read as
+nanoseconds. `internal/duration.Duration` implements this for `internal/vpn` and
+`internal/mesh`, matching `internal/config.Duration`.
+
 ## 6. Technical Details
 
 ### 6.1 Dependencies

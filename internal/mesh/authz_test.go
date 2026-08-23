@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/device"
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
 	"github.com/rennerdo30/bifrost-proxy/internal/frame"
 	"github.com/rennerdo30/bifrost-proxy/internal/p2p"
 )
@@ -67,7 +68,7 @@ func newAuthzTestNode(t *testing.T, allowedPeers []string) (*MeshNode, *recordin
 		config: Config{
 			Security: SecurityConfig{AllowedPeers: allowedPeers},
 			Connection: ConnectionConfig{
-				ConnectTimeout: time.Second,
+				ConnectTimeout: duration.Duration(time.Second),
 			},
 		},
 		localPeerID:  "local",

@@ -38,6 +38,14 @@ const (
 	ActionBypass Action = "bypass"
 )
 
+// Split tunnel modes.
+const (
+	// ModeExclude routes listed destinations around the VPN; everything else is tunneled.
+	ModeExclude = "exclude"
+	// ModeInclude tunnels only listed destinations; everything else bypasses the VPN.
+	ModeInclude = "include"
+)
+
 // Decision represents a split tunnel routing decision.
 type Decision struct {
 	Action    Action // ActionTunnel or ActionBypass
@@ -50,34 +58,34 @@ type SplitTunnelConfig struct {
 	// Mode determines the split tunnel behavior.
 	// "exclude": Traffic to listed items bypasses the VPN (default goes through VPN)
 	// "include": Only traffic to listed items goes through VPN (default bypasses)
-	Mode string `yaml:"mode"`
+	Mode string `yaml:"mode" json:"mode"`
 
 	// Apps lists applications to include/exclude from VPN.
-	Apps []AppRule `yaml:"apps"`
+	Apps []AppRule `yaml:"apps" json:"apps"`
 
 	// Domains lists domain patterns to include/exclude.
-	Domains []string `yaml:"domains"`
+	Domains []string `yaml:"domains" json:"domains"`
 
 	// IPs lists IP addresses or CIDR ranges to include/exclude.
-	IPs []string `yaml:"ips"`
+	IPs []string `yaml:"ips" json:"ips"`
 
 	// AlwaysBypass lists destinations that always bypass the VPN.
 	// These are checked before other rules (e.g., LAN, localhost).
-	AlwaysBypass []string `yaml:"always_bypass"`
+	AlwaysBypass []string `yaml:"always_bypass" json:"always_bypass"`
 }
 
 // AppRule defines a rule for matching applications.
 type AppRule struct {
-	Name string `yaml:"name"` // Process name (e.g., "slack", "zoom")
-	Path string `yaml:"path"` // Full executable path (optional, more specific)
+	Name string `yaml:"name" json:"name"` // Process name (e.g., "slack", "zoom")
+	Path string `yaml:"path" json:"path"` // Full executable path (optional, more specific)
 }
 
 // Validate validates the split tunnel configuration.
 func (c *SplitTunnelConfig) Validate() error {
 	if c.Mode == "" {
-		c.Mode = "exclude"
+		c.Mode = DefaultSplitTunnelMode
 	}
-	if c.Mode != "exclude" && c.Mode != "include" {
+	if c.Mode != ModeExclude && c.Mode != ModeInclude {
 		return &ConfigError{Field: "split_tunnel.mode", Message: "must be 'exclude' or 'include'"}
 	}
 	return nil
