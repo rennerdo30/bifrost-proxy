@@ -1,42 +1,30 @@
 <!--
-  Bifrost mark: a faceted span crossing between two realms.
+  Bifrost mark: a rainbow span between two realms, on a dark plate.
 
-  Hand-built on a 4-unit grid inside a 64x40 viewBox, artwork bounds 4,4-60,36,
-  so every horizontal and vertical stroke edge lands on a whole pixel at 16px.
-  Three flat colours, no gradients: the two landings (cyan / violet) and the
-  span itself in the product accent blue. The span is drawn first and the two
-  landings overlap it, which puts the colour seams on straight runs of the leg
-  - butt caps there mean the seams are clean lines, not lobes.
+  The arch is M30 130 Q100 40 170 130 at stroke 12. Its x is linear in t
+  (x = 30 + 140t), which is how the geometry below is positioned exactly:
+    - the packet inlays sit on the centreline, y=99.7 at x=60 and x=140
+    - the flow dash is concentric (Q100 70), crown y=100, clear of the band
+    - the hub ring is seated on the crown: 66 + 12 + 8/2 = 82 against a band
+      top of 79
+  The five gradient stops run in spectral order. Nothing here has an opaque
+  fill that assumes the plate colour except the packet inlays, which sit
+  entirely on the arch and so are safe on any surface.
 
-  Colours come from the dashboard palette (web/server/src/index.css) and follow
-  the viewer's colour scheme. The stroke="..." presentation attributes are the
-  fallback for renderers that ignore the stylesheet; assets/logo-light.svg and
-  assets/logo-dark.svg pin one palette each for contexts that cannot resolve
-  prefers-color-scheme, and assets/logo-mono.svg is the single-colour cut.
+  assets/icon.svg is the simplified cut for favicons and app icons: at 16px
+  this stroke is 0.96px and the packets and dashes disappear entirely.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" width="256" height="160"
-     class="bifrost-mark" role="img" aria-labelledby="bifrost-logo-title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="bifrost-logo-title">
   <title id="bifrost-logo-title">Bifrost Proxy</title>
-  <style>
-    .bifrost-mark {
-      --bifrost-span: #2563eb;
-      --bifrost-realm-in: #0891b2;
-      --bifrost-realm-out: #7c3aed;
-    }
-    @media (prefers-color-scheme: dark) {
-      .bifrost-mark {
-        --bifrost-span: #3b82f6;
-        --bifrost-realm-in: #22d3ee;
-        --bifrost-realm-out: #8b5cf6;
-      }
-    }
-    .bifrost-mark .bifrost-span { stroke: var(--bifrost-span); }
-    .bifrost-mark .bifrost-realm-in { stroke: var(--bifrost-realm-in); }
-    .bifrost-mark .bifrost-realm-out { stroke: var(--bifrost-realm-out); }
-  </style>
-  <g fill="none" stroke-width="8" stroke-linecap="butt" stroke-linejoin="miter">
-    <path class="bifrost-span" stroke="#2563eb" d="M20 24V14L26 8H38L44 14V24"/>
-    <path class="bifrost-realm-in" stroke="#0891b2" d="M4 32H20V20"/>
-    <path class="bifrost-realm-out" stroke="#7c3aed" d="M44 20V32H60"/>
-  </g>
+  <defs><linearGradient id="bifrostSpan" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#FF6B6B"/><stop offset="25%" stop-color="#FFE66D"/><stop offset="50%" stop-color="#96CEB4"/><stop offset="75%" stop-color="#4ECDC4"/><stop offset="100%" stop-color="#45B7D1"/></linearGradient><linearGradient id="bifrostPlate" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#1a1a2e"/><stop offset="100%" stop-color="#16213e"/></linearGradient></defs>
+  <circle cx="100" cy="100" r="95" fill="url(#bifrostPlate)"/>
+  <path d="M30 130Q100 70 170 130" fill="none" stroke="#8fb3c9" stroke-width="2.5"
+        stroke-dasharray="5 6" stroke-linecap="round" opacity="0.38"/>
+  <path d="M30 130Q100 40 170 130" fill="none" stroke="url(#bifrostSpan)" stroke-width="12"
+        stroke-linecap="round"/>
+  <circle cx="60" cy="99.7" r="3.5" fill="#1a1a2e"/>
+  <circle cx="140" cy="99.7" r="3.5" fill="#1a1a2e"/>
+  <circle cx="30" cy="130" r="12" fill="#FF6B6B"/>
+  <circle cx="170" cy="130" r="12" fill="#45B7D1"/>
+  <circle cx="100" cy="66" r="12" fill="none" stroke="#4ECDC4" stroke-width="8"/>
 </svg>

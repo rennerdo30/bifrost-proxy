@@ -1,9 +1,5 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg" />
-    <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg" />
-    <img src="assets/logo.svg" alt="Bifrost logo: a faceted span crossing between two realms" width="220" />
-  </picture>
+  <img src="assets/logo.svg" alt="Bifrost logo: a rainbow span between two realms" width="220" />
 </p>
 
 # Bifrost Proxy
