@@ -28,6 +28,7 @@ import type {
   MeshNetworksResponse,
   MeshNetwork,
   CreateMeshNetworkRequest,
+  AuthPluginsResponse,
   MeshPeersResponse,
   MeshPeerInfo,
   RegisterMeshPeerRequest,
@@ -146,6 +147,10 @@ export const api = {
     fetchJSON<{ message: string; time: string }>('/config/reload', {
       method: 'POST',
     }),
+
+  // Auth plugins — which providers this server build can actually
+  // authenticate with (see AuthPluginInfo).
+  getAuthPlugins: () => fetchJSON<AuthPluginsResponse>('/auth/plugins'),
 
   // Connections
   getConnections: () => fetchJSON<ConnectionsResponse>('/connections/'),

@@ -2,6 +2,7 @@
 package mfa
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -25,54 +26,66 @@ func (p *plugin) Description() string {
 	return "Multi-factor authentication wrapper for combining primary auth with TOTP/HOTP"
 }
 
+// errByNameUnsupported is returned for the by-name provider format. Resolving
+// providers by name (primary_provider / mfa_provider) needs a registry of
+// already-constructed, named authenticators that this plugin has no access to at
+// Create time. Returning a wrapper that then rejects every login would be a
+// silent failure, so the configuration is refused with instructions instead.
+//
+// Both Create and ValidateConfig return this so the two cannot disagree: the
+// audit's finding was that the by-name format passed validation and was only
+// hard-rejected later by Create, which let the Web UI save a config that could
+// not start.
+var errByNameUnsupported = errors.New("mfa_wrapper: referencing auth providers by name " +
+	"(primary_provider/mfa_provider) is not supported; configure the wrapper with inline " +
+	"'primary' and 'secondary' blocks instead, each carrying its own 'mode' and 'config'")
+
 // Create creates a new MFA wrapper from the configuration.
 func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 	if hasInlineProviders(config) {
 		return p.createInlineWrapper(config)
 	}
 
-	// Validate the by-name configuration so misconfigurations are reported,
-	// then fail closed: resolving providers by name (primary_provider /
-	// mfa_provider) requires a registry of already-constructed, named
-	// authenticators that this plugin does not have access to at Create time.
-	// Returning a wrapper that rejects every login would be a silent, surprising
-	// failure, so we reject the configuration explicitly and tell the operator
-	// how to make it work (inline primary/secondary blocks).
-	if _, err := parsePluginConfig(config, true); err != nil {
-		return nil, err
-	}
-
-	return nil, fmt.Errorf("mfa_wrapper: referencing auth providers by name " +
-		"(primary_provider/mfa_provider) is not supported; configure the wrapper " +
-		"with inline 'primary' and 'secondary' blocks instead")
+	// Report the unsupported format before parsing the by-name fields. Parsing
+	// first meant a by-name config that merely omitted primary_provider got
+	// "'primary_provider' is required" — advice pointing further down a road that
+	// is a dead end — instead of being told the format itself is unsupported.
+	return nil, errByNameUnsupported
 }
 
-// ValidateConfig validates the configuration.
+// ValidateConfig validates the configuration. It accepts exactly what Create
+// accepts: the inline 'primary'/'secondary' block format, with both sub-provider
+// blocks validated by their own plugins.
 func (p *plugin) ValidateConfig(config map[string]any) error {
-	if hasInlineProviders(config) {
-		_, _, err := parseInlineAuthenticatorConfig(config, "primary")
-		if err != nil {
-			return err
-		}
-		secondaryMode, _, err := parseInlineAuthenticatorConfig(config, "secondary")
-		if err != nil {
-			return err
-		}
-		wrapperCfg := copyMap(config)
-		if _, ok := wrapperCfg["primary_provider"]; !ok {
-			wrapperCfg["primary_provider"] = "primary"
-		}
-		if _, ok := wrapperCfg["mfa_type"]; !ok {
-			wrapperCfg["mfa_type"] = secondaryMode
-		}
-		if _, ok := wrapperCfg["mfa_provider"]; !ok {
-			wrapperCfg["mfa_provider"] = secondaryMode
-		}
-		_, err = parsePluginConfig(wrapperCfg, false)
-		return err
+	if !hasInlineProviders(config) {
+		return errByNameUnsupported
 	}
 
-	_, err := parsePluginConfig(config, true)
+	primaryMode, primaryConfig, err := parseInlineAuthenticatorConfig(config, "primary")
+	if err != nil {
+		return err
+	}
+	if err = validateInlineAuthenticator("primary", primaryMode, primaryConfig); err != nil {
+		return err
+	}
+	secondaryMode, secondaryConfig, err := parseInlineAuthenticatorConfig(config, "secondary")
+	if err != nil {
+		return err
+	}
+	if err = validateInlineAuthenticator("secondary", secondaryMode, secondaryConfig); err != nil {
+		return err
+	}
+	wrapperCfg := copyMap(config)
+	if _, ok := wrapperCfg["primary_provider"]; !ok {
+		wrapperCfg["primary_provider"] = "primary"
+	}
+	if _, ok := wrapperCfg["mfa_type"]; !ok {
+		wrapperCfg["mfa_type"] = secondaryMode
+	}
+	if _, ok := wrapperCfg["mfa_provider"]; !ok {
+		wrapperCfg["mfa_provider"] = secondaryMode
+	}
+	_, err = parsePluginConfig(wrapperCfg)
 	return err
 }
 
@@ -169,8 +182,12 @@ func (p *plugin) ConfigSchema() string {
 }`
 }
 
-// parsePluginConfig parses the plugin configuration.
-func parsePluginConfig(config map[string]any, requirePrimaryProvider bool) (*Config, error) {
+// parsePluginConfig parses the wrapper's own settings (MFA mode, password
+// format, separator, code length). The by-name provider fields are no longer a
+// supported input — both Create and ValidateConfig reject that format up front —
+// so this only ever runs on a config whose providers are inline, and it does not
+// require primary_provider to be present.
+func parsePluginConfig(config map[string]any) (*Config, error) {
 	if config == nil {
 		return nil, fmt.Errorf("mfa_wrapper config is required")
 	}
@@ -184,10 +201,6 @@ func parsePluginConfig(config map[string]any, requirePrimaryProvider bool) (*Con
 
 	if primaryProvider, ok := config["primary_provider"].(string); ok {
 		cfg.PrimaryProvider = primaryProvider
-	}
-
-	if cfg.PrimaryProvider == "" && requirePrimaryProvider {
-		return nil, fmt.Errorf("mfa_wrapper config: 'primary_provider' is required")
 	}
 
 	if mfaType, ok := config["mfa_type"].(string); ok {
@@ -287,7 +300,7 @@ func (p *plugin) createInlineWrapper(config map[string]any) (auth.Authenticator,
 		}
 	}
 
-	wrapperCfg, err := parsePluginConfig(wrapperCfgInput, false)
+	wrapperCfg, err := parsePluginConfig(wrapperCfgInput)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +362,34 @@ func createInlineAuthenticator(mode string, config map[string]any) (auth.Authent
 		return nil, err
 	}
 	return plugin.Create(config)
+}
+
+// validateInlineAuthenticator resolves one inline sub-provider block against the
+// plugin registry and runs that plugin's own validation.
+//
+// Without this, ValidateConfig only checked that a block existed and named some
+// `mode`, while Create resolved it for real — so `primary: {mode: "ldap"}` with
+// no config, or an outright bogus mode, validated clean and then failed at
+// startup. That is the same "dashboard says Saved, server will not come back up"
+// failure this whole change set exists to remove, so the wrapper must not
+// reproduce it one level down.
+//
+// A sub-provider that can never authenticate is refused here too: nesting NTLM
+// inside an MFA wrapper is no more workable than using it directly.
+func validateInlineAuthenticator(key, mode string, config map[string]any) error {
+	plugin, ok := auth.GetPlugin(mode)
+	if !ok {
+		return fmt.Errorf("mfa_wrapper config: '%s.mode' is %q, which is not a registered auth plugin type (available: %v)",
+			key, mode, auth.ListPlugins())
+	}
+	if availability := auth.PluginAvailability(plugin); availability.MustRefuse() {
+		return fmt.Errorf("mfa_wrapper config: '%s.mode' is %q: %w", key, mode,
+			&auth.ErrPluginUnimplemented{Type: mode, Reason: availability.Reason})
+	}
+	if err := plugin.ValidateConfig(config); err != nil {
+		return fmt.Errorf("mfa_wrapper config: '%s' block: %w", key, err)
+	}
+	return nil
 }
 
 func normalizeOTPSecrets(mode string, config map[string]any) {

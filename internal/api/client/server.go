@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"gopkg.in/yaml.v3"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/api/apitoken"
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/debug"
@@ -240,6 +241,9 @@ func (a *API) Handler() http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
+	// Lift any ?token= credential out of the URL before the request logger sees
+	// it — a token in a URL is a token in every access log. Must stay first.
+	r.Use(apitoken.StripQueryMiddleware)
 	r.Use(middleware.RequestID)
 	//lint:ignore SA1019 chi v5.3.0 deprecated RealIP (IP-spoofing advisory GHSA-3fxj-6jh8-hvhx); behavior unchanged pending a trusted-proxy-aware replacement
 	r.Use(middleware.RealIP) //nolint:staticcheck // see //lint:ignore above
@@ -270,6 +274,9 @@ func (a *API) HandlerWithUI() http.Handler {
 	r := chi.NewRouter()
 
 	// Middleware
+	// Lift any ?token= credential out of the URL before the request logger sees
+	// it — a token in a URL is a token in every access log. Must stay first.
+	r.Use(apitoken.StripQueryMiddleware)
 	r.Use(middleware.RequestID)
 	//lint:ignore SA1019 chi v5.3.0 deprecated RealIP (IP-spoofing advisory GHSA-3fxj-6jh8-hvhx); behavior unchanged pending a trusted-proxy-aware replacement
 	r.Use(middleware.RealIP) //nolint:staticcheck // see //lint:ignore above
@@ -510,8 +517,12 @@ func (a *API) authMiddleware(next http.Handler) http.Handler {
 
 		token := r.Header.Get("Authorization")
 		if token == "" {
-			// Fallback to query parameter for WebSocket connections
-			token = r.URL.Query().Get("token")
+			// Fallback for transports that cannot set an Authorization header —
+			// notably the dashboard's EventSource subscription to
+			// /api/v1/logs/stream. Read from the request context, not the URL:
+			// apitoken.StripQueryMiddleware has already removed the credential
+			// from the URL so it never reaches the request logger.
+			token = apitoken.FromContext(r)
 		}
 
 		// Remove "Bearer " prefix if present (case-insensitive)
