@@ -8,17 +8,26 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	srp "github.com/ProtonMail/go-srp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
+)
+
+const (
+	// srpSaltSize is the salt size Proton uses for auth version 3/4 accounts.
+	srpSaltSize = 10
+
+	// testSRPSessionID is an opaque session identifier, as returned by
+	// /auth/info and echoed back in the /auth request.
+	testSRPSessionID = "6f1c9a24b8e34f5f9d2c7e0a1b3d5f78"
 )
 
 func TestNewClient(t *testing.T) {
@@ -271,10 +280,26 @@ S3vk1kV7KCOQGo8kaZuf/FMb5i01AiBM7NIPGiss4EsEm98gobuEpZGmhAwwWKS4
 PuVu76HIBw==
 -----END CERTIFICATE-----`
 
-// testTLSAuthKey is an arbitrary OpenVPN static key block for tests.
+// testTLSAuthKey is a randomly generated, well-formed 2048-bit OpenVPN static
+// key used purely for tests. It is not any provider's key and is not used to
+// connect anywhere.
 const testTLSAuthKey = `-----BEGIN OpenVPN Static key V1-----
-e685bdaf659a25a200e2b9e39e51ff03
-0fc72cf1ce07232bd8b2be5e6c670143
+b471dc400a1e110cbf55a761d7a8927f
+a3ea0ae7e958d84ef04e0ca554fa7a14
+31cf280937e61b5e4e7ec53df634f622
+8a5e421fc63606e79ff03b2d138ed3a9
+be609e6e7ba610fb970faac041c49aff
+dd6abd72d1c74e4573970a81898d1380
+48825ded9a3c6c2b8d094b5778fde088
+b296d22eb4ab8bd1e014f07f1d5950f9
+195a6668313671b57addc3d5adbac360
+3e9b078adf53a6556b756c6ebfe6d99b
+dcfa55397bc13ee066a4e3b2bb5b292f
+817eba92be7defe63f74a9ae0c6550ac
+9bc3fe7f7d9c49c58f6a3ec67f0a3a7a
+adbac2964e22b8e671399ecd244c1862
+eb53499ee020d56274df454ea88a6754
+3e337ffc0264f94fde0f9485f2d0a757
 -----END OpenVPN Static key V1-----`
 
 func TestGenerateOpenVPNConfig(t *testing.T) {
@@ -533,80 +558,182 @@ func TestTierFiltering(t *testing.T) {
 	assert.Len(t, servers, 3)
 }
 
-func TestLogin_SRP(t *testing.T) {
-	// Create a test modulus (2048-bit)
-	modulusHex := "AC6BDB41324A9A9BF166DE5E1389582FAF72B6651987EE07FC3192943DB56050A37329CBB4A099ED8193E0757767A13DD52312AB4B03310DCD7F48A9DA04FD50E8083969EDB767B0CF6095179A163AB3661A05FBD5FAAAE82918A9962F0B93B855F97993EC975EEAA80D740ADBF4FF747359D041D5C33EA71D281E446B14773BCA97B43A23FB801676BD207A436C6481F1D2B9078717461A5B9D32E688F87748544523B524B0D57D5EA77A2775D2ECFA032CFBDBF52FB3786160279004E57AE6AF874E7303CE53299CCC041C7BC308D82A5698F3A8D0C38271AE35F8E9DBFBB694B5C803D89F7AE435DE236D525F54759B65E372FCD68EF20FA7111F9E4AFF73"
-	modulus := new(big.Int)
-	modulus.SetString(modulusHex, 16)
+// srpTestServer runs the server side of a Proton-style SRP exchange for a known
+// password, using the same library the client uses. This makes the mock behave
+// like the real API: it hands out a clear-signed modulus, a genuine challenge
+// derived from a verifier, and verifies the client's proof before answering with
+// a server proof the client can check.
+type srpTestServer struct {
+	t          *testing.T
+	srpServer  *srp.Server
+	salt       []byte
+	authFailed bool // set when the client proof did not verify
+}
 
-	// Generate server's ephemeral key
-	bPrivate := make([]byte, 32)
-	rand.Read(bPrivate)
-	b := new(big.Int).SetBytes(bPrivate)
-	serverB := new(big.Int).Exp(srpGenerator, b, modulus)
+// newSRPTestServer builds a server-side SRP state for password, mirroring what
+// Proton stores for an account (a verifier plus salt, never the password).
+func newSRPTestServer(t *testing.T, password string) *srpTestServer {
+	t.Helper()
 
-	// Generate salt
-	salt := make([]byte, 16)
-	rand.Read(salt)
+	salt := make([]byte, srpSaltSize)
+	_, err := rand.Read(salt)
+	require.NoError(t, err)
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	verifierAuth, err := srp.NewAuthForVerifier([]byte(password), testSignedModulus, salt)
+	require.NoError(t, err)
+
+	verifier, err := verifierAuth.GenerateVerifier(SRPBitLength)
+	require.NoError(t, err)
+
+	srpServer, err := srp.NewServerFromSigned(testSignedModulus, verifier, SRPBitLength)
+	require.NoError(t, err)
+
+	return &srpTestServer{t: t, srpServer: srpServer, salt: salt}
+}
+
+// handler returns an http.Handler implementing /auth/info and /auth.
+func (s *srpTestServer) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/auth/info":
-			// Return SRP parameters
-			resp := AuthInfoResponse{
-				Code:            1000,
-				Modulus:         base64.StdEncoding.EncodeToString(modulus.Bytes()),
-				ServerEphemeral: base64.StdEncoding.EncodeToString(serverB.Bytes()),
-				Salt:            base64.StdEncoding.EncodeToString(salt),
-				SRPSession:      "test-session-123",
-				Version:         0,
+			challenge, err := s.srpServer.GenerateChallenge()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
 			}
+
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(AuthInfoResponse{ //nolint:errcheck // test handler
+				Code:            apiCodeSuccess,
+				Modulus:         testSignedModulus,
+				ServerEphemeral: base64.StdEncoding.EncodeToString(challenge),
+				Salt:            base64.StdEncoding.EncodeToString(s.salt),
+				SRPSession:      testSRPSessionID,
+				Version:         testAuthVersion,
+			})
 
 		case "/auth":
-			// Verify auth request and return session
 			var authReq AuthRequest
 			if err := json.NewDecoder(r.Body).Decode(&authReq); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}
-
-			// Verify required fields
-			if authReq.Username == "" || authReq.ClientEphemeral == "" || authReq.ClientProof == "" {
-				http.Error(w, "missing fields", http.StatusBadRequest)
+			if authReq.SRPSession != testSRPSessionID {
+				http.Error(w, "unknown SRP session", http.StatusBadRequest)
 				return
 			}
 
-			// Return success (in real SRP, we'd verify the proof)
-			resp := AuthResponse{
-				Code:         1000,
-				UID:          "user-123",
-				AccessToken:  "access-token-xyz",
-				RefreshToken: "refresh-token-abc",
-				TokenType:    "Bearer",
-				Scope:        "full",
-				// In a real implementation, we'd compute the actual server proof
-				ServerProof: base64.StdEncoding.EncodeToString(make([]byte, 64)),
+			clientEphemeral, err := base64.StdEncoding.DecodeString(authReq.ClientEphemeral)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
 			}
+			clientProof, err := base64.StdEncoding.DecodeString(authReq.ClientProof)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+
+			serverProof, err := s.srpServer.VerifyProofs(clientEphemeral, clientProof)
+			if err != nil {
+				// This is what the real API does for a wrong password.
+				s.authFailed = true
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(AuthResponse{ //nolint:errcheck // test handler
+				Code:         apiCodeSuccess,
+				UID:          "uid-abc123",
+				AccessToken:  "access-token",
+				RefreshToken: "refresh-token",
+				TokenType:    "Bearer",
+				Scope:        "full self vpn",
+				ServerProof:  base64.StdEncoding.EncodeToString(serverProof),
+			})
 
 		default:
 			http.NotFound(w, r)
 		}
+	})
+}
+
+// TestLogin_SRPRoundTrip drives the full SRP exchange against a mock that
+// performs the real server-side computation, so a correct client proof (and only
+// a correct one) completes login.
+func TestLogin_SRPRoundTrip(t *testing.T) {
+	const password = "correct-horse-battery-staple"
+
+	srpBackend := newSRPTestServer(t, password)
+	server := httptest.NewServer(srpBackend.handler())
+	defer server.Close()
+
+	store := NewMemorySessionStore()
+	client := NewClient(WithBaseURL(server.URL), WithSessionStore(store))
+
+	require.NoError(t, client.Login(context.Background(), "proton-user", password))
+
+	require.NotNil(t, client.session)
+	assert.Equal(t, "uid-abc123", client.session.GetUID())
+	assert.Equal(t, AuthModeAPI, client.authMode)
+	assert.True(t, client.SupportsWireGuard(), "API auth mode unlocks WireGuard key registration")
+
+	saved, err := store.Load()
+	require.NoError(t, err)
+	require.NotNil(t, saved)
+	assert.Equal(t, "uid-abc123", saved.GetUID())
+}
+
+// TestLogin_SRPWrongPassword asserts a wrong password is rejected by the server
+// side of the exchange rather than producing a session.
+func TestLogin_SRPWrongPassword(t *testing.T) {
+	srpBackend := newSRPTestServer(t, "the-real-password")
+	server := httptest.NewServer(srpBackend.handler())
+	defer server.Close()
+
+	client := NewClient(WithBaseURL(server.URL))
+
+	err := client.Login(context.Background(), "proton-user", "not-the-password")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrAuthenticationFailed)
+	assert.True(t, srpBackend.authFailed, "server must have rejected the client proof")
+	assert.Nil(t, client.session)
+}
+
+// TestLogin_SRPForgedServerProof asserts the client verifies the server proof:
+// an API that answers with a well-formed but wrong proof must not yield a
+// session, since it does not know the password verifier.
+func TestLogin_SRPForgedServerProof(t *testing.T) {
+	const password = "correct-horse-battery-staple"
+
+	srpBackend := newSRPTestServer(t, password)
+	inner := srpBackend.handler()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/auth" {
+			inner.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AuthResponse{ //nolint:errcheck // test handler
+			Code:         apiCodeSuccess,
+			UID:          "uid-forged",
+			AccessToken:  "access-token",
+			RefreshToken: "refresh-token",
+			TokenType:    "Bearer",
+			ServerProof:  base64.StdEncoding.EncodeToString(make([]byte, SRPProofSize)),
+		})
 	}))
 	defer server.Close()
 
 	client := NewClient(WithBaseURL(server.URL))
 
-	// Note: This test verifies the flow works, but since we don't compute
-	// the real server proof, the verification will fail
-	err := client.Login(context.Background(), "testuser", "testpassword")
-
-	// We expect an error because the mock server doesn't compute the real proof
-	assert.Error(t, err)
+	err := client.Login(context.Background(), "proton-user", password)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, vpnprovider.ErrAuthenticationFailed)
 	assert.Contains(t, err.Error(), "server proof verification failed")
+	assert.Nil(t, client.session)
 }
 
 func TestLogin_AuthInfoError(t *testing.T) {
@@ -625,28 +752,34 @@ func TestLogin_AuthInfoError(t *testing.T) {
 	assert.Contains(t, err.Error(), "get auth info")
 }
 
-func TestLogin_InvalidModulus(t *testing.T) {
+// TestLogin_UnsignedModulus is the regression test for the modulus-signature
+// gap: the real API returns a PGP clear-signed modulus, and an API (or
+// man-in-the-middle) that supplies a bare base64 group must be refused instead
+// of downgrading the exchange to an attacker-chosen group.
+func TestLogin_UnsignedModulus(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/auth/info" {
-			resp := AuthInfoResponse{
-				Code:            1000,
-				Modulus:         "not-valid-base64!!!",
-				ServerEphemeral: base64.StdEncoding.EncodeToString([]byte{1, 2, 3}),
-				Salt:            base64.StdEncoding.EncodeToString([]byte{1, 2, 3}),
-				SRPSession:      "test",
-				Version:         0,
-			}
-			json.NewEncoder(w).Encode(resp)
+		if r.URL.Path != "/auth/info" {
+			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(AuthInfoResponse{ //nolint:errcheck // test handler
+			Code:            apiCodeSuccess,
+			Modulus:         testPlainModulus,
+			ServerEphemeral: testServerEphemeral,
+			Salt:            testSalt,
+			SRPSession:      testSRPSessionID,
+			Version:         testAuthVersion,
+		})
 	}))
 	defer server.Close()
 
 	client := NewClient(WithBaseURL(server.URL))
 	err := client.Login(context.Background(), "user", "pass")
 
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "parse modulus")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrSRPModulusUntrusted)
+	assert.Nil(t, client.session)
 }
 
 func TestWithLogger(t *testing.T) {
@@ -824,20 +957,7 @@ func TestGenerateWireGuardConfig_NotSupported(t *testing.T) {
 	assert.ErrorIs(t, err, vpnprovider.ErrUnsupportedProtocol)
 }
 
-func TestSRPSession_GetSessionKey(t *testing.T) {
-	// Create a mock SRP session with a known session key
-	session := &SRPSession{
-		sessionKey: []byte("test-session-key-12345"),
-	}
-
-	key := session.GetSessionKey()
-	assert.Equal(t, []byte("test-session-key-12345"), key)
-}
-
-func TestSRPSession_GetSessionKey_Empty(t *testing.T) {
-	// Empty session key
-	session := &SRPSession{}
-
-	key := session.GetSessionKey()
-	assert.Nil(t, key)
-}
+// The SRP shared session key is never exposed by SRPSession: nothing in the
+// ProtonVPN flow needs it, and handing out key material invites misuse. The
+// exchange is covered end-to-end by TestLogin_SRPRoundTrip and by the
+// known-answer vectors in srp_test.go.

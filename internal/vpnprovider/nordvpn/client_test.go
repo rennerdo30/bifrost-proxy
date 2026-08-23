@@ -31,10 +31,26 @@ S3vk1kV7KCOQGo8kaZuf/FMb5i01AiBM7NIPGiss4EsEm98gobuEpZGmhAwwWKS4
 PuVu76HIBw==
 -----END CERTIFICATE-----`
 
-// testTLSAuthKey is an arbitrary OpenVPN static key block for tests.
+// testTLSAuthKey is a randomly generated, well-formed 2048-bit OpenVPN static
+// key used purely for tests. It is not any provider's key and is not used to
+// connect anywhere.
 const testTLSAuthKey = `-----BEGIN OpenVPN Static key V1-----
-e685bdaf659a25a200e2b9e39e51ff03
-0fc72cf1ce07232bd8b2be5e6c670143
+b471dc400a1e110cbf55a761d7a8927f
+a3ea0ae7e958d84ef04e0ca554fa7a14
+31cf280937e61b5e4e7ec53df634f622
+8a5e421fc63606e79ff03b2d138ed3a9
+be609e6e7ba610fb970faac041c49aff
+dd6abd72d1c74e4573970a81898d1380
+48825ded9a3c6c2b8d094b5778fde088
+b296d22eb4ab8bd1e014f07f1d5950f9
+195a6668313671b57addc3d5adbac360
+3e9b078adf53a6556b756c6ebfe6d99b
+dcfa55397bc13ee066a4e3b2bb5b292f
+817eba92be7defe63f74a9ae0c6550ac
+9bc3fe7f7d9c49c58f6a3ec67f0a3a7a
+adbac2964e22b8e671399ecd244c1862
+eb53499ee020d56274df454ea88a6754
+3e337ffc0264f94fde0f9485f2d0a757
 -----END OpenVPN Static key V1-----`
 
 func TestNewClient(t *testing.T) {

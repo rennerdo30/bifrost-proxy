@@ -386,6 +386,61 @@ openvpn:
 
 **Note**: The server uses an embedded OpenVPN client library or spawns the `openvpn` binary (must be installed on the system). For Docker deployments, the OpenVPN client is included in the image.
 
+### 3.5 VPN Provider Backends (`nordvpn`, `mullvad`, `pia`, `protonvpn`)
+
+Provider backends fetch the provider's server list, select a server and generate
+a WireGuard or OpenVPN configuration for a delegate backend at runtime.
+
+```yaml
+backends:
+  - name: "proton-ch"
+    type: "protonvpn"
+    enabled: true
+    config:
+      auth_mode: "manual"     # protonvpn only: "manual" (default) or "api"
+      username: "${VPN_USER}"
+      password: "${VPN_PASSWORD}"
+      country: "CH"
+      protocol: "openvpn"     # "openvpn" or "wireguard"
+      ca_cert: "${VPN_CA_PEM}"        # OpenVPN CA certificate (PEM)
+      tls_auth_key: ""                # Optional OpenVPN tls-auth static key
+```
+
+**Crypto-material contract**
+
+No CA certificate is embedded for `nordvpn`, `mullvad` or `protonvpn`: `ca_cert`
+is mandatory for `protocol: openvpn` and is validated fail-closed. `pia` embeds
+PIA's published root (`ca.rsa.4096.crt`) instead, guarded at package
+initialization and re-checked against the clock at profile generation.
+
+Validation is applied at backend construction (config load) and again at profile
+generation. `ca_cert` is accepted only if every PEM block is a `CERTIFICATE`
+that parses as X.509, every self-issued certificate's signature verifies under
+its own public key, the first certificate is a CA, and the certificate is inside
+its validity window. `tls_auth_key`, when present, must carry 2048 bits of hex
+key material inside an OpenVPN static key block and must not be placeholder
+material (all-zero, or a single repeated line). No provider path emits generated
+or imported material without running these checks first — including the inline
+`<ca>` block of a profile imported wholesale — and no path substitutes a weaker
+verification mode when material is missing: generation fails with an error
+naming the offending field. Material referenced out of line by an imported
+profile (a `ca <file>` directive) remains the operator's responsibility.
+
+**ProtonVPN authentication modes**
+
+| `auth_mode` | Credentials | Protocols | Notes |
+|-------------|-------------|-----------|-------|
+| `manual` (default) | OpenVPN/IKEv2 credentials from the account portal | `openvpn` | Requires `ca_cert` |
+| `api` | Proton account credentials | `wireguard` | SRP-6a login; required for WireGuard key registration |
+
+In `api` mode the client performs Proton's SRP-6a exchange: `POST /auth/info`
+returns the modulus as a PGP clear-signed message whose signature is verified
+against Proton's modulus-signing key before use, the verifier is derived per the
+account's auth version, and the server proof returned by `POST /auth` is checked
+in constant time before a session is stored. Rejection cases: a modulus that is
+not clear-signed or fails signature verification, an unsupported auth version,
+an out-of-bounds server ephemeral, or a server proof mismatch.
+
 ## 4. Traffic Debugging
 
 ### 4.1 Debug Log Format

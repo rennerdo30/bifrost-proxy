@@ -4,7 +4,6 @@ package nordvpn
 import (
 	"context"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
@@ -416,11 +415,13 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 // server.
 func (c *Client) generateOpenVPNConfigContent(hostname, proto string, port int, creds vpnprovider.Credentials) (string, error) {
 	caCert := strings.TrimSpace(creds.CACert)
-	if caCert == "" {
-		return "", fmt.Errorf("%w: NordVPN OpenVPN requires a CA certificate to be configured (credentials.ca_cert)", vpnprovider.ErrConfigGenerationFailed)
+	if err := vpnprovider.ValidateCACertPEMAt(caCert, time.Now()); err != nil {
+		return "", fmt.Errorf("%w: NordVPN OpenVPN requires a valid CA certificate (credentials.ca_cert): %w",
+			vpnprovider.ErrConfigGenerationFailed, err)
 	}
-	if block, _ := pem.Decode([]byte(caCert)); block == nil {
-		return "", fmt.Errorf("%w: configured NordVPN CA certificate is not valid PEM", vpnprovider.ErrConfigGenerationFailed)
+	if err := vpnprovider.ValidateTLSAuthKey(creds.TLSAuthKey); err != nil {
+		return "", fmt.Errorf("%w: configured NordVPN tls-auth key is unusable (credentials.tls_auth_key): %w",
+			vpnprovider.ErrConfigGenerationFailed, err)
 	}
 
 	var sb strings.Builder

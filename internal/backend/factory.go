@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider/mullvad"
 )
 
@@ -262,6 +263,23 @@ func (f *Factory) createOpenVPN(cfg config.BackendConfig) (Backend, error) {
 	return NewOpenVPNBackend(ovpnCfg), nil
 }
 
+// validateOpenVPNMaterial checks the OpenVPN CA certificate and optional
+// tls-auth static key a VPN-provider backend was configured with.
+//
+// Providers embed no CA material, so an operator-supplied CA is mandatory for
+// the OpenVPN protocol. Validating it here — at backend construction, i.e. at
+// config load — turns a malformed certificate into an actionable startup error
+// instead of an opaque OpenVPN subprocess failure on the first dial.
+func validateOpenVPNMaterial(provider, caCertPEM, tlsAuthKey string) error {
+	if err := vpnprovider.ValidateCACertPEMAt(caCertPEM, time.Now()); err != nil {
+		return fmt.Errorf("%s openvpn backend needs a valid 'ca_cert' (PEM CA certificate): %w", provider, err)
+	}
+	if err := vpnprovider.ValidateTLSAuthKey(tlsAuthKey); err != nil {
+		return fmt.Errorf("%s openvpn backend has an unusable 'tls_auth_key': %w", provider, err)
+	}
+	return nil
+}
+
 func (f *Factory) createNordVPN(cfg config.BackendConfig) (Backend, error) {
 	nordCfg := NordVPNConfig{
 		Name: cfg.Name,
@@ -332,11 +350,11 @@ func (f *Factory) createNordVPN(cfg config.BackendConfig) (Backend, error) {
 		if nordCfg.Username == "" || nordCfg.Password == "" {
 			return nil, fmt.Errorf("nordvpn openvpn backend requires 'username' and 'password' config")
 		}
-		// NordVPN OpenVPN requires a CA certificate; without it config
-		// generation fails closed. Surface this at construction time so a
+		// NordVPN OpenVPN requires a usable CA certificate; without it config
+		// generation fails closed. Validate at construction time so a
 		// misconfigured backend is rejected early rather than at first dial.
-		if nordCfg.CACert == "" {
-			return nil, fmt.Errorf("nordvpn openvpn backend requires 'ca_cert' (PEM CA certificate) config")
+		if err := validateOpenVPNMaterial("nordvpn", nordCfg.CACert, nordCfg.TLSAuthKey); err != nil {
+			return nil, err
 		}
 	}
 
@@ -406,12 +424,14 @@ func (f *Factory) createMullvad(cfg config.BackendConfig) (Backend, error) {
 		mullvadCfg.LeakProofRouting = v
 	}
 
-	// Mullvad OpenVPN requires a CA certificate; without it config generation
-	// fails closed. Surface this at construction time so a misconfigured backend
-	// is rejected early rather than at first dial. (WireGuard is the default and
-	// needs no CA.)
-	if mullvadCfg.Protocol == "openvpn" && mullvadCfg.CACert == "" {
-		return nil, fmt.Errorf("mullvad openvpn backend requires 'ca_cert' (PEM CA certificate) config")
+	// Mullvad OpenVPN requires a usable CA certificate; without it config
+	// generation fails closed. Validate at construction time so a misconfigured
+	// backend is rejected early rather than at first dial. (WireGuard is the
+	// default and needs no CA.)
+	if mullvadCfg.Protocol == "openvpn" {
+		if err := validateOpenVPNMaterial("mullvad", mullvadCfg.CACert, mullvadCfg.TLSAuthKey); err != nil {
+			return nil, err
+		}
 	}
 
 	mullvadCfg.Network = f.network
@@ -581,12 +601,14 @@ func (f *Factory) createProtonVPN(cfg config.BackendConfig) (Backend, error) {
 		if protocol == "wireguard" {
 			return nil, fmt.Errorf("protonvpn wireguard backend requires auth_mode='api'")
 		}
-		// ProtonVPN OpenVPN requires a CA certificate; without it config
-		// generation fails closed. Surface this at construction time so a
+		// ProtonVPN OpenVPN requires a usable CA certificate; without it config
+		// generation fails closed. Validate at construction time so a
 		// misconfigured backend is rejected early rather than at first dial. No
 		// CA is embedded in the binary.
-		if protocol == "openvpn" && protonCfg.CACert == "" {
-			return nil, fmt.Errorf("protonvpn openvpn backend requires 'ca_cert' (PEM CA certificate) config")
+		if protocol == "openvpn" {
+			if err := validateOpenVPNMaterial("protonvpn", protonCfg.CACert, protonCfg.TLSAuthKey); err != nil {
+				return nil, err
+			}
 		}
 	case "api":
 		if protonCfg.Username == "" || protonCfg.Password == "" {
