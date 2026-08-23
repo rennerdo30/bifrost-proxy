@@ -2,13 +2,16 @@ package p2p
 
 import (
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/curve25519"
@@ -21,6 +24,13 @@ var (
 	ErrInvalidNonce         = errors.New("crypto: invalid nonce")
 	ErrAuthenticationFailed = errors.New("crypto: authentication failed")
 	ErrHandshakeNotComplete = errors.New("crypto: handshake not complete")
+
+	// ErrHandshakeUnauthenticated is returned when a handshake message carries
+	// an invalid authenticator, i.e. the sender does not hold the static
+	// private key belonging to the static public key it claims. Static public
+	// keys are distributed via discovery and are not secret, so this check is
+	// what separates the real peer from any host that merely knows its key.
+	ErrHandshakeUnauthenticated = errors.New("crypto: handshake authenticator invalid")
 )
 
 // Key sizes.
@@ -33,6 +43,9 @@ const (
 
 	// NonceSize is the size of a nonce.
 	NonceSize = 12
+
+	// keySize is the size of a derived symmetric key (ChaCha20-Poly1305).
+	keySize = 32
 
 	// TagSize is the size of the authentication tag.
 	TagSize = 16
@@ -100,6 +113,104 @@ func PublicKeyFromPrivate(privateKey []byte) ([]byte, error) {
 // which is used as the HKDF input keying material.
 const ephemeralPubSize = PublicKeySize
 
+// Handshake message layout. The initiation and the response share one framing,
+// so a single set of offsets describes both:
+//
+//	[0]                    message type (msgTypeHandshakeInit/Response)
+//	[1:33]                 sender's static X25519 public key
+//	[33:65]                sender's per-session ephemeral X25519 public key
+//	[65:73]                handshake timestamp, little endian (chosen by the
+//	                       initiator and echoed verbatim by the responder)
+//	[73:105]               HMAC-SHA256 authenticator over bytes [0:73]
+//
+// The authenticator is keyed by a value derived from the static-static X25519
+// shared secret, so only a holder of one of the two static private keys can
+// produce it. This lets the responder reject a spoofed initiation before it
+// allocates any per-peer state, and lets the initiator reject a forged or
+// reflected response.
+//
+// The timestamp is strictly increasing per initiator process
+// (nextHandshakeTimestamp), which lets the responder reject a verbatim replay
+// of a captured initiation. Without that check a replay is authentic-looking
+// (the authenticator still verifies) and would let an attacker occupy the
+// peer's connection slot and blackhole it.
+const (
+	// handshakeTimestampSize is the encoded size of the handshake timestamp.
+	handshakeTimestampSize = 8
+
+	// handshakeMACSize is the size of the handshake authenticator.
+	handshakeMACSize = sha256.Size
+
+	hsOffsetStaticPub = 1
+	hsOffsetEphPub    = hsOffsetStaticPub + PublicKeySize
+	hsOffsetTimestamp = hsOffsetEphPub + ephemeralPubSize
+	hsOffsetMAC       = hsOffsetTimestamp + handshakeTimestampSize
+
+	// handshakeMsgSize is the exact size of a handshake initiation or response.
+	handshakeMsgSize = hsOffsetMAC + handshakeMACSize
+)
+
+// KDF labels and domain-separation strings.
+const (
+	kdfLabelSend = "send"
+	kdfLabelRecv = "recv"
+
+	// kdfInfoHandshakeMAC domain-separates the handshake authenticator key from
+	// the data-plane session keys, which are derived from the same static
+	// secret.
+	kdfInfoHandshakeMAC = "bifrost-p2p-handshake-mac-v1"
+)
+
+// handshakeClock backs nextHandshakeTimestamp. It guarantees strictly
+// increasing handshake timestamps within this process even if the wall clock is
+// coarse or steps backwards, which is what the responder's replay check relies
+// on for correctness.
+var handshakeClock atomic.Uint64
+
+// nextHandshakeTimestamp returns a strictly increasing handshake timestamp.
+func nextHandshakeTimestamp() uint64 {
+	now := uint64(time.Now().UnixNano()) //nolint:gosec // G115: UnixNano is positive for any realistic clock
+	for {
+		prev := handshakeClock.Load()
+		next := now
+		if next <= prev {
+			next = prev + 1
+		}
+		if handshakeClock.CompareAndSwap(prev, next) {
+			return next
+		}
+	}
+}
+
+// handshakeMACKey derives the key for the handshake authenticator from the
+// static-static X25519 shared secret. Both peers derive the same key; either
+// can authenticate messages to the other. This is peer authentication, not
+// non-repudiation, which is all the handshake requires.
+//
+// The symmetry also means the scheme offers no key-compromise impersonation
+// resistance: an attacker holding A's static private key can impersonate B to A
+// as well as A to anyone. That is inherent to authenticating solely from a
+// static-static shared secret and is accepted here — a stolen static key already
+// means full impersonation of its owner.
+func handshakeMACKey(staticShared []byte) []byte {
+	return deriveKey(staticShared, nil, []byte(kdfInfoHandshakeMAC))
+}
+
+// computeHandshakeMAC returns the authenticator over the authenticated prefix
+// of a handshake message (everything before the MAC field).
+func computeHandshakeMAC(macKey, authenticated []byte) []byte {
+	mac := hmac.New(sha256.New, macKey)
+	mac.Write(authenticated)
+	return mac.Sum(nil)
+}
+
+// verifyHandshakeMAC checks a handshake message's authenticator in constant
+// time. msg must already be exactly handshakeMsgSize bytes.
+func verifyHandshakeMAC(macKey, msg []byte) bool {
+	want := computeHandshakeMAC(macKey, msg[:hsOffsetMAC])
+	return hmac.Equal(want, msg[hsOffsetMAC:handshakeMsgSize])
+}
+
 // CryptoSession manages an encrypted session with a peer.
 type CryptoSession struct {
 	localPrivate [PrivateKeySize]byte
@@ -107,12 +218,27 @@ type CryptoSession struct {
 	remotePublic [PublicKeySize]byte
 	sharedSecret [32]byte
 
-	// localEphemeral is this side's per-session ephemeral key pair; its private
-	// half is discarded (dropped with the session) after the handshake.
+	// localEphemeral is this side's per-session ephemeral key pair. Its private
+	// half is never reused across handshakes and is released when the session is
+	// dropped; note that it is not zeroized, so forward secrecy holds against
+	// later compromise of a *static* key, not against memory disclosure of a
+	// live session.
 	localEphemeral *KeyPair
+	// remoteEphemeral is the peer's per-session ephemeral public key, retained
+	// so it can be bound into the key-derivation transcript.
+	remoteEphemeral [ephemeralPubSize]byte
 	// ephemeralShared is the ephemeral-ephemeral X25519 result, identical on
 	// both peers and used as the KDF salt to make each session's keys unique.
 	ephemeralShared [32]byte
+
+	// initiator records which side of the handshake this session is, so both
+	// peers can assemble the transcript in the same canonical order.
+	initiator bool
+	// handshakeTimestamp is the initiation's timestamp: chosen locally when
+	// initiating, taken from the initiation when responding.
+	handshakeTimestamp uint64
+	// macKey authenticates handshake messages; see handshakeMACKey.
+	macKey []byte
 
 	sendCipher cipher.AEAD
 	recvCipher cipher.AEAD
@@ -178,19 +304,34 @@ func (cs *CryptoSession) CreateHandshakeInit(remotePublicKey []byte) ([]byte, er
 		return nil, err
 	}
 	cs.localEphemeral = eph
+	cs.initiator = true
+	cs.macKey = handshakeMACKey(cs.sharedSecret[:])
+	cs.handshakeTimestamp = nextHandshakeTimestamp()
 
-	// Build init message: type (1) + local public key (32) + ephemeral pub (32)
-	msg := make([]byte, 1+PublicKeySize+ephemeralPubSize)
-	msg[0] = msgTypeHandshakeInit
-	copy(msg[1:33], cs.localPublic[:])
-	copy(msg[33:65], eph.PublicKey[:])
+	return cs.buildHandshakeMessage(msgTypeHandshakeInit), nil
+}
 
-	return msg, nil
+// buildHandshakeMessage assembles and authenticates an initiation or response
+// message from the session's current handshake state.
+func (cs *CryptoSession) buildHandshakeMessage(msgType byte) []byte {
+	msg := make([]byte, handshakeMsgSize)
+	msg[0] = msgType
+	copy(msg[hsOffsetStaticPub:hsOffsetEphPub], cs.localPublic[:])
+	copy(msg[hsOffsetEphPub:hsOffsetTimestamp], cs.localEphemeral.PublicKey[:])
+	binary.LittleEndian.PutUint64(msg[hsOffsetTimestamp:hsOffsetMAC], cs.handshakeTimestamp)
+	copy(msg[hsOffsetMAC:], computeHandshakeMAC(cs.macKey, msg[:hsOffsetMAC]))
+	return msg
+}
+
+// HandshakeTimestamp returns the timestamp carried by this session's handshake
+// initiation. The manager uses it to reject replayed initiations.
+func (cs *CryptoSession) HandshakeTimestamp() uint64 {
+	return cs.handshakeTimestamp
 }
 
 // ProcessHandshakeInit processes a handshake initiation message.
 func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
-	if len(msg) < 1+PublicKeySize+ephemeralPubSize {
+	if len(msg) != handshakeMsgSize {
 		return nil, ErrHandshakeFailed
 	}
 
@@ -199,9 +340,8 @@ func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
 	}
 
 	// Extract remote static public key and the initiator's ephemeral public key.
-	copy(cs.remotePublic[:], msg[1:33])
-	var remoteEphemeral [ephemeralPubSize]byte
-	copy(remoteEphemeral[:], msg[33:65])
+	copy(cs.remotePublic[:], msg[hsOffsetStaticPub:hsOffsetEphPub])
+	copy(cs.remoteEphemeral[:], msg[hsOffsetEphPub:hsOffsetTimestamp])
 
 	// Compute the static-static shared secret (authentication + HKDF IKM).
 	sharedSecret, err := curve25519.X25519(cs.localPrivate[:], cs.remotePublic[:])
@@ -210,6 +350,18 @@ func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
 	}
 	copy(cs.sharedSecret[:], sharedSecret)
 
+	// Authenticate the initiation before allocating any further state. Only a
+	// holder of the claimed static private key can produce a valid
+	// authenticator, so a host that merely knows the (public, discovery-
+	// distributed) key cannot open a session.
+	cs.macKey = handshakeMACKey(cs.sharedSecret[:])
+	if !verifyHandshakeMAC(cs.macKey, msg) {
+		return nil, ErrHandshakeUnauthenticated
+	}
+
+	cs.initiator = false
+	cs.handshakeTimestamp = binary.LittleEndian.Uint64(msg[hsOffsetTimestamp:hsOffsetMAC])
+
 	// Generate this side's ephemeral key pair and compute the ephemeral-ephemeral
 	// shared secret used as the KDF salt.
 	eph, err := GenerateKeyPair()
@@ -217,7 +369,7 @@ func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
 		return nil, err
 	}
 	cs.localEphemeral = eph
-	if err := cs.computeEphemeralShared(remoteEphemeral[:]); err != nil {
+	if err := cs.computeEphemeralShared(cs.remoteEphemeral[:]); err != nil {
 		return nil, err
 	}
 
@@ -228,18 +380,15 @@ func (cs *CryptoSession) ProcessHandshakeInit(msg []byte) ([]byte, error) {
 
 	cs.handshakeComplete.Store(true)
 
-	// Build response: type (1) + local public key (32) + ephemeral pub (32)
-	response := make([]byte, 1+PublicKeySize+ephemeralPubSize)
-	response[0] = msgTypeHandshakeResponse
-	copy(response[1:33], cs.localPublic[:])
-	copy(response[33:65], eph.PublicKey[:])
-
-	return response, nil
+	// The response echoes the initiation's timestamp, which binds it to this
+	// exact initiation: an old or reflected response is rejected by the
+	// initiator.
+	return cs.buildHandshakeMessage(msgTypeHandshakeResponse), nil
 }
 
 // ProcessHandshakeResponse processes a handshake response message.
 func (cs *CryptoSession) ProcessHandshakeResponse(msg []byte) error {
-	if len(msg) < 1+PublicKeySize+ephemeralPubSize {
+	if len(msg) != handshakeMsgSize {
 		return ErrHandshakeFailed
 	}
 
@@ -249,19 +398,33 @@ func (cs *CryptoSession) ProcessHandshakeResponse(msg []byte) error {
 
 	// Verify remote public key matches
 	var receivedPublic [PublicKeySize]byte
-	copy(receivedPublic[:], msg[1:33])
+	copy(receivedPublic[:], msg[hsOffsetStaticPub:hsOffsetEphPub])
 
 	if receivedPublic != cs.remotePublic {
 		return ErrHandshakeFailed
 	}
 
-	if cs.localEphemeral == nil {
+	if cs.localEphemeral == nil || cs.macKey == nil {
+		return ErrHandshakeFailed
+	}
+
+	// Authenticate the response: only the intended responder holds the static
+	// private key needed to produce this authenticator.
+	if !verifyHandshakeMAC(cs.macKey, msg) {
+		return ErrHandshakeUnauthenticated
+	}
+
+	// The responder must echo this handshake's timestamp. This rejects a
+	// response captured from an earlier handshake with the same peer, so a
+	// replayed response cannot resurrect an old session's key material.
+	if binary.LittleEndian.Uint64(msg[hsOffsetTimestamp:hsOffsetMAC]) != cs.handshakeTimestamp {
 		return ErrHandshakeFailed
 	}
 
 	// Compute the ephemeral-ephemeral shared secret (KDF salt) from the
 	// responder's ephemeral public key.
-	if err := cs.computeEphemeralShared(msg[33:65]); err != nil {
+	copy(cs.remoteEphemeral[:], msg[hsOffsetEphPub:hsOffsetTimestamp])
+	if err := cs.computeEphemeralShared(cs.remoteEphemeral[:]); err != nil {
 		return err
 	}
 
@@ -292,20 +455,64 @@ func (cs *CryptoSession) computeEphemeralShared(remoteEphemeralPub []byte) error
 	return nil
 }
 
+// handshakeTranscript returns the canonical byte string that both peers bind
+// into key derivation: both static public keys and both ephemeral public keys
+// in initiator-then-responder order, followed by the handshake timestamp. The
+// two ends therefore derive the same keys only if they agree on every handshake
+// input; any mismatch (a tampered, reflected or spliced handshake) yields
+// different keys and the session simply fails to decrypt rather than falling
+// back to something an attacker chose.
+func (cs *CryptoSession) handshakeTranscript() []byte {
+	initStatic, respStatic := cs.localPublic[:], cs.remotePublic[:]
+	initEph, respEph := cs.localEphemeral.PublicKey[:], cs.remoteEphemeral[:]
+	if !cs.initiator {
+		initStatic, respStatic = respStatic, initStatic
+		initEph, respEph = respEph, initEph
+	}
+
+	transcript := make([]byte, 0, 2*PublicKeySize+2*ephemeralPubSize+handshakeTimestampSize)
+	transcript = append(transcript, initStatic...)
+	transcript = append(transcript, respStatic...)
+	transcript = append(transcript, initEph...)
+	transcript = append(transcript, respEph...)
+
+	var ts [handshakeTimestampSize]byte
+	binary.LittleEndian.PutUint64(ts[:], cs.handshakeTimestamp)
+	return append(transcript, ts[:]...)
+}
+
+// sessionKeyInfo builds the HKDF info string for one direction: a direction
+// label for domain separation followed by the handshake transcript.
+func sessionKeyInfo(label string, transcript []byte) []byte {
+	info := make([]byte, 0, len(label)+len(transcript))
+	info = append(info, label...)
+	return append(info, transcript...)
+}
+
 // initializeCiphers initializes the send and receive ciphers.
 func (cs *CryptoSession) initializeCiphers() error {
 	// Derive separate keys for send and receive using HKDF. The input keying
 	// material is the deterministic static-static X25519 secret (which
 	// authenticates the peer); the salt is the per-session ephemeral-ephemeral
-	// X25519 secret. Because the salt changes every handshake, the derived keys
-	// are unique per session, so the nonce counter (which restarts at 0 each
-	// session) never reuses a (key, nonce) pair — essential for
+	// X25519 secret; the info string binds the direction label and the full
+	// handshake transcript. Because the salt changes every handshake, the
+	// derived keys are unique per session, so the nonce counter (which restarts
+	// at 0 each session) never reuses a (key, nonce) pair — essential for
 	// ChaCha20-Poly1305. Because the ephemeral private keys are discarded after
 	// the handshake, the session also has forward secrecy.
+	//
+	// Nonce invariant: within one CryptoSession the send nonce is produced only
+	// by sendNonce.Add(1)-1, so it is unique per frame; and the keys are unique
+	// per handshake, so a nonce is never reused under a given key across
+	// sessions either. Any change that reuses keys across handshakes, or resets
+	// sendNonce within a session, breaks ChaCha20-Poly1305 catastrophically. The
+	// hard cap is 2^64 frames per session (the counter width); there is no
+	// rekeying, so a session must not be used beyond that.
 	salt := cs.ephemeralShared[:]
+	transcript := cs.handshakeTranscript()
 
-	sendKey := deriveKey(cs.sharedSecret[:], salt, []byte("send"))
-	recvKey := deriveKey(cs.sharedSecret[:], salt, []byte("recv"))
+	sendKey := deriveKey(cs.sharedSecret[:], salt, sessionKeyInfo(kdfLabelSend, transcript))
+	recvKey := deriveKey(cs.sharedSecret[:], salt, sessionKeyInfo(kdfLabelRecv, transcript))
 
 	// Determine direction based on public key comparison
 	// Higher public key sends with sendKey, receives with recvKey
@@ -366,6 +573,15 @@ func (cs *CryptoSession) Decrypt(msg []byte) ([]byte, error) {
 	nonce := msg[1:13]
 	ciphertext := msg[13:]
 
+	// Encrypt only ever writes a 64-bit counter into the low 8 bytes, leaving
+	// the upper 4 zero. Requiring that here keeps the 96-bit nonce space in
+	// one-to-one correspondence with the 64-bit value the replay filter tracks;
+	// otherwise a peer could vary the upper bytes to produce distinct nonces
+	// that alias the same replay-filter slot.
+	if nonce[8] != 0 || nonce[9] != 0 || nonce[10] != 0 || nonce[11] != 0 {
+		return nil, ErrInvalidNonce
+	}
+
 	plaintext, err := cs.recvCipher.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, ErrAuthenticationFailed
@@ -387,16 +603,17 @@ func (cs *CryptoSession) Decrypt(msg []byte) ([]byte, error) {
 // deriveKey derives a key from shared secret, salt and label using HKDF. The
 // salt binds the derived key to per-session handshake randomness so that keys
 // are unique per session even when sharedSecret is deterministic.
+//
+// HKDF-SHA256 can emit up to 255*32 = 8160 bytes and this reads 32, so the read
+// cannot fail for any input — the lengths of the secret, salt and label do not
+// affect it. It therefore fails fast rather than falling back to a second,
+// weaker construction: a fallback that hashed the inputs by plain concatenation
+// would silently undercut the domain separation the callers rely on.
 func deriveKey(sharedSecret, salt, label []byte) []byte {
 	kdf := hkdf.New(sha256.New, sharedSecret, salt, label)
-	key := make([]byte, 32)
+	key := make([]byte, keySize)
 	if _, err := io.ReadFull(kdf, key); err != nil {
-		// HKDF with valid params should never fail; fall back to SHA-256
-		h := sha256.New()
-		h.Write(sharedSecret)
-		h.Write(salt)
-		h.Write(label)
-		return h.Sum(nil)
+		panic(fmt.Sprintf("p2p: HKDF-SHA256 failed for a %d-byte read, which is impossible: %v", keySize, err))
 	}
 	return key
 }
@@ -496,6 +713,11 @@ func compareKeys(a, b []byte) int {
 }
 
 // NoiseHandshake implements a simplified Noise Protocol handshake.
+//
+// NOTE: this type is not used by the mesh data plane (which uses CryptoSession)
+// and its exchange is an unauthenticated ephemeral-ephemeral DH: it offers no
+// peer authentication and is therefore trivially machine-in-the-middle-able. Do
+// not wire it into any transport without adding static-key authentication.
 type NoiseHandshake struct {
 	pattern   string
 	initiator bool
@@ -569,8 +791,8 @@ func (h *NoiseHandshake) Split() (cipher.AEAD, cipher.AEAD, error) {
 
 	// Derive keys. The ephemeral X25519 exchange already yields a fresh shared
 	// secret per handshake, so no additional salt is required here.
-	sendKey := deriveKey(sharedSecret[:], nil, []byte("send"))
-	recvKey := deriveKey(sharedSecret[:], nil, []byte("recv"))
+	sendKey := deriveKey(sharedSecret[:], nil, []byte(kdfLabelSend))
+	recvKey := deriveKey(sharedSecret[:], nil, []byte(kdfLabelRecv))
 
 	if h.initiator {
 		sendKey, recvKey = recvKey, sendKey

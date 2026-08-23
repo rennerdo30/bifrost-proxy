@@ -57,6 +57,21 @@ func TestConfigValidate(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	// There is no plaintext mesh transport, so require_encryption: false must be
+	// normalized rather than honored or rejected — honoring it would imply a
+	// mode that does not exist, and rejecting it would break configs that arrive
+	// with a zero-valued security block.
+	t.Run("require_encryption false is normalized to true", func(t *testing.T) {
+		config := DefaultConfig()
+		config.Enabled = true
+		config.NetworkID = "test-network"
+		config.Discovery.Server = "localhost:7080"
+		config.Security.RequireEncryption = false
+
+		require.NoError(t, config.Validate())
+		assert.True(t, config.Security.RequireEncryption)
+	})
+
 	t.Run("missing network_id", func(t *testing.T) {
 		config := DefaultConfig()
 		config.Enabled = true
