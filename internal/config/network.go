@@ -10,8 +10,13 @@ package config
 //   - MaxConnections is a process-wide ceiling on concurrent proxied
 //     connections (0 = unlimited).
 //
-// DialTimeout is surfaced for completeness but listener-specific timeouts
-// continue to be taken from the per-listener config.
+// DialTimeout applies to outbound (backend) dials, via
+// backend.NetworkTuningFromConfig -> NetworkTuning.apply. It is passed with
+// overrideTimeout=false, so it acts as a default only where the backend has not
+// already derived a timeout of its own. It does NOT affect inbound listener
+// timeouts, which continue to come from the per-listener config -- this comment
+// previously said only the latter, which read as "DialTimeout does nothing" and
+// was documented that way by mistake.
 type NetworkConfig struct {
 	// IPv6 controls the outbound-dial address family. It is a pointer so that
 	// "unset" (the default) is distinguishable from an explicit value:

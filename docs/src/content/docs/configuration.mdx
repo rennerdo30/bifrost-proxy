@@ -200,10 +200,11 @@ network:
 as `true` does, so an absent value never narrows the address family. Only an
 explicit `ipv6: false` restricts dialling to IPv4.
 
-`network.dial_timeout` is accepted by the parser but **has no effect today** —
-connection timeouts are still taken from the per-listener `server.http` and
-`server.socks5` settings. It is documented here only so that setting it and
-seeing nothing change is not a mystery.
+`dial_timeout` is the default timeout for **outbound** connections to a backend.
+It applies only where the backend does not already derive a timeout from its own
+configuration — it will not override a backend-specific value. It has no bearing
+on **inbound** connections; those timeouts come from the per-listener
+`server.http` and `server.socks5` settings.
 
 ### API Settings
 
