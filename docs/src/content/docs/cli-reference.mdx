@@ -433,6 +433,9 @@ auth:
       enabled: true
       priority: 1
       config:
+        url: "ldaps://ldap.example.com:636"
+        base_dn: "dc=example,dc=com"
+        bind_dn: "cn=bifrost-svc,ou=services,dc=example,dc=com"
         bind_password: "${LDAP_BIND_PASSWORD}"
 ```
 

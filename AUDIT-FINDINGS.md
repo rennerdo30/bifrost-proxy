@@ -37,8 +37,8 @@ The problems cluster into four themes:
 
 1. **UI/config integration gaps** — several fully-working Go features (TOTP/HOTP/MFA, negotiate/SPNEGO, network/session/mitm config, listener mTLS, per-route weights, health thresholds) cannot be configured from the admin dashboards at all, and setting the documented `api.token` breaks *both* dashboards because neither UI can supply a token.
 2. **Silent config-save/reload defects** — the server's `detectChangedSections()` omits `access_control`, `cache`, and several restart-required sections, so security-relevant changes are written to disk, reported as `requires_restart=false`, yet never applied to the running server.
-3. **Broken/fabricated crypto material in two VPN providers** — ProtonVPN's and Mullvad's embedded OpenVPN CA certificates are corrupted (fail x509 parsing), ProtonVPN ships a fabricated tls-auth key, and the P2P mesh session crypto reuses deterministic keys with a nonce that restarts at 0 (ChaCha20-Poly1305 nonce reuse) plus a fail-open inbound-peer path.
-4. **Observability & documentation drift** — the entire cache Prometheus subsystem is dead code, monitoring docs describe a metric schema that doesn't exist (alerts that silently never fire), and six auth docs still teach a config syntax the server hard-rejects at startup.
+3. **Broken/fabricated crypto material in two VPN providers** — ProtonVPN's and Mullvad's embedded OpenVPN CA certificates are corrupted (fail x509 parsing), ProtonVPN ships a fabricated tls-auth key, and the P2P mesh session crypto reuses deterministic keys with a nonce that restarts at 0 (ChaCha20-Poly1305 nonce reuse) plus a fail-open inbound-peer path. *(The two P2P mesh items in this theme are fixed as of `cfae5bd` plus `fix/p2p-session-crypto`; see the status note in §8.)*
+4. **Observability & documentation drift** — the entire cache Prometheus subsystem is dead code, monitoring docs describe a metric schema that doesn't exist (alerts that silently never fire), and six auth docs still teach a config syntax the server hard-rejects at startup. *(All three since remediated: the cache collectors are wired in `internal/server/server.go:212`, and §10 below tracks the documentation reconciliation.)*
 
 ### The three maintainer questions, answered directly
 
@@ -184,7 +184,7 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 ## 6. Unimplemented / Stub / TODO Inventory
 
 **Dead code / never instantiated**
-- `internal/cache/metrics.go:44` (`NewMetrics`) + `internal/cache/cache.go:15` — entire cache Prometheus subsystem never called from production; `Manager` has no `*Metrics` field.
+- ~~`internal/cache/metrics.go:44` (`NewMetrics`) + `internal/cache/cache.go:15` — entire cache Prometheus subsystem never called from production; `Manager` has no `*Metrics` field.~~ **No longer true (verified 2026-08-21):** `internal/server/server.go:212` wires `cacheManager.SetMetrics(cache.NewMetrics(m.Registry()))` whenever `cache.enabled` is set, and the manager/memory/disk stores record hits, misses, evictions, storage gauges and operation latency. `ObserveOperation` is called for `get` and `put` only, and the `lru` / `disabled` reason constants are still unused.
 - `internal/p2p/ice.go:99-105,394-444` — `ICEAgent` fully implemented + unit-tested but never wired; `checkConnectivity` uses a plaintext `BIFROST_ICE_PROBE` echo, not STUN.
 - `internal/p2p/relay.go:542-638` (`RelayRouter`, `PeerRelay`, `PeerRelayedConnection`) — multi-hop peer relay never wired; `wrapRelayMessage`/`unwrapRelayMessage` never set `SrcPeerID`/TTL; rejected by config (`internal/mesh/config.go:247-248`).
 - `internal/api/server/config_handlers.go:255-264` (`handleGetConfigTimestamp`) — unrouted; returns `time.Now()` not the config file mtime.
@@ -230,8 +230,38 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 1. **[high] P2P session keys are deterministic + nonce restarts at 0 → ChaCha20-Poly1305 nonce reuse across every reconnect.** `internal/p2p/crypto.go:229-277`; handshake randomness at `:154,:193` is transmitted but never mixed into key derivation. `sharedSecret = X25519(static priv, static pub)`, keys via `deriveKey(secret,"send"/"recv")` with nil HKDF salt, `sendNonce` starts at 0 each session, `NewCryptoSession` recreated on every `Connect` (`connection.go:262`). Any peer pair observed across a reconnect leaks plaintext XOR and the Poly1305 one-time key, enabling frame forgery on the mesh data plane. No forward secrecy. `AUDIT.md:38-41` presents this as a completed fix. (Minor: reconnection is driven by the higher-layer connect path, not `connectionMonitor` alone.)
 2. **[high] Responder accepts inbound P2P handshakes from unknown/unauthorized public keys and injects their frames into the tunnel device.** `internal/p2p/manager.go:586-592,653` → `internal/mesh/node.go:1031-1045`. Unknown keys get a synthetic `incoming-<addr>` ID and proceed through `ProcessHandshakeInit`; decrypted `markerData` payloads flow straight to `writeToDevice`/`macTable.Learn`. A `mesh.SecurityConfig.AllowedPeers` field exists but is never read (dead config). Any host that can reach the mesh UDP port and knows the (non-secret, discovery-distributed) public key can inject arbitrary IP/Ethernet frames. Fail-open authorization gap not disclosed in `AUDIT.md`.
 3. **[medium] Replay protection accepts replayed frames within a 1024-nonce window (effectively inert).** `internal/p2p/crypto.go:301-310`. Single `atomic.Uint64`, no sliding-window bitmap; exact replays and any nonce ≤1024 behind max are accepted, and a low nonce drags the counter backward. Compounds #1.
+> **Status note (re-verified 2026-08-21 against `fix/p2p-session-crypto`).** Items 1–3 are reproduced as originally written but are **stale**: all three were remediated by commit `cfae5bd`, and their line numbers no longer resolve. Each is annotated with what is actually true now. A follow-up pass over the same code path found three further defects plus one dead-config item, listed as 1a–1d.
+
+1. ~~**[high] P2P session keys are deterministic + nonce restarts at 0 → ChaCha20-Poly1305 nonce reuse across every reconnect.**~~ **FIXED in `cfae5bd`; re-verified.** Each handshake now generates an ephemeral X25519 key pair whose public half occupies the slot that used to carry a raw random value, and the ephemeral-ephemeral shared secret is the HKDF salt. Session keys are therefore unique per handshake, so the nonce counter restarting at 0 no longer reuses a `(key, nonce)` pair; discarding the ephemeral private keys also supplies the forward secrecy the original design lacked. The audit's specific claim — that handshake randomness was transmitted but never mixed into derivation — was true when written and is now false. Regression tests were added with the fix (`security_fix_test.go`).
+   *Follow-up hardening on this branch:* derivation is additionally bound to the whole handshake transcript (both static public keys, both ephemeral public keys, and the handshake timestamp) via the HKDF info string.
+2. ~~**[high] Responder accepts inbound P2P handshakes from unknown/unauthorized public keys and injects their frames into the tunnel device.**~~ **PARTIALLY FIXED in `cfae5bd`; completed on this branch.** Already fixed: the responder fails closed on unrecognised keys (`ManagerConfig.AllowUnknownPeers` defaults to false and is deliberately not exposed in YAML), and `mesh.SecurityConfig.AllowedPeers` **is** read — `MeshNode.isPeerAllowed` gates `onPeerDiscovered`, which is the only caller of `RegisterPeerKey`. **The audit's "never read (dead config)" claim is stale.** Still broken, and fixed here: the handshake carried no proof of private-key possession (1a), captured handshakes were replayable (1b), and authorization was never revoked (1c).
+3. ~~**[medium] Replay protection accepts replayed frames within a 1024-nonce window (effectively inert).**~~ **FIXED in `cfae5bd`; re-verified independently.** `replayFilter` is an RFC 6479-style sliding-window bitmap: 2048-bit capacity with one 64-bit block reserved as a guard, giving a 1984-nonce usable window. Exact replays are rejected (the bit is already set), anything at or below the window floor is rejected, and the floor never moves backwards. The guard-block requirement and the block-index aliasing bound (max block distance 31 < 32 for any in-window nonce) were both re-derived and hold.
 4. **[medium] OpenVPN backend leaks DNS outside the tunnel.** `internal/backend/openvpn.go:118-124`. Hostname resolution uses the host OS resolver; `leak_proof_routing` (source-IP policy routing) doesn't cover resolver dials. Honestly documented; steers privacy users to WireGuard. Off-by-default.
 5. **[low] Leak-proof egress routing is off by default, Linux-only, runtime-unvalidated.** `internal/backend/leakproof.go:31`, `leakproof_other.go:7`, `openvpn.go:104-124`. Disclosed design limitation, fails closed when enabled.
+
+### 8a. Follow-up findings in the same code path (found and fixed on `fix/p2p-session-crypto`)
+
+1a. **[high] Mesh handshakes were unauthenticated — knowing a peer's public key was enough to impersonate it.** `ProcessHandshakeInit` accepted any well-formed initiation claiming a registered static public key, and public keys are distributed by discovery and are not secret. The impersonator cannot derive session keys (that requires the static private key), so confidentiality held — but the responder still created the session, sent a response, installed `connections[peerID]`, overwrote `endpoints[peerID]` with the attacker's address, and fired `OnPeerConnected`, after which the real peer's own initiation was refused with "already connected to peer". Net effect: any host able to reach the mesh UDP port could blackhole any mesh peer and cause routes to be installed toward a dead connection. Fixed by adding an HMAC-SHA256 authenticator over both handshake messages, keyed from the static-static X25519 secret and verified before any further state is allocated.
+
+1b. **[medium] Handshake initiations were replayable.** With 1a fixed, a *captured* initiation still carries a valid authenticator, so replaying it from another address reproduced the same connection-slot takeover. Fixed with a strictly increasing per-process handshake timestamp: the responder refuses any initiation not newer than the greatest previously accepted for that key, and the initiator refuses a response that does not echo its own timestamp (which also prevents a replayed response from resurrecting old key material). High-water marks are in memory only, so the first initiation from each peer after a restart is accepted unconditionally — the same residual exposure WireGuard's TAI64N greeting has without persistent state.
+
+1c. **[medium] Peer authorization was never revoked.** `RegisterPeerKey` was called from `onPeerDiscovered`, but nothing removed the mapping: `UnregisterPeerKey` had no non-test caller and `onPeerLeft` did not touch the key registry. Authorization therefore lasted the lifetime of the process, so a departed or expired peer's public key stayed valid for opening inbound sessions and injecting frames into the local device. Fixed by adding `P2PManager.UnregisterPeerID` and calling it from `onPeerLeft`.
+
+1d. **[low] `mesh.security.require_encryption` was dead config** — the same class of defect that item 2 wrongly attributed to `AllowedPeers`. Declared, defaulted to true, documented in `mesh-networking.mdx`, and never read, so setting it to `false` silently did nothing. Now normalized to `true` with a warning at validation time, because there is no plaintext mesh transport. (Normalized rather than rejected: the config can also arrive from an API caller posting a zero-valued security block, and failing startup there would be a gratuitous break.)
+
+1e. **[high, availability] `DirectConnection.Close` closed the P2P manager's shared UDP socket.** Found while reviewing 1c, and sitting directly on it: `onPeerLeft` calls `Disconnect` one line before revoking the key, and `Disconnect` → `conn.Close()` → the shared socket. One peer leaving therefore disabled the node's entire P2P plane — nothing could be sent or received, no new peer could handshake — and `receiveWorker` treated the permanently closed socket as retryable and busy-spun, logging in a hot loop. Neither constructor gives a `DirectConnection` its own socket, so the close was simply wrong. Fixed: only the manager closes it; the receive worker returns on `net.ErrClosed`; and the connection that loses the inbound race is closed rather than leaked.
+
+1f. **[low] Data-frame nonces were not required to be canonical.** `Encrypt` writes only a 64-bit counter into the 96-bit nonce, but `Decrypt` accepted any 12 bytes while the replay filter keyed on the low 64 bits, so a key-holding peer could vary the upper bytes to produce distinct nonces aliasing one replay slot. Now rejected. Also: `deriveKey`'s unreachable SHA-256 fallback hashed `secret‖salt‖label` by plain concatenation, silently undercutting the domain separation its callers rely on; it now fails fast.
+
+### 8b. Known-open items in the mesh data plane (NOT fixed here)
+
+Found during the same review. Each is pre-existing, upstream of the handshake changes, and out of safe scope for this pass.
+
+- **[medium, latent] `RelayRouter.deliverLocally` is an unauthenticated injection path.** `internal/p2p/relay.go` hands `callbacks.OnData` a cleartext, never-decrypted payload with an attacker-chosen peer ID, bypassing `CryptoSession` entirely; in the mesh that reaches `macTable.Learn` and `writeToDevice`. Currently unreachable — `NewRelayRouter` has no non-test caller and `mesh/config.go` rejects `relay_via_peers` — but it will silently defeat the whole authorization model the moment multi-hop relaying is enabled, so it should be made to fail closed before then. It also reads `r.manager.callbacks` under the router's own mutex rather than the manager's, racing `SetCallbacks`.
+- **[medium, availability] A failed outbound connect permanently blackholes that peer's inbound handshakes.** `Connect` populates `endpoints[peerID]` before dialing and never clears it on failure, and `receiveWorker` only routes to `handleNewConnection` when no endpoint matches — so a stale entry sends the peer's authentic initiations to a nil pending connection. This is exactly the symmetric-NAT case where inbound is the only way in.
+- **[medium, availability] A dead connection blocks re-handshaking forever.** `handleNewConnection` returns early on "already connected" with no liveness check, and a `DirectConnection` never transitions itself to Failed/Disconnected, so `checkConnections` never reaps it. After a peer restart or NAT rebind its authentic, fresh-timestamp initiation from a new port is ignored while the connection stays pinned to the stale address and still reports Connected. There is no endpoint roaming (WireGuard rebinds on any authenticated packet). Consequence for the handshake work: an on-path attacker need not replay anything to win a connection slot — it can forward the genuine initiation from its own address, because nothing rebinds afterwards. Closing this properly means implementing authenticated endpoint roaming.
+- **[low] Unauthenticated log amplification.** Every spoofed 105-byte datagram emits an unrate-limited `slog.Warn` on the goroutine that is the sole reader of the socket, so synchronous log I/O there stalls packet processing.
+- **[informational] Relayed connections are inert.** `tryRelayConnect` never calls `RelayedConnection.Connect`, so the state stays `New`, `Encrypt` returns nil, and no receive worker runs — yet `Connect` reports success and fires `OnPeerConnected`. Fails closed security-wise, but the mesh believes it has a working relay path.
 
 ---
 
@@ -248,17 +278,89 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 
 ## 10. Doc-vs-Code Mismatches (severity-ordered)
 
+> **Status as of 2026-08-21: all eleven items below are resolved.** Line/file
+> references in the original findings are from 2026-07-02 and are mostly stale;
+> each item now carries a `**Resolved:**` annotation describing what the code
+> actually does and how the docs were reconciled. Verification: every fenced YAML
+> block in `docs/src/content/docs/` (225 blocks) is strict-decoded against
+> `config.ServerConfig` / `config.ClientConfig` and every `auth.providers[]` entry
+> (59 of them) is run through the real plugin `ValidateConfig`; zero failures. The
+> sweep also caught a further batch of invented config keys outside the original
+> eleven — see "Additional mismatches found during remediation" at the end of this
+> section.
+
 1. **[high] Documented auth config examples are rejected by the server (legacy `auth.mode`).** `docs/src/content/docs/security.mdx:102-141` (+ `configuration.mdx:58`, `troubleshooting/connections.mdx:300`, `troubleshooting/authentication.mdx:89`, `troubleshooting/faq.mdx`). `AuthConfig.Validate` (`internal/config/server.go:494-499`) hard-rejects any `mode:` and any top-level `native/system/ldap/oauth` block, via `LoadAndValidate` at startup (`cmd/server/main.go`). Copying these guides yields a server that exits with "legacy auth.mode is no longer supported". Six docs affected.
+   **Resolved.** No `auth.mode` key and no top-level `auth.native/system/ldap/oauth` block remains anywhere in `docs/`; every example uses `auth.providers[]` with a nested `config` map. `authentication.mdx` carries an explicit schema note that the legacy shapes are rejected at startup. Verified by running `AuthConfig.Validate` over every extracted `auth:` block.
 2. **[high] Entire `configuration/authentication.mdx` uses rejected `mode:` syntax (kerberos/mtls/negotiate).** `authentication.mdx:156,272,356,496,612,725,784`. All 7 config blocks fail to load; `auth.kerberos:`/`auth.mtls:` aren't even fields (silently dropped by non-strict unmarshal). The dedicated Kerberos/mTLS/Negotiate guide is 100% non-functional. (`auth.negotiate:` *is* a real field, but blocks still set `mode: negotiate`.)
+   **Resolved.** The guide now uses `auth.providers[]` throughout plus the real `auth.negotiate` middleware block. Residual defects found and fixed in this pass: the AD-integration example routed to a `direct` backend it never declared (`ServerConfig.Validate` → "route references unknown backend: direct"), the SPNEGO example set `access_log.fields` (not a field), and one troubleshooting snippet referenced a `kerberos_provider` that the same block did not declare.
 3. **[high] monitoring.mdx documents a Prometheus schema that doesn't match the code.** `docs/src/content/docs/monitoring.mdx:46-126` vs `internal/metrics/prometheus.go:56-207`. Nonexistent series (`bifrost_connections_errors_total`, `bifrost_bytes_total`, `bifrost_backend_healthy`, `bifrost_backend_connections_active`, `bifrost_bandwidth_bytes_per_second`, `bifrost_memory_bytes`); wrong labels (`bifrost_requests_total` is `{protocol,method,status}` not `{method,backend,status}`; `bifrost_request_size_bytes` label is `protocol` not `direction`). Copy-paste alerts `BifrostHighErrorRate` and critical `BifrostBackendDown` evaluate against missing metrics and **silently never fire**; panels render empty. Doc-only, caps at high.
+   **Resolved.** The metric tables now match `internal/metrics/prometheus.go` name-for-name and label-for-label, and `BifrostHighErrorRate` / `BifrostBackendDown` evaluate against `bifrost_requests_total{status=~"5.."}` and `bifrost_backend_health == 0`. Two further corrections in this pass, both caused by code moving on since the audit: (a) the cache Prometheus subsystem is **no longer dead** — `internal/server/server.go:212` calls `cacheManager.SetMetrics(cache.NewMetrics(m.Registry()))` when `cache.enabled` is true, so the eleven `bifrost_cache_*` series are now documented (the doc previously asserted they were *not* exported); (b) `bifrost_connections_active` is registered with a `backend` label but `Collector.RecordConnection` only ever increments it at protocol scope, so the label is always empty — documented, with a pointer to `bifrost_backend_connections` for a live per-backend view.
 4. **[medium] Two contradictory authentication docs; AUDIT calls the broken set "authoritative".** `authentication.mdx` (correct `providers[]`) vs `configuration/authentication.mdx` (rejected `mode:`); `AUDIT.md:98`. Readers can't tell which syntax is valid.
+   **Resolved.** Both pages now use `auth.providers[]`, and the division of labour is stated at the top of `authentication.mdx`: it owns the provider/`config` schema, `configuration/authentication.mdx` owns enterprise deployment (keytabs, CA setup, browser/`curl` clients, `auth.negotiate`, troubleshooting). The advanced page was orphaned from the sidebar and is now listed under Configuration → Advanced Authentication. `AUDIT.md`'s "Notes" section was rewritten: the code is authoritative for the config schema (`internal/config/` plus each plugin's `parseConfig`/`ValidateConfig`), and it records that the two auth pages exist by design and must not disagree. The genuine remaining contradiction — `authentication.mdx` documented mTLS as `ca_cert`/`require_cn`/`allowed_cns`/`username_from` while the plugin accepts `ca_cert_file`/`ca_cert_pem`/`require_client_cert`/`subject_mapping`/`allowed_subjects` — was fixed against the code.
 5. **[medium] Docs advertise mesh `relay_via_peers: true`, but config validation rejects it.** `internal/mesh/config.go:247-248` vs `docs/.../mesh-networking.mdx:421,579`. Copying the full config example produces a fatal (but loud, self-remediating) startup error.
+   **Resolved.** Both occurrences are `relay_via_peers: false` with an inline comment and a note that multi-hop peer relaying is unimplemented and `true` is rejected at startup. Additionally the `stun:`, `turn:` and `connection:` examples were bare fragments that would have been silently dropped if pasted at the top level; they are now nested under `mesh:` so the block loads as written.
 6. **[medium] `system` (PAM) offered as a working UI option but fails closed in default/Docker builds.** `pam_stub.go:40-45`; `AuthSection.tsx:23` (see §4).
+   **Resolved on the documentation side.** `authentication.mdx` already carried the fail-closed warning and the platform matrix; `security.mdx`'s provider-selection table previously rated `system` "Medium-High" with no caveat and now carries the warning inline (release binaries and the Docker image are built without `CGO_ENABLED=1 -tags pam`, so `type: system` rejects every login on Linux). The UI-side gap (`AuthSection.tsx` offering it without a warning) is a web change and remains open.
 7. **[low] Docs show `mode: negotiate` although negotiate is not a registered plugin.** `configuration/authentication.mdx:356,725,784`; `AUDIT.md:78-79`. Doubly broken (`mode:` rejected AND unregistered); SPNEGO SSO *is* supported via `auth.negotiate.enabled` middleware, so only the syntax is wrong.
+   **Resolved.** No `mode: negotiate` remains. The docs present the real `auth.negotiate` block (`enabled`, `kerberos_provider`, `ntlm_provider`, `prefer_kerberos`, `allow_ntlm`, `realm`) and explain that it is middleware referencing a named `type: kerberos` provider, not a plugin type. `AUDIT.md`'s "the negotiate auth mode is not a registered plugin — do not configure it" bullet was misleading in the other direction and now describes the supported middleware form.
 8. **[low] Docs architecture diagram claims NTLM validates against a Domain Controller.** `docs/.../configuration/authentication.mdx:50` (`NTLMAuth -->|Validate| DC`) + stale `docs/dist/.../authentication/index.html:132`. Contradicts the same file's honest "fails closed" note (`:371-382`) and the always-reject code.
+   **Resolved.** The edge now reads `NTLMAuth -.->|Always rejected: no verification| Reject[Fails closed]`. This pass also removed the now-orphaned `DC[Domain Controller]` node the retargeted edge left behind. The `NTLM | auth_type=ntlm, domain` row in the metadata table was likewise fiction (NTLM never returns a `UserInfo`) and was replaced. `docs/dist/` is gitignored build output and is not hand-edited.
 9. **[low] Built-in log rotation is fully implemented but undocumented; docs steer users to external logrotate.** `internal/logging/rotate.go` + `logging.go:22-26,111-130` vs `deployment.mdx:253`; `CLAUDE.md` even asserts "No built-in log rotation". `max_size_mb`/`max_backups` are valid config keys documented nowhere.
+   **Resolved.** `deployment.mdx` documents built-in rotation first and external `logrotate` as the alternative (`copytruncate`, because the process keeps the file handle); `CLAUDE.md` is corrected. This pass added a `logging` field-reference table to `configuration.mdx`, surfaced the two keys in `monitoring.mdx`, and corrected the rotated-file suffix, which is `YYYYMMDD-HHMMSS.mmm` (`rotate.go` uses layout `20060102-150405.000`), not the ISO-like form the doc showed.
 10. **[low] AUDIT understates VPN userspace TCP: claims "in-order only (no reassembly)" but out-of-order reassembly exists.** `AUDIT.md:92-93` vs `internal/vpn/tcpreasm.go` + `vpn.go:495`. Code is stronger than documented (windowing/SACK/congestion control genuinely absent).
+    **Resolved.** `AUDIT.md` now states that the userspace TCP proxy performs bounded out-of-order reassembly (default caps 256 KiB / 1024 segments per connection, drained once the gap fills) and that a full receive window, SACK and congestion control are still absent.
 11. **[low] NordVPN WireGuard uses hardcoded client address/DNS + out-of-band private key.** `internal/vpnprovider/nordvpn/client.go:337-367`. Inherent to NordVPN's lack of a public NordLynx key-registration API; documented in-code.
+    **Resolved / no action needed.** Inherent to NordVPN's API and disclosed in-code; `vpn-providers.mdx` documents the operator-supplied private key.
+
+Additionally, the SOCKS5 feature limitation from §6 (`internal/proxy/socks5.go`: `BIND` and `UDP ASSOCIATE` answered with reply `0x07`) is now stated in `configuration.mdx`, together with the supported authentication methods (no-auth `0x00` and username/password `0x02`; GSSAPI `0x01` is not offered).
+
+### Additional mismatches found during remediation
+
+Validating every YAML block mechanically surfaced a second class of defect the
+original audit did not enumerate: config keys that do not exist in any struct or
+`config["…"]` lookup. Because the loader is non-strict these were silently
+dropped, so each documented setting simply did nothing — and a handful of blocks
+had duplicate YAML mapping keys, which makes `yaml.Unmarshal` hard-fail so the
+server would refuse to start. All are now fixed.
+
+- **Duplicate mapping keys** (hard startup failure if pasted): LDAP `url` /
+  `user_filter` / `group_filter` and a doubled top-level `auth:` in
+  `troubleshooting/authentication.mdx`; a tripled top-level `server:` in
+  `troubleshooting/connections.mdx`; doubled `mode:` and doubled `type:`/`target:`
+  in `troubleshooting/vpn-tunnels.mdx`. Blocks that were showing alternatives were
+  split into separate fenced blocks.
+- **Invented auth-plugin keys**: mTLS `ca_cert` / `require_cn` / `allowed_cns` /
+  `username_from`; JWT `signing_key` and `allowed_algorithms`; apikey `header`
+  (the real key is `header_name`); TOTP/HOTP `secrets` written as a
+  username→secret map when the plugin requires an array of
+  `{username, secret, …}` objects; OAuth `redirect_url` (the plugin validates a
+  bearer token, it never runs a redirect flow); `mfa_wrapper` `otp_header` (the
+  OTP is only ever read out of the password field) and blocks with `primary:` but
+  no `secondary:`, which fall into the unsupported by-name path.
+- **Invented server keys**: `access_log.fields`; `server.http.forward_auth_headers`
+  together with the `X-Authenticated-User` / `X-Auth-Method` / `X-User-Groups`
+  headers, none of which the proxy sets; `cache.memory` / `cache.disk` (both live
+  under `cache.storage`); `rate_limit.burst` (`burst_size`); listener
+  `connect_timeout` / `enabled` / `address` / `max_idle_conns*` /
+  `idle_conn_timeout` (outbound pooling is not configurable at all); top-level
+  `websocket:` and `connection_limits:` in `internals/architecture.mdx`
+  (`api.websocket_max_clients`, `server.<listener>.max_connections`,
+  `network.max_connections`).
+- **Invented client keys**: `vpn.mode`, `vpn.interface_name`, `vpn.mtu`,
+  `vpn.split` (`vpn.tun.*` and `vpn.split_tunnel`), `vpn.dns.servers`
+  (`upstream`), `vpn.dns.intercept_port` (no such setting — the port is part of
+  `listen`), `debug.log_level` (log level is top-level `logging.level`),
+  split-tunnel `bundle_id` app rules (`AppRule` has only `name` and `path`).
+- **Env-var interpolation**: `${VAR:-default}` was shown as "with default", but
+  expansion is `os.ExpandEnv`, which treats `VAR:-default` as the whole variable
+  name and yields the empty string — so `listen: ":${HTTP_PORT:-8080}"` silently
+  becomes `listen: ":"`. Both occurrences fixed and the limitation documented.
+- **Fabricated API/Go surfaces**: the custom-auth-plugin Go example implemented a
+  `Name`/`Init`/`Authenticate(ctx, creds)`/`Close` interface that does not exist
+  (the real `auth.Plugin` is `Type`/`Description`/`Create`/`ValidateConfig`/
+  `DefaultConfig`/`ConfigSchema`, producing an `auth.Authenticator`); several
+  `/api/v1/vpn/*` response fields and three `/api/v1/p2p/*` endpoints that are not
+  registered anywhere.
 
 ---
 
@@ -266,8 +368,8 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 
 **Critical / High**
 1. **Server config save: `access_control` changes silently not applied, reported as no-restart** — add `AccessControl` to `detectChangedSections` and the reload path. Security control unenforced. (`config_handlers.go:204-239`)
-2. **P2P session crypto: deterministic keys + nonce-from-0 → ChaCha20-Poly1305 nonce reuse** — mix handshake randomness/ephemeral keys into KDF, use unique nonces per (key) lifetime; add forward secrecy. (`p2p/crypto.go:229-277`)
-3. **P2P inbound handshake accepts unauthorized peers and injects frames into TUN/TAP** — enforce `SecurityConfig.AllowedPeers`/known-key allowlist before accepting. (`p2p/manager.go:586-592`)
+2. ~~**P2P session crypto: deterministic keys + nonce-from-0 → ChaCha20-Poly1305 nonce reuse**~~ — **DONE.** `cfae5bd` (ephemeral-ephemeral X25519 as HKDF salt, forward secrecy) + `fix/p2p-session-crypto` (transcript binding). See §8 item 1.
+3. ~~**P2P inbound handshake accepts unauthorized peers and injects frames into TUN/TAP**~~ — **DONE.** `cfae5bd` (fail closed on unknown keys, `allowed_peers` enforced) + `fix/p2p-session-crypto` (handshake authentication, handshake-replay rejection, revocation on peer leave). See §8 items 2 and 1a–1c.
 4. **ProtonVPN OpenVPN CA malformed → default path never connects** — replace/validate the embedded CA; fail fast at config-gen. (`protonvpn/servers.go:261`)
 5. ~~**Client dashboard fully broken when `api.token` set**~~ **[DONE]**
 6. ~~**Server dashboard 401s when `api.token` set**~~ **[DONE]** — and the `?token=` credential is no longer logged.

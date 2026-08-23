@@ -690,6 +690,63 @@ sequenceDiagram
 - WireGuard .conf files contain private keys - protect file permissions
 - MITM mode requires careful handling of generated certificates
 
+### 7.1 Mesh P2P Session Security
+
+The mesh data plane (`internal/p2p`) is the only path by which a remote host can
+get bytes written to the local TUN/TAP device, so its handshake is the trust
+boundary.
+
+**Wire format.** Handshake initiation and response are both a fixed 105 bytes:
+message type (1) | sender static X25519 public key (32) | sender ephemeral
+X25519 public key (32) | handshake timestamp (8, little endian) | HMAC-SHA256
+authenticator over the preceding 73 bytes (32). Data frames are
+type (1) | nonce (12) | ChaCha20-Poly1305 ciphertext and tag.
+
+**Session keys.** `staticShared = X25519(static_priv, remote_static_pub)`
+authenticates the peer and is the HKDF-SHA256 input keying material.
+`ephemeralShared = X25519(eph_priv, remote_eph_pub)` is fresh per handshake and
+is the HKDF salt. The HKDF info string is a direction label (`send`/`recv`)
+followed by the handshake transcript: both static public keys, both ephemeral
+public keys in initiator-then-responder order, and the timestamp. Consequences:
+
+- Session keys are unique per handshake, so the frame nonce counter can safely
+  restart at 0 on reconnect without ever reusing a `(key, nonce)` pair.
+- Ephemeral private keys are discarded with the session, giving forward secrecy.
+- The two ends derive matching keys only if they agree on every handshake input,
+  so a tampered, spliced or reflected handshake yields non-matching keys instead
+  of anything an attacker controls.
+
+**Nonce invariant.** Within one session the send nonce comes only from an atomic
+increment, and keys are unique per session. Reusing a key across handshakes, or
+resetting the counter mid-session, would be catastrophic for
+ChaCha20-Poly1305 — both are called out in the code.
+
+**Inbound authorization** (fail closed, in order):
+
+1. The initiator's static public key must be one this node learned from
+   discovery, and must appear in `mesh.security.allowed_peers` when that list is
+   non-empty. Authorization is revoked when the peer leaves the mesh.
+2. The handshake authenticator must verify, proving the sender holds the static
+   private key for the key it claims. Public keys are distributed by discovery
+   and are not secrets, so this is the check that separates the real peer from
+   anyone who merely knows its key.
+3. The handshake timestamp must exceed the greatest previously accepted for that
+   key, rejecting a replayed initiation. Timestamps are strictly increasing per
+   initiator process. High-water marks are in memory only, so the first
+   initiation after a restart is accepted unconditionally.
+
+Only after all three does the node install the connection, so an unauthorized
+peer's frames never reach `writeToDevice`.
+
+**Data-frame replay.** Each session carries an RFC 6479-style sliding-window
+bitmap (2048-bit capacity, 1984-nonce usable window) over authenticated frame
+nonces. A nonce is accepted at most once, anything below the window floor is
+rejected, and the floor never moves backwards.
+
+**Encryption is not optional.** There is no plaintext mesh transport.
+`mesh.security.require_encryption: false` is normalized to `true` with a warning
+rather than honoured.
+
 > [!CAUTION]
 > WireGuard and OpenVPN configuration files contain sensitive private keys. Ensure file permissions are restricted (e.g., `chmod 600`) and they are excluded from backups where appropriate.
 

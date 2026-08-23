@@ -161,7 +161,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
   reporting success while changing nothing but an in-memory field
 
+### Security
+- **Mesh P2P handshakes are now authenticated.** Each handshake message carries an
+  HMAC-SHA256 authenticator keyed from the static-static X25519 secret, so a host
+  must prove it holds the static private key for the public key it claims. Peer
+  public keys are distributed by discovery and are not secrets, so previously
+  anyone who could reach the mesh UDP port and knew a peer's key could complete a
+  handshake in its name, take over that peer's connection slot and endpoint, and
+  blackhole it
+- **Replayed mesh handshakes are rejected.** Handshake initiations carry a
+  strictly increasing timestamp and are refused if not newer than the last one
+  accepted for that public key, and handshake responses must echo the timestamp
+  of the initiation they answer, so a captured handshake cannot be replayed to
+  hijack a connection slot or resurrect old key material
+- **Mesh session keys are bound to the handshake transcript.** Key derivation now
+  mixes both static public keys, both ephemeral public keys and the handshake
+  timestamp into the HKDF info string, so the two ends derive matching keys only
+  if they agree on every handshake input
+- **Peer authorization is revoked when a peer leaves the mesh.** It previously
+  lasted for the lifetime of the process, leaving a departed peer's (non-secret)
+  public key able to open new inbound sessions and inject frames into the local
+  TUN/TAP device
+- `mesh.security.require_encryption: false` was silently ignored; it is now
+  normalized to `true` with a warning, so the setting cannot imply a plaintext
+  mesh transport that does not exist
+- The startup log now states which peer-authorization stance is in effect
+  (`allowed_peers` enforced, or discovery-announced peers only), and each inbound
+  rejection is logged with its reason
+- Mesh data frames whose unused upper nonce bytes are non-zero are rejected, so a
+  peer cannot craft distinct nonces that alias a single replay-window slot
+
+> [!IMPORTANT]
+> The mesh handshake wire format changed (both messages are now a fixed 105
+> bytes). Mesh peers must be upgraded together: a peer running an older build
+> cannot complete a handshake with an upgraded one, and logs
+> `invalid handshake init: unexpected length (incompatible peer version?)`. The
+> handshake has no version-negotiation field, so there is no mixed-version
+> fallback. Nothing outside the mesh data plane is affected.
+
 ### Fixed
+- **One peer leaving the mesh disabled networking for the whole node.**
+  `DirectConnection.Close` closed the P2P manager's shared UDP socket, which it
+  does not own, so the first disconnect left the node unable to send or receive
+  any datagram or accept any new peer — while the receive worker busy-spun on the
+  closed socket, logging in a hot loop. The socket is now closed only by the
+  manager, the receive worker stops instead of retrying a permanently closed
+  socket, and a connection that loses the inbound race is closed rather than
+  leaking its worker goroutines
+- Documentation: every YAML example in the docs is now one the server/client
+  actually accepts. Removed config keys that do not exist and were therefore
+  silently dropped by the loader (`access_log.fields`,
+  `server.http.forward_auth_headers`, `cache.memory`/`cache.disk` outside
+  `cache.storage`, `rate_limit.burst`, listener `enabled`/`address`/
+  `connect_timeout`/`max_idle_conns*`, top-level `websocket:`/`connection_limits:`,
+  `vpn.mode`/`vpn.interface_name`/`vpn.mtu`/`vpn.split`, `vpn.dns.servers`,
+  `vpn.dns.intercept_port`, `debug.log_level`), corrected auth-provider options to
+  the schema each plugin parses (mTLS `ca_cert_file`/`allowed_subjects`, JWT
+  `algorithms` plus a real key source, apikey `header_name`, list-shaped TOTP/HOTP
+  `secrets`, `mfa_wrapper` requiring both `primary` and `secondary`), and split
+  the blocks that contained duplicate YAML keys — those made the loader hard-fail,
+  so pasting them prevented startup
+- Documentation: `monitoring.mdx` now matches the Prometheus registry, including
+  the `bifrost_cache_*` series (exported whenever `cache.enabled` is set) and the
+  note that `bifrost_connections_active` always carries an empty `backend` label.
+  Two Mermaid diagrams in the architecture guide that failed to parse in the
+  browser now render
+- Documentation: `${VAR:-default}` was shown as supported env-var interpolation,
+  but expansion is `os.ExpandEnv`, so it silently yields an empty string
 - A config save that changed both a hot-reloadable and a restart-required section
   skipped the hot-reload entirely, so e.g. a new `access_control` blocklist saved
   alongside a listener change stayed unenforced until a restart. The

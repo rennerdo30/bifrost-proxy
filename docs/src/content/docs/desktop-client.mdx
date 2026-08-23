@@ -167,12 +167,21 @@ tray:
 
 vpn:
   enabled: true
-  mode: tun
+  tun:
+    name: bifrost0
+    address: "10.255.0.1/24"
+    mtu: 1400
 
 debug:
   enabled: false
-  log_level: "info"
+
+logging:
+  level: "info"
 ```
+
+The log level lives in the top-level `logging` section, not under `debug`. The `debug` section
+controls traffic capture only: `enabled`, `max_entries`, `capture_body`, `max_body_size` and
+`filter_domains`.
 
 ## Keyboard Shortcuts
 

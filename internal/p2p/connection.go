@@ -534,14 +534,18 @@ func (c *DirectConnection) RemoteAddr() netip.AddrPort {
 }
 
 // Close closes the connection.
+//
+// It deliberately does NOT close c.conn: every DirectConnection is handed the
+// P2P manager's single shared UDP socket (see NewDirectConnection and
+// newIncomingConnection), which the manager owns and closes in Stop. Closing it
+// here tore down the whole node's P2P plane the first time any one peer
+// disconnected — no further datagram could be sent or received, and the
+// manager's receive worker spun on the resulting ErrClosed.
 func (c *DirectConnection) Close() error {
 	c.state.Store(int32(ConnectionStateDisconnected))
 	c.cancel()
 	c.wg.Wait()
 
-	if c.conn != nil {
-		return c.conn.Close()
-	}
 	return nil
 }
 
