@@ -421,7 +421,10 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 	region := c.findRegion(server.ID)
 
 	// Build OpenVPN configuration
-	config := c.buildOpenVPNConfig(server, region)
+	config, err := c.buildOpenVPNConfig(server, region)
+	if err != nil {
+		return nil, err
+	}
 
 	return &vpnprovider.OpenVPNConfig{
 		ConfigContent: config,
@@ -431,7 +434,17 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 }
 
 // buildOpenVPNConfig builds the OpenVPN configuration content.
-func (c *Client) buildOpenVPNConfig(server *vpnprovider.Server, region *Region) string {
+//
+// Unlike the other providers, PIA publishes a long-lived CA certificate that is
+// embedded here (piaOpenVPNCA) and validated at package init. The certificate is
+// re-checked against the clock on every generation so that an expired embedded
+// CA fails closed with an actionable error instead of producing a profile the
+// OpenVPN subprocess would reject at handshake time.
+func (c *Client) buildOpenVPNConfig(server *vpnprovider.Server, region *Region) (string, error) {
+	if err := vpnprovider.ValidateCACertPEMAt(piaOpenVPNCA, time.Now()); err != nil {
+		return "", fmt.Errorf("%w: embedded PIA CA certificate is unusable: %w", vpnprovider.ErrConfigGenerationFailed, err)
+	}
+
 	var sb strings.Builder
 
 	sb.WriteString("client\n")
@@ -462,12 +475,12 @@ func (c *Client) buildOpenVPNConfig(server *vpnprovider.Server, region *Region) 
 		sb.WriteString(fmt.Sprintf("dhcp-option DNS %s\n", region.DNS))
 	}
 
-	// PIA CA certificate
+	// PIA CA certificate (embedded, validated above and at package init).
 	sb.WriteString("<ca>\n")
 	sb.WriteString(piaOpenVPNCA)
 	sb.WriteString("</ca>\n")
 
-	return sb.String()
+	return sb.String(), nil
 }
 
 // generateWireGuardKeyPair generates a new WireGuard key pair.
@@ -511,20 +524,20 @@ func (c *Client) ClearCache() {
 
 // piaCertPool is the certificate pool trusting the PIA CA. It is built once at
 // package initialization from the compile-time PIA CA constant; if that constant
-// ever fails to parse the package refuses to load (init panics) rather than
-// allowing a silent fail-open. Because the CA is a compile-time constant, a parse
-// failure can only be a build/source regression, never a runtime condition.
+// ever fails to parse — or is not a CA certificate at all — the package refuses
+// to load (init panics) rather than allowing a silent fail-open. Because the CA
+// is a compile-time constant, such a failure can only be a build/source
+// regression, never a runtime condition.
+//
+// Validity dates are checked at use time instead (see buildOpenVPNConfig and
+// piaTLSConfig callers), so the binary keeps starting when the CA expires.
 var piaCertPool = mustParsePIACertPool()
 
 // mustParsePIACertPool builds the PIA CA pool, panicking if the embedded CA
 // cannot be parsed. Failing closed here guarantees TLS verification can never
 // silently degrade to InsecureSkipVerify.
 func mustParsePIACertPool() *x509.CertPool {
-	pool := x509.NewCertPool()
-	if !pool.AppendCertsFromPEM([]byte(piaOpenVPNCA)) {
-		panic("pia: embedded CA certificate failed to parse; refusing to start to avoid fail-open TLS")
-	}
-	return pool
+	return vpnprovider.MustParseEmbeddedCACertPool(ProviderName, piaOpenVPNCA)
 }
 
 // piaTLSConfig returns a TLS config that trusts the PIA CA certificate.
@@ -537,7 +550,16 @@ func piaTLSConfig() *tls.Config {
 	}
 }
 
-// PIA OpenVPN CA certificate
+// piaOpenVPNCA is Private Internet Access' published OpenVPN root CA
+// (ca.rsa.4096.crt, RSA-4096, valid 2014-04-17 .. 2034-04-12), as distributed by
+// PIA in github.com/pia-foss/manual-connections. It is used both as the <ca>
+// block of generated OpenVPN profiles and as the trust root for PIA's HTTPS
+// endpoints (token, addKey, port forwarding).
+//
+// Its integrity is asserted by tests: the certificate must parse, be a CA, be
+// self-signed with a signature that verifies against its own key, and match the
+// SHA-256 fingerprint pinned in ca_test.go. Do not hand-edit this constant --
+// replace it wholesale with the file published by PIA.
 const piaOpenVPNCA = `-----BEGIN CERTIFICATE-----
 MIIHqzCCBZOgAwIBAgIJAJ0u+vODZJntMA0GCSqGSIb3DQEBDQUAMIHoMQswCQYD
 VQQGEwJVUzELMAkGA1UECBMCQ0ExEzARBgNVBAcTCkxvc0FuZ2VsZXMxIDAeBgNV
@@ -555,13 +577,13 @@ hjumaqBbL8aSgj6xbX1QPTfTd1qHsAZd2B97m8Vw31c/2yQgZNf5qZY0+jOIHULN
 De4R9TIvyBEbvnAg/OkPw8n/+ScgYOeH876VUXzjLDBnDb8DLr/+w9oVsuDeFJ9K
 V2UFM1OYX0SnkHnrYAN2QLF98ESK4NCSU01h5zkcgmQ+qKSfA9Ny0/UpsKPBFqsQ
 25NvjDWFhCpeqCHKUJ4Be27CDbSl7lAkBuHMPHJs8f8xPgAbHRXZOxVCpayZ2SND
-fCwsnGWpWFoMGvdMbygngCn6gREDXiWYbAUfkD4F0B0qVWJj06T/+mhFkFCQTQ9h
-QGEbwtD7ohLb/r/rFCwaTRHvtJSHYGwINV1n4/v9HxMeBPi9Q+bH+OYKkqt1cL06
-8xJ9FatZ+aLPKkPAG7Us2E+z3E7TaK7E4XdEgSr7V0KvGz4xYvBQz3kCLz54G3tS
-pYaKrQ2s+Bk6l2e1FfM0Aa5qSTd2V+6dTFmJstqh7R7VzbcC7bYBLdqJrGVXg7Nm
-ZUgPPPQO+RKXdLnsROhM0NvCISha0EJZrxZqHiqruQOU3j4wxLEYQrkCLwAoGE2p
-cvy5T7I6WXSEKz6ALrF3GAVXT5t7pJkJGhFC08ExJFiPw/WLd6pD7l8q7JL7FgHW
-aWyepKCdhHNkBQBhyoA/VjVpI/voxJoR/fLPDjGzAgMBAAGjggFUMIIBUDAdBgNV
+fCwsnGWpWFoMGvdMbygngCn6jA/W1VSFOlRlfLuuGe7QFfDwA0jaLCxuWt/BgZyl
+p7tAzYKR8lnWmtUCPm4+BtjyVDYtDCiGBD9Z4P13RFWvJHw5aapx/5W/CuvVyI7p
+Kwvc2IT+KPxCUhH1XI8ca5RN3C9NoPJJf6qpg4g0rJH3aaWkoMRrYvQ+5PXXYUzj
+tRHImghRGd/ydERYoAZXuGSbPkm9Y/p2X8unLcW+F0xpJD98+ZI+tzSsI99Zs5wi
+jSUGYr9/j18KHFTMQ8n+1jauc5bCCegN27dPeKXNSZ5riXFL2XX6BkY68y58UaNz
+meGMiUL9BOV1iV+PMb7B7PYs7oFLjAhh0EdyvfHkrh/ZV9BEhtFa7yXp8XR0J6vz
+1YV9R6DYJmLjOEbhU8N0gc3tZm4Qz39lIIG6w3FDAgMBAAGjggFUMIIBUDAdBgNV
 HQ4EFgQUrsRtyWJftjpdRM0+925Y6Cl08SUwggEfBgNVHSMEggEWMIIBEoAUrsRt
 yWJftjpdRM0+925Y6Cl08SWhge6kgeswgegxCzAJBgNVBAYTAlVTMQswCQYDVQQI
 EwJDQTETMBEGA1UEBxMKTG9zQW5nZWxlczEgMB4GA1UEChMXUHJpdmF0ZSBJbnRl
@@ -571,13 +593,13 @@ ZSBJbnRlcm5ldCBBY2Nlc3MxLzAtBgkqhkiG9w0BCQEWIHNlY3VyZUBwcml2YXRl
 aW50ZXJuZXRhY2Nlc3MuY29tggkAnS7684Nkme0wDAYDVR0TBAUwAwEB/zANBgkq
 hkiG9w0BAQ0FAAOCAgEAJsfhsPk3r8kLXLxY+v+vHzbr4ufNtqnL9/1Uuf8NrsCt
 pXAoyZ0YqfbkWx3NHTZ7OE9ZRhdMP/RqHQE1p4N4Sa1nZKhTKasV6KhHDqSCt/dv
-Em89xWm2MVA7nyzQxVlHa9AHVf7EVJQ5R+UyG4FE6cBj4G+0VQBdUFnlHSqjWTqq
-QgujGfqcLmfvDl4FhoJejHLtlvppl1YQxPRbVZJm7Ll6oJHgJw7lQ7r5BYJIZt6Z
-f9XusGLK6jBHgRvfFfzHYtTgVF/i2y4mPcKg4W+badvLVWJbHC3duR8I3NL1axqI
-rR7JKF0g0FTTVEBf0ISLvakV0AqWEOZ2lVrFJeYVwWfYMFvA4bLLPbVoC3ZLejuM
-wPXKUMyYqd+RXqxmSy+SfjJEOA0B1OMpSTBqkV7NftV3qJEJk0sHl9svQINiONMp
-cOWk6vjzGP7pSLSzVZFM8hlQ3RKaM3bGXclqefKQoE8mV1wJrpS6gMsCwv1B2l8E
-x3jhXsnF/rTDnvJrTSI4cFBLiJYH0sNwEJm8qLthJiJo9E5jAABaS7Wjj4eqKP2W
-tcD9u3sgnKNfTPfIQ+0rDrxBl7xLb0l9o/n8xqQgB8wO5K0WchF0HGP3dH04Bwvw
-HYFpA+EJOYZ5cHmwPzy2s3j9nQLf6j5n9toN9Q1N2VnXHY0ZhbhlGTR4BTyU8Sg=
+Em89xWm2MVA7nyzQxVlHa9AkcBaemcXEiyT19XdpiXOP4Vhs+J1R5m8zQOxZlV1G
+tF9vsXmJqWZpOVPmZ8f35BCsYPvv4yMewnrtAC8PFEK/bOPeYcKN50bol22QYaZu
+LfpkHfNiFTnfMh8sl/ablPyNY7DUNiP5DRcMdIwmfGQxR5WEQoHL3yPJ42LkB5zs
+6jIm26DGNXfwura/mi105+ENH1CaROtRYwkiHb08U6qLXXJz80mWJkT90nr8Asj3
+5xN2cUppg74nG3YVav/38P48T56hG1NHbYF5uOCske19F6wi9maUoto/3vEr0rnX
+JUp2KODmKdvBI7co245lHBABWikk8VfejQSlCtDBXn644ZMtAdoxKNfR2WTFVEwJ
+iyd1Fzx0yujuiXDROLhISLQDRjVVAvawrAtLZWYK31bY7KlezPlQnl/D9Asxe85l
+8jO5+0LdJ6VyOs/Hd4w52alDW/MFySDZSfQHMTIc30hLBJ8OnCEIvluVQQ2UQvoW
++no177N9L2Y+M9TcTA62ZyMXShHQGeh20rb4kK8f+iFX8NxtdHVSkxMEFSfDDyQ=
 -----END CERTIFICATE-----`

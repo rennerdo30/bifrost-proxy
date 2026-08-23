@@ -2,16 +2,50 @@
 
 > Documentation only. No fixes were applied. Findings below are drawn from a verified multi-area audit; refuted claims were discarded and partials are annotated "(overstated)". Severities shown are the adjudicated final severities.
 
+> **Status update (2026-08-21) — VPN provider crypto material.** Line numbers in
+> the VPN-provider items below are stale. Current state of each:
+>
+> - **§7.2 / §11.4 ProtonVPN embedded CA, §7.3 / §11.10 Mullvad embedded CA,
+>   §11.11 ProtonVPN fabricated tls-auth key, §7.9 ProtonVPN `script-security 2`
+>   resolv.conf scripts — already fixed** before this pass: the embedded material
+>   was removed in favour of operator-supplied `ca_cert` / `tls_auth_key`, and the
+>   OpenVPN template no longer sets `script-security` or references host
+>   resolv.conf helpers.
+> - **§11.13 embedded-CA parse tests / init guards — now done**, and the guard is
+>   stronger than the PIA pattern the item points at: validation requires X.509
+>   parsing, a CA basic constraint, a verifying self-signature and a current
+>   validity window, applied at config load and at profile generation.
+> - **§7.8 / §11.12 ProtonVPN SRP — now fixed.** The clear-signed modulus is
+>   parsed and its signature verified against Proton's modulus-signing key, and
+>   the hash scheme is Proton's own (little-endian, expanded SHA-512,
+>   bcrypt-derived verifier) rather than textbook SRP-6a. Live-API verification
+>   was still not possible (needs real Proton credentials).
+> - **Audit was wrong about PIA.** §1 credits the PIA client as working
+>   end-to-end and treats `mustParsePIACertPool` as the reference fail-closed
+>   pattern. In fact PIA's *embedded* CA was also unusable: it parsed, with the
+>   right structure and subject, but 711 of its 1967 DER bytes had been replaced
+>   (300 at the tail of the RSA modulus, 414 of the 512 signature bytes), so its
+>   self-signature did not verify and its public key was not PIA's.
+>   `x509.CertPool.AppendCertsFromPEM` accepts such a certificate, which is why
+>   the init guard passed. Because that constant is the trust root for PIA's
+>   `/addKey` and port-forwarding endpoints as well as the `<ca>` block of PIA
+>   OpenVPN profiles, PIA OpenVPN, WireGuard key registration and port forwarding
+>   could not have worked. Replaced with PIA's published `ca.rsa.4096.crt`
+>   (fingerprint-pinned in tests).
+
 ---
 
 ## 1. Executive Summary
 
-Bifrost Proxy is, on the whole, a **mature and honestly-built codebase**. The core proxy data path (HTTP/CONNECT + SOCKS5), routing/matching, all four load-balancing strategies, token-bucket + bandwidth rate limiting, IP access control, disk/memory/tiered caching, active health checks, and log rotation are all genuinely implemented and wired — not stubs. The real backends (direct, http_proxy, socks5_proxy, wireguard, openvpn) are real, the PIA and Mullvad-WireGuard and NordVPN provider clients work end-to-end, and the checked-in `AUDIT.md` is unusually candid: every one of its nine "fixed" claims held up under independent inspection. TODO/FIXME markers are rare and the production panics are legitimate fail-fast guards.
+Bifrost Proxy is, on the whole, a **mature and honestly-built codebase**. The core proxy data path (HTTP/CONNECT + SOCKS5), routing/matching, all four load-balancing strategies, token-bucket + bandwidth rate limiting, IP access control, disk/memory/tiered caching, active health checks, and log rotation are all genuinely implemented and wired — not stubs. The real backends (direct, http_proxy, socks5_proxy, wireguard, openvpn) are real, the Mullvad-WireGuard and NordVPN provider clients work end-to-end (the PIA client did **not** — its embedded CA was unusable; see the status update above), and the checked-in `AUDIT.md` is unusually candid: every one of its nine "fixed" claims held up under independent inspection. TODO/FIXME markers are rare and the production panics are legitimate fail-fast guards.
 
 The problems cluster into four themes:
 
 1. **UI/config integration gaps** — several fully-working Go features (TOTP/HOTP/MFA, negotiate/SPNEGO, network/session/mitm config, listener mTLS, per-route weights, health thresholds) cannot be configured from the admin dashboards at all, and setting the documented `api.token` breaks *both* dashboards because neither UI can supply a token.
 2. **Silent config-save/reload defects** — the server's `detectChangedSections()` omits `access_control`, `cache`, and several restart-required sections, so security-relevant changes are written to disk, reported as `requires_restart=false`, yet never applied to the running server.
+3. **Broken/fabricated crypto material in two VPN providers** *(in fact three — see the status update above: PIA's embedded CA was corrupted too, in a way that still parses)* — ProtonVPN's and Mullvad's embedded OpenVPN CA certificates are corrupted (fail x509 parsing), ProtonVPN ships a fabricated tls-auth key, and the P2P mesh session crypto reuses deterministic keys with a nonce that restarts at 0 (ChaCha20-Poly1305 nonce reuse) plus a fail-open inbound-peer path.
+4. **Observability & documentation drift** — the entire cache Prometheus subsystem is dead code, monitoring docs describe a metric schema that doesn't exist (alerts that silently never fire), and six auth docs still teach a config syntax the server hard-rejects at startup.
+3. **Broken/fabricated crypto material in two VPN providers** — ProtonVPN's and Mullvad's embedded OpenVPN CA certificates are corrupted (fail x509 parsing), ProtonVPN ships a fabricated tls-auth key, and the P2P mesh session crypto reuses deterministic keys with a nonce that restarts at 0 (ChaCha20-Poly1305 nonce reuse) plus a fail-open inbound-peer path.
 3. **Broken/fabricated crypto material in two VPN providers** — ProtonVPN's and Mullvad's embedded OpenVPN CA certificates are corrupted (fail x509 parsing), ProtonVPN ships a fabricated tls-auth key, and the P2P mesh session crypto reuses deterministic keys with a nonce that restarts at 0 (ChaCha20-Poly1305 nonce reuse) plus a fail-open inbound-peer path. *(The two P2P mesh items in this theme are fixed as of `cfae5bd` plus `fix/p2p-session-crypto`; see the status note in §8.)*
 4. **Observability & documentation drift** — the entire cache Prometheus subsystem is dead code, monitoring docs describe a metric schema that doesn't exist (alerts that silently never fire), and six auth docs still teach a config syntax the server hard-rejects at startup. *(All three since remediated: the cache collectors are wired in `internal/server/server.go:212`, and §10 below tracks the documentation reconciliation.)*
 
@@ -34,7 +68,7 @@ No authentication **bypass** was found — every questionable path fails closed 
 
 ### Credit where due
 - Correct, DNS-leak-avoiding remote hostname resolution in the direct/http/socks5 backends.
-- PIA CA is validated fail-closed at init (`mustParsePIACertPool`); NordVPN validates the operator-supplied CA fail-closed.
+- ~~PIA CA is validated fail-closed at init (`mustParsePIACertPool`)~~ *(overstated: the guard only proved the bytes parsed, and the certificate it accepted was not PIA's — see the status update above)*; NordVPN validates the operator-supplied CA fail-closed.
 - Handlers correctly guard nil dependencies and return proper status codes; every endpoint the two Web UIs call actually exists (no orphaned UI calls / 404s).
 - WireGuard backend uses a proper userspace netstack with in-tunnel DNS.
 - VPN userspace TCP actually includes out-of-order reassembly (stronger than `AUDIT.md` claims).
@@ -176,14 +210,14 @@ Client-side config coverage additionally has dead controls: **Auto-Update** togg
 ## 7. Bugs & Correctness Issues (severity-ordered)
 
 1. **[high] `access_control` changes saved to disk but never applied; API falsely reports `requires_restart=false`.** `internal/api/server/config_handlers.go:204-239` (+ auto-reload gate `:146`). `detectChangedSections` never compares `current.AccessControl`; an access_control-only save yields `changedSections=[]`, so `reloadConfig()` is never called and `requiresRestart=false`, even though `Server.ReloadConfig` (`server.go:857-869`) *would* hot-apply the whitelist/blacklist. Operator adds an IP block, sees "saved", but the rule is not enforced until a later manual reload/restart. Security-relevant.
-2. **[high] ProtonVPN OpenVPN embedded CA is malformed → default ProtonVPN path never connects.** `internal/vpnprovider/protonvpn/servers.go:261`, consumed `client.go:373`. `x509.ParseCertificate` fails; interpolated into `<ca>` with no validation. Default protocol is `openvpn`, default auth `manual`. openvpn subprocess fails to start with a cryptic CA error and no early diagnostic.
-3. **[medium] Mullvad OpenVPN embedded CA is malformed.** `internal/vpnprovider/mullvad/client.go:409`. Same failure mode as #2, but only on the opt-in OpenVPN protocol (default WireGuard works). Fails silently at generation, aborts at connect.
+2. **[high] [FIXED 2026-08] ProtonVPN OpenVPN embedded CA is malformed → default ProtonVPN path never connects.** `internal/vpnprovider/protonvpn/servers.go:261`, consumed `client.go:373`. `x509.ParseCertificate` fails; interpolated into `<ca>` with no validation. Default protocol is `openvpn`, default auth `manual`. openvpn subprocess fails to start with a cryptic CA error and no early diagnostic.
+3. **[medium] [FIXED 2026-08] Mullvad OpenVPN embedded CA is malformed.** `internal/vpnprovider/mullvad/client.go:409`. Same failure mode as #2, but only on the opt-in OpenVPN protocol (default WireGuard works). Fails silently at generation, aborts at connect.
 4. **[medium] Restart-required changes to `auto_update`/`health_check`/`network`/`session`/`mitm` report `requires_restart=false`.** `config_handlers.go:204-248`. `detectChangedSections` omits these; `ReloadConfig` doesn't apply them either, so edits are silently inert with no restart prompt.
 5. **[medium] `cache` changes saved but not hot-reloaded from the save path.** `config_handlers.go:204-239`. No `Cache` comparison; cache toggles/rules written to YAML but not applied to the live server; response says `requires_restart=false`. (`ReloadConfig:894-900` would apply them if reached.)
 6. **[medium] Cache hits recorded as HTTP 500 in metrics and access logs.** `internal/proxy/http.go:364-373,213-221`. The cache-served branch never sets `entry.StatusCode`, so the deferred closure defaults it to 500 and records `bifrost_requests_total{status="500"}`. Inflates error-rate dashboards; client still gets a correct 200. Only when caching enabled.
 7. **[medium] `backend` label always empty on connection and byte-transfer metrics.** `internal/server/server.go:1001,1089,1200`. `RecordBytes("", …)` / `RecordConnection("http"/"socks5", "")` always pass empty backend even though the name is known at request time (`util.WithBackend`). Per-backend Prometheus breakdown non-functional across 5 metrics.
-8. **[medium] ProtonVPN SRP (api/WireGuard) auth against unrealistic mock; omits modulus signature verification.** `client.go:462`, `srp.go:93,282`. Real `/auth/info` returns a PGP clear-signed modulus (plain base64 decode fails); wrong hash scheme; no signature check (theoretical SRP-downgrade gap). ProtonVPN WireGuard effectively unusable against live API.
-9. **[medium] ProtonVPN OpenVPN template runs host resolv.conf scripts with `script-security 2`.** `servers.go:243-245`. Rewrites the host's global `/etc/resolv.conf` on tunnel-up (Debian/Ubuntu), and is fatal to openvpn on hosts lacking the script (RHEL/Alpine/most containers).
+8. **[medium] [FIXED 2026-08] ProtonVPN SRP (api/WireGuard) auth against unrealistic mock; omits modulus signature verification.** `client.go:462`, `srp.go:93,282`. Real `/auth/info` returns a PGP clear-signed modulus (plain base64 decode fails); wrong hash scheme; no signature check (theoretical SRP-downgrade gap). ProtonVPN WireGuard effectively unusable against live API.
+9. **[medium] [FIXED 2026-08] ProtonVPN OpenVPN template runs host resolv.conf scripts with `script-security 2`.** `servers.go:243-245`. Rewrites the host's global `/etc/resolv.conf` on tunnel-up (Debian/Ubuntu), and is fatal to openvpn on hosts lacking the script (RHEL/Alpine/most containers).
 10. **[medium] Client Server & Tray settings change with no restart warning but are not hot-applied.** `internal/client/client.go:557-576,621-637`, `restartRequiredFields:117-126`. `retry_delay`/health-check/tray edits show "Saved" with no restart banner but only take effect after manual restart; the client Health Check block is in fact entirely unconsumed (dead config).
 11. **[medium] Auto-Update settings are a dead toggle.** `internal/updater/updater.go:181` (`StartBackgroundChecker` never called in prod); daemon never constructs an Updater. Enabling Auto-Update has no runtime effect.
 12. **[low] `/status` always reports `bytes_sent=0`, `bytes_received=0`, `active_connections=0`.** `internal/api/client/server.go:662-687`; wiring `client.go:160`. Counter funcs never set, so guarded branches skipped. Dashboard doesn't render these three today, so limited visible impact.
@@ -333,6 +367,9 @@ server would refuse to start. All are now fixed.
 
 **Critical / High**
 1. **Server config save: `access_control` changes silently not applied, reported as no-restart** — add `AccessControl` to `detectChangedSections` and the reload path. Security control unenforced. (`config_handlers.go:204-239`)
+2. **P2P session crypto: deterministic keys + nonce-from-0 → ChaCha20-Poly1305 nonce reuse** — mix handshake randomness/ephemeral keys into KDF, use unique nonces per (key) lifetime; add forward secrecy. (`p2p/crypto.go:229-277`)
+3. **P2P inbound handshake accepts unauthorized peers and injects frames into TUN/TAP** — enforce `SecurityConfig.AllowedPeers`/known-key allowlist before accepting. (`p2p/manager.go:586-592`)
+4. **[FIXED 2026-08] ProtonVPN OpenVPN CA malformed → default path never connects** — replace/validate the embedded CA; fail fast at config-gen. (`protonvpn/servers.go:261`)
 2. ~~**P2P session crypto: deterministic keys + nonce-from-0 → ChaCha20-Poly1305 nonce reuse**~~ — **DONE.** `cfae5bd` (ephemeral-ephemeral X25519 as HKDF salt, forward secrecy) + `fix/p2p-session-crypto` (transcript binding). See §8 item 1.
 3. ~~**P2P inbound handshake accepts unauthorized peers and injects frames into TUN/TAP**~~ — **DONE.** `cfae5bd` (fail closed on unknown keys, `allowed_peers` enforced) + `fix/p2p-session-crypto` (handshake authentication, handshake-replay rejection, revocation on peer leave). See §8 items 2 and 1a–1c.
 4. **ProtonVPN OpenVPN CA malformed → default path never connects** — replace/validate the embedded CA; fail fast at config-gen. (`protonvpn/servers.go:261`)
@@ -343,10 +380,10 @@ server would refuse to start. All are now fixed.
 
 **Medium**
 9. `cache` and `auto_update`/`health_check`/`network`/`session`/`mitm` config saves report `requires_restart=false` and aren't applied — fix `detectChangedSections`/`hasRestartRequiredChanges`.
-10. Mullvad OpenVPN CA malformed (opt-in path). (`mullvad/client.go:409`)
-11. ProtonVPN fabricated tls-auth key + `script-security 2` host-resolv scripts. (`protonvpn/servers.go:243-245,296`)
-12. ProtonVPN SRP auth: PGP modulus parsing + signature verification + correct hash scheme. (`protonvpn/srp.go`)
-13. Add embedded-provider-CA parse tests / init guards for Mullvad + ProtonVPN (mirror PIA's `mustParsePIACertPool`).
+10. **[FIXED 2026-08]** Mullvad OpenVPN CA malformed (opt-in path). (`mullvad/client.go:409`)
+11. **[FIXED 2026-08]** ProtonVPN fabricated tls-auth key + `script-security 2` host-resolv scripts. (`protonvpn/servers.go:243-245,296`)
+12. **[FIXED 2026-08]** ProtonVPN SRP auth: PGP modulus parsing + signature verification + correct hash scheme. (`protonvpn/srp.go`)
+13. **[FIXED 2026-08]** Add embedded-provider-CA parse tests / init guards for Mullvad + ProtonVPN (mirror PIA's `mustParsePIACertPool`) — note PIA's own embedded CA turned out to be unusable too; see the status update at the top.
 14. Cache hits logged/counted as HTTP 500 — set `entry.StatusCode=200` on cache-served path. (`proxy/http.go:364-373`)
 15. Empty `backend` label on connection/byte metrics — forward backend name to `recordMetrics`. (`server.go:1001`)
 16. SOCKS5 traffic missing from request/duration/size/byte metrics — add `RecordMetrics` to `SOCKS5HandlerConfig`.
