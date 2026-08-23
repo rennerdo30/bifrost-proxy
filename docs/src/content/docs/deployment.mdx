@@ -264,7 +264,9 @@ logging:
   max_backups: 14     # Keep 14 rotated files (<= 0 keeps all)
 ```
 
-Rotated files are renamed with a timestamp suffix (e.g. `server.log.2026-07-02T10-30-00`).
+Rotated files are renamed with a `YYYYMMDD-HHMMSS.mmm` timestamp suffix (e.g.
+`server.log.20260702-103000.123`). The suffix sorts chronologically, which is how
+`max_backups` decides which files to prune.
 
 Alternatively, if you prefer external rotation, disable the built-in rotation
 (leave `max_size_mb` unset or `0`) and use `logrotate` with `copytruncate` (the

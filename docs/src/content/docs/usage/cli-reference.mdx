@@ -962,8 +962,12 @@ api:
   token: "${BIFROST_API_TOKEN}"
 
 logging:
-  level: "${BIFROST_LOG_LEVEL:-info}"
+  level: "${BIFROST_LOG_LEVEL}"
 ```
+
+> Expansion uses Go's `os.ExpandEnv`: only `${VAR}` and `$VAR` are recognised.
+> Shell-style defaults like `${BIFROST_LOG_LEVEL:-info}` are **not** supported —
+> they expand to the empty string. Export every variable the config references.
 
 ```bash
 # Set variables and start
@@ -971,6 +975,7 @@ export BIFROST_SERVER_ADDRESS="proxy.example.com:7080"
 export BIFROST_SERVER_USERNAME="myuser"
 export BIFROST_SERVER_PASSWORD="mypassword"
 export BIFROST_API_TOKEN="api-secret"
+export BIFROST_LOG_LEVEL="info"
 bifrost-client -c client-config.yaml
 ```
 
