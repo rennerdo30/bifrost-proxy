@@ -7,6 +7,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/pem"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
+	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
 
 // generateTestCAPEM returns a valid self-signed CA certificate in PEM form for
@@ -684,6 +686,82 @@ func TestFactory_Create_Mullvad_OpenVPNRequiresCA(t *testing.T) {
 	_, err := f.Create(cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "ca_cert")
+}
+
+// TestFactory_Create_RejectsUnusableOpenVPNMaterial asserts a CA certificate
+// that parses as PEM but is not a usable X.509 CA is rejected at config-load
+// time. Previously such material passed validation and only failed later, inside
+// the OpenVPN subprocess, with an opaque error.
+func TestFactory_Create_RejectsUnusableOpenVPNMaterial(t *testing.T) {
+	// A PEM block with valid base64 that is not DER at all.
+	garbageCA := string(pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: []byte("this is not a certificate"),
+	}))
+
+	// A tls-auth block of the right shape but placeholder content.
+	fabricatedTLSAuth := vpnprovider.TLSAuthKeyHeader + "\n" +
+		strings.Repeat("0123456789abcdef0123456789abcdef\n", vpnprovider.TLSAuthKeySize*2/vpnprovider.TLSAuthKeyHexCharsPerLine) +
+		vpnprovider.TLSAuthKeyFooter + "\n"
+
+	tests := []struct {
+		name    string
+		cfg     config.BackendConfig
+		wantErr error
+	}{
+		{
+			name: "protonvpn malformed ca",
+			cfg: config.BackendConfig{
+				Name: "proton-bad-ca", Type: "protonvpn", Enabled: true,
+				Config: map[string]any{
+					"username": "u", "password": "p", "protocol": "openvpn", "ca_cert": garbageCA,
+				},
+			},
+			wantErr: vpnprovider.ErrCACertMalformed,
+		},
+		{
+			name: "mullvad malformed ca",
+			cfg: config.BackendConfig{
+				Name: "mullvad-bad-ca", Type: "mullvad", Enabled: true,
+				Config: map[string]any{
+					"account_id": "1234567890123456", "protocol": "openvpn", "ca_cert": garbageCA,
+				},
+			},
+			wantErr: vpnprovider.ErrCACertMalformed,
+		},
+		{
+			name: "nordvpn malformed ca",
+			cfg: config.BackendConfig{
+				Name: "nord-bad-ca", Type: "nordvpn", Enabled: true,
+				Config: map[string]any{
+					"username": "u", "password": "p", "protocol": "openvpn", "ca_cert": garbageCA,
+				},
+			},
+			wantErr: vpnprovider.ErrCACertMalformed,
+		},
+		{
+			name: "protonvpn fabricated tls-auth key",
+			cfg: config.BackendConfig{
+				Name: "proton-bad-tls-auth", Type: "protonvpn", Enabled: true,
+				Config: map[string]any{
+					"username": "u", "password": "p", "protocol": "openvpn",
+					"ca_cert":      generateTestCAPEM(t),
+					"tls_auth_key": fabricatedTLSAuth,
+				},
+			},
+			wantErr: vpnprovider.ErrTLSAuthKeyPlaceholder,
+		},
+	}
+
+	f := NewFactory()
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			backend, err := f.Create(tt.cfg)
+			require.Error(t, err)
+			assert.Nil(t, backend)
+			assert.ErrorIs(t, err, tt.wantErr)
+		})
+	}
 }
 
 func TestFactory_Create_ProtonVPN_MissingUsername(t *testing.T) {

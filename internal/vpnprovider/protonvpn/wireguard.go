@@ -143,7 +143,7 @@ func (c *Client) RegisterWireGuardKey(ctx context.Context, publicKey string) (*V
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	if result.Code != 1000 {
+	if result.Code != apiCodeSuccess {
 		if result.Error != nil {
 			return nil, fmt.Errorf("%w: %s (code %d)", vpnprovider.ErrConfigGenerationFailed, result.Error.Message, result.Error.Code)
 		}
