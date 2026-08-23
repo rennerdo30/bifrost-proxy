@@ -1,0 +1,105 @@
+package mullvad
+
+import (
+	"encoding/pem"
+	"strings"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
+)
+
+// tamperPEMSignature returns certPEM with one signature byte flipped: the
+// certificate still parses, but its self-signature no longer verifies.
+func tamperPEMSignature(t *testing.T, certPEM string) string {
+	t.Helper()
+
+	block, _ := pem.Decode([]byte(certPEM))
+	require.NotNil(t, block)
+
+	der := append([]byte(nil), block.Bytes...)
+	der[len(der)-1] ^= 0xFF
+
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}))
+}
+
+// pemWithGarbageDER is a PEM block that decodes fine but holds no X.509
+// certificate. This is the shape of the CA material that used to be embedded
+// for Mullvad, so config generation must reject it.
+func pemWithGarbageDER() string {
+	return string(pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("not a certificate")}))
+}
+
+// TestOpenVPNConfigRefusesUnusableCryptoMaterial asserts config generation fails
+// closed for every flavor of unusable CA / tls-auth material instead of
+// emitting a profile the OpenVPN subprocess would reject.
+func TestOpenVPNConfigRefusesUnusableCryptoMaterial(t *testing.T) {
+	server := &vpnprovider.Server{
+		Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+			UDPPort:  1194,
+			TCPPort:  443,
+		},
+	}
+
+	fabricatedTLSAuth := vpnprovider.TLSAuthKeyHeader + "\n" +
+		strings.Repeat("0000000000000000000000000000000000000000000000000000000000000000\n", 4) +
+		vpnprovider.TLSAuthKeyFooter + "\n"
+
+	tests := []struct {
+		name    string
+		creds   vpnprovider.Credentials
+		wantErr error
+	}{
+		{name: "no CA", creds: vpnprovider.Credentials{}, wantErr: vpnprovider.ErrCACertMissing},
+		{name: "not PEM", creds: vpnprovider.Credentials{CACert: "not a valid pem"}, wantErr: vpnprovider.ErrCACertNotPEM},
+		{name: "garbage DER", creds: vpnprovider.Credentials{CACert: pemWithGarbageDER()}, wantErr: vpnprovider.ErrCACertMalformed},
+		{
+			name:    "broken self-signature",
+			creds:   vpnprovider.Credentials{CACert: tamperPEMSignature(t, testCACertPEM)},
+			wantErr: vpnprovider.ErrCACertBadSelfSignature,
+		},
+		{
+			name:    "fabricated tls-auth key",
+			creds:   vpnprovider.Credentials{CACert: testCACertPEM, TLSAuthKey: fabricatedTLSAuth},
+			wantErr: vpnprovider.ErrTLSAuthKeyMalformed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config, err := generateOpenVPNConfig(server, tt.creds)
+			require.Error(t, err, "generation must fail closed")
+			assert.Empty(t, config)
+			assert.ErrorIs(t, err, vpnprovider.ErrConfigGenerationFailed)
+			assert.ErrorIs(t, err, tt.wantErr)
+		})
+	}
+}
+
+// TestOpenVPNConfigEmitsUsableCA re-parses the <ca> block of a generated profile
+// so a regression that emits unusable material is caught here rather than by
+// OpenVPN at connect time.
+func TestOpenVPNConfigEmitsUsableCA(t *testing.T) {
+	server := &vpnprovider.Server{
+		Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+		OpenVPN: &vpnprovider.OpenVPNServer{
+			Hostname: "de-fra-ovpn-001.relays.mullvad.net",
+			UDPPort:  1194,
+		},
+	}
+
+	config, err := generateOpenVPNConfig(server, vpnprovider.Credentials{CACert: testCACertPEM})
+	require.NoError(t, err)
+
+	start := strings.Index(config, "<ca>")
+	end := strings.Index(config, "</ca>")
+	require.Greater(t, end, start)
+
+	certs, err := vpnprovider.ParseCACertPEM(config[start+len("<ca>") : end])
+	require.NoError(t, err)
+	assert.Len(t, certs, 1)
+}

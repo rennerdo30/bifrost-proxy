@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io"
 	"log/slog"
@@ -26,6 +25,15 @@ const (
 	// AppVersion is sent to the ProtonVPN API.
 	// Format: <platform>-vpn@<version>
 	AppVersion = "LinuxVPN_4.0.0"
+
+	// apiCodeSuccess is the Proton API's success code; any other value in a
+	// 200 response body indicates a logical error.
+	apiCodeSuccess = 1000
+
+	// caBlockOpenTag and caBlockCloseTag delimit an inline CA certificate in an
+	// OpenVPN profile.
+	caBlockOpenTag  = "<ca>"
+	caBlockCloseTag = "</ca>"
 )
 
 // Client implements the vpnprovider.Provider interface for ProtonVPN.
@@ -188,7 +196,7 @@ func (c *Client) fetchLogicalServers(ctx context.Context) ([]LogicalServer, erro
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	if result.Code != 1000 {
+	if result.Code != apiCodeSuccess {
 		return nil, fmt.Errorf("%w: API returned code %d", vpnprovider.ErrServerListFetchFailed, result.Code)
 	}
 
@@ -364,11 +372,13 @@ func (c *Client) GenerateOpenVPNConfig(ctx context.Context, server *vpnprovider.
 // operator-supplied and only emitted when present.
 func (c *Client) generateOpenVPNConfigContent(server *vpnprovider.Server, protocol string, creds vpnprovider.Credentials) (string, error) {
 	caCert := strings.TrimSpace(creds.CACert)
-	if caCert == "" {
-		return "", fmt.Errorf("%w: ProtonVPN OpenVPN requires a CA certificate to be configured (credentials.ca_cert)", vpnprovider.ErrConfigGenerationFailed)
+	if err := vpnprovider.ValidateCACertPEMAt(caCert, time.Now()); err != nil {
+		return "", fmt.Errorf("%w: ProtonVPN OpenVPN requires a valid CA certificate (credentials.ca_cert): %w",
+			vpnprovider.ErrConfigGenerationFailed, err)
 	}
-	if block, _ := pem.Decode([]byte(caCert)); block == nil {
-		return "", fmt.Errorf("%w: configured ProtonVPN CA certificate is not valid PEM", vpnprovider.ErrConfigGenerationFailed)
+	if err := vpnprovider.ValidateTLSAuthKey(creds.TLSAuthKey); err != nil {
+		return "", fmt.Errorf("%w: configured ProtonVPN tls-auth key is unusable (credentials.tls_auth_key): %w",
+			vpnprovider.ErrConfigGenerationFailed, err)
 	}
 
 	port := server.OpenVPN.UDPPort
@@ -404,12 +414,12 @@ func (c *Client) generateOpenVPNConfigContent(server *vpnprovider.Server, protoc
 	sb.WriteString("auth-user-pass\n")
 
 	// CA certificate (supplied via configuration, validated above).
-	sb.WriteString("<ca>\n")
+	sb.WriteString(caBlockOpenTag + "\n")
 	sb.WriteString(caCert)
 	if !strings.HasSuffix(caCert, "\n") {
 		sb.WriteString("\n")
 	}
-	sb.WriteString("</ca>\n")
+	sb.WriteString(caBlockCloseTag + "\n")
 
 	// Optional tls-auth static key (only emitted when operator-supplied).
 	if tlsAuth := strings.TrimSpace(creds.TLSAuthKey); tlsAuth != "" {
@@ -459,12 +469,15 @@ func (c *Client) checkResponse(resp *http.Response) error {
 
 // AuthInfoResponse represents the response from /auth/info endpoint.
 type AuthInfoResponse struct {
-	Code            int    `json:"Code"`
-	Modulus         string `json:"Modulus"`         // Base64-encoded modulus N
+	Code int `json:"Code"`
+	// Modulus is the SRP group modulus N as a PGP clear-signed message whose
+	// payload is base64-encoded, little-endian N. It is NOT plain base64: the
+	// signature must be verified against Proton's modulus-signing key first.
+	Modulus         string `json:"Modulus"`
 	ServerEphemeral string `json:"ServerEphemeral"` // Base64-encoded server public value B
 	Salt            string `json:"Salt"`            // Base64-encoded salt
 	SRPSession      string `json:"SRPSession"`      // Session identifier for auth request
-	Version         int    `json:"Version"`         // SRP version (affects password hashing)
+	Version         int    `json:"Version"`         // Auth version (selects password hashing)
 }
 
 // AuthRequest represents the authentication request to /auth endpoint.
@@ -486,45 +499,29 @@ type AuthResponse struct {
 	ServerProof  string `json:"ServerProof"` // Base64-encoded server proof M2
 }
 
-// Login authenticates with the ProtonVPN API using SRP-6a protocol.
+// Login authenticates with the ProtonVPN API using the SRP-6a protocol.
+//
+// The modulus returned by /auth/info is a PGP clear-signed message; its
+// signature is verified against Proton's modulus-signing key before any SRP
+// computation, so a tampered or unsigned group is rejected rather than used.
 func (c *Client) Login(ctx context.Context, username, password string) error {
 	c.logger.Debug("starting SRP authentication", "username", username)
 
-	// Step 1: Get auth info (salt, modulus, server ephemeral)
+	// Step 1: Get auth info (salt, signed modulus, server ephemeral)
 	authInfo, err := c.getAuthInfo(ctx, username)
 	if err != nil {
 		return fmt.Errorf("get auth info: %w", err)
 	}
 
-	// Parse SRP parameters
-	modulus, err := ParseSRPModulus(authInfo.Modulus)
-	if err != nil {
-		return fmt.Errorf("parse modulus: %w", err)
-	}
-
-	serverB, err := ParseServerPublicValue(authInfo.ServerEphemeral)
-	if err != nil {
-		return fmt.Errorf("parse server ephemeral: %w", err)
-	}
-
-	salt, err := base64.StdEncoding.DecodeString(authInfo.Salt)
-	if err != nil {
-		return fmt.Errorf("decode salt: %w", err)
-	}
-
-	params := &SRPParameters{
-		Modulus:   modulus,
-		Generator: srpGenerator,
-		Salt:      salt,
-		ServerB:   serverB,
-		Version:   authInfo.Version,
-	}
-
-	// Step 2: Create SRP session and compute proofs
-	srpSession, err := NewSRPSession(username, password, params)
+	// Step 2: Verify the signed modulus, derive the verifier and compute proofs
+	srpSession, err := NewSRPSession(username, password, authInfo)
 	if err != nil {
 		return fmt.Errorf("create SRP session: %w", err)
 	}
+
+	c.logger.Debug("computed SRP proofs",
+		"username", username,
+		"auth_version", authInfo.Version)
 
 	// Step 3: Send authentication request
 	authResp, err := c.sendAuthRequest(ctx, username, srpSession, authInfo.SRPSession)
@@ -595,7 +592,7 @@ func (c *Client) getAuthInfo(ctx context.Context, username string) (*AuthInfoRes
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	if result.Code != 1000 {
+	if result.Code != apiCodeSuccess {
 		return nil, fmt.Errorf("%w: API returned code %d", vpnprovider.ErrAuthenticationFailed, result.Code)
 	}
 
@@ -608,7 +605,7 @@ func (c *Client) sendAuthRequest(ctx context.Context, username string, srpSessio
 
 	authReq := AuthRequest{
 		Username:        username,
-		ClientEphemeral: srpSession.GetPublicA(),
+		ClientEphemeral: srpSession.GetClientEphemeral(),
 		ClientProof:     srpSession.GetClientProof(),
 		SRPSession:      sessionID,
 	}
@@ -641,7 +638,7 @@ func (c *Client) sendAuthRequest(ctx context.Context, username string, srpSessio
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 
-	if result.Code != 1000 {
+	if result.Code != apiCodeSuccess {
 		return nil, fmt.Errorf("%w: API returned code %d", vpnprovider.ErrAuthenticationFailed, result.Code)
 	}
 
@@ -691,8 +688,14 @@ func (c *Client) GetAvailableCountries(ctx context.Context) ([]vpnprovider.Count
 	return countries, nil
 }
 
-// ImportOpenVPNConfig allows importing a user-provided OpenVPN config.
-// This is useful when users want to use a specific config downloaded from ProtonVPN.
+// ImportOpenVPNConfig allows importing a user-provided OpenVPN config, e.g. a
+// profile downloaded from account.protonvpn.com.
+//
+// An inline <ca> block, if present, is held to the same standard as an
+// operator-supplied ca_cert: a profile carrying unusable CA material is rejected
+// here rather than at connect time. A profile that references its CA out of line
+// (a `ca <file>` directive) is passed through as-is; that file is the operator's
+// to manage.
 func (c *Client) ImportOpenVPNConfig(configContent string, username, password string) (*vpnprovider.OpenVPNConfig, error) {
 	if configContent == "" {
 		return nil, fmt.Errorf("%w: config content is empty", vpnprovider.ErrConfigGenerationFailed)
@@ -703,9 +706,33 @@ func (c *Client) ImportOpenVPNConfig(configContent string, username, password st
 		return nil, fmt.Errorf("%w: config does not appear to be an OpenVPN client config", vpnprovider.ErrConfigGenerationFailed)
 	}
 
+	if caCert, ok := inlineCABlock(configContent); ok {
+		if err := vpnprovider.ValidateCACertPEMAt(caCert, time.Now()); err != nil {
+			return nil, fmt.Errorf("%w: imported profile has an unusable <ca> block: %w",
+				vpnprovider.ErrConfigGenerationFailed, err)
+		}
+	}
+
 	return &vpnprovider.OpenVPNConfig{
 		ConfigContent: configContent,
 		Username:      username,
 		Password:      password,
 	}, nil
+}
+
+// inlineCABlock returns the contents of the profile's <ca> block and whether one
+// was present.
+func inlineCABlock(configContent string) (string, bool) {
+	start := strings.Index(configContent, caBlockOpenTag)
+	if start < 0 {
+		return "", false
+	}
+	start += len(caBlockOpenTag)
+
+	end := strings.Index(configContent[start:], caBlockCloseTag)
+	if end < 0 {
+		return "", false
+	}
+
+	return configContent[start : start+end], true
 }
