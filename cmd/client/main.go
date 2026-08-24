@@ -397,7 +397,7 @@ func newServiceCommand() *cobra.Command {
 	serviceCmd := &cobra.Command{
 		Use:   "service",
 		Short: "Manage system service installation",
-		Long:  `Install, uninstall, or check status of bifrost-client as a system service.`,
+		Long:  `Install, start, stop, uninstall, or check bifrost-client as a system service.`,
 	}
 
 	// Install command
@@ -423,6 +423,21 @@ On Windows: Registers a Windows Service`,
 	}
 	uninstallCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-client)")
 
+	// Start/stop commands
+	startCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start the installed service",
+		RunE:  runServiceStart,
+	}
+	startCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-client)")
+
+	stopCmd := &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the installed service",
+		RunE:  runServiceStop,
+	}
+	stopCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-client)")
+
 	// Status command
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -431,7 +446,7 @@ On Windows: Registers a Windows Service`,
 	}
 	statusCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-client)")
 
-	serviceCmd.AddCommand(installCmd, uninstallCmd, statusCmd)
+	serviceCmd.AddCommand(installCmd, startCmd, stopCmd, uninstallCmd, statusCmd)
 	return serviceCmd
 }
 
@@ -469,6 +484,22 @@ func runServiceUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	return mgr.Uninstall()
+}
+
+func runServiceStart(cmd *cobra.Command, args []string) error {
+	mgr, err := service.New(service.Config{Type: service.TypeClient, Name: serviceName})
+	if err != nil {
+		return fmt.Errorf("create service manager: %w", err)
+	}
+	return mgr.Start()
+}
+
+func runServiceStop(cmd *cobra.Command, args []string) error {
+	mgr, err := service.New(service.Config{Type: service.TypeClient, Name: serviceName})
+	if err != nil {
+		return fmt.Errorf("create service manager: %w", err)
+	}
+	return mgr.Stop()
 }
 
 func runServiceStatus(cmd *cobra.Command, args []string) error {

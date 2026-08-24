@@ -27,6 +27,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logging happens; it still authenticates the request
 
 ### Added
+- `bifrost-server service start|stop` and `bifrost-client service start|stop`
+  now control an installed systemd, launchd, or Windows service directly. The
+  commands preserve the platform tool's exit failure and diagnostic output,
+  instead of forcing operators to copy platform-specific instructions after
+  installation
 - `api.allowed_origins`: browser origins permitted to open `/api/v1/ws`, for
   reverse proxies that rewrite `Host` (Home Assistant Ingress, Traefik, nginx,
   Cloudflare Tunnel). Entries are host or `scheme://host` patterns with

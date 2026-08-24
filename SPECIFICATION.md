@@ -505,10 +505,12 @@ bifrost-server ctl config reload
 bifrost-server ctl stats
 bifrost-server ctl health
 
-# Service management (install as system service)
+# Service management
 bifrost-server service install --config /path/to/config.yaml
-bifrost-server service uninstall
+bifrost-server service start
 bifrost-server service status
+bifrost-server service stop
+bifrost-server service uninstall
 
 # Update management
 bifrost-server update check
@@ -549,10 +551,12 @@ bifrost-client ctl vpn disable
 bifrost-client ctl vpn split list
 bifrost-client ctl vpn split add-domain "*.internal.company.com"
 
-# Service management (install as system service)
+# Service management
 bifrost-client service install --config /path/to/config.yaml
-bifrost-client service uninstall
+bifrost-client service start
 bifrost-client service status
+bifrost-client service stop
+bifrost-client service uninstall
 
 # Update management
 bifrost-client update check
@@ -1734,8 +1738,12 @@ Bifrost provides native service management for Windows (SCM), macOS (launchd), a
 
 ### 22.1 Service Commands
 - `install`: Registers the binary as a system service with specified configuration.
+- `start`: Starts an installed service through systemd, launchd, or Windows SCM.
+- `stop`: Stops an installed service without removing it.
 - `uninstall`: Unregisters and removes the service.
 - `status`: Displays the current service status.
+
+Every control command returns platform-tool failures and their diagnostic output; missing service tools and permission errors never report success.
 
 ### 22.2 Platform Specifics
 - **Windows**: Registers as a Windows Service using the SCM. Supports START, STOP, and SHUTDOWN events.
