@@ -51,6 +51,10 @@ export default function App() {
                 <Logs />
               </SectionErrorBoundary>
             } />
+            {/* Catch-all: an unknown hash (a stale bookmark, or a fragment
+                written by something that does not know the hash is the route)
+                must not leave <Outlet /> empty and blank the dashboard. */}
+            <Route path="*" element={<Navigate to="/traffic" replace />} />
           </Route>
         </Routes>
       </HashRouter>

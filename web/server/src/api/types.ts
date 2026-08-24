@@ -76,14 +76,28 @@ export interface RequestLogResponse {
   message?: string
 }
 
+export interface HostCount {
+  host: string
+  count: number
+}
+
+// Mirrors RequestLogStats in internal/api/server/requestlog.go. The server
+// always sends every field, and never sends null for the map/slice fields.
+//
+// Note the two different scopes, as documented on the Go struct:
+// total_requests/total_bytes_* are running totals since server start or the
+// last clear, while count/requests_by_*/top_hosts describe only the entries
+// still retained in the ring buffer (at most max_size of them).
 export interface RequestLogStats {
   enabled: boolean
+  count: number
+  max_size: number
   total_requests: number
   total_bytes_sent: number
   total_bytes_recv: number
   requests_by_method: Record<string, number>
   requests_by_status: Record<string, number>
-  top_hosts: Array<{ host: string; count: number }>
+  top_hosts: HostCount[]
 }
 
 // ============================================
