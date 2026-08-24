@@ -576,6 +576,7 @@ export function SplitTunnelingScreen() {
                     <Switch
                       value={app.enabled}
                       onValueChange={() => handleToggleApp(app)}
+                      accessibilityLabel={`Toggle rule for ${app.name}`}
                       trackColor={{ false: '#374151', true: '#3b82f6' }}
                       thumbColor="#ffffff"
                       disabled={isMutating}
@@ -643,6 +644,7 @@ export function SplitTunnelingScreen() {
                     <Switch
                       value={domainEntry.enabled}
                       onValueChange={() => handleToggleDomain(domainEntry)}
+                      accessibilityLabel={`Toggle rule for ${domainEntry.domain}`}
                       trackColor={{ false: '#374151', true: '#3b82f6' }}
                       thumbColor="#ffffff"
                       disabled={isMutating}
@@ -710,6 +712,7 @@ export function SplitTunnelingScreen() {
                     <Switch
                       value={ipEntry.enabled}
                       onValueChange={() => handleToggleIP(ipEntry)}
+                      accessibilityLabel={`Toggle rule for ${ipEntry.cidr}`}
                       trackColor={{ false: '#374151', true: '#3b82f6' }}
                       thumbColor="#ffffff"
                       disabled={isMutating}
