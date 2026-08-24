@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { RequestTable } from '../components/RequestLog/RequestTable'
 import { ConfirmModal } from '../components/Config/ConfirmModal'
+import { QueryError } from '../components/ui/QueryError'
 import { useToast } from '../components/Toast'
 import { formatBytes } from '../utils'
 
@@ -13,7 +14,7 @@ export function RequestLog() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['requests', limit],
     queryFn: () => api.getRequests(limit),
     refetchInterval: autoRefresh ? 2000 : false,
@@ -189,11 +190,17 @@ export function RequestLog() {
       )}
 
       {/* Request Table */}
-      <RequestTable
-        requests={data?.requests}
-        isLoading={isLoading}
-        enabled={data?.enabled ?? true}
-      />
+      {error ? (
+        <div className="card">
+          <QueryError what="the request log" error={error} onRetry={() => refetch()} />
+        </div>
+      ) : (
+        <RequestTable
+          requests={data?.requests}
+          isLoading={isLoading}
+          enabled={data?.enabled ?? true}
+        />
+      )}
 
       <ConfirmModal
         isOpen={isClearConfirmOpen}
