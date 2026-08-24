@@ -550,7 +550,7 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
             y1={centerY}
             x2={pos.x}
             y2={pos.y}
-            stroke={isDirect ? '#10b981' : '#f59e0b'}
+            stroke={isDirect ? 'var(--bifrost-success)' : 'var(--bifrost-warning)'}
             strokeWidth={selectedPeerId === peer.id ? 3 : 2}
             strokeDasharray={isDirect ? undefined : '4 2'}
             opacity={0.6}
@@ -562,14 +562,14 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
       <g transform={`translate(${centerX}, ${centerY})`}>
         <circle
           r={24}
-          fill="#1e1e2e"
-          stroke="#8b5cf6"
+          fill="var(--bifrost-card)"
+          stroke="var(--bifrost-accent)"
           strokeWidth={3}
         />
         <text
           textAnchor="middle"
           dominantBaseline="middle"
-          fill="#e2e8f0"
+          fill="var(--bifrost-text)"
           fontSize="10"
           fontWeight="bold"
         >
@@ -578,7 +578,7 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
         <text
           y={35}
           textAnchor="middle"
-          fill="#94a3b8"
+          fill="var(--bifrost-muted)"
           fontSize="8"
         >
           {localPeer.virtual_ip || ''}
@@ -609,14 +609,14 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
           >
             <circle
               r={isSelected ? 22 : 18}
-              fill="#1e1e2e"
-              stroke={isDirect ? '#10b981' : '#f59e0b'}
+              fill="var(--bifrost-card)"
+              stroke={isDirect ? 'var(--bifrost-success)' : 'var(--bifrost-warning)'}
               strokeWidth={isSelected ? 3 : 2}
             />
             <text
               textAnchor="middle"
               dominantBaseline="middle"
-              fill="#e2e8f0"
+              fill="var(--bifrost-text)"
               fontSize="8"
             >
               {(peer.name || peer.id).slice(0, 6)}
@@ -624,7 +624,7 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
             <text
               y={28}
               textAnchor="middle"
-              fill="#94a3b8"
+              fill="var(--bifrost-muted)"
               fontSize="7"
             >
               {peer.latency_ms > 0 ? `${peer.latency_ms}ms` : ''}
@@ -636,7 +636,7 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
       {/* Disconnected Peers - smaller, on the side */}
       {disconnectedPeers.length > 0 && (
         <g transform="translate(350, 20)">
-          <text fill="#64748b" fontSize="8" fontWeight="medium">Offline ({disconnectedPeers.length})</text>
+          <text fill="var(--bifrost-muted)" fontSize="8" fontWeight="medium">Offline ({disconnectedPeers.length})</text>
           {disconnectedPeers.slice(0, 5).map((peer, idx) => (
             <g
               key={peer.id}
@@ -653,14 +653,14 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
               }}
               className="cursor-pointer"
             >
-              <circle r={6} fill="#1e1e2e" stroke="#64748b" strokeWidth={1} opacity={0.5} />
-              <text x={12} y={3} fill="#64748b" fontSize="7">
+              <circle r={6} fill="var(--bifrost-card)" stroke="var(--bifrost-muted)" strokeWidth={1} opacity={0.5} />
+              <text x={12} y={3} fill="var(--bifrost-muted)" fontSize="7">
                 {(peer.name || peer.id).slice(0, 8)}
               </text>
             </g>
           ))}
           {disconnectedPeers.length > 5 && (
-            <text y={15 + 5 * 20} fill="#64748b" fontSize="7">
+            <text y={15 + 5 * 20} fill="var(--bifrost-muted)" fontSize="7">
               +{disconnectedPeers.length - 5} more
             </text>
           )}
@@ -669,10 +669,10 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
 
       {/* Legend */}
       <g transform="translate(10, 180)">
-        <line x1="0" y1="0" x2="20" y2="0" stroke="#10b981" strokeWidth={2} />
-        <text x="25" y="3" fill="#94a3b8" fontSize="7">Direct</text>
-        <line x1="70" y1="0" x2="90" y2="0" stroke="#f59e0b" strokeWidth={2} strokeDasharray="4 2" />
-        <text x="95" y="3" fill="#94a3b8" fontSize="7">Relayed</text>
+        <line x1="0" y1="0" x2="20" y2="0" stroke="var(--bifrost-success)" strokeWidth={2} />
+        <text x="25" y="3" fill="var(--bifrost-muted)" fontSize="7">Direct</text>
+        <line x1="70" y1="0" x2="90" y2="0" stroke="var(--bifrost-warning)" strokeWidth={2} strokeDasharray="4 2" />
+        <text x="95" y="3" fill="var(--bifrost-muted)" fontSize="7">Relayed</text>
       </g>
     </svg>
   )

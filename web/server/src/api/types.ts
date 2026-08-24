@@ -1021,17 +1021,6 @@ export interface MeshPeerInfo {
   metadata: Record<string, string>
 }
 
-// Extended mesh peer with stats (for UI display)
-export interface MeshPeer extends MeshPeerInfo {
-  status?: MeshPeerStatus
-  connection_type?: MeshConnectionType
-  latency?: number
-  last_seen?: string
-  joined_at?: string
-  bytes_sent?: number
-  bytes_received?: number
-}
-
 // Mesh network
 export interface MeshNetwork {
   id: string
@@ -1091,29 +1080,3 @@ export interface MeshEventError {
   error: string
 }
 
-// Mesh route
-export interface MeshRoute {
-  dest_peer_id: string
-  dest_ip: string
-  next_hop?: string
-  type: 'direct' | 'next_hop' | 'relay'
-  metric: number
-  latency?: number
-  hop_count: number
-  last_updated: string
-  active: boolean
-}
-
-// Mesh node stats (for overview)
-export interface MeshNodeStats {
-  status: 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
-  peer_count: number
-  connected_peers: number
-  direct_connections: number
-  relayed_connections: number
-  bytes_sent: number
-  bytes_received: number
-  packets_sent: number
-  packets_received: number
-  uptime: number
-}

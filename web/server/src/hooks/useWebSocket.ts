@@ -15,7 +15,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [isConnected, setIsConnected] = useState(false)
-  const [lastMessage, setLastMessage] = useState<WSEvent | null>(null)
 
   const connect = useCallback(() => {
     if (!enabled) return
@@ -38,7 +37,6 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data) as WSEvent
-          setLastMessage(data)
           onMessage?.(data)
         } catch (err) {
           if (import.meta.env.DEV) console.error('WebSocket message parse error:', err)
@@ -76,15 +74,5 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     }
   }, [connect])
 
-  const send = useCallback((data: unknown) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data))
-    }
-  }, [])
-
-  return {
-    isConnected,
-    lastMessage,
-    send,
-  }
+  return { isConnected }
 }
