@@ -373,6 +373,13 @@ This applies everywhere a config file is read: server and client startup,
 `bifrost-server config validate`, hot reload, and the dashboard's config API. A
 rejected hot reload leaves the running configuration in place.
 
+The check reaches into the dynamic sections too: `backends[].config` and
+`auth.providers[].config` are validated against the exact keys their backend
+type or provider plugin reads — including nested blocks such as a WireGuard
+`peer`, a native `users` entry, or an inline `mfa_wrapper` authenticator. A
+config file must also contain exactly one YAML document; content after a `---`
+separator used to be silently ignored and is now an error.
+
 Every shipped example config and both `init` templates pass this check, so a file
 that follows this guide is unaffected. A hand-edited file carrying a typo, or a
 key from an older release, will now fail to start — which is the point: a

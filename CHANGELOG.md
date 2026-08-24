@@ -81,6 +81,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is checked in one pass, so the fix is one edit. If a deployment must come up
   immediately, set `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` to turn the failure back
   into warnings and clean up afterwards
+- **Breaking:** the unknown-key rejection now reaches the dynamic sections the
+  YAML decoder cannot see into: `backends[].config` and
+  `auth.providers[].config` are validated against the exact keys their backend
+  type or provider plugin reads, including nested blocks (a WireGuard `peer`, a
+  native `users` entry, an `mtls` `subject_mapping`, an inline `mfa_wrapper`
+  authenticator). This closes a fail-open: `disabledd: true` on a native user
+  used to load cleanly, validate cleanly, and leave the supposedly disabled
+  user able to authenticate. The same schemas back startup, `validate`, and
+  the dashboard's save and validate endpoints; the escape hatch above applies
+  identically. Two of our own test fixtures carried such dead keys (an apikey
+  `username` that the plugin never read), which is the failure mode in miniature
+- **Breaking:** a config file must contain exactly one YAML document. Content
+  after a `---` separator used to be silently ignored; it is now an error
+- The server dashboard's config save and validate endpoints reject unknown JSON
+  fields instead of dropping them, so validation reports exactly what save and
+  startup would refuse
+- Client config updates through `PUT /api/v1/config` reject unknown keys before
+  anything is applied or persisted. Previously the update reported success,
+  wrote the bogus key to disk, and the next strict reload refused the whole
+  file — a 200 that bricked the config
+- The client API's comment-preserving save path now escapes dollar signs in the
+  values it inserts, matching `config.Save`: a literal `${...}` credential
+  saved from the dashboard survives the reload instead of being expanded, while
+  pre-existing `${VAR}` references in untouched parts of the file keep working
 - **Breaking:** environment-variable expansion in config files no longer expands
   bare `$NAME` references — only `${NAME}` and `${NAME:-fallback}`. This is what
   makes a literal `$` in a value safe. A config file that relied on `$NAME` will

@@ -129,6 +129,25 @@ func DecodeStrict(source string, data []byte, v any) error {
 	return decodeStrict(source, data, v)
 }
 
+// ValidateKnownKeys applies the same unknown-key rejection KnownFields gives
+// typed sections to a dynamic map[string]any section, by re-encoding the map
+// and strict-decoding it into prototype (a pointer to a struct whose yaml tags
+// enumerate every key the consumer reads). yaml.v3's KnownFields cannot see
+// into map-typed fields, so without this a typo inside backends[].config or
+// auth.providers[].config loaded silently — including security-sensitive keys
+// such as a user's "disabled" flag. The EnvAllowUnknownKeys escape hatch
+// applies here exactly as it does to file loading.
+func ValidateKnownKeys(section string, m map[string]any, prototype any) error {
+	if len(m) == 0 {
+		return nil
+	}
+	data, err := yaml.Marshal(m)
+	if err != nil {
+		return fmt.Errorf("%s: %w", section, err)
+	}
+	return decodeStrict(section, data, prototype)
+}
+
 // decodeStrict decodes YAML into v, rejecting unknown keys.
 func decodeStrict(path string, data []byte, v any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
@@ -137,6 +156,13 @@ func decodeStrict(path string, data []byte, v any) error {
 	err := dec.Decode(v)
 	switch {
 	case err == nil:
+		// Exactly one document: content after a `---` separator used to be
+		// silently ignored, which is another way for a setting to look
+		// configured while nothing reads it.
+		var extra any
+		if extraErr := dec.Decode(&extra); !errors.Is(extraErr, io.EOF) {
+			return fmt.Errorf("config %s contains more than one YAML document; everything after the first `---` separator would be ignored", path)
+		}
 		return nil
 	case errors.Is(err, io.EOF):
 		// An empty or comment-only file leaves the defaults in place, which is
