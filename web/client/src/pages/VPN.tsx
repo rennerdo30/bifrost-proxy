@@ -1,4 +1,8 @@
 import { useState } from 'react'
+// Link, not <a href>: under a HashRouter a path href leaves the SPA, reloads
+// the page at that path and repoints BASE_PATH at it, which silently breaks
+// every subsequent API call.
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, VPNConnection } from '../api/client'
 import { formatBytes } from '../utils/formatting'
@@ -224,7 +228,7 @@ export function VPN() {
             <p className="text-sm text-bifrost-error mt-1">{vpnError}</p>
             {vpnError.includes('not configured') && (
               <p className="text-xs text-bifrost-muted mt-2">
-                Go to <a href="/settings" className="text-bifrost-accent underline">Settings → VPN Mode</a> and enable VPN first.
+                Go to <Link to="/settings" className="text-bifrost-accent underline">Settings → VPN Mode</Link> and enable VPN first.
               </p>
             )}
           </div>
@@ -241,7 +245,7 @@ export function VPN() {
         {!isEnabled && vpnStatus?.status === 'disabled' && (
           <div className="mt-4 p-3 bg-bifrost-muted/10 border border-bifrost-border rounded-lg">
             <p className="text-sm text-bifrost-muted">
-              VPN mode is not configured. Enable it in <a href="/settings" className="text-bifrost-accent underline">Settings → VPN Mode</a> to route all traffic through the Bifrost server.
+              VPN mode is not configured. Enable it in <Link to="/settings" className="text-bifrost-accent underline">Settings → VPN Mode</Link> to route all traffic through the Bifrost server.
             </p>
           </div>
         )}
