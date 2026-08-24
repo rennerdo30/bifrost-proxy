@@ -99,6 +99,18 @@ logging:
 A listener is active when its `listen` address is set; there is no per-listener
 `enabled` flag. At least one of the two listeners must be configured.
 
+#### HTTP proxy protocol support
+
+The plain-HTTP forward-proxy path speaks **HTTP/1.1 with one request per
+connection** — the proxy now says so on the wire (`Connection: close` on both
+hops) instead of implying persistence and closing. `CONNECT` tunnels are
+opaque, so HTTP/2 and WebSocket-over-TLS work end-to-end through them; a
+plain-HTTP `Upgrade` (e.g. `ws://`) is honored by switching the connection to
+an opaque tunnel after the origin's `101`. An h2c prior-knowledge request is
+rejected with `505 HTTP Version Not Supported` — HTTP/2 to the proxy itself is
+not supported. Hop-by-hop headers (RFC 7230 §6.1) are stripped in both
+directions and the proxy appends itself to `Via`.
+
 #### SOCKS5 protocol support
 
 The SOCKS5 listener implements the `CONNECT` command only. `BIND` (0x02) and
