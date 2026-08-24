@@ -95,8 +95,9 @@ logging:
 | `server.http.listen` | string | `:7080` | HTTP proxy listen address |
 | `server.socks5.listen` | string | `:7180` | SOCKS5 proxy listen address |
 | `server.<listener>.read_timeout` | duration | `30s` | Inbound request read deadline (see below) |
-| `server.<listener>.write_timeout` | duration | `30s` | Deadline for a single write back to the client |
+| `server.<listener>.write_timeout` | duration | `30s` | No-progress bound on writes back to the client |
 | `server.<listener>.idle_timeout` | duration | `60s` | Bound on a connection with nothing in flight |
+| `server.<listener>.tunnel_idle_timeout` | duration | unset | Opt-in reaper for established tunnels quiet in both directions |
 | `server.<listener>.max_connections` | int | `0` | Per-listener ceiling; 0 = unlimited |
 | `server.graceful_period` | duration | `30s` | Graceful shutdown period |
 
@@ -116,26 +117,38 @@ its peer.
   HTTP, the whole handshake (method negotiation, optional username/password
   exchange, connect request) for SOCKS5. This is an absolute bound, which is
   what makes it effective against a client that trickles a request one byte at
-  a time. Once the headers are in it applies per read instead, so a large
+  a time. It applies to TLS-terminated listeners too — the TLS handshake must
+  complete within it — and to every decrypted request on a MITM-intercepted
+  tunnel. Once the headers are in it applies per read instead, so a large
   upload may take arbitrarily long overall as long as it keeps making progress.
-- **`write_timeout`** — the deadline for a *single* write back to the client,
-  not for the whole response. A streaming response (server-sent events, a
-  chunked feed, a large download) is therefore never truncated while it is
-  still making progress, but a client that has stopped reading cannot pin the
-  connection indefinitely.
+- **`write_timeout`** — a **no-progress** bound on writes back to the client:
+  each window of `write_timeout` must deliver at least one byte. A streaming
+  response (server-sent events, a chunked feed, a large download) is never
+  truncated while it keeps moving — even to a very slow receiver — but a
+  client that has stopped reading entirely is timed out within one window.
+  (On a TLS-terminated listener a stalled window is fatal to the connection, a
+  constraint of Go's TLS implementation; a progressing response is still never
+  cut off.)
 - **`idle_timeout`** — bounds a connection with no request in flight: one that
-  has been accepted but has sent nothing, the wait between exchanges on an
-  intercepted (MITM) tunnel, and an established `CONNECT` tunnel or SOCKS5
-  relay in which **neither** direction has carried data. Activity in either
-  direction resets it, so an actively transferring tunnel is never interrupted
-  regardless of how long it lives.
+  has been accepted but has sent nothing, or the wait between exchanges on a
+  kept-alive loop, including a MITM-intercepted tunnel. It deliberately does
+  **not** apply to an established opaque `CONNECT` tunnel or SOCKS5 relay.
+- **`tunnel_idle_timeout`** — off by default. When set, an **established**
+  tunnel or relay in which *neither* direction has carried data for the period
+  is closed. An actively transferring tunnel is never interrupted, even to a
+  very slow receiver — each window only requires progress, not completion.
 
-:::caution[`idle_timeout` closes idle tunnels]
-Because `idle_timeout` reaps established tunnels that have gone quiet, a
-protocol that holds a `CONNECT` tunnel open without traffic — SSH, IMAP IDLE, a
-WebSocket with no keepalive pings — needs `idle_timeout` raised above its own
-quiet period, or set to `0` to disable reaping entirely.
+:::caution[quiet tunnels are valid traffic]
+A protocol that holds a `CONNECT` tunnel open in silence — SSH, IMAP IDLE, a
+WebSocket without keepalive pings — is working as intended, which is why idle
+tunnels are **not** reaped by default. Set `tunnel_idle_timeout` only on
+listeners exposed to untrusted clients that could park connections, and above
+the longest legitimate quiet period you expect.
 :::
+
+The same three listener timeouts exist on the client's `proxy.http` and
+`proxy.socks5` blocks and are applied the same way; they default to `0`
+(disabled) there, since the client's listeners are typically loopback-only.
 
 #### SOCKS5 protocol support
 

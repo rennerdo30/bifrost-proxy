@@ -76,6 +76,7 @@ type SOCKS5Handler struct {
 	readTimeout          time.Duration
 	writeTimeout         time.Duration
 	idleTimeout          time.Duration
+	tunnelIdleTimeout    time.Duration
 	onConnect            func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	onError              func(ctx context.Context, conn net.Conn, host string, err error)
 	recordMetrics        func(protocol, method, status, backend string, duration time.Duration, sent, recv int64)
@@ -110,9 +111,14 @@ type SOCKS5HandlerConfig struct {
 	WriteTimeout time.Duration
 
 	// IdleTimeout is the listener's idle_timeout. It bounds the wait for the
-	// first handshake byte and, on the established relay, the time both
-	// directions may stay quiet before the relay is closed. Zero disables it.
+	// first handshake byte. It does NOT apply to the established relay: a
+	// quiet-but-open relay is valid traffic. Zero disables it.
 	IdleTimeout time.Duration
+
+	// TunnelIdleTimeout, when positive, opts the ESTABLISHED relay into idle
+	// reaping: it is closed once NEITHER direction has carried data for this
+	// period. Off by default.
+	TunnelIdleTimeout time.Duration
 
 	OnConnect func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	OnError   func(ctx context.Context, conn net.Conn, host string, err error)
@@ -126,9 +132,8 @@ type SOCKS5HandlerConfig struct {
 
 // NewSOCKS5Handler creates a new SOCKS5 proxy handler.
 func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
-	if cfg.DialTimeout == 0 {
-		cfg.DialTimeout = defaultDialTimeout
-	}
+	// DialTimeout keeps its zero value: it is the global network.dial_timeout
+	// fallback, and the backends own the precedence chain (see http.go).
 	if cfg.DialNetwork == "" {
 		cfg.DialNetwork = defaultDialNetwork
 	}
@@ -146,6 +151,7 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 		readTimeout:          cfg.ReadTimeout,
 		writeTimeout:         cfg.WriteTimeout,
 		idleTimeout:          cfg.IdleTimeout,
+		tunnelIdleTimeout:    cfg.TunnelIdleTimeout,
 		onConnect:            cfg.OnConnect,
 		onError:              cfg.OnError,
 		recordMetrics:        cfg.RecordMetrics,
@@ -568,8 +574,10 @@ func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target
 	// silent in one direction for a long time, so read_timeout and
 	// write_timeout must not survive into it. idle_timeout takes over and fires
 	// only when neither direction has moved data.
+	// An idle-but-open relay lives until a peer closes it unless the operator
+	// opted into reaping with tunnel_idle_timeout (see the HTTP CONNECT path).
 	connDeadlines(conn).enterTunnel()
-	CopyBidirectionalWithIdle(ctx, conn, targetConn, h.idleTimeout)
+	CopyBidirectionalWithIdle(ctx, conn, targetConn, h.tunnelIdleTimeout)
 	return nil
 }
 

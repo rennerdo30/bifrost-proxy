@@ -30,10 +30,6 @@ import (
 // that failed before backend selection.
 const backendNameCache = "cache"
 
-// defaultDialTimeout bounds an outbound backend dial when neither the listener
-// caller nor network.dial_timeout supplies one.
-const defaultDialTimeout = 30 * time.Second
-
 // defaultDialNetwork is the address family used for outbound dials when the
 // caller does not restrict it.
 const defaultDialNetwork = "tcp"
@@ -52,22 +48,23 @@ type NegotiateResult struct {
 
 // HTTPHandler handles HTTP and HTTPS CONNECT proxy requests.
 type HTTPHandler struct {
-	getBackend       func(domain, clientIP string) backend.Backend
-	authenticate     func(ctx context.Context, username, password string) (*auth.UserInfo, error)
-	negotiateAuth    func(ctx context.Context, req *http.Request) (*NegotiateResult, error)
-	authRequired     bool
-	accessCheck      func(clientIP string) (bool, string)
-	rateLimitUser    func(username, clientIP string) bool
-	accessLogger     accesslog.Logger
-	bandwidth        *ratelimit.BandwidthConfig
-	dialTimeout      time.Duration
-	dialNetwork      string
-	readTimeout      time.Duration
-	writeTimeout     time.Duration
-	idleTimeout      time.Duration
-	onConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
-	onError          func(ctx context.Context, conn net.Conn, host string, err error)
-	cacheInterceptor *cache.Interceptor
+	getBackend        func(domain, clientIP string) backend.Backend
+	authenticate      func(ctx context.Context, username, password string) (*auth.UserInfo, error)
+	negotiateAuth     func(ctx context.Context, req *http.Request) (*NegotiateResult, error)
+	authRequired      bool
+	accessCheck       func(clientIP string) (bool, string)
+	rateLimitUser     func(username, clientIP string) bool
+	accessLogger      accesslog.Logger
+	bandwidth         *ratelimit.BandwidthConfig
+	dialTimeout       time.Duration
+	dialNetwork       string
+	readTimeout       time.Duration
+	writeTimeout      time.Duration
+	idleTimeout       time.Duration
+	tunnelIdleTimeout time.Duration
+	onConnect         func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
+	onError           func(ctx context.Context, conn net.Conn, host string, err error)
+	cacheInterceptor  *cache.Interceptor
 	// mitm enables live HTTPS interception when non-nil. It defaults to nil
 	// (OFF): when nil, CONNECT requests use the opaque tunnel path unchanged.
 	mitm          *MITMInterceptor
@@ -107,11 +104,15 @@ type HTTPHandlerConfig struct {
 
 	// IdleTimeout is the listener's idle_timeout. It bounds a connection with
 	// no request in flight -- one that has been accepted but has sent nothing,
-	// or a kept-alive exchange loop between requests -- and, on an established
-	// CONNECT tunnel, the time both directions may stay quiet before the
-	// tunnel is closed. Zero disables it, leaving idle connections to be
-	// closed only by a peer.
+	// or a kept-alive exchange loop between requests. It does NOT apply to an
+	// established opaque CONNECT tunnel: a quiet-but-open tunnel (SSH, IMAP
+	// IDLE, a WebSocket without pings) is valid traffic. Zero disables it.
 	IdleTimeout time.Duration
+
+	// TunnelIdleTimeout, when positive, opts an ESTABLISHED opaque CONNECT
+	// tunnel into idle reaping: the tunnel is closed once NEITHER direction
+	// has carried data for this period. Off by default.
+	TunnelIdleTimeout time.Duration
 
 	OnConnect        func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	OnError          func(ctx context.Context, conn net.Conn, host string, err error)
@@ -130,31 +131,33 @@ type HTTPHandlerConfig struct {
 
 // NewHTTPHandler creates a new HTTP proxy handler.
 func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
-	if cfg.DialTimeout == 0 {
-		cfg.DialTimeout = defaultDialTimeout
-	}
+	// DialTimeout deliberately keeps its zero value: it is the global
+	// network.dial_timeout, a FALLBACK the backends consult only when they
+	// have no connect_timeout of their own. Injecting a default here used to
+	// cap an explicit 60s backend timeout at 30s.
 	if cfg.DialNetwork == "" {
 		cfg.DialNetwork = defaultDialNetwork
 	}
 	return &HTTPHandler{
-		getBackend:       cfg.GetBackend,
-		authenticate:     cfg.Authenticate,
-		negotiateAuth:    cfg.NegotiateAuth,
-		authRequired:     cfg.AuthRequired,
-		accessCheck:      cfg.AccessCheck,
-		rateLimitUser:    cfg.RateLimitUser,
-		accessLogger:     cfg.AccessLogger,
-		bandwidth:        cfg.Bandwidth,
-		dialTimeout:      cfg.DialTimeout,
-		dialNetwork:      cfg.DialNetwork,
-		readTimeout:      cfg.ReadTimeout,
-		writeTimeout:     cfg.WriteTimeout,
-		idleTimeout:      cfg.IdleTimeout,
-		onConnect:        cfg.OnConnect,
-		onError:          cfg.OnError,
-		cacheInterceptor: cfg.CacheInterceptor,
-		mitm:             cfg.MITM,
-		recordMetrics:    cfg.RecordMetrics,
+		getBackend:        cfg.GetBackend,
+		authenticate:      cfg.Authenticate,
+		negotiateAuth:     cfg.NegotiateAuth,
+		authRequired:      cfg.AuthRequired,
+		accessCheck:       cfg.AccessCheck,
+		rateLimitUser:     cfg.RateLimitUser,
+		accessLogger:      cfg.AccessLogger,
+		bandwidth:         cfg.Bandwidth,
+		dialTimeout:       cfg.DialTimeout,
+		dialNetwork:       cfg.DialNetwork,
+		readTimeout:       cfg.ReadTimeout,
+		writeTimeout:      cfg.WriteTimeout,
+		idleTimeout:       cfg.IdleTimeout,
+		tunnelIdleTimeout: cfg.TunnelIdleTimeout,
+		onConnect:         cfg.OnConnect,
+		onError:           cfg.OnError,
+		cacheInterceptor:  cfg.CacheInterceptor,
+		mitm:              cfg.MITM,
+		recordMetrics:     cfg.RecordMetrics,
 	}
 }
 
@@ -211,11 +214,26 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 	// certificate, expose the leaf (and full chain, when intermediates were
 	// presented) on the context so the mTLS auth plugin can authenticate the
 	// request and build a verification path through intermediate CAs.
+	//
+	// peerCertificateChain completes the TLS handshake, whose reads and writes
+	// happen below this wrapper -- without a deadline armed directly on the
+	// socket, a client could stall the handshake forever and pin this
+	// goroutine: the original slowloris finding, one layer down.
+	handshakeBounded := false
+	if _, isTLS := conn.(tlsConnectionStater); isTLS {
+		handshakeBounded = deadlines.beginHandshake()
+	}
 	if chain := peerCertificateChain(conn); len(chain) > 0 {
 		ctx = context.WithValue(ctx, auth.ClientCertContextKey, chain[0])
 		if len(chain) > 1 {
 			ctx = context.WithValue(ctx, auth.ClientCertChainContextKey, chain)
 		}
+	}
+	if handshakeBounded {
+		// Clear the absolute handshake deadlines so they cannot fire later
+		// inside a long response or an established tunnel; the per-phase
+		// deadlines below take over.
+		deadlines.endHandshake()
 	}
 
 	// Read the first request. idle_timeout bounds the wait for its first byte
@@ -417,10 +435,13 @@ func (h *HTTPHandler) handleConnect(ctx context.Context, conn net.Conn, req *htt
 	// Drop every socket deadline first. The tunnel is opaque and may
 	// legitimately stay silent in one direction for a long time, so a
 	// read_timeout on the client side or a write_timeout on a hijacked
-	// connection would kill working traffic. idle_timeout takes over, and it
-	// only fires when neither direction has moved data.
+	// connection would kill working traffic. By default an idle-but-open
+	// tunnel lives until a peer closes it -- SSH, IMAP IDLE or a WebSocket
+	// without pings holds a silent tunnel legitimately -- and only the opt-in
+	// tunnel_idle_timeout reaps a pair in which neither direction has moved
+	// data for the configured period.
 	deadlines.enterTunnel()
-	CopyBidirectionalWithIdle(ctx, conn, targetConn, h.idleTimeout)
+	CopyBidirectionalWithIdle(ctx, conn, targetConn, h.tunnelIdleTimeout)
 	return nil
 }
 

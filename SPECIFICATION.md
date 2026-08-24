@@ -294,9 +294,9 @@ api:
 proxy:
   http:
     listen: "127.0.0.1:7380"    # Local HTTP/HTTPS proxy
-    read_timeout: "30s"         # NOT YET APPLIED by the client listener
-    write_timeout: "30s"        # NOT YET APPLIED by the client listener
-    idle_timeout: "60s"         # NOT YET APPLIED by the client listener
+    read_timeout: "30s"         # inbound request deadline (0 = disabled; the client default)
+    write_timeout: "30s"        # no-progress bound on writes to the local client
+    idle_timeout: "60s"         # bound on a connection with nothing in flight
   socks5:
     listen: "127.0.0.1:7381"    # Local SOCKS5 proxy
 

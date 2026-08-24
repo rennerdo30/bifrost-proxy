@@ -253,8 +253,9 @@ each:
 | Symptom | Setting |
 |---------|---------|
 | A slow client's request is cut off before it finishes arriving | `read_timeout` |
-| A response to a slow or stalled client is cut off | `write_timeout` |
-| A `CONNECT` tunnel or SOCKS5 relay dies while sitting quiet | `idle_timeout` |
+| A response to a client that stopped reading is cut off | `write_timeout` |
+| An accepted-but-silent connection is closed too eagerly | `idle_timeout` |
+| A `CONNECT` tunnel or SOCKS5 relay dies while sitting quiet | `tunnel_idle_timeout` — off by default, so if a quiet tunnel dies, something else closed it |
 
 Outbound dial timeouts are a property of the backend, not the listener, and are
 set in the backend's `config` block:

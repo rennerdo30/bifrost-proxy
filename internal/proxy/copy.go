@@ -29,8 +29,13 @@ func CopyBidirectionalWithIdle(ctx context.Context, conn1, conn2 net.Conn, idleT
 	}
 
 	clock := newActivityClock()
-	watched1 := &activityConn{Conn: conn1, clock: clock}
-	watched2 := &activityConn{Conn: conn2, clock: clock}
+	// The write-progress window is half the idle timeout so that a slow but
+	// progressing transfer marks the clock strictly more often than the
+	// watchdog's reap threshold — a window equal to the timeout would race the
+	// watchdog at the boundary.
+	window := idleTimeout / 2
+	watched1 := &activityConn{Conn: conn1, clock: clock, window: window}
+	watched2 := &activityConn{Conn: conn2, clock: clock, window: window}
 
 	stop := make(chan struct{})
 	watchdogDone := make(chan struct{})
@@ -58,7 +63,10 @@ func CopyBidirectionalWithIdle(ctx context.Context, conn1, conn2 net.Conn, idleT
 				// deadline unblocks the in-flight io.Copy calls just as well,
 				// but leaves the actual Close to the copy loop's caller --
 				// closing a connection from this goroutine would race the copy
-				// goroutines still reading and writing it.
+				// goroutines still reading and writing it. The expired flag is
+				// set first so a progress-aware write cannot re-arm its window
+				// and undo the expiry.
+				clock.expired.Store(true)
 				expireDeadlines(conn1)
 				expireDeadlines(conn2)
 				return

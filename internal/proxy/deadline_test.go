@@ -266,9 +266,10 @@ func TestHTTPHandler_TrickledHeadersAreClosed(t *testing.T) {
 }
 
 // TestHTTPHandler_ActiveTunnelSurvivesThenIdleReaped is the both-directions
-// test the fix has to satisfy: an actively used CONNECT tunnel must live far
-// longer than read_timeout, write_timeout and idle_timeout combined, and must
-// then be reaped once it goes quiet.
+// test for the OPT-IN tunnel reaper: with tunnel_idle_timeout set, an actively
+// used CONNECT tunnel must live far longer than every configured timeout
+// combined, and must then be reaped once it goes quiet. (Without the opt-in a
+// quiet tunnel lives forever — TestHTTPHandler_IdleTunnelSurvivesByDefault.)
 func TestHTTPHandler_ActiveTunnelSurvivesThenIdleReaped(t *testing.T) {
 	target := newEchoServer(t)
 
@@ -278,11 +279,12 @@ func TestHTTPHandler_ActiveTunnelSurvivesThenIdleReaped(t *testing.T) {
 
 	idle := 400 * time.Millisecond
 	handler := NewHTTPHandler(HTTPHandlerConfig{
-		GetBackend:   func(domain, clientIP string) backend.Backend { return directBackend },
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  tinyTimeout,
-		WriteTimeout: tinyTimeout,
-		IdleTimeout:  idle,
+		GetBackend:        func(domain, clientIP string) backend.Backend { return directBackend },
+		DialTimeout:       5 * time.Second,
+		ReadTimeout:       tinyTimeout,
+		WriteTimeout:      tinyTimeout,
+		IdleTimeout:       idle,
+		TunnelIdleTimeout: idle,
 	})
 
 	clientConn, serverConn := net.Pipe()
@@ -324,13 +326,73 @@ func TestHTTPHandler_ActiveTunnelSurvivesThenIdleReaped(t *testing.T) {
 	}
 	require.Greater(t, echoes, 2, "test did not exercise the tunnel")
 
-	// Now go quiet. The watchdog must reap the tunnel.
+	// Now go quiet. With the opt-in set, the watchdog must reap the tunnel.
 	require.NoError(t, clientConn.SetDeadline(time.Time{}))
 	select {
 	case <-served:
 	case <-time.After(settleWait):
-		t.Fatal("handler held an idle CONNECT tunnel open; idle_timeout was not applied to the tunnel")
+		t.Fatal("handler held an idle CONNECT tunnel open; tunnel_idle_timeout was not applied")
 	}
+}
+
+// TestHTTPHandler_IdleTunnelSurvivesByDefault pins the default contract: an
+// established, quiet-but-open CONNECT tunnel is VALID traffic (SSH, IMAP IDLE,
+// a WebSocket without pings) and must not be reaped by idle_timeout — only the
+// explicit tunnel_idle_timeout opt-in reaps tunnels.
+func TestHTTPHandler_IdleTunnelSurvivesByDefault(t *testing.T) {
+	target := newEchoServer(t)
+
+	directBackend := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, directBackend.Start(context.Background()))
+	defer directBackend.Stop(context.Background()) //nolint:errcheck // test cleanup
+
+	idle := 150 * time.Millisecond
+	handler := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend:   func(domain, clientIP string) backend.Backend { return directBackend },
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  tinyTimeout,
+		WriteTimeout: tinyTimeout,
+		IdleTimeout:  idle,
+		// TunnelIdleTimeout deliberately unset.
+	})
+
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		handler.ServeConn(context.Background(), serverConn)
+	}()
+
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodConnect, "http://"+target, nil)
+	require.NoError(t, err)
+	req.Host = target
+	require.NoError(t, req.Write(clientConn))
+
+	reader := bufio.NewReader(clientConn)
+	resp, err := http.ReadResponse(reader, req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Stay completely silent for many times idle_timeout: the tunnel must
+	// still be alive and usable afterwards.
+	time.Sleep(6 * idle)
+	select {
+	case <-served:
+		t.Fatal("an idle-but-open CONNECT tunnel was reaped without the tunnel_idle_timeout opt-in")
+	default:
+	}
+
+	payload := []byte("still-alive\n")
+	require.NoError(t, clientConn.SetDeadline(time.Now().Add(settleWait)))
+	_, err = clientConn.Write(payload)
+	require.NoError(t, err)
+	got := make([]byte, len(payload))
+	_, err = io.ReadFull(reader, got)
+	require.NoError(t, err, "the tunnel must still carry data after a long quiet period")
+	require.Equal(t, payload, got)
 }
 
 // TestHTTPHandler_StreamingResponseIsNotTruncated guards the other half of the
@@ -444,11 +506,12 @@ func TestSOCKS5Handler_ActiveRelaySurvivesThenIdleReaped(t *testing.T) {
 
 	idle := 400 * time.Millisecond
 	handler := NewSOCKS5Handler(SOCKS5HandlerConfig{
-		GetBackend:   func(domain, clientIP string) backend.Backend { return directBackend },
-		DialTimeout:  5 * time.Second,
-		ReadTimeout:  tinyTimeout,
-		WriteTimeout: tinyTimeout,
-		IdleTimeout:  idle,
+		GetBackend:        func(domain, clientIP string) backend.Backend { return directBackend },
+		DialTimeout:       5 * time.Second,
+		ReadTimeout:       tinyTimeout,
+		WriteTimeout:      tinyTimeout,
+		IdleTimeout:       idle,
+		TunnelIdleTimeout: idle,
 	})
 
 	clientConn, serverConn := net.Pipe()
@@ -504,7 +567,7 @@ func TestSOCKS5Handler_ActiveRelaySurvivesThenIdleReaped(t *testing.T) {
 	select {
 	case <-served:
 	case <-time.After(settleWait):
-		t.Fatal("SOCKS5 handler held an idle relay open; idle_timeout was not applied to the relay")
+		t.Fatal("SOCKS5 handler held an idle relay open; tunnel_idle_timeout was not applied to the relay")
 	}
 }
 
