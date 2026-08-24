@@ -205,6 +205,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   watching the already-closed channel exited immediately, so the server health
   monitor never probed again. Each run now gets its own shutdown channel,
   listeners and API server, and a stopped client can be started again cleanly
+- Start and Stop are serialized for their complete duration: a Start racing a
+  Stop used to be admitted the moment the running flag flipped, bring up a
+  fresh run, and then have that run's VPN, mesh, updater, system proxy and
+  connection drain dismantled by the tail of the old Stop. A dedicated
+  lifecycle lock now holds the new Start out until the previous teardown has
+  entirely finished
+- **The system tray is now an honest process-lifetime resource.** The tray
+  library (fyne.io/systray) can only ever run once per process — a second run
+  exits immediately on Linux and its quit is guarded by a package-global
+  once — but the client created a new tray on every Start and quit it on every
+  Stop, leaking one click-loop goroutine per restart cycle and leaving a dead
+  icon after the first stop. The tray is now created once, survives every
+  Stop/Start cycle (Stop just flips the icon to disconnected), and its
+  callbacks always target the currently registered client, so it also survives
+  a full client rebuild. A data race on the tray's status field, between the
+  client's stop path and the tray's own click loop, was fixed along the way
 - A client start that could not bind its HTTP or SOCKS5 listener left the client
   reporting itself as running, so the desktop app's Connect button (which only
   starts a client that is not already running) reported success from then on
@@ -214,6 +230,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Connected", with the green shield, whenever a server address was configured —
   reachable or not. It now performs a real, short reachability probe against the
   configured server, the same check the client's own API already used
+- **Desktop server selection now switches the live connection.** SelectServer
+  used to mutate only the configuration, so every future dial (and the status
+  probe) kept using the previous upstream while the UI displayed the new one;
+  it now goes through the client's own selection, which reconfigures the live
+  connection and persists the choice. GetServers stopped labeling the selected
+  server "connected" merely because the local client process was running — the
+  selected entry now carries a real probed status and the rest are "available"
+- The desktop Connect button follows the local client lifecycle instead of
+  upstream reachability. When the upstream went down, the button flipped to
+  "Connect" — but clicking it was a no-op on the already-running client, and
+  the server list simultaneously said "Connected". A running client with an
+  unreachable upstream now shows a distinct amber state whose action is
+  Disconnect
 - The desktop app's traffic panel rendered permanent zeros as live telemetry.
   Bytes sent, bytes received and active connections are now read from the
   client's existing counters

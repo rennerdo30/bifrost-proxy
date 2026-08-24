@@ -383,3 +383,140 @@ func TestConnectDisconnectCycle(t *testing.T) {
 		t.Error("IsConnected = true after the second Disconnect")
 	}
 }
+
+// TestSelectServer_SwitchesLiveUpstreamAndProbe is the regression for the
+// contradictory desktop state: SelectServer used to mutate only the config,
+// so GetStatus kept probing the OLD server (reporting Connected for a
+// selection that pointed elsewhere) and GetServers labeled the selected
+// server "connected" merely because the local client was running.
+func TestSelectServer_SwitchesLiveUpstreamAndProbe(t *testing.T) {
+	// alpha is a live listener; beta is dead.
+	liveLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer liveLn.Close()
+	go func() {
+		for {
+			conn, acceptErr := liveLn.Accept()
+			if acceptErr != nil {
+				return
+			}
+			_ = conn.Close()
+		}
+	}()
+	aliveAddr := liveLn.Addr().String()
+	deadAddr := freeAddr(t)
+
+	cfg := &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address:  aliveAddr,
+			Protocol: "http",
+			Timeout:  config.Duration(500 * time.Millisecond),
+		},
+		Servers: []config.NamedServer{
+			{Name: "alpha", Address: aliveAddr, Protocol: "http", IsDefault: true},
+			{Name: "beta", Address: deadAddr, Protocol: "http"},
+		},
+	}
+	app := newTestApp(t, cfg)
+
+	if err := app.client.Start(app.ctx); err != nil {
+		t.Fatalf("client.Start: %v", err)
+	}
+	defer stopApp(t, app)
+
+	// Sanity: the initially selected server is reachable.
+	status, err := app.GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if !status.ServerConnected {
+		t.Fatal("precondition: the live alpha server should probe as connected")
+	}
+
+	// Select the unreachable server while the old one is still alive — the
+	// review's exact scenario.
+	if err := app.SelectServer("beta"); err != nil {
+		t.Fatalf("SelectServer: %v", err)
+	}
+
+	status, err = app.GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if status.ServerAddress != deadAddr {
+		t.Errorf("ServerAddress = %q, want the selected %q", status.ServerAddress, deadAddr)
+	}
+	if status.ServerConnected {
+		t.Error("ServerConnected = true after selecting an unreachable server; " +
+			"the probe must follow the selection, not the previous upstream")
+	}
+
+	servers, err := app.GetServers()
+	if err != nil {
+		t.Fatalf("GetServers: %v", err)
+	}
+	byName := map[string]string{}
+	for _, s := range servers {
+		byName[s.Name] = s.Status
+	}
+	if byName["beta"] != "disconnected" {
+		t.Errorf("selected unreachable server status = %q, want %q "+
+			"(a running local client must not fabricate a connected label)",
+			byName["beta"], "disconnected")
+	}
+	if byName["alpha"] != "available" {
+		t.Errorf("unselected server status = %q, want %q", byName["alpha"], "available")
+	}
+
+	// Selecting an unknown name is an error, not a silent success.
+	if err := app.SelectServer("missing"); err == nil {
+		t.Error("SelectServer(missing) = nil, want error")
+	}
+}
+
+// TestConnectDisconnect_UnreachableUpstreamStillStops proves the lifecycle
+// contract the Connect button relies on: a running client with an unreachable
+// upstream is still running, and Disconnect — not Connect — is the available
+// action and actually stops it.
+func TestConnectDisconnect_UnreachableUpstreamStillStops(t *testing.T) {
+	app := newTestApp(t, &config.ClientConfig{
+		Proxy: config.ClientProxySettings{
+			HTTP: config.ListenerConfig{Listen: "127.0.0.1:0"},
+		},
+		Server: config.ServerConnection{
+			Address:  freeAddr(t),
+			Protocol: "http",
+			Timeout:  config.Duration(500 * time.Millisecond),
+		},
+	})
+
+	if err := app.Connect(); err != nil {
+		t.Fatalf("Connect: %v", err)
+	}
+	if !app.client.Running() {
+		t.Fatal("client should be running after Connect")
+	}
+
+	status, err := app.GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus: %v", err)
+	}
+	if status.Status != "running" {
+		t.Errorf("Status = %q, want running: the UI derives the button action from it", status.Status)
+	}
+	if status.ServerConnected {
+		t.Error("ServerConnected should be false for an unreachable upstream")
+	}
+
+	if err := app.Disconnect(); err != nil {
+		t.Fatalf("Disconnect: %v", err)
+	}
+	if app.client.Running() {
+		t.Error("client should be stopped after Disconnect")
+	}
+}

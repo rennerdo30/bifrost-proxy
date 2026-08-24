@@ -394,25 +394,54 @@ func (a *App) GetStatus() (*StatusResponse, error) {
 
 // GetServers returns the list of configured servers.
 func (a *App) GetServers() ([]ServerInfo, error) {
+	// Snapshot under the lock, probe outside it: the reachability dial below
+	// must not block Connect/Disconnect or any other writer while it runs.
 	a.mu.RLock()
-	defer a.mu.RUnlock()
+	if a.clientCfg == nil {
+		a.mu.RUnlock()
+		return []ServerInfo{}, nil
+	}
+	activeAddress := a.clientCfg.Server.Address
+	named := make([]config.NamedServer, len(a.clientCfg.Servers))
+	copy(named, a.clientCfg.Servers)
+	legacy := config.NamedServer{
+		Name:      "Default Server",
+		Address:   a.clientCfg.Server.Address,
+		Protocol:  a.clientCfg.Server.Protocol,
+		Username:  a.clientCfg.Server.Username,
+		Password:  a.clientCfg.Server.Password,
+		IsDefault: true,
+	}
+	c := a.client
+	ctx := a.ctx
+	a.mu.RUnlock()
+
+	// The selected server's status is a real reachability probe, never "the
+	// local client happens to be running" — that fabricated a Connected label
+	// for an unreachable upstream. Only the selected entry is probed (one
+	// bounded dial per call); the rest are reported as available.
+	activeStatus := "available"
+	if c != nil && c.Running() && activeAddress != "" {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, serverProbeTimeout)
+		if c.ServerConnected(probeCtx) {
+			activeStatus = "connected"
+		} else {
+			activeStatus = "disconnected"
+		}
+		cancel()
+	}
 
 	servers := []ServerInfo{}
 
-	if a.clientCfg == nil {
-		return servers, nil
-	}
-
-	// Get the currently active server address
-	activeAddress := a.clientCfg.Server.Address
-
 	// Return servers from the Servers slice
-	if len(a.clientCfg.Servers) > 0 {
-		for _, s := range a.clientCfg.Servers {
+	if len(named) > 0 {
+		for _, s := range named {
 			status := "available"
-			// Check if this is the active server
-			if s.Address == activeAddress && a.client != nil && a.client.Running() {
-				status = "connected"
+			if s.Address == activeAddress {
+				status = activeStatus
 			}
 
 			servers = append(servers, ServerInfo{
@@ -425,37 +454,53 @@ func (a *App) GetServers() ([]ServerInfo, error) {
 				Status:    status,
 			})
 		}
-	} else if a.clientCfg.Server.Address != "" {
+	} else if legacy.Address != "" {
 		// Backwards compatibility: if no named servers but Server is configured
-		status := "available"
-		if a.client != nil && a.client.Running() {
-			status = "connected"
-		}
-
 		servers = append(servers, ServerInfo{
-			Name:      "Default Server",
-			Address:   a.clientCfg.Server.Address,
-			Protocol:  a.clientCfg.Server.Protocol,
-			Username:  a.clientCfg.Server.Username,
-			Password:  a.clientCfg.Server.Password,
+			Name:      legacy.Name,
+			Address:   legacy.Address,
+			Protocol:  legacy.Protocol,
+			Username:  legacy.Username,
+			Password:  legacy.Password,
 			IsDefault: true,
-			Status:    status,
+			Status:    activeStatus,
 		})
 	}
 
 	return servers, nil
 }
 
-// SelectServer selects a server to connect to.
+// SelectServer selects a server to connect to. When the embedded client
+// exists, selection goes through Client.SelectServer, which reconfigures the
+// live upstream connection (the next dial really uses the new server) and
+// persists the choice — mutating only the config used to leave every future
+// dial on the old upstream while the UI displayed the new one.
 func (a *App) SelectServer(serverName string) error {
+	a.mu.Lock()
+	if a.clientCfg == nil {
+		a.mu.Unlock()
+		return fmt.Errorf("config not loaded")
+	}
+	c := a.client
+	a.mu.Unlock()
+
+	if c != nil {
+		// The client shares a.clientCfg and a.configPath (see initClient), so
+		// this updates the app's view, the live connection, and the file.
+		if err := c.SelectServer(serverName); err != nil {
+			return err
+		}
+		a.mu.Lock()
+		a.preferences.DefaultServer = serverName
+		a.mu.Unlock()
+		slog.Info("selected server", "server", serverName)
+		return nil
+	}
+
+	// No client yet: config-only selection, applied when the client starts.
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.clientCfg == nil {
-		return fmt.Errorf("config not loaded")
-	}
-
-	// Find the server by name
 	var selectedServer *config.NamedServer
 	for i := range a.clientCfg.Servers {
 		if a.clientCfg.Servers[i].Name == serverName {
@@ -474,16 +519,12 @@ func (a *App) SelectServer(serverName string) error {
 		return fmt.Errorf("server not found: %s", serverName)
 	}
 
-	// Update the active Server connection with the selected server's settings
 	a.clientCfg.Server.Address = selectedServer.Address
 	a.clientCfg.Server.Protocol = selectedServer.Protocol
 	a.clientCfg.Server.Username = selectedServer.Username
 	a.clientCfg.Server.Password = selectedServer.Password
-
-	// Update preferences
 	a.preferences.DefaultServer = serverName
 
-	// Save config
 	if a.configPath != "" {
 		if err := config.Save(a.configPath, a.clientCfg); err != nil {
 			slog.Error("failed to save config after server selection", "error", err)
