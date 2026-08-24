@@ -115,12 +115,14 @@ nonsense: 1
 }
 
 func TestLoad_UnknownKeyIsNotAcceptedForValidClients(t *testing.T) {
-	path := writeConfig(t, "server:\n  addres: \"proxy:7080\"\n")
+	// "addres" is a deliberate typo - it is the unknown key under test, so the
+	// misspell linter is exempted here rather than weakening the test data.
+	path := writeConfig(t, "server:\n  addres: \"proxy:7080\"\n") //nolint:misspell // intentional typo under test
 
 	var cfg ClientConfig
 	err := Load(path, &cfg)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "addres")
+	assert.Contains(t, err.Error(), "addres") //nolint:misspell // intentional typo under test
 	assert.Empty(t, cfg.Server.Address)
 }
 
