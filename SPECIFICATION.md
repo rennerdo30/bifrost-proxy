@@ -676,8 +676,17 @@ POST   /api/v1/config/reload    - Reload config
 snake_case names their YAML keys use, so a response body is a valid request body.
 Durations are duration strings in both directions (`"30s"`, `"1m30s"`), never
 nanosecond counts; a bare number is still accepted on input and read as
-nanoseconds. `internal/duration.Duration` implements this for `internal/vpn` and
-`internal/mesh`, matching `internal/config.Duration`.
+nanoseconds (an integral float such as `3e+11` counts — old releases persisted
+that form — but a fractional nanosecond is an error). There is exactly one
+duration contract: `internal/config.Duration` is an alias of
+`internal/duration.Duration`, which also serves `internal/vpn` and
+`internal/mesh`.
+
+For compatibility, imports of JSON exports written before the structs carried
+`json:` tags also accept the legacy Go field names (`SplitTunnel`, `CacheTTL`,
+`NetworkID`, `HeartbeatInterval`, …). A document naming both spellings of the
+same field with different values is rejected as ambiguous. Output is always
+canonical snake_case.
 
 ## 6. Technical Details
 

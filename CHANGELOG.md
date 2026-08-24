@@ -201,7 +201,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mesh.connection.keep_alive_interval` and `vpn.dns.cache_ttl` now serialise as
   duration strings (`"30s"`, `"1m30s"`), matching the convention `internal/config`
   already used for every other duration. Input still accepts a bare nanosecond
-  number, so payloads written against the old shape keep working
+  number — including the integral scientific-notation floats (`3e+11`) that a
+  numeric value picked up on its way through the config API — so payloads and
+  files written against the old shape keep working
+- The compatibility promise above now actually holds on the primary PUT path: a
+  legacy numeric duration sent to `PUT /api/v1/config` used to decode as
+  `float64`, persist as YAML scientific notation, and make the next config load
+  fail — a 200 response that bricked the reload. The API now decodes numbers
+  losslessly (integral numbers stay integers all the way to disk), and the
+  comment-preserving config writer no longer copies a quoted style onto a value
+  whose type changed, which is what turned integers into strings
+- JSON exports written before the VPN and mesh structs carried `json:` tags can
+  be imported again: the legacy Go field names (`SplitTunnel`, `CacheTTL`,
+  `InterceptMode`, `AlwaysBypass`, `NetworkID`, `HeartbeatInterval`,
+  `KeepAliveInterval`, …) are accepted on input alongside the canonical
+  snake_case keys, instead of being silently dropped and reset to defaults —
+  which could invert split-tunnel behavior on import. A document naming both
+  spellings with different values is rejected as ambiguous; output stays
+  canonical
+- The client dashboard's duration inputs now parse the composite strings the API
+  actually emits: `time.Duration.String()` renders five minutes as `"5m0s"`,
+  which the previous single-component parser displayed as `0 sec` (affecting VPN
+  Cache TTL and the mesh timeouts). An unreadable value now shows an inline
+  error instead of being coerced to zero. The mesh Keepalive field also
+  read/wrote `keepalive_interval`, a key the server never emits — it now uses
+  the documented `keep_alive_interval` and defaults to the server's real 25s
 - The server dashboard's Request Log page crashed to the error boundary as soon
   as `api.enable_request_log` was turned on — the exact thing its own empty state
   told operators to do. The page reads aggregate counters that

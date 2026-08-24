@@ -1,16 +1,14 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
 	"time"
 	"unicode"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
 )
 
@@ -446,50 +444,13 @@ type AutoUpdateConfig struct {
 	Channel       string   `yaml:"channel" json:"channel"` // stable, prerelease
 }
 
-// Duration is a time.Duration that can be unmarshaled from YAML.
-type Duration time.Duration
-
-func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
-	var s string
-	if err := value.Decode(&s); err != nil {
-		return err
-	}
-	dur, err := time.ParseDuration(s)
-	if err != nil {
-		return err
-	}
-	*d = Duration(dur)
-	return nil
-}
-
-func (d Duration) MarshalYAML() (interface{}, error) {
-	return time.Duration(d).String(), nil
-}
-
-func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Duration(d).String())
-}
-
-func (d *Duration) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	if s == "" {
-		*d = 0
-		return nil
-	}
-	dur, err := time.ParseDuration(s)
-	if err != nil {
-		return err
-	}
-	*d = Duration(dur)
-	return nil
-}
-
-func (d Duration) Duration() time.Duration {
-	return time.Duration(d)
-}
+// Duration is the repository-wide duration wire type. Strings ("30s",
+// "1m30s") are canonical on output; a bare number is accepted on input as a
+// nanosecond count, for payloads written against the old unmarshaled
+// time.Duration representation. It is an alias so there is exactly one
+// duration contract — the implementation lives in internal/duration because
+// vpn and mesh cannot import this package back without a cycle.
+type Duration = duration.Duration
 
 // DefaultServerConfig returns a server configuration with sensible defaults.
 func DefaultServerConfig() ServerConfig {
