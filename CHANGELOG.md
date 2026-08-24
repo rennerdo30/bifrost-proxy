@@ -202,6 +202,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   duration strings (`"30s"`, `"1m30s"`), matching the convention `internal/config`
   already used for every other duration. Input still accepts a bare nanosecond
   number, so payloads written against the old shape keep working
+- The server dashboard's Request Log page crashed to the error boundary as soon
+  as `api.enable_request_log` was turned on — the exact thing its own empty state
+  told operators to do. The page reads aggregate counters that
+  `GET /api/v1/requests/stats` never sent, so the first render threw
+  `TypeError: Cannot read properties of undefined`. The endpoint now reports
+  `total_requests`, `total_bytes_sent`, `total_bytes_recv`, `requests_by_method`,
+  `requests_by_status` and `top_hosts` alongside the existing `enabled`, `count`
+  and `max_size`, and the dashboard's types match it field for field. Clearing
+  the log also resets the running totals
+- The server dashboard's Cache page went into a silent 404 loop on any server
+  started without a `cache:` section — including the shipped example config. The
+  cache API is only mounted when caching is configured, and the page had no error
+  state, so it showed permanent loading skeletons, no explanation, and live
+  Purge Domain / Clear All / Add Rule buttons. It now reports "Caching is not
+  configured", disables the destructive actions, stops polling the missing
+  endpoints and surfaces other failures with a retry. The Mesh page gained the
+  same treatment for `mesh.enabled: false`
+- The "Skip to main content" link blanked the whole dashboard in both the server
+  and the client UI. Both run under a `HashRouter`, where the URL fragment *is*
+  the route, so following the link set the route to `main-content`, matched
+  nothing and rendered an empty page — the one control provided exclusively for
+  keyboard users destroyed the page for them. The link now moves focus
+  programmatically, and both routers have a catch-all so no stale hash can blank
+  the app
+- The Backends page's "Configuration" link left the single-page app: a path
+  `href` under a `HashRouter` reloaded the dashboard at `/config`, which made
+  every later API call go to `/config/api/v1/…`. Those paths are answered with
+  `200 text/html`, so the dashboard degraded silently — empty stats, WebSocket
+  dropping to polling, nothing logged. It now navigates within the router, as do
+  the four equivalent "go to Settings" links on the client's VPN and Mesh pages
 - `/api/v1/ws` accepted a DNS-rebound `Host`. The origin check relies on the
   WebSocket library's same-origin shortcut, which accepts any request whose
   `Origin` host equals the request `Host`; an attacker controlling a DNS name

@@ -663,15 +663,37 @@ GET /api/v1/requests/stats
 {
   "enabled": true,
   "count": 1500,
-  "max_size": 10000
+  "max_size": 10000,
+  "total_requests": 48213,
+  "total_bytes_sent": 10485760,
+  "total_bytes_recv": 83886080,
+  "requests_by_method": { "GET": 1200, "POST": 300 },
+  "requests_by_status": { "200": 1400, "404": 100 },
+  "top_hosts": [
+    { "host": "api.example.com", "count": 900 },
+    { "host": "cdn.example.com", "count": 600 }
+  ]
 }
 ```
+
+Two scopes are mixed in this response, because the request log is a fixed-size
+ring buffer:
+
+- `total_requests`, `total_bytes_sent` and `total_bytes_recv` are running totals
+  since the server started or since the log was last cleared. They keep counting
+  after entries are evicted from the buffer.
+- `count`, `requests_by_method`, `requests_by_status` and `top_hosts` describe
+  only the entries still retained in the buffer — at most `max_size` of them.
+
+`top_hosts` is ordered by descending count and holds at most 10 hosts. Every
+field is always present; the maps and the list are never `null`.
 
 ---
 
 ### Clear Request Log
 
-Clear all request log entries.
+Clear all request log entries. This also resets `total_requests`,
+`total_bytes_sent` and `total_bytes_recv`.
 
 ```http
 DELETE /api/v1/requests
