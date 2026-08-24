@@ -114,12 +114,9 @@ export function Mesh() {
     setSelectedPeer(peer)
   }, [])
 
-  // Calculate stats
+  // Calculate stats. The coordinator does not report per-peer connection
+  // status, so the cards only show counts it actually knows.
   const totalPeers = networks.reduce((sum, n) => sum + n.peer_count, 0)
-  const connectedPeers = peers.filter((p) => {
-    const extPeer = p as MeshPeerInfo & { status?: string }
-    return extPeer.status === 'connected' || extPeer.status === 'relayed'
-  }).length
 
   return (
     <div className="space-y-6">
@@ -216,9 +213,9 @@ export function Mesh() {
           <p className="text-2xl font-bold text-cyan-400 mt-1">{totalPeers}</p>
         </div>
         <div className="card py-3 bg-gradient-to-br from-bifrost-success/10 to-transparent">
-          <p className="text-sm text-bifrost-subtle">Connected</p>
+          <p className="text-sm text-bifrost-subtle">Peers in Network</p>
           <p className="text-2xl font-bold text-bifrost-success mt-1">
-            {selectedNetworkId ? connectedPeers : '-'}
+            {selectedNetworkId ? peers.length : '-'}
           </p>
         </div>
         <div className="card py-3 bg-gradient-to-br from-emerald-500/10 to-transparent">

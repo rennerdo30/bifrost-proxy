@@ -574,6 +574,11 @@ export interface LoggingConfig {
   format: 'text' | 'json'
   output?: string
   time_format?: string
+  // File rotation (only applies when output is a file path):
+  // rotate when the file exceeds max_size_mb (<= 0 disables rotation),
+  // keep max_backups rotated files (<= 0 keeps all).
+  max_size_mb?: number
+  max_backups?: number
 }
 
 // Web UI Configuration
@@ -774,6 +779,7 @@ export const WS_EVENT_BACKEND_HEALTH = 'backend.health'
 export const WS_EVENT_CONNECTION_NEW = 'connection.new'
 export const WS_EVENT_CONNECTION_CLOSE = 'connection.close'
 export const WS_EVENT_CONFIG_RELOAD = 'config.reload'
+export const WS_EVENT_CONFIG_SAVED = 'config.saved'
 
 export type WSEventType =
   | typeof WS_EVENT_STATS
@@ -781,6 +787,24 @@ export type WSEventType =
   | typeof WS_EVENT_CONNECTION_NEW
   | typeof WS_EVENT_CONNECTION_CLOSE
   | typeof WS_EVENT_CONFIG_RELOAD
+  | typeof WS_EVENT_CONFIG_SAVED
+
+// Payload of connection.new / connection.close
+// (internal/api/server/websocket.go ConnectionEvent).
+export interface ConnectionEvent {
+  protocol: string
+  host: string
+  backend: string
+  client_ip: string
+}
+
+// Payload of config.saved (internal/api/server/config_handlers.go).
+export interface ConfigSavedEvent {
+  changed_sections: string[]
+  requires_restart: boolean
+  hot_reloaded_sections: string[]
+  restart_required_sections: string[]
+}
 
 export interface WSEvent {
   type: WSEventType | string
@@ -999,6 +1023,12 @@ export interface MeshPeerEvent {
   type: 'join' | 'leave' | 'update'
   peer: MeshPeerInfo
   timestamp: string
+}
+
+// Error frame the mesh events socket sends before closing
+// (e.g. {"error": "network not found"}).
+export interface MeshEventError {
+  error: string
 }
 
 // Mesh route

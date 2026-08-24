@@ -2,12 +2,16 @@ import { useState, useEffect, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { RequestTable } from '../components/RequestLog/RequestTable'
+import { ConfirmModal } from '../components/Config/ConfirmModal'
+import { useToast } from '../components/Toast'
 import { formatBytes } from '../utils'
 
 export function RequestLog() {
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [limit, setLimit] = useState(100)
+  const [isClearConfirmOpen, setIsClearConfirmOpen] = useState(false)
   const queryClient = useQueryClient()
+  const { showToast } = useToast()
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['requests', limit],
@@ -23,9 +27,16 @@ export function RequestLog() {
   })
 
   const handleClear = useCallback(async () => {
-    await api.clearRequests()
-    queryClient.invalidateQueries({ queryKey: ['requests'] })
-  }, [queryClient])
+    setIsClearConfirmOpen(false)
+    try {
+      await api.clearRequests()
+      queryClient.invalidateQueries({ queryKey: ['requests'] })
+      queryClient.invalidateQueries({ queryKey: ['requestStats'] })
+      showToast('Request log cleared', 'success')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to clear request log', 'error')
+    }
+  }, [queryClient, showToast])
 
   // Keyboard shortcut for refresh
   useEffect(() => {
@@ -99,7 +110,7 @@ export function RequestLog() {
           </button>
 
           {/* Clear Button */}
-          <button onClick={handleClear} className="btn btn-secondary text-bifrost-error" aria-label="Clear request log">
+          <button onClick={() => setIsClearConfirmOpen(true)} className="btn btn-secondary text-bifrost-error" aria-label="Clear request log">
             <svg
               className="w-4 h-4"
               fill="none"
@@ -182,6 +193,16 @@ export function RequestLog() {
         requests={data?.requests}
         isLoading={isLoading}
         enabled={data?.enabled ?? true}
+      />
+
+      <ConfirmModal
+        isOpen={isClearConfirmOpen}
+        onClose={() => setIsClearConfirmOpen(false)}
+        onConfirm={handleClear}
+        title="Clear Request Log"
+        message="Clear all logged requests and reset the aggregate counters? This action cannot be undone."
+        confirmLabel="Clear"
+        variant="danger"
       />
     </div>
   )
