@@ -56,6 +56,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the inline `primary`/`secondary` format the server actually accepts
 
 ### Changed
+- Mobile app honesty pass: the Expo config plugin no longer injects an
+  Android `<service>` entry for a VPN service class that does not exist in the
+  project — declaring it made the app eligible for Always-on-VPN in system
+  settings, which would break all device networking when enabled. The plugin
+  now checks for the Kotlin source in the generated project and skips the
+  injection with a warning when it is absent. `app.json` drops the unused
+  `remote-notification` background mode, the `POST_NOTIFICATIONS` permission,
+  and the iOS Network Extension entitlement (the app is a remote control, not
+  an on-device VPN), and gains the `NSLocalNetworkUsageDescription` iOS
+  requires for local-network access. The Auto-connect and Connection Alerts
+  settings are now labelled as remote-client settings instead of implying
+  phone-side behavior, split-tunneling rule switches and toasts got
+  accessibility labels/roles, and the mobile docs no longer claim stats the
+  API does not report
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
   rejecting every login. This affects `ntlm` (no credential source exists to
