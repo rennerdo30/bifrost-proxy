@@ -19,7 +19,7 @@ import (
 // Duration is a time.Duration that round-trips as a duration string.
 //
 // A bare number is also accepted on input and interpreted as nanoseconds, which
-// keeps configs and API payloads written against the old, unmarshalled
+// keeps configs and API payloads written against the old, unmarshaled
 // time.Duration representation working.
 type Duration time.Duration
 

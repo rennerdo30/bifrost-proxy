@@ -47,7 +47,7 @@ func TestUnmarshalJSONAcceptsEmptyString(t *testing.T) {
 }
 
 // TestUnmarshalJSONAcceptsNanosecondNumber covers payloads written against the
-// previous representation, where a plain time.Duration marshalled as an integer.
+// previous representation, where a plain time.Duration marshaled as an integer.
 func TestUnmarshalJSONAcceptsNanosecondNumber(t *testing.T) {
 	var d duration.Duration
 	require.NoError(t, json.Unmarshal([]byte(`30000000000`), &d))
