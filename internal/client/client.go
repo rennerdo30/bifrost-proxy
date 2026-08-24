@@ -72,6 +72,14 @@ type Client struct {
 	mu      sync.RWMutex
 	wg      sync.WaitGroup
 
+	// lifecycleMu serializes complete Start/Stop transitions. c.mu guards
+	// field access but is released during teardown, so without this a Start
+	// racing a Stop could see running==false the moment the flag flipped,
+	// bring up a fresh run, and then have that run's VPN/mesh/updater/system
+	// proxy/tray dismantled by the tail of the old Stop. Held for the entire
+	// duration of Start and Stop; never taken by their internal helpers.
+	lifecycleMu sync.Mutex
+
 	// done signals the background goroutines of the *current* run to exit. It
 	// has a per-run lifetime: Start allocates a fresh channel and Stop closes
 	// it, so a Start -> Stop -> Start -> Stop cycle no longer closes an already
@@ -198,6 +206,12 @@ func New(cfg *config.ClientConfig) (*Client, error) {
 // Connect/Disconnect cycle exposed by the desktop app is safe to repeat.
 // Calling Start on an already-running client is a no-op.
 func (c *Client) Start(ctx context.Context) error {
+	// Serialize against a concurrent Stop for its ENTIRE teardown, not just
+	// the flag flip: a Start admitted mid-teardown had its fresh resources
+	// undone by the tail of the previous Stop.
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
 	c.mu.Lock()
 	if c.running {
 		c.mu.Unlock()
@@ -572,9 +586,14 @@ func (c *Client) applyStartupBehavior() {
 }
 
 // Stop stops the client. It is safe to call on a client that is not running
-// (it is then a no-op) and safe to interleave with Start: the run's done channel
-// is closed exactly once, under the same lock that guards c.running.
+// (it is then a no-op) and safe to interleave with Start: lifecycleMu holds
+// any concurrent Start out until the WHOLE teardown — VPN, mesh, updater,
+// system proxy, connection drain — has finished, so a new run can never have
+// its resources dismantled by the tail of an old Stop.
 func (c *Client) Stop(ctx context.Context) error {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
 	c.mu.Lock()
 	if !c.running {
 		c.mu.Unlock()
@@ -639,15 +658,15 @@ func (c *Client) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Stop system tray. Detached under the lock so a later Start (which calls
-	// startTray under the same lock) creates a fresh tray instead of observing
-	// a half-torn-down one.
-	c.mu.Lock()
+	// The tray is a process-lifetime resource (see processTray): the systray
+	// library can neither be quit-and-rerun nor run twice, so Stop only
+	// reflects the state change on the icon. The tray's own Quit menu — or
+	// process exit — ends it.
+	c.mu.RLock()
 	t := c.tray
-	c.tray = nil
-	c.mu.Unlock()
+	c.mu.RUnlock()
 	if t != nil {
-		t.Quit()
+		t.SetStatus(tray.StatusDisconnected)
 	}
 
 	// Wait for connections
@@ -1256,40 +1275,92 @@ func (c *Client) reloadConfig() error {
 	return nil
 }
 
-func (c *Client) startTray(ctx context.Context) {
-	c.mu.Lock()
-	if c.tray != nil {
-		c.mu.Unlock()
-		return
-	}
+// processTray is the process-wide system tray. fyne.io/systray is a one-shot,
+// process-lifetime library: Run may only be called once per process (a second
+// Run exits immediately on Linux, whose quit channel is a never-recreated
+// package global) and Quit is guarded by a package-global sync.Once. Creating
+// a tray per client run therefore cannot work — the previous design leaked one
+// click-loop goroutine per restart and left a dead icon after the first Stop.
+// The tray is created once, its single click-loop goroutine lives for the
+// process, and its callbacks always target the client currently registered,
+// so it survives both Start/Stop cycles and full client rebuilds.
+var processTray = struct {
+	mu      sync.Mutex
+	started bool
+	tray    *tray.Tray
+	client  atomic.Pointer[Client]
+}{}
 
-	t := tray.New(tray.Config{
-		OnConnect: func() {
-			c.setSystemProxyEnabled(true)
-			c.notify("Connected")
-		},
-		OnDisconnect: func() {
-			c.setSystemProxyEnabled(false)
-			c.notify("Disconnected")
-		},
-		OnOpenUI: func() {
-			c.openUI()
-		},
-		OnOpenQuick: func() {
-			c.openUI()
-		},
-		OnQuit: func() {
-			go func() {
-				_ = c.Stop(context.Background()) //nolint:errcheck // Exiting anyway
-				os.Exit(0)
-			}()
-		},
-		ShowQuickGUI: c.config.Tray.ShowQuickGUI,
-	})
+// newTray builds the tray instance; a package variable so tests can substitute
+// a GUI-free adapter.
+var newTray = tray.New
+
+// resetProcessTrayForTesting clears the process-tray singleton. Tests only —
+// the real systray cannot actually be restarted within a process.
+func resetProcessTrayForTesting() {
+	processTray.mu.Lock()
+	defer processTray.mu.Unlock()
+	processTray.started = false
+	processTray.tray = nil
+	processTray.client.Store(nil)
+}
+
+// trayClient returns the client the process tray currently controls.
+func trayClient() *Client {
+	return processTray.client.Load()
+}
+
+func (c *Client) startTray(ctx context.Context) {
+	// This client is now the one the tray's callbacks act on.
+	processTray.client.Store(c)
+
+	processTray.mu.Lock()
+	if !processTray.started {
+		t := newTray(tray.Config{
+			OnConnect: func() {
+				if cl := trayClient(); cl != nil {
+					cl.setSystemProxyEnabled(true)
+					cl.notify("Connected")
+				}
+			},
+			OnDisconnect: func() {
+				if cl := trayClient(); cl != nil {
+					cl.setSystemProxyEnabled(false)
+					cl.notify("Disconnected")
+				}
+			},
+			OnOpenUI: func() {
+				if cl := trayClient(); cl != nil {
+					cl.openUI()
+				}
+			},
+			OnOpenQuick: func() {
+				if cl := trayClient(); cl != nil {
+					cl.openUI()
+				}
+			},
+			OnQuit: func() {
+				go func() {
+					if cl := trayClient(); cl != nil {
+						_ = cl.Stop(context.Background()) //nolint:errcheck // Exiting anyway
+					}
+					os.Exit(0)
+				}()
+			},
+			ShowQuickGUI: c.config.Tray.ShowQuickGUI,
+		})
+		processTray.tray = t
+		processTray.started = true
+		// The context of the first tray-enabled Start is deliberately unused
+		// for cancellation: the tray outlives every run by design.
+		go t.Run(ctx)
+	}
+	t := processTray.tray
+	processTray.mu.Unlock()
+
+	c.mu.Lock()
 	c.tray = t
 	c.mu.Unlock()
-
-	go t.Run(ctx)
 }
 
 // notify shows a desktop notification via the tray, but only when the user has
