@@ -171,6 +171,13 @@ func (p *Peer) SetLatency(latency time.Duration) {
 	p.Latency = latency
 }
 
+// GetLatency returns the measured latency.
+func (p *Peer) GetLatency() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.Latency
+}
+
 // AddEndpoint adds an endpoint to the peer.
 func (p *Peer) AddEndpoint(endpoint Endpoint) {
 	p.mu.Lock()
