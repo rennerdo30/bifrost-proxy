@@ -11,6 +11,7 @@ package duration
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -26,8 +27,16 @@ type Duration time.Duration
 // Zero is the zero duration, used when an empty string is decoded.
 const Zero = Duration(0)
 
-// yamlIntTag is the YAML resolved tag for a plain integer scalar.
-const yamlIntTag = "!!int"
+// yamlIntTag and yamlFloatTag are the YAML resolved tags for plain numeric scalars.
+const (
+	yamlIntTag   = "!!int"
+	yamlFloatTag = "!!float"
+)
+
+// maxInt64AsFloat is the smallest float64 that no longer fits in an int64.
+// math.MaxInt64 itself is not exactly representable as a float64; the nearest
+// representable value above it is 2^63, so the range check must be exclusive.
+const maxInt64AsFloat = float64(1 << 63)
 
 // Duration returns the wrapped time.Duration.
 func (d Duration) Duration() time.Duration {
@@ -57,10 +66,24 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 	}
 
 	var ns int64
-	if err := json.Unmarshal(b, &ns); err != nil {
+	if err := json.Unmarshal(b, &ns); err == nil {
+		*d = Duration(ns)
+		return nil
+	}
+
+	// Integral floats are accepted because a JSON round-trip through a
+	// map[string]interface{} widens every number to float64, and legacy
+	// nanosecond counts are large enough to re-encode in scientific
+	// notation. A fractional nanosecond has no meaning and is rejected.
+	var f float64
+	if err := json.Unmarshal(b, &f); err != nil {
 		return fmt.Errorf("duration: expected a duration string or a number of nanoseconds, got %s", b)
 	}
-	*d = Duration(ns)
+	whole, err := integralNanoseconds(f)
+	if err != nil {
+		return err
+	}
+	*d = whole
 	return nil
 }
 
@@ -83,6 +106,24 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 		return nil
 	}
 
+	// A float scalar appears when an older release round-tripped a nanosecond
+	// count through float64 and YAML re-encoded it in scientific notation
+	// ("3e+11"). Such a value is still an exact whole number of nanoseconds,
+	// so configs already written that way keep loading; a fractional
+	// nanosecond stays an error.
+	if value.Tag == yamlFloatTag {
+		var f float64
+		if err := value.Decode(&f); err != nil {
+			return fmt.Errorf("duration: invalid nanosecond count at line %d: %w", value.Line, err)
+		}
+		whole, err := integralNanoseconds(f)
+		if err != nil {
+			return fmt.Errorf("duration: at line %d: %w", value.Line, err)
+		}
+		*d = whole
+		return nil
+	}
+
 	var s string
 	if err := value.Decode(&s); err != nil {
 		return fmt.Errorf("duration: expected a duration string or a number of nanoseconds at line %d: %w", value.Line, err)
@@ -93,6 +134,18 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	}
 	*d = parsed
 	return nil
+}
+
+// integralNanoseconds converts a float that must represent an exact whole
+// number of nanoseconds within the int64 range.
+func integralNanoseconds(f float64) (Duration, error) {
+	if f != math.Trunc(f) {
+		return Zero, fmt.Errorf("duration: fractional nanosecond count %v", f)
+	}
+	if f < math.MinInt64 || f >= maxInt64AsFloat {
+		return Zero, fmt.Errorf("duration: nanosecond count %v overflows int64", f)
+	}
+	return Duration(int64(f)), nil
 }
 
 // parse converts a duration string to a Duration, treating "" as Zero.

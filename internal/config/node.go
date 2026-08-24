@@ -82,8 +82,13 @@ func UpdateNode(node *yaml.Node, updates map[string]interface{}) error {
 					if err != nil {
 						return fmt.Errorf("failed to convert value for key %s: %w", k, err)
 					}
-					// Preserve comments/style from original value node
-					if node.Content[i+1].Kind == yaml.ScalarNode && newNode.Kind == yaml.ScalarNode {
+					// Preserve comments/style from original value node. Style
+					// only carries over between scalars of the same resolved
+					// type: inheriting a quoted style across a type change
+					// turned a numeric update replacing "5m" into the string
+					// "300000000000", which the next strict load rejected.
+					if node.Content[i+1].Kind == yaml.ScalarNode && newNode.Kind == yaml.ScalarNode &&
+						node.Content[i+1].Tag == newNode.Tag {
 						newNode.Style = node.Content[i+1].Style
 					}
 					newNode.HeadComment = node.Content[i+1].HeadComment
