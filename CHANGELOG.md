@@ -56,6 +56,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the inline `primary`/`secondary` format the server actually accepts
 
 ### Changed
+- Desktop completion pass: tagged releases now build the Wails app on native
+  Linux, Windows, and macOS runners and attach consistently named
+  `bifrost-desktop-*` artifacts (including a universal macOS bundle). The
+  process tray now honors application-context cancellation, terminates its
+  click worker on exit, and its Quick Access item restores the Wails window —
+  so a Start-minimized launch always has a route back to the UI. Unused tray
+  SVGs and stale generated `wailsjs` bindings were removed; the frontend uses
+  the live Wails binding surface directly. The desktop docs and specification
+  now describe only the controls and telemetry the compact app actually ships,
+  distinguish local lifecycle/system proxy/VPN actions, and document native
+  build requirements and real release names
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
   rejecting every login. This affects `ntlm` (no credential source exists to

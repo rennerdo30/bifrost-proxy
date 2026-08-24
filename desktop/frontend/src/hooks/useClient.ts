@@ -25,7 +25,6 @@ declare global {
           OpenWebDashboard: () => Promise<void>;
           Quit: () => Promise<void>;
           IsConnected: () => Promise<boolean>;
-          GetAPIBaseURL: () => Promise<string>;
         };
       };
     };
@@ -150,7 +149,6 @@ const mockAPI = {
   OpenWebDashboard: async () => { window.open('http://127.0.0.1:3129', '_blank'); },
   Quit: async () => { if (import.meta.env.DEV) console.log('Mock: Quit'); },
   IsConnected: async () => false,
-  GetAPIBaseURL: async () => 'http://127.0.0.1:7383',
 };
 
 // Get the API (real or mock)

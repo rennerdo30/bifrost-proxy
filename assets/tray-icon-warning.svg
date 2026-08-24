@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="t-warning">
-  <title id="t-warning">Bifrost: warning</title>
-  <g fill="#FFE66D">
-    <path d="M36 138Q100 44 164 138" fill="none" stroke="#FFE66D" stroke-width="26" stroke-linecap="round"/>
-    <circle cx="36" cy="138" r="17"/><circle cx="164" cy="138" r="17"/>
-  </g>
-</svg>
