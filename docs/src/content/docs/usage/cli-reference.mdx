@@ -58,6 +58,8 @@ graph TB
 | `bifrost-client ctl routes list` | List routing rules |
 | `bifrost-client ctl vpn enable` | Enable VPN mode |
 | `bifrost-client service install` | Install as system service |
+| `bifrost-client service start` | Start the installed service |
+| `bifrost-client service stop` | Stop the installed service |
 | `bifrost-client update` | Check for and install updates |
 | `bifrost-client version` | Print version information |
 
@@ -731,30 +733,25 @@ bifrost-client service install -c /etc/bifrost/client.yaml
 bifrost-client service install -c /etc/bifrost/client.yaml --name my-proxy
 ```
 
-**Linux systemd:**
+Installation enables the Linux systemd unit for boot, loads the macOS launchd plist immediately, and registers the Windows service for automatic start. Use the platform-neutral commands below instead of invoking `systemctl`, `launchctl`, or `sc` yourself.
 
-After installation:
+### bifrost-client service start
+
+Start an installed service. On Linux this runs `systemctl start`; on macOS it loads the installed plist; on Windows it runs `sc start`.
+
 ```bash
-# Start the service
-sudo systemctl start bifrost-client
-
-# Enable on boot
-sudo systemctl enable bifrost-client
-
-# Check status
-sudo systemctl status bifrost-client
+bifrost-client service start [--name bifrost-client]
 ```
 
-**macOS launchd:**
+### bifrost-client service stop
 
-After installation:
+Stop the installed service without uninstalling it. On Linux this runs `systemctl stop`; on macOS it unloads the plist; on Windows it runs `sc stop`.
+
 ```bash
-# Load the service
-launchctl load ~/Library/LaunchAgents/bifrost-client.plist
-
-# Check if running
-launchctl list | grep bifrost
+bifrost-client service stop [--name bifrost-client]
 ```
+
+Command failures are returned to the shell with the platform tool's diagnostic output; a missing service tool or permission failure is never reported as success.
 
 ### bifrost-client service uninstall
 
