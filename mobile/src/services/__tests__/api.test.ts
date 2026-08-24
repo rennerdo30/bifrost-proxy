@@ -85,6 +85,44 @@ describe('server selection', () => {
   })
 })
 
+describe('split tunneling request bodies', () => {
+  // internal/api/client/server.go decodes exact JSON keys and 400s on a miss;
+  // header-only assertions let a wrong body ("domain" instead of "pattern")
+  // stay green while every rule add failed against a real client.
+  it('adds a domain rule with the "pattern" key the handler decodes', async () => {
+    const fetchStub = stubFetch({ body: { status: 'added' } })
+    try {
+      await apiModule.api.addSplitTunnelDomain('*.example.com')
+    } finally {
+      fetchStub.restore()
+    }
+    const request = fetchStub.requests[0]
+    assert.equal(request.url, 'http://localhost:7383/api/v1/vpn/split/domains')
+    assert.equal(request.method, 'POST')
+    assert.deepEqual(JSON.parse(request.body as string), { pattern: '*.example.com' })
+  })
+
+  it('adds an IP rule with the "cidr" key', async () => {
+    const fetchStub = stubFetch({ body: { status: 'added' } })
+    try {
+      await apiModule.api.addSplitTunnelIP('10.0.0.0/8')
+    } finally {
+      fetchStub.restore()
+    }
+    assert.deepEqual(JSON.parse(fetchStub.requests[0].body as string), { cidr: '10.0.0.0/8' })
+  })
+
+  it('adds an app rule with the "name"/"path" keys', async () => {
+    const fetchStub = stubFetch({ body: { status: 'added' } })
+    try {
+      await apiModule.api.addSplitTunnelApp({ name: 'slack' })
+    } finally {
+      fetchStub.restore()
+    }
+    assert.deepEqual(JSON.parse(fetchStub.requests[0].body as string), { name: 'slack' })
+  })
+})
+
 describe('authentication', () => {
   it('omits Authorization when no token is configured', async () => {
     const fetchStub = stubFetch()
