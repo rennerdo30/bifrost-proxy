@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/client'
+import { api, isFeatureUnavailable, retryUnlessUnavailable } from '../api/client'
 import { formatBytes } from '../utils'
 import { useToast } from '../components/Toast'
 import { ConfirmModal } from '../components/Config/ConfirmModal'
@@ -14,6 +14,10 @@ import {
 import type { AddCacheRuleRequest } from '../api/types'
 
 type TabType = 'entries' | 'rules' | 'presets'
+
+/** Poll intervals, in milliseconds. Paused while the cache API is unreachable. */
+const STATS_REFETCH_MS = 5000
+const ENTRIES_REFETCH_MS = 10000
 
 export function Cache() {
   const queryClient = useQueryClient()
@@ -35,30 +39,53 @@ export function Cache() {
   const [entryLimit, setEntryLimit] = useState(100)
 
   // Cache stats query
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading, error: statsError } = useQuery({
     queryKey: ['cacheStats'],
     queryFn: api.getCacheStats,
-    refetchInterval: 5000,
+    retry: retryUnlessUnavailable,
+    // Once the endpoint is known to be missing, stop polling it: the routes
+    // are mounted at startup, so retrying cannot make them appear.
+    refetchInterval: (query) =>
+      isFeatureUnavailable(query.state.error) ? false : STATS_REFETCH_MS,
   })
 
+  // The cache API group is only mounted when the server has a cache
+  // configuration. Without it every /cache/* call 404s, which must read as
+  // "caching is not configured", not as "the cache is empty".
+  const cacheUnavailable = isFeatureUnavailable(statsError)
+
   // Cache entries query
-  const { data: entriesData, isLoading: entriesLoading, refetch: refetchEntries } = useQuery({
+  const { data: entriesData, isLoading: entriesLoading, error: entriesError, refetch: refetchEntries } = useQuery({
     queryKey: ['cacheEntries', domainFilter, entryLimit],
     queryFn: () => api.getCacheEntries({ domain: domainFilter || undefined, limit: entryLimit }),
-    refetchInterval: 10000,
+    enabled: !cacheUnavailable,
+    retry: retryUnlessUnavailable,
+    refetchInterval: (query) =>
+      isFeatureUnavailable(query.state.error) ? false : ENTRIES_REFETCH_MS,
   })
 
   // Cache rules query
-  const { data: rulesData, isLoading: rulesLoading, refetch: refetchRules } = useQuery({
+  const { data: rulesData, isLoading: rulesLoading, error: rulesError, refetch: refetchRules } = useQuery({
     queryKey: ['cacheRules'],
     queryFn: api.getCacheRules,
+    enabled: !cacheUnavailable,
+    retry: retryUnlessUnavailable,
   })
 
   // Cache presets query
-  const { data: presetsData, isLoading: presetsLoading, refetch: refetchPresets } = useQuery({
+  const { data: presetsData, isLoading: presetsLoading, error: presetsError, refetch: refetchPresets } = useQuery({
     queryKey: ['cachePresets'],
     queryFn: api.getCachePresets,
+    enabled: !cacheUnavailable,
+    retry: retryUnlessUnavailable,
   })
+
+  // Any other failure (auth, 5xx, network) is reported with a retry, rather
+  // than silently rendering empty lists.
+  const loadError =
+    [statsError, entriesError, rulesError, presetsError].find(
+      (err): err is Error => err != null && !isFeatureUnavailable(err)
+    ) ?? null
 
   const existingRuleNames = rulesData?.rules.map((r) => r.name) || []
 
@@ -155,7 +182,17 @@ export function Cache() {
     }
   }, [refetchPresets, refetchRules, showToast])
 
-  const cacheDisabled = stats && !stats.enabled
+  // Destructive actions must be off whenever the cache cannot be managed —
+  // including the case where the stats call failed, which used to leave
+  // `stats` undefined and every button live.
+  const cacheDisabled = cacheUnavailable || (stats !== undefined && !stats.enabled)
+
+  const handleRetry = useCallback(() => {
+    refetchEntries()
+    refetchRules()
+    refetchPresets()
+    queryClient.invalidateQueries({ queryKey: ['cacheStats'] })
+  }, [queryClient, refetchEntries, refetchRules, refetchPresets])
 
   return (
     <div className="space-y-6">
@@ -170,11 +207,7 @@ export function Cache() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => {
-              refetchEntries()
-              refetchRules()
-              refetchPresets()
-            }}
+            onClick={handleRetry}
             className="btn btn-secondary"
             aria-label="Refresh cache data"
           >
@@ -236,7 +269,35 @@ export function Cache() {
         </div>
       </div>
 
-      {/* Cache Disabled Warning */}
+      {/* Load Error */}
+      {loadError && (
+        <div className="card bg-bifrost-error/10 border-bifrost-error/50">
+          <div className="flex items-start gap-3">
+            <svg
+              className="w-6 h-6 text-bifrost-error flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <div className="flex-1">
+              <p className="font-medium text-bifrost-error">Failed to load cache data</p>
+              <p className="text-sm text-bifrost-muted">{loadError.message}</p>
+            </div>
+            <button onClick={handleRetry} className="btn btn-secondary">
+              Try Again
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cache Disabled / Not Configured Warning */}
       {cacheDisabled && (
         <div className="card bg-bifrost-warning/10 border-bifrost-warning/50">
           <div className="flex items-center gap-3">
@@ -254,9 +315,13 @@ export function Cache() {
               />
             </svg>
             <div>
-              <p className="font-medium text-bifrost-warning">Cache is disabled</p>
+              <p className="font-medium text-bifrost-warning">
+                {cacheUnavailable ? 'Caching is not configured' : 'Cache is disabled'}
+              </p>
               <p className="text-sm text-bifrost-muted">
-                Enable caching in your server configuration to use this feature
+                {cacheUnavailable
+                  ? 'This server was started without a cache section, so the cache management API is not available. Add a cache configuration and restart the server to use this feature.'
+                  : 'Enable caching in your server configuration to use this feature'}
               </p>
             </div>
           </div>
@@ -331,127 +396,134 @@ export function Cache() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-bifrost-border">
-        <button
-          onClick={() => setActiveTab('entries')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'entries'
-              ? 'border-bifrost-accent text-bifrost-heading'
-              : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
-          }`}
-        >
-          Cached Entries
-          {entriesData && (
-            <span className="ml-2 text-xs bg-bifrost-bg px-1.5 py-0.5 rounded">
-              {entriesData.total}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('rules')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'rules'
-              ? 'border-bifrost-accent text-bifrost-heading'
-              : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
-          }`}
-        >
-          Rules
-          {rulesData && (
-            <span className="ml-2 text-xs bg-bifrost-bg px-1.5 py-0.5 rounded">
-              {rulesData.count}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('presets')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            activeTab === 'presets'
-              ? 'border-bifrost-accent text-bifrost-heading'
-              : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
-          }`}
-        >
-          Presets
-          {presetsData && (
-            <span className="ml-2 text-xs bg-bifrost-bg px-1.5 py-0.5 rounded">
-              {presetsData.count}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* Tab Content */}
-      {activeTab === 'entries' && (
-        <div className="space-y-4">
-          {/* Entry Filters */}
-          <div className="flex flex-col sm:flex-row gap-3">
-            <div className="flex-1">
-              <input
-                type="text"
-                value={domainFilter}
-                onChange={(e) => setDomainFilter(e.target.value)}
-                placeholder="Filter by domain..."
-                className="input w-full"
-              />
-            </div>
-            <select
-              value={entryLimit}
-              onChange={(e) => setEntryLimit(Number(e.target.value))}
-              className="select w-32"
-            >
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={250}>250</option>
-              <option value={500}>500</option>
-            </select>
-          </div>
-
-          <CacheEntryList
-            entries={entriesData?.entries}
-            total={entriesData?.total ?? 0}
-            isLoading={statsLoading || entriesLoading}
-            onDelete={(key) => setDeletingEntry(key)}
-            onPurgeDomain={handleOpenPurgeDomain}
-          />
+      {/* Cache management is only meaningful when the cache API is
+          reachable; without it these tabs would render permanently
+          empty tables next to the banner above. */}
+      {!cacheUnavailable && (
+        <>
+        {/* Tabs */}
+        <div className="flex items-center gap-1 border-b border-bifrost-border">
+          <button
+            onClick={() => setActiveTab('entries')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'entries'
+                ? 'border-bifrost-accent text-bifrost-heading'
+                : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
+            }`}
+          >
+            Cached Entries
+            {entriesData && (
+              <span className="ml-2 text-xs bg-bifrost-bg px-1.5 py-0.5 rounded">
+                {entriesData.total}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('rules')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'rules'
+                ? 'border-bifrost-accent text-bifrost-heading'
+                : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
+            }`}
+          >
+            Rules
+            {rulesData && (
+              <span className="ml-2 text-xs bg-bifrost-bg px-1.5 py-0.5 rounded">
+                {rulesData.count}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('presets')}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === 'presets'
+                ? 'border-bifrost-accent text-bifrost-heading'
+                : 'border-transparent text-bifrost-muted hover:text-bifrost-heading'
+            }`}
+          >
+            Presets
+            {presetsData && (
+              <span className="ml-2 text-xs bg-bifrost-bg px-1.5 py-0.5 rounded">
+                {presetsData.count}
+              </span>
+            )}
+          </button>
         </div>
-      )}
 
-      {activeTab === 'rules' && (
-        <div className="space-y-4">
-          <div className="flex justify-end">
-            <button
-              onClick={() => setIsAddRuleOpen(true)}
-              className="btn btn-primary"
-              disabled={cacheDisabled}
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={2}
+        {/* Tab Content */}
+        {activeTab === 'entries' && (
+          <div className="space-y-4">
+            {/* Entry Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <input
+                  type="text"
+                  value={domainFilter}
+                  onChange={(e) => setDomainFilter(e.target.value)}
+                  placeholder="Filter by domain..."
+                  className="input w-full"
+                />
+              </div>
+              <select
+                value={entryLimit}
+                onChange={(e) => setEntryLimit(Number(e.target.value))}
+                className="select w-32"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              Add Rule
-            </button>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={250}>250</option>
+                <option value={500}>500</option>
+              </select>
+            </div>
+
+            <CacheEntryList
+              entries={entriesData?.entries}
+              total={entriesData?.total ?? 0}
+              isLoading={statsLoading || entriesLoading}
+              onDelete={(key) => setDeletingEntry(key)}
+              onPurgeDomain={handleOpenPurgeDomain}
+            />
           </div>
+        )}
 
-          <CacheRulesList
-            rules={rulesData?.rules}
-            isLoading={rulesLoading}
-            onToggle={handleToggleRule}
-            onDelete={(name) => setDeletingRule(name)}
+        {activeTab === 'rules' && (
+          <div className="space-y-4">
+            <div className="flex justify-end">
+              <button
+                onClick={() => setIsAddRuleOpen(true)}
+                className="btn btn-primary"
+                disabled={cacheDisabled}
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={2}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                Add Rule
+              </button>
+            </div>
+
+            <CacheRulesList
+              rules={rulesData?.rules}
+              isLoading={rulesLoading}
+              onToggle={handleToggleRule}
+              onDelete={(name) => setDeletingRule(name)}
+            />
+          </div>
+        )}
+
+        {activeTab === 'presets' && (
+          <CachePresetsList
+            presets={presetsData?.presets}
+            isLoading={presetsLoading}
+            onToggle={handleTogglePreset}
           />
-        </div>
-      )}
-
-      {activeTab === 'presets' && (
-        <CachePresetsList
-          presets={presetsData?.presets}
-          isLoading={presetsLoading}
-          onToggle={handleTogglePreset}
-        />
+        )}
+        </>
       )}
 
       {/* Dialogs */}
