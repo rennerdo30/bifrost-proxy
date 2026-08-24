@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -199,8 +200,7 @@ func (m *Manager) installSystemd() error {
 		return fmt.Errorf("enable service: %w", err)
 	}
 
-	fmt.Printf("Service installed: %s\n", unitPath)
-	fmt.Printf("Start with: sudo systemctl start %s\n", m.config.Name)
+	slog.Info("service installed", "unit", unitPath, "start_command", "sudo systemctl start "+m.config.Name)
 	return nil
 }
 
@@ -220,7 +220,7 @@ func (m *Manager) uninstallSystemd() error {
 	// Reload systemd
 	_ = exec.Command("systemctl", "daemon-reload").Run() //nolint:errcheck,gosec // G204: no user input; best effort reload
 
-	fmt.Printf("Service uninstalled: %s\n", m.config.Name)
+	slog.Info("service uninstalled", "name", m.config.Name)
 	return nil
 }
 
@@ -295,11 +295,13 @@ func (m *Manager) launchdPath() string {
 	home, _ := os.UserHomeDir() //nolint:errcheck // Fall back to empty string if home dir unavailable
 	userAgentPath := filepath.Join(home, "Library", "LaunchAgents", m.config.Name+".plist")
 
-	// Check if we can write to LaunchDaemons
+	// Prefer LaunchDaemons when running with the privileges to manage it.
+	// The old probe CREATED the real plist path and deleted it again — a
+	// destructive writability test that could clobber or momentarily remove
+	// an installed service's plist. Root can always write there; nothing
+	// else can, so the euid check answers the same question harmlessly.
 	daemonPath := filepath.Join("/Library/LaunchDaemons", m.config.Name+".plist")
-	if f, err := os.OpenFile(daemonPath, os.O_WRONLY|os.O_CREATE, 0644); err == nil { //nolint:gosec // G302: Service file permissions are appropriate
-		f.Close()
-		os.Remove(daemonPath)
+	if os.Geteuid() == 0 {
 		return daemonPath
 	}
 
@@ -334,8 +336,7 @@ func (m *Manager) installLaunchd() error {
 		return fmt.Errorf("load service: %w", err)
 	}
 
-	fmt.Printf("Service installed: %s\n", plistPath)
-	fmt.Printf("Service is now running.\n")
+	slog.Info("service installed and running", "plist", plistPath)
 	return nil
 }
 
@@ -350,7 +351,7 @@ func (m *Manager) uninstallLaunchd() error {
 		return fmt.Errorf("remove plist: %w", err)
 	}
 
-	fmt.Printf("Service uninstalled: %s\n", m.config.Name)
+	slog.Info("service uninstalled", "name", m.config.Name)
 	return nil
 }
 
@@ -396,8 +397,7 @@ func (m *Manager) installWindows() error {
 	// Set description
 	_ = exec.Command("sc", "description", m.config.Name, m.config.Description).Run() //nolint:errcheck,gosec // G204: service name from config; best effort description set
 
-	fmt.Printf("Service installed: %s\n", m.config.Name)
-	fmt.Printf("Start with: sc start %s\n", m.config.Name)
+	slog.Info("service installed", "name", m.config.Name, "start_command", "sc start "+m.config.Name)
 	return nil
 }
 
@@ -411,7 +411,7 @@ func (m *Manager) uninstallWindows() error {
 		return fmt.Errorf("delete service: %w\n%s", err, string(out))
 	}
 
-	fmt.Printf("Service uninstalled: %s\n", m.config.Name)
+	slog.Info("service uninstalled", "name", m.config.Name)
 	return nil
 }
 
