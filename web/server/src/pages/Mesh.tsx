@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { QueryError } from '../components/ui/QueryError'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, isFeatureUnavailable, retryUnlessUnavailable } from '../api/client'
 import { useToast } from '../components/Toast'
@@ -46,7 +47,7 @@ export function Mesh() {
   // means the coordinator is switched off — not that there are no networks.
   const meshUnavailable = isFeatureUnavailable(networksError)
 
-  const { data: peersData, isLoading: peersLoading, refetch: refetchPeers } = useQuery({
+  const { data: peersData, isLoading: peersLoading, error: peersError, refetch: refetchPeers } = useQuery({
     queryKey: ['meshPeers', selectedNetworkId],
     queryFn: () => (selectedNetworkId ? api.listMeshPeers(selectedNetworkId) : Promise.resolve({ peers: [] })),
     enabled: !!selectedNetworkId && !meshUnavailable,
@@ -235,13 +236,17 @@ export function Mesh() {
               <h3 className="text-sm font-medium text-bifrost-heading">Networks</h3>
               <span className="badge badge-info">{networks.length}</span>
             </div>
-            <MeshNetworkList
-              networks={networks}
-              selectedNetworkId={selectedNetworkId || undefined}
-              isLoading={networksLoading}
-              onSelect={handleSelectNetwork}
-              onDelete={setDeletingNetworkId}
-            />
+            {networksError && !meshUnavailable ? (
+              <QueryError what="mesh networks" error={networksError} />
+            ) : (
+              <MeshNetworkList
+                networks={networks}
+                selectedNetworkId={selectedNetworkId || undefined}
+                isLoading={networksLoading}
+                onSelect={handleSelectNetwork}
+                onDelete={setDeletingNetworkId}
+              />
+            )}
           </div>
         </div>
 
@@ -292,6 +297,8 @@ export function Mesh() {
                     selectedPeerId={selectedPeer?.id}
                     onSelectPeer={handleSelectPeer}
                   />
+                ) : peersError ? (
+                  <QueryError what="mesh peers" error={peersError} onRetry={() => refetchPeers()} />
                 ) : (
                   <div className="h-full overflow-y-auto">
                     <MeshPeerList

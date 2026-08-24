@@ -13,10 +13,11 @@ import { TestBackendDialog } from '../components/Backends/TestBackendDialog'
 import { ConfirmModal } from '../components/Config/ConfirmModal'
 import { useToast } from '../components/Toast'
 import { api } from '../api/client'
+import { QueryError } from '../components/ui/QueryError'
 import type { BackendConfig } from '../api/types'
 
 export function Backends() {
-  const { data: backends, isLoading, refetch } = useBackends()
+  const { data: backends, isLoading, error, refetch } = useBackends()
   const queryClient = useQueryClient()
   const { showToast } = useToast()
 
@@ -190,13 +191,19 @@ export function Backends() {
       )}
 
       {/* Backend List */}
-      <BackendList
-        backends={backends}
-        isLoading={isLoading}
-        onEdit={handleEditClick}
-        onDelete={(name) => setDeletingBackend(name)}
-        onTest={(name) => setTestingBackend(name)}
-      />
+      {error ? (
+        <div className="card">
+          <QueryError what="backends" error={error} onRetry={() => refetch()} />
+        </div>
+      ) : (
+        <BackendList
+          backends={backends}
+          isLoading={isLoading}
+          onEdit={handleEditClick}
+          onDelete={(name) => setDeletingBackend(name)}
+          onTest={(name) => setTestingBackend(name)}
+        />
+      )}
 
       {/* Add Backend Dialog */}
       <AddBackendDialog

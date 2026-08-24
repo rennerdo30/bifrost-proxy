@@ -666,6 +666,65 @@ export interface MITMConfig {
   max_cached_certs?: number
 }
 
+// Mesh networking configuration. Matches internal/mesh/config.go. Durations
+// are Go time.Duration values and travel as integer nanoseconds in JSON.
+export interface MeshDeviceConfig {
+  type?: 'tun' | 'tap'
+  name?: string
+  mtu?: number
+  mac_address?: string
+}
+
+export interface MeshDiscoveryConfig {
+  server?: string
+  heartbeat_interval?: number
+  peer_timeout?: number
+  token?: string
+}
+
+export interface MeshSTUNConfig {
+  servers?: string[]
+  timeout?: number
+}
+
+export interface MeshTURNServer {
+  url: string
+  username?: string
+  password?: string
+}
+
+export interface MeshTURNConfig {
+  enabled?: boolean
+  servers?: MeshTURNServer[]
+}
+
+export interface MeshConnectionConfig {
+  direct_connect?: boolean
+  relay_enabled?: boolean
+  relay_via_peers?: boolean
+  connect_timeout?: number
+  keep_alive_interval?: number
+}
+
+export interface MeshSecurityConfig {
+  private_key?: string
+  allowed_peers?: string[]
+  require_encryption?: boolean
+}
+
+export interface MeshConfig {
+  enabled: boolean
+  network_id?: string
+  network_cidr?: string
+  peer_name?: string
+  device?: MeshDeviceConfig
+  discovery?: MeshDiscoveryConfig
+  stun?: MeshSTUNConfig
+  turn?: MeshTURNConfig
+  connection?: MeshConnectionConfig
+  security?: MeshSecurityConfig
+}
+
 // Full Server Configuration
 export interface ServerConfig {
   server: ServerSettings
@@ -685,6 +744,7 @@ export interface ServerConfig {
   network?: NetworkConfig
   session?: SessionConfig
   mitm?: MITMConfig
+  mesh?: MeshConfig
 }
 
 // Metadata for one config section, as returned by GET /config/meta. Matches the

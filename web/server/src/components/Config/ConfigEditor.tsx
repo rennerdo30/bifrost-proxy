@@ -26,6 +26,7 @@ import { CacheSection } from './sections/CacheSection'
 import { NetworkSection } from './sections/NetworkSection'
 import { SessionSection } from './sections/SessionSection'
 import { MITMSection } from './sections/MITMSection'
+import { MeshSection } from './sections/MeshSection'
 
 interface ConfigEditorProps {
   config: ServerConfig | undefined
@@ -594,6 +595,11 @@ export function ConfigEditor({
           <SessionSection
             config={currentConfig.session}
             onChange={(session) => updateConfig({ session })}
+          />
+
+          <MeshSection
+            config={currentConfig.mesh}
+            onChange={(mesh) => updateConfig({ mesh })}
           />
 
           <AutoUpdateSection
