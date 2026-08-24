@@ -13,6 +13,8 @@ import (
 	"sync"
 	"time"
 
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"github.com/rennerdo30/bifrost-proxy/internal/client"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
@@ -111,7 +113,10 @@ type ProxySettings struct {
 func NewApp() *App {
 	return &App{
 		preferences: &Preferences{
-			AutoConnect:       false,
+			// AutoConnect defaults to true: the app always started the client
+			// at launch before the preference was honored, so the default
+			// preserves that behavior for existing users.
+			AutoConnect:       true,
 			StartMinimized:    false,
 			ShowNotifications: true,
 		},
@@ -126,10 +131,20 @@ func (a *App) startup(ctx context.Context) {
 
 	slog.Info("bifrost quick access starting")
 
-	// Load and start the embedded client
-	if err := a.initClient(); err != nil {
-		slog.Error("failed to initialize client", "error", err)
-		// Continue anyway - user can configure via settings
+	// Load and start the embedded client. AutoConnect was persisted by the
+	// settings toggle and never read; it now controls whether the client is
+	// started at launch (the default preference is true, matching the app's
+	// previous unconditional behavior).
+	if a.preferences.AutoConnect {
+		if err := a.initClient(); err != nil {
+			slog.Error("failed to initialize client", "error", err)
+			// Continue anyway - user can configure via settings
+		}
+	} else {
+		if err := a.initClientStopped(); err != nil {
+			slog.Error("failed to initialize client", "error", err)
+		}
+		slog.Info("auto-connect disabled; client loaded but not started")
 	}
 
 	slog.Info("bifrost quick access started")
@@ -211,6 +226,38 @@ func (a *App) initClient() error {
 		"api", a.clientCfg.API.Listen,
 	)
 
+	return nil
+}
+
+// initClientStopped builds the client without starting it, for launches with
+// auto-connect disabled: the Connect button then performs the first Start.
+func (a *App) initClientStopped() error {
+	configPath := a.findConfigFile()
+	if configPath == "" {
+		configPath = a.createDefaultConfig()
+	}
+	a.configPath = configPath
+	if configPath == "" {
+		return fmt.Errorf("no config file found and could not create default")
+	}
+
+	cfg := config.DefaultClientConfig()
+	if err := config.LoadAndValidate(configPath, &cfg); err != nil {
+		slog.Warn("failed to load config file, using defaults", "error", err)
+		cfg = config.DefaultClientConfig()
+	}
+	cfg.API.Enabled = true
+	if cfg.API.Listen == "" {
+		cfg.API.Listen = "127.0.0.1:7383"
+	}
+	a.clientCfg = &cfg
+
+	c, err := client.New(a.clientCfg)
+	if err != nil {
+		return fmt.Errorf("create client: %w", err)
+	}
+	a.client = c
+	c.SetConfigPath(a.configPath)
 	return nil
 }
 
@@ -820,7 +867,21 @@ func (a *App) UpdateQuickSettings(settings *QuickSettings) error {
 
 	a.savePreferences()
 
-	// Update VPN state if changed
+	// Only touch the VPN when the setting actually changed: every settings
+	// save used to enable or disable the VPN as a side effect, so saving an
+	// unrelated toggle bounced the tunnel.
+	currentlyEnabled := false
+	a.mu.RLock()
+	c := a.client
+	a.mu.RUnlock()
+	if c != nil {
+		if vpnMgr := c.VPNManager(); vpnMgr != nil {
+			currentlyEnabled = vpnMgr.Status().Status == vpn.StatusConnected
+		}
+	}
+	if settings.VPNEnabled == currentlyEnabled {
+		return nil
+	}
 	if settings.VPNEnabled {
 		return a.EnableVPN()
 	}
@@ -829,8 +890,10 @@ func (a *App) UpdateQuickSettings(settings *QuickSettings) error {
 
 // EnableVPN enables the VPN mode.
 func (a *App) EnableVPN() error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	// Full lock: enabling the VPN mutates shared state (the VPN manager and
+	// preferences); an RLock here allowed concurrent mutation.
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	if a.client == nil {
 		return fmt.Errorf("client not initialized")
@@ -851,8 +914,8 @@ func (a *App) EnableVPN() error {
 
 // DisableVPN disables the VPN mode.
 func (a *App) DisableVPN() error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	if a.client == nil {
 		return nil
@@ -902,7 +965,11 @@ func (a *App) OpenWebDashboard() error {
 // Quit exits the application.
 func (a *App) Quit() error {
 	a.savePreferences()
-	// The Wails runtime will handle the actual quit
+	// Actually quit. The old body saved preferences and returned — the
+	// dashboard's Quit control was a no-op.
+	if a.ctx != nil {
+		wailsruntime.Quit(a.ctx)
+	}
 	return nil
 }
 

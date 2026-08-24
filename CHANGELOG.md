@@ -237,6 +237,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connection and persists the choice. GetServers stopped labeling the selected
   server "connected" merely because the local client process was running — the
   selected entry now carries a real probed status and the rest are "available"
+- The desktop Quit control actually quits (it saved preferences and returned);
+  Auto-connect and Start minimized are honored (both were persisted by their
+  toggles and never read — the client always started at launch and the window
+  always opened visible; Auto-connect defaults to on, preserving the previous
+  behavior); the Notifications toggle was removed, because the desktop app has
+  no notifier and a switch that saves a preference nothing reads is worse than
+  no switch
+- Saving the desktop quick settings no longer bounces the VPN as a side
+  effect: the VPN is touched only when its toggle actually changed, and the
+  enable/disable paths take the write lock they mutate state under
+- Desktop server statuses render correctly: the frontend styled
+  online/offline/busy — a vocabulary the backend never emits — so every server
+  showed the fallback style; it now understands connected/disconnected/
+  available. The Edit Server dialog opens with the server's values (it kept
+  its initial state forever, so Edit opened blank and Add retained stale
+  values), and the empty-state "Add Server" button opens the Add dialog
+  instead of being wired to a comment
 - The desktop Connect button follows the local client lifecycle instead of
   upstream reachability. When the upstream went down, the button flipped to
   "Connect" — but clicking it was a no-op on the already-running client, and
