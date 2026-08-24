@@ -126,6 +126,9 @@ export function RequestLog() {
               <div className="card py-3 bg-gradient-to-br from-bifrost-accent/10 to-transparent">
                 <p className="text-sm text-bifrost-subtle">Total Requests</p>
                 <p className="text-xl font-bold text-bifrost-heading">{stats.total_requests.toLocaleString()}</p>
+                <p className="text-xs text-bifrost-muted">
+                  {stats.count.toLocaleString()} of {stats.max_size.toLocaleString()} kept in the log
+                </p>
               </div>
               <div className="card py-3 bg-gradient-to-br from-cyan-500/10 to-transparent">
                 <p className="text-sm text-bifrost-subtle">Data Sent</p>

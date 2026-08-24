@@ -1,4 +1,10 @@
 import { useState, useEffect } from 'react'
+// Link, not <a href>: the dashboard runs under a HashRouter, so a path href
+// navigates the browser to that path instead of the route. The SPA is served
+// for any unmatched path, so the page reloads at /config, BASE_PATH becomes
+// "/config", and every later API call goes to /config/api/v1/... — which the
+// server answers with 200 text/html, breaking the dashboard silently.
+import { Link } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useBackends } from '../hooks/useStats'
 import { BackendList } from '../components/Backends/BackendList'
@@ -156,7 +162,7 @@ export function Backends() {
           </svg>
           <p className="text-sm text-bifrost-text">
             <strong>Runtime vs Persistent:</strong> Backends added here are active immediately but not persisted across restarts.
-            To make changes permanent, configure backends in the <a href="/config" className="text-bifrost-accent hover:underline">Configuration</a> page.
+            To make changes permanent, configure backends in the <Link to="/config" className="text-bifrost-accent hover:underline">Configuration</Link> page.
           </p>
         </div>
       </div>
