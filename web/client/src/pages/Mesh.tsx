@@ -1,4 +1,8 @@
 import { useState } from 'react'
+// Link, not <a href>: under a HashRouter a path href leaves the SPA, reloads
+// the page at that path and repoints BASE_PATH at it, which silently breaks
+// every subsequent API call.
+import { Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { MeshPeer, MeshRoute } from '../api/types'
@@ -173,7 +177,7 @@ export function Mesh() {
             <p className="text-sm text-bifrost-error mt-1">{meshError}</p>
             {meshError.includes('not configured') && (
               <p className="text-xs text-bifrost-muted mt-2">
-                Go to <a href="/settings" className="text-bifrost-accent underline">Settings → Mesh Networking</a> and configure mesh first.
+                Go to <Link to="/settings" className="text-bifrost-accent underline">Settings → Mesh Networking</Link> and configure mesh first.
               </p>
             )}
           </div>
@@ -183,7 +187,7 @@ export function Mesh() {
         {!isEnabled && meshStatus?.status === 'disabled' && (
           <div className="mt-4 p-3 bg-bifrost-muted/10 border border-bifrost-border rounded-lg">
             <p className="text-sm text-bifrost-muted">
-              Mesh networking is not configured. Enable it in <a href="/settings" className="text-bifrost-accent underline">Settings → Mesh Networking</a> to create peer-to-peer connections with other Bifrost clients.
+              Mesh networking is not configured. Enable it in <Link to="/settings" className="text-bifrost-accent underline">Settings → Mesh Networking</Link> to create peer-to-peer connections with other Bifrost clients.
             </p>
           </div>
         )}

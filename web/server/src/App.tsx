@@ -27,6 +27,10 @@ export default function App() {
             <Route path="config" element={<Config />} />
             <Route path="generator" element={<ConfigGenerator />} />
             <Route path="setup" element={<SetupGuide />} />
+            {/* Catch-all: an unknown hash (a stale bookmark, or a fragment
+                written by something that does not know the hash is the route)
+                must not leave <Outlet /> empty and blank the dashboard. */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>
         </Routes>
       </HashRouter>
