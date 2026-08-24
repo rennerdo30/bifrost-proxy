@@ -73,7 +73,7 @@ export function ApiTokenDialog() {
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsOpen(false)} aria-hidden="true" />
+          <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={() => setIsOpen(false)} aria-hidden="true" />
 
           <div
             ref={modalRef}
