@@ -1189,6 +1189,26 @@ func (n *MeshNode) performMaintenance() {
 		}
 		_ = n.discovery.UpdateEndpoints(meshEndpoints) //nolint:errcheck // Best effort endpoint update
 	}
+
+	// Refresh measured peer latencies so routing metrics track the
+	// keep-alive round-trip instead of the value captured at connect time,
+	// which is 0 for inbound and relayed peers before their first PONG.
+	if n.p2pManager != nil {
+		for peerID, conn := range n.p2pManager.GetConnections() {
+			latency := conn.Latency()
+			if latency <= 0 {
+				continue
+			}
+			peer, exists := n.peerRegistry.Get(peerID)
+			if !exists || peer.GetLatency() == latency {
+				continue
+			}
+			peer.SetLatency(latency)
+			if peer.VirtualIP.IsValid() {
+				n.protocol.UpdatePeerLatency(peerID, peer.VirtualIP, latency)
+			}
+		}
+	}
 }
 
 // setStatus sets the node status.

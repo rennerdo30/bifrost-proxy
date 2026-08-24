@@ -183,6 +183,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written into a profile
 
 ### Fixed
+- P2P latency is now measured instead of fabricated: keep-alive PONGs record
+  the actual PING round-trip (previously the PONG was discarded and the stored
+  "latency" was however long a socket write took), relayed connections gained
+  the same keep-alive measurement (previously always 0), and the mesh node
+  refreshes routing metrics with the measured values during maintenance — so
+  inbound and relayed peers no longer permanently score as the cheapest route
+  and relay selection can order relays by real latency
+- Relayed peer connections now report the peer address they were established
+  to instead of a blank endpoint in `/api/mesh/peers`
+- NAT detection no longer hard-codes its results: `is_behind_nat` is computed
+  by checking whether the STUN-observed address is held by a local interface
+  (a machine with a public IP now correctly reports no NAT and NAT type
+  `none`), and the never-tested `hairpin` field is gone from the NAT info
+- The Windows TUN device no longer busy-spins when the interface is idle:
+  reads wait on WinTun's read-wait event instead of hammering
+  `ERROR_NO_MORE_ITEMS`, which also ends the error-log flood from the VPN read
+  loop on an idle tunnel
 - The server dashboard's Request Log page crashed to the error boundary as soon
   as `api.enable_request_log` was turned on — the exact thing its own empty state
   told operators to do. The page reads aggregate counters that
