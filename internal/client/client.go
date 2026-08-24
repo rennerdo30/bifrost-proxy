@@ -277,6 +277,12 @@ func (c *Client) Start(ctx context.Context) error {
 				return c.getQuickSettings()
 			},
 			SettingsUpdater: c.updateQuickSettings,
+			// Server list and selection for GET /api/v1/servers and
+			// POST /api/v1/server/select. Without these the list was always
+			// empty and selection acknowledged with 200 while changing
+			// nothing — the mobile app's server screen was wired to a stub.
+			ServersGetter:  c.Servers,
+			ServerSelector: c.SelectServer,
 			// Traffic counters for /status. Without these the endpoint reported a
 			// hardcoded-looking bytes_sent=0 / bytes_received=0 /
 			// active_connections=0 forever.
@@ -1068,6 +1074,139 @@ func (c *Client) applyServerConn() {
 		RetryCount: c.config.Server.RetryCount,
 		RetryDelay: c.config.Server.RetryDelay.Duration(),
 	})
+}
+
+// legacyDefaultServerName is the display name given to the single `server:`
+// block when no named `servers:` list is configured, matching the desktop
+// app's convention so a selection round-trips between the two clients.
+const legacyDefaultServerName = "Default Server"
+
+// serverProbeTimeout bounds the reachability probe Servers performs for the
+// currently selected entry, so a dead upstream cannot stall the API response.
+const serverProbeTimeout = 2 * time.Second
+
+// serverStatus values reported in ServerInfo.Status. Only the currently
+// selected server is probed — dialing every configured server on each list
+// request would turn a UI poll into a port scan.
+const (
+	serverStatusAvailable    = "available"
+	serverStatusConnected    = "connected"
+	serverStatusDisconnected = "disconnected"
+)
+
+// Servers reports the configured upstream servers for GET /api/v1/servers.
+// Credentials never leave the process: ServerInfo has no credential fields.
+func (c *Client) Servers() []apiclient.ServerInfo {
+	c.mu.RLock()
+	named := make([]config.NamedServer, len(c.config.Servers))
+	copy(named, c.config.Servers)
+	current := c.config.Server
+	c.mu.RUnlock()
+
+	// One bounded probe of the active address; every other entry is reported
+	// as available without being dialed.
+	currentStatus := serverStatusDisconnected
+	if current.Address != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), serverProbeTimeout)
+		if c.serverConn.IsConnected(ctx) {
+			currentStatus = serverStatusConnected
+		}
+		cancel()
+	}
+
+	servers := make([]apiclient.ServerInfo, 0, len(named)+1)
+	for _, s := range named {
+		status := serverStatusAvailable
+		if s.Address == current.Address {
+			status = currentStatus
+		}
+		servers = append(servers, apiclient.ServerInfo{
+			Name:      s.Name,
+			Address:   s.Address,
+			Protocol:  s.Protocol,
+			IsDefault: s.IsDefault,
+			Status:    status,
+		})
+	}
+	if len(named) == 0 && current.Address != "" {
+		servers = append(servers, apiclient.ServerInfo{
+			Name:      legacyDefaultServerName,
+			Address:   current.Address,
+			Protocol:  current.Protocol,
+			IsDefault: true,
+			Status:    currentStatus,
+		})
+	}
+	return servers
+}
+
+// SelectServer switches the upstream connection to the named entry from the
+// `servers:` list: it updates the in-memory config, reconfigures the live
+// ServerConnection so the next dial uses the new address and credentials, and
+// persists the choice when a config path is known. An unknown name is an
+// error — selection must never report success without changing anything.
+func (c *Client) SelectServer(name string) error {
+	c.mu.Lock()
+	var sel *config.NamedServer
+	for i := range c.config.Servers {
+		if c.config.Servers[i].Name == name {
+			sel = &c.config.Servers[i]
+			break
+		}
+	}
+	if sel == nil {
+		// The legacy single-server shape exposes exactly one entry; selecting
+		// it is an idempotent no-op by identity, not a swallowed failure.
+		if len(c.config.Servers) == 0 && c.config.Server.Address != "" && name == legacyDefaultServerName {
+			c.mu.Unlock()
+			return nil
+		}
+		c.mu.Unlock()
+		return fmt.Errorf("server not found: %s", name)
+	}
+
+	c.config.Server.Address = sel.Address
+	c.config.Server.Protocol = sel.Protocol
+	c.config.Server.Username = sel.Username
+	c.config.Server.Password = sel.Password
+	c.applyServerConn()
+	path := c.configPath
+	c.mu.Unlock()
+
+	logging.Info("Selected upstream server", "server", name, "address", sel.Address)
+
+	if path == "" {
+		return nil
+	}
+	// Persist through the comment-preserving node path, exactly like
+	// updateConfig; all four keys are always written so switching away from a
+	// credentialed server clears its stale credentials.
+	updates := map[string]interface{}{
+		"server": map[string]interface{}{
+			"address":  sel.Address,
+			"protocol": sel.Protocol,
+			"username": sel.Username,
+			"password": sel.Password,
+		},
+	}
+	node, err := config.LoadNode(path)
+	if err != nil {
+		logging.Warn("Failed to load config for server selection, preserving comments might fail", "error", err)
+		c.mu.RLock()
+		saveErr := config.Save(path, c.config)
+		c.mu.RUnlock()
+		if saveErr != nil {
+			return fmt.Errorf("failed to save config: %w", saveErr)
+		}
+		return nil
+	}
+	if err := config.UpdateNode(node, updates); err != nil {
+		return fmt.Errorf("failed to update config node: %w", err)
+	}
+	if err := config.SaveNode(path, node); err != nil {
+		return fmt.Errorf("failed to save config node: %w", err)
+	}
+	return nil
 }
 
 // reloadConfig reloads the client configuration from disk and hot-applies the
