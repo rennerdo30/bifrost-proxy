@@ -76,3 +76,6 @@ docs/node_modules
 # embedded repositories.
 .claude/worktrees/
 .claude/settings.local.json
+
+# Built hashpw helper binary
+/hashpw
