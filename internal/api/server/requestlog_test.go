@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -245,18 +247,131 @@ func TestRequestLog_Stats(t *testing.T) {
 	}
 
 	stats := log.Stats()
-	assert.True(t, stats["enabled"].(bool))
-	assert.Equal(t, 10, stats["count"])
-	assert.Equal(t, 100, stats["max_size"])
+	assert.True(t, stats.Enabled)
+	assert.Equal(t, 10, stats.Count)
+	assert.Equal(t, 100, stats.MaxSize)
 }
 
 func TestRequestLog_Stats_Empty(t *testing.T) {
 	log := NewRequestLog(50, false)
 
 	stats := log.Stats()
-	assert.False(t, stats["enabled"].(bool))
-	assert.Equal(t, 0, stats["count"])
-	assert.Equal(t, 50, stats["max_size"])
+	assert.False(t, stats.Enabled)
+	assert.Equal(t, 0, stats.Count)
+	assert.Equal(t, 50, stats.MaxSize)
+}
+
+// The Web UI renders stats.total_requests, .total_bytes_sent, .total_bytes_recv
+// and .top_hosts unconditionally as soon as stats.enabled is true. Before these
+// fields existed the Request Log page crashed with
+// "Cannot read properties of undefined (reading 'toLocaleString')" the moment
+// api.enable_request_log was turned on.
+func TestRequestLog_Stats_Aggregates(t *testing.T) {
+	log := NewRequestLog(100, true)
+
+	log.Add(RequestLogEntry{Method: "GET", Host: "a.example.com", StatusCode: 200, BytesSent: 10, BytesRecv: 100})
+	log.Add(RequestLogEntry{Method: "GET", Host: "a.example.com", StatusCode: 404, BytesSent: 20, BytesRecv: 200})
+	log.Add(RequestLogEntry{Method: "POST", Host: "b.example.com", StatusCode: 200, BytesSent: 30, BytesRecv: 300})
+
+	stats := log.Stats()
+
+	assert.Equal(t, int64(3), stats.TotalRequests)
+	assert.Equal(t, int64(60), stats.TotalBytesSent)
+	assert.Equal(t, int64(600), stats.TotalBytesRecv)
+	assert.Equal(t, map[string]int{"GET": 2, "POST": 1}, stats.RequestsByMethod)
+	assert.Equal(t, map[string]int{"200": 2, "404": 1}, stats.RequestsByStatus)
+	require.Len(t, stats.TopHosts, 2)
+	// Most frequent host first.
+	assert.Equal(t, HostCount{Host: "a.example.com", Count: 2}, stats.TopHosts[0])
+	assert.Equal(t, HostCount{Host: "b.example.com", Count: 1}, stats.TopHosts[1])
+}
+
+// The UI calls stats.top_hosts.slice() and Object.keys() on the two maps, so a
+// JSON null would crash it just as a missing field did.
+func TestRequestLog_Stats_CollectionsNeverNil(t *testing.T) {
+	log := NewRequestLog(100, true)
+
+	stats := log.Stats()
+	require.NotNil(t, stats.TopHosts)
+	require.NotNil(t, stats.RequestsByMethod)
+	require.NotNil(t, stats.RequestsByStatus)
+
+	encoded, err := json.Marshal(stats)
+	require.NoError(t, err)
+
+	var decoded map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(encoded, &decoded))
+	for _, field := range []string{
+		"enabled", "count", "max_size", "total_requests", "total_bytes_sent",
+		"total_bytes_recv", "requests_by_method", "requests_by_status", "top_hosts",
+	} {
+		assert.Contains(t, decoded, field, "field %q must always be present for the Web UI", field)
+	}
+	assert.JSONEq(t, `[]`, string(decoded["top_hosts"]))
+	assert.JSONEq(t, `{}`, string(decoded["requests_by_method"]))
+	assert.JSONEq(t, `{}`, string(decoded["requests_by_status"]))
+}
+
+// Running totals must survive ring buffer eviction, otherwise "Total Requests"
+// would silently stop counting once the buffer filled up.
+func TestRequestLog_Stats_TotalsSurviveEviction(t *testing.T) {
+	log := NewRequestLog(2, true)
+
+	for i := 0; i < 5; i++ {
+		log.Add(RequestLogEntry{Method: "GET", Host: "example.com", BytesSent: 1, BytesRecv: 2})
+	}
+
+	stats := log.Stats()
+	assert.Equal(t, 2, stats.Count, "only maxSize entries are retained")
+	assert.Equal(t, int64(5), stats.TotalRequests)
+	assert.Equal(t, int64(5), stats.TotalBytesSent)
+	assert.Equal(t, int64(10), stats.TotalBytesRecv)
+}
+
+func TestRequestLog_Stats_ClearResetsTotals(t *testing.T) {
+	log := NewRequestLog(100, true)
+
+	log.Add(RequestLogEntry{Method: "GET", Host: "example.com", BytesSent: 5, BytesRecv: 7})
+	log.Clear()
+
+	stats := log.Stats()
+	assert.Equal(t, 0, stats.Count)
+	assert.Zero(t, stats.TotalRequests)
+	assert.Zero(t, stats.TotalBytesSent)
+	assert.Zero(t, stats.TotalBytesRecv)
+	assert.Empty(t, stats.TopHosts)
+}
+
+func TestRequestLog_Stats_TopHostsCapped(t *testing.T) {
+	log := NewRequestLog(1000, true)
+
+	// topHostsLimit+5 distinct hosts, each with a distinct count so the
+	// ordering is unambiguous.
+	const extraHosts = 5
+	for i := 0; i < topHostsLimit+extraHosts; i++ {
+		for j := 0; j <= i; j++ {
+			log.Add(RequestLogEntry{Method: "GET", Host: fmt.Sprintf("host-%02d", i)})
+		}
+	}
+
+	stats := log.Stats()
+	require.Len(t, stats.TopHosts, topHostsLimit)
+	// The busiest host is the last one added (highest count).
+	assert.Equal(t, fmt.Sprintf("host-%02d", topHostsLimit+extraHosts-1), stats.TopHosts[0].Host)
+	for i := 1; i < len(stats.TopHosts); i++ {
+		assert.GreaterOrEqual(t, stats.TopHosts[i-1].Count, stats.TopHosts[i].Count)
+	}
+}
+
+func TestRequestLog_Stats_DisabledDoesNotCount(t *testing.T) {
+	log := NewRequestLog(100, false)
+
+	log.Add(RequestLogEntry{Method: "GET", Host: "example.com", BytesSent: 1, BytesRecv: 1})
+
+	stats := log.Stats()
+	assert.Zero(t, stats.TotalRequests)
+	assert.Zero(t, stats.TotalBytesSent)
+	assert.Zero(t, stats.TotalBytesRecv)
 }
 
 func TestRequestLogEntry_Struct(t *testing.T) {

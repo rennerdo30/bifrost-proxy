@@ -47,6 +47,9 @@ export const BASE_PATH = window.location.pathname.replace(/\/+$/, '')
 const API_BASE = `${BASE_PATH}/api/v1`
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
 
+/** HTTP status chi returns for a path that has no handler registered. */
+const HTTP_NOT_FOUND = 404
+
 class APIError extends Error {
   constructor(
     public status: number,
@@ -55,6 +58,33 @@ class APIError extends Error {
     super(message)
     this.name = 'APIError'
   }
+}
+
+/**
+ * True when a request failed because the endpoint is not mounted at all.
+ *
+ * Whole API groups are registered conditionally by the server: /cache/* only
+ * when a `cache:` section is configured, /mesh/* only when `mesh.enabled` is
+ * true (internal/api/server/server.go). On such a server every call in the
+ * group 404s forever, so a 404 there means "this feature is not configured",
+ * not "this item does not exist" — and the UI must say so instead of rendering
+ * an empty list.
+ */
+export function isFeatureUnavailable(error: unknown): boolean {
+  return error instanceof APIError && error.status === HTTP_NOT_FOUND
+}
+
+/** Attempts a failing query makes before giving up (react-query's default). */
+const MAX_QUERY_RETRIES = 3
+
+/**
+ * react-query retry policy that gives up immediately on an unmounted
+ * endpoint. Retrying cannot make a conditionally mounted route appear, and the
+ * default backoff would delay the "not configured" banner by several seconds
+ * while the page shows loading skeletons.
+ */
+export function retryUnlessUnavailable(failureCount: number, error: unknown): boolean {
+  return !isFeatureUnavailable(error) && failureCount < MAX_QUERY_RETRIES
 }
 
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
