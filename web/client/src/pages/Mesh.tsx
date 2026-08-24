@@ -266,10 +266,18 @@ export function Mesh() {
                 {peers.map((peer: MeshPeer) => (
                   <tr
                     key={peer.id}
-                    className={`border-b border-bifrost-border/50 text-sm cursor-pointer hover:bg-bifrost-bg/50 ${
+                    tabIndex={0}
+                    aria-expanded={selectedPeer?.id === peer.id}
+                    className={`border-b border-bifrost-border/50 text-sm cursor-pointer hover:bg-bifrost-bg/50 focus:outline-none focus:bg-bifrost-bg/50 ${
                       selectedPeer?.id === peer.id ? 'bg-bifrost-accent/10' : ''
                     }`}
                     onClick={() => setSelectedPeer(selectedPeer?.id === peer.id ? null : peer)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setSelectedPeer(selectedPeer?.id === peer.id ? null : peer)
+                      }
+                    }}
                   >
                     <td className="py-2">
                       <div className="flex items-center gap-2">
@@ -577,8 +585,18 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
           <g
             key={peer.id}
             transform={`translate(${pos.x}, ${pos.y})`}
+            role="button"
+            tabIndex={0}
+            aria-pressed={isSelected}
+            aria-label={`Select peer ${peer.name || peer.id}`}
             onClick={() => onSelectPeer(isSelected ? null : peer)}
-            className="cursor-pointer"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelectPeer(isSelected ? null : peer)
+              }
+            }}
+            className="cursor-pointer focus:outline-none"
           >
             <circle
               r={isSelected ? 22 : 18}
@@ -614,7 +632,16 @@ function TopologyVisualization({ localPeer, peers, onSelectPeer, selectedPeerId 
             <g
               key={peer.id}
               transform={`translate(0, ${15 + idx * 20})`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Select offline peer ${peer.name || peer.id}`}
               onClick={() => onSelectPeer(peer)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onSelectPeer(peer)
+                }
+              }}
               className="cursor-pointer"
             >
               <circle r={6} fill="#1e1e2e" stroke="#64748b" strokeWidth={1} opacity={0.5} />
