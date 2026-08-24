@@ -1739,6 +1739,8 @@ func TestAPI_HandleSelectServer_EmptyServer(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
+// A client without a selector must refuse rather than acknowledge with 200 —
+// the previous fake success made every mobile server selection a silent no-op.
 func TestAPI_HandleSelectServer_NilServerSelector(t *testing.T) {
 	api := New(Config{})
 	handler := api.Handler()
@@ -1750,13 +1752,7 @@ func TestAPI_HandleSelectServer_NilServerSelector(t *testing.T) {
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 
-	assert.Equal(t, http.StatusOK, w.Code)
-
-	var resp map[string]string
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Equal(t, "selected", resp["status"])
-	assert.Equal(t, "server1", resp["server"])
+	assert.Equal(t, http.StatusNotImplemented, w.Code)
 }
 
 func TestAPI_HandleSelectServer_SelectorError(t *testing.T) {

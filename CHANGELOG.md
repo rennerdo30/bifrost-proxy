@@ -206,6 +206,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist, with an `id` that was always `undefined` because `ServerInfo` has no
   such field. It now calls `POST /api/v1/server/select` with
   `{"server": "<name>"}`, and the server list is keyed on `name`
+- `GET /api/v1/servers` and `POST /api/v1/server/select` now work against the
+  real client, not just the desktop app: the client never supplied the server
+  list or selector, so the list was always `[]` and a select was acknowledged
+  with 200 while changing nothing. The client now reports its `servers:` config
+  (credentials excluded; only the selected entry is probed for reachability),
+  and selection reconfigures the live upstream connection and persists through
+  the comment-preserving save path. An API built without a selector answers
+  501 instead of the previous fake success
+- Mobile app: adding a split-tunnel domain sent `{"domain": ...}` where the
+  handler decodes `{"pattern": ...}`, so every domain rule — from the Split
+  Tunneling screen and the pre-connect sync alike — was rejected with
+  HTTP 400. The request body now matches the handler
 - Mobile app: the `StatusResponse` and `VPNStatus` types matched neither the Go
   handlers nor the API docs, so the Stats screen showed a permanent `N/A` for
   nine rows and the session duration, and "Server Status" was permanently

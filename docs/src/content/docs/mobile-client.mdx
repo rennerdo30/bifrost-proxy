@@ -325,8 +325,8 @@ The mobile app uses these API endpoints:
 | `GET /api/v1/vpn/status` | VPN connection status (`vpn.VPNStats`) |
 | `POST /api/v1/vpn/enable` | Enable VPN |
 | `POST /api/v1/vpn/disable` | Disable VPN |
-| `GET /api/v1/servers` | Available servers |
-| `POST /api/v1/server/select` | Select server, body `{"server": "<name>"}` |
+| `GET /api/v1/servers` | The client's `servers:` list (credentials excluded) |
+| `POST /api/v1/server/select` | Select server, body `{"server": "<name>"}`; switches the client's live upstream connection and persists the choice |
 | `GET /api/v1/config` | Get configuration |
 | `PUT /api/v1/config` | Update configuration |
 | `GET /api/v1/vpn/split/rules` | Split tunnel rules |

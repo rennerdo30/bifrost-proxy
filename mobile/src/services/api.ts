@@ -486,10 +486,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ mode }),
     }),
+  // The Go handler decodes `pattern`, not `domain` — sending the wrong key is
+  // answered with 400 "pattern is required" and the rule never lands.
   addSplitTunnelDomain: (domain: string) =>
     fetchJSON<{ status: string }>('/vpn/split/domains', {
       method: 'POST',
-      body: JSON.stringify({ domain }),
+      body: JSON.stringify({ pattern: domain }),
     }),
   removeSplitTunnelDomain: (domain: string) =>
     fetchJSON<{ status: string }>(`/vpn/split/domains/${encodeURIComponent(domain)}`, { method: 'DELETE' }),
