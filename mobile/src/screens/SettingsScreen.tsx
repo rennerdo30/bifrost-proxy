@@ -216,7 +216,7 @@ export function SettingsScreen() {
       <SettingSection title="Connection">
         <SettingItem
           title="Auto-connect"
-          description="Connect on app launch"
+          description="Remote client setting: connect when the client app starts"
           disabled={isMutating}
         >
           <Switch
@@ -226,7 +226,7 @@ export function SettingsScreen() {
             thumbColor="#ffffff"
             disabled={isMutating}
             accessibilityLabel="Auto-connect toggle"
-            accessibilityHint="When enabled, the app will connect automatically on launch"
+            accessibilityHint="When enabled, the remote Bifrost client connects automatically when it starts"
             accessibilityState={{ checked: config?.tray?.auto_connect ?? false }}
           />
         </SettingItem>
@@ -300,7 +300,7 @@ export function SettingsScreen() {
       <SettingSection title="Notifications">
         <SettingItem
           title="Connection Alerts"
-          description="Notify on connect/disconnect"
+          description="Remote client setting: desktop notifications on the machine running the client"
           disabled={isMutating}
         >
           <Switch

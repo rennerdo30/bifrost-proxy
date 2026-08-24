@@ -56,8 +56,11 @@ mobile/
 ### What is wired up in this change
 
 - **`app.json`**
-  - iOS `entitlements`: `com.apple.developer.networking.networkextension`
-    = `["packet-tunnel-provider"]`.
+  - iOS: the Network Extension entitlement is intentionally NOT declared —
+    the packet-tunnel extension does not exist yet, and requesting an
+    entitlement for a missing extension breaks provisioning. Add
+    `com.apple.developer.networking.networkextension =
+    ["packet-tunnel-provider"]` when the extension target is real.
   - Android `permissions`: `FOREGROUND_SERVICE`,
     `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` (plus existing
     `INTERNET` / `ACCESS_NETWORK_STATE`).

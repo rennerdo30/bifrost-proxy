@@ -206,10 +206,13 @@ Detailed connection statistics:
 └─────────────────────────────────────┘
 ```
 
-> **Note:** Protocol/encryption/IP fields above describe the connection of the
-> **remote Bifrost client** the app controls (reported over the REST API). They
-> do **not** indicate an encrypted tunnel running on the phone itself — see the
-> warning at the top of this page.
+> **Note:** the mockup above is aspirational for the Connection Details and
+> Network sections: the REST API does **not** currently report protocol,
+> encryption, port, MTU, local IP, gateway, DNS servers or interface name, so
+> the app shows only the fields the API supplies (traffic counters, session
+> duration, connection counts, DNS statistics). Anything shown describes the
+> **remote Bifrost client** the app controls, never a tunnel on the phone —
+> see the warning at the top of this page.
 
 ### Settings Screen
 
@@ -223,13 +226,10 @@ Configuration and preferences:
 │  Connection                         │
 │  ─────────────────────────────────  │
 │  Auto-connect              [  🔘  ] │
-│  Connect on app launch              │
+│  Remote client: connect on start    │
 │                                     │
-│  Kill Switch               [🔘   ]  │
-│  Block traffic if VPN disconnects   │
-│                                     │
-│  Split Tunneling           [  🔘  ] │
-│  Exclude certain apps               │
+│  Split Tunneling                    │
+│  Manage app/domain/IP rules         │
 │                     [Configure →]   │
 │                                     │
 │  Server                             │
@@ -241,7 +241,7 @@ Configuration and preferences:
 │  Notifications                      │
 │  ─────────────────────────────────  │
 │  Connection Alerts         [🔘   ]  │
-│  Notify on connect/disconnect       │
+│  Remote client desktop alerts       │
 │                                     │
 │  Data & Privacy                     │
 │  ─────────────────────────────────  │
@@ -350,8 +350,8 @@ The Bifrost Mobile Client is designed with accessibility in mind, supporting bot
 
 | Feature | Support |
 |---------|---------|
-| Screen Reader | Full support |
-| Accessibility Labels | All interactive elements |
+| Screen Reader | Supported across all five screens |
+| Accessibility Labels | Interactive elements are labelled, including the split-tunnel rule switches; toasts announce as alerts |
 | Accessibility Roles | Semantic roles for buttons, tabs, switches |
 | Accessibility States | Disabled, selected, checked states |
 | Accessibility Hints | Context-aware action hints |
