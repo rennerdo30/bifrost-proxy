@@ -30,14 +30,21 @@ export function Backends() {
   // Backend configs for editing (fetched from full config)
   const [backendConfigs, setBackendConfigs] = useState<BackendConfig[]>([])
 
+  // Whether the source-of-truth configs could be loaded. Editing without them
+  // is destructive (see handleEditClick), so the failure must not be silent.
+  const [configsUnavailable, setConfigsUnavailable] = useState(false)
+
   // Fetch full config to get backend configurations
   useEffect(() => {
     const fetchConfigs = async () => {
       try {
         const config = await api.getFullConfig()
         setBackendConfigs(config.backends || [])
-      } catch {
-        // Silently fail - configs will be empty
+        setConfigsUnavailable(false)
+      } catch (err) {
+        setBackendConfigs([])
+        setConfigsUnavailable(true)
+        if (import.meta.env.DEV) console.error('Failed to load backend configs:', err)
       }
     }
     fetchConfigs()
@@ -82,20 +89,18 @@ export function Backends() {
     const config = backendConfigs.find((b) => b.name === name)
     if (config) {
       setEditingBackend(config)
-    } else {
-      // If we don't have the config, create a minimal one from runtime data
-      const runtime = backends?.find((b) => b.name === name)
-      if (runtime) {
-        setEditingBackend({
-          name: runtime.name,
-          type: runtime.type as BackendConfig['type'],
-          enabled: true,
-          priority: 10,
-          weight: 1,
-          config: {},
-        })
-      }
+      return
     }
+    // Editing is remove-then-add: without the real source config, the dialog
+    // would silently substitute config: {} and saving would DESTROY the
+    // backend's settings (a WireGuard key, credentials, ...). Refuse and say
+    // why rather than pretending an empty config is what the backend has.
+    showToast(
+      configsUnavailable
+        ? `Cannot edit "${name}": the server configuration could not be loaded, and editing without it would erase this backend's settings`
+        : `Cannot edit "${name}": its configuration was not found in the server config`,
+      'error'
+    )
   }
 
   return (
