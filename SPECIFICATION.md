@@ -610,6 +610,8 @@ POST   /api/v1/config/reload        - Reload config
 GET    /api/v1/auth/plugins         - Registered auth plugins + availability
 
 GET    /api/v1/requests             - Recent proxied requests
+GET    /api/v1/requests/stats       - Request log totals and top hosts
+DELETE /api/v1/requests             - Clear the request log (resets the totals)
 GET    /api/v1/connections          - Active connections
 
 GET    /api/v1/cache/...            - Response cache control (only when cache.enabled)

@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api } from '../api/client'
+import { api, isFeatureUnavailable, retryUnlessUnavailable } from '../api/client'
 import { useToast } from '../components/Toast'
 import { ConfirmModal } from '../components/Config/ConfirmModal'
 import {
@@ -15,6 +15,10 @@ import type { MeshPeerInfo, CreateMeshNetworkRequest } from '../api/types'
 
 type ViewMode = 'list' | 'topology'
 
+/** Poll intervals, in milliseconds. Paused while the mesh API is unreachable. */
+const NETWORKS_REFETCH_MS = 10000
+const PEERS_REFETCH_MS = 5000
+
 export function Mesh() {
   const queryClient = useQueryClient()
   const { showToast } = useToast()
@@ -28,17 +32,25 @@ export function Mesh() {
   const [removingPeerId, setRemovingPeerId] = useState<string | null>(null)
 
   // Queries
-  const { data: networksData, isLoading: networksLoading } = useQuery({
+  const { data: networksData, isLoading: networksLoading, error: networksError } = useQuery({
     queryKey: ['meshNetworks'],
     queryFn: api.listMeshNetworks,
-    refetchInterval: 10000,
+    retry: retryUnlessUnavailable,
+    // Once the endpoint is known to be missing, stop polling it: the routes
+    // are mounted at startup, so retrying cannot make them appear.
+    refetchInterval: (query) =>
+      isFeatureUnavailable(query.state.error) ? false : NETWORKS_REFETCH_MS,
   })
+
+  // The /mesh/* group is only mounted when mesh.enabled is true, so a 404 here
+  // means the coordinator is switched off — not that there are no networks.
+  const meshUnavailable = isFeatureUnavailable(networksError)
 
   const { data: peersData, isLoading: peersLoading, refetch: refetchPeers } = useQuery({
     queryKey: ['meshPeers', selectedNetworkId],
     queryFn: () => (selectedNetworkId ? api.listMeshPeers(selectedNetworkId) : Promise.resolve({ peers: [] })),
-    enabled: !!selectedNetworkId,
-    refetchInterval: 5000,
+    enabled: !!selectedNetworkId && !meshUnavailable,
+    refetchInterval: PEERS_REFETCH_MS,
   })
 
   const networks = networksData?.networks || []
@@ -149,6 +161,7 @@ export function Mesh() {
           <button
             onClick={() => setIsCreateNetworkOpen(true)}
             className="btn btn-primary"
+            disabled={meshUnavailable}
           >
             <svg
               className="w-4 h-4"
@@ -163,6 +176,34 @@ export function Mesh() {
           </button>
         </div>
       </div>
+
+      {/* Mesh Coordinator Disabled Warning */}
+      {meshUnavailable && (
+        <div className="card bg-bifrost-warning/10 border-bifrost-warning/50">
+          <div className="flex items-center gap-3">
+            <svg
+              className="w-6 h-6 text-bifrost-warning flex-shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={2}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+              />
+            </svg>
+            <div>
+              <p className="font-medium text-bifrost-warning">Mesh coordinator is disabled</p>
+              <p className="text-sm text-bifrost-muted">
+                This server runs with mesh.enabled set to false, so the mesh coordinator API is not
+                available. Enable it in the configuration and restart the server to manage networks.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
