@@ -70,6 +70,11 @@ type ManagerConfig struct {
 	// STUNServers is a list of STUN servers.
 	STUNServers []string
 
+	// STUNTimeout bounds each STUN request. Zero falls back to
+	// ConnectTimeout. It exists because mesh.stun.timeout was parsed,
+	// documented and never delivered here.
+	STUNTimeout time.Duration
+
 	// TURNConfig is the TURN server configuration.
 	TURNConfig *TURNConfig
 
@@ -168,10 +173,27 @@ func NewP2PManager(config ManagerConfig) (*P2PManager, error) {
 	}
 
 	// Initialize NAT detector
-	pm.natDetector = NewNATDetector(config.STUNServers, config.ConnectTimeout)
+	stunTimeout := config.STUNTimeout
+	if stunTimeout <= 0 {
+		stunTimeout = config.ConnectTimeout
+	}
+	pm.natDetector = NewNATDetector(config.STUNServers, stunTimeout)
 
 	// Initialize relay manager
-	pm.relayManager = NewRelayManager(config.RelayConfig)
+	// Bridge the manager-level relay fields into the relay manager's config
+	// when the caller did not build a RelayConfig explicitly. The mesh layer
+	// fills TURNConfig/RelayEnabled on ManagerConfig — which nothing read, so
+	// with turn.enabled: true and valid credentials no TURN client was ever
+	// created and GetBestRelay always returned ErrRelayNotAvailable: mesh
+	// relaying was inoperative and nothing said why.
+	relayCfg := config.RelayConfig
+	if !relayCfg.Enabled && relayCfg.TURNConfig == nil {
+		relayCfg = DefaultRelayConfig()
+		relayCfg.Enabled = config.RelayEnabled
+		relayCfg.PeerRelayEnabled = config.PeerRelayEnabled
+		relayCfg.TURNConfig = config.TURNConfig
+	}
+	pm.relayManager = NewRelayManager(relayCfg)
 
 	return pm, nil
 }
