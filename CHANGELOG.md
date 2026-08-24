@@ -183,6 +183,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written into a profile
 
 ### Fixed
+- `logging.time_format` is applied. The field was documented, defaulted and
+  shown in the monitoring docs — and never read: slog's handlers used their own
+  fixed timestamp format, so the setting was pure decoration
+- Malformed split-tunnel rules are configuration errors instead of silent
+  drops. `IPMatcher.Add` returned nil for an entry that parsed as nothing, the
+  engine discarded every per-rule error at construction, and in include mode
+  the default action is bypass — so a typo'd include rule sent that traffic
+  OUTSIDE the tunnel in cleartext with nothing logged. `split_tunnel.ips`,
+  `.apps`, `.domains` and `.always_bypass` are all validated now, an app rule
+  needs a name or a path, and an unparsable IP entry is an error at the matcher
+  level too
+- An unusable route domain pattern (duplicate within a route, or beyond the
+  matcher's pattern limit) is rejected at config validation instead of being
+  silently dropped by the router — a dropped pattern sent those domains to the
+  default backend. Runtime drops that still occur (a hot-reload race) are
+  logged with the pattern and reason instead of a code-comment shrug. The same
+  pattern on two different routes stays legal
+- An unknown `health_check.type` is a configuration error. The checker factory
+  silently substituted a bare TCP connect — which reports green for a backend
+  whose application layer is dead — and `Checker.Type()` then answered "tcp",
+  hiding the substitution from the API as well
+- `health_check.timeout` is honored by ping checks. The subprocess flags were
+  hardcoded to 5s (and the manager wrapped 10s), so `timeout: 1s` still blocked
+  5–10s per probe and failure detection ran 5–10× slower than configured
+- `network.ipv6` / address-family restrictions are honored by the `http_proxy`
+  and `socks5_proxy` backends, which hardcoded "tcp" for the proxy dial while
+  `direct` and `wireguard` obeyed the setting
+- `mesh.stun.timeout` reaches the STUN client (it was parsed and never passed;
+  the NAT detector used the connect timeout), and **the entire `mesh.turn`
+  block works for the first time**: the TURN credentials were assigned to a
+  manager field nothing read, so with `turn.enabled: true` no TURN client was
+  ever created and relay selection always failed with nothing saying why. A
+  second and later configured TURN server is still unused, and now says so in
+  the log
+- `client.servers` selection support (see the server-selection change) plus:
+  `server.tls`, `proxy.http.tls`, `proxy.socks5.tls` and client-side
+  `max_connections` are refused with actionable errors instead of silently
+  ignored — a client `server.tls.enabled: true` used to yield a PLAINTEXT
+  upstream connection with no warning
+- Mullvad and PIA log a warning when `max_load` is configured: neither
+  provider's API integration populates server load, so the filter can never
+  trip — the setting currently has no effect
+- The server dashboard's OAuth `required_claims` field submits the
+  claim→value map the Go parser expects. It used to submit a string list,
+  which the parser silently discarded — the dashboard looked configured while
+  nothing reached the setting
+- `backends[].priority` is documented as having no effect (backend selection is
+  driven entirely by `routes[].priority`) and removed from the shipped
+  examples; `web_ui.base_path` is documented as optional in every setup (the
+  dashboard derives its prefix from the browser URL; the Go server does not
+  consume the value); the `debug.filter_domains` template comment now says
+  NOT YET IMPLEMENTED instead of describing a working option
+
 - The server dashboard's Request Log page crashed to the error boundary as soon
   as `api.enable_request_log` was turned on — the exact thing its own empty state
   told operators to do. The page reads aggregate counters that
