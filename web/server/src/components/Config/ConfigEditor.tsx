@@ -298,6 +298,11 @@ export function ConfigEditor({
   const handleSave = useCallback(async () => {
     if (!currentConfig) return
 
+    // In raw mode with unparseable YAML, editedConfig still holds the last
+    // good parse - saving would silently write stale config while the
+    // operator sees the broken text.
+    if (editorMode === 'raw' && rawError) return undefined
+
     // Validate before saving if validator is available
     if (onValidate) {
       setIsValidating(true)
@@ -322,7 +327,7 @@ export function ConfigEditor({
       setIsSaving(false)
     }
     return undefined
-  }, [currentConfig, createBackup, onSave, onValidate])
+  }, [currentConfig, createBackup, onSave, onValidate, editorMode, rawError])
 
   const handleReload = async () => {
     setIsReloading(true)
@@ -672,7 +677,7 @@ export function ConfigEditor({
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={isSaving || isReloading || isValidating}
+                  disabled={isSaving || isReloading || isValidating || (editorMode === 'raw' && !!rawError)}
                   className="btn btn-primary text-sm"
                 >
                   {isValidating ? (

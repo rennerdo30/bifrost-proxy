@@ -371,6 +371,7 @@ const (
 	EventConnectionNew   = "connection.new"
 	EventConnectionClose = "connection.close"
 	EventConfigReload    = "config.reload"
+	EventConfigSaved     = "config.saved"
 	EventStats           = "stats.update"
 )
 
