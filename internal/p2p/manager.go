@@ -392,6 +392,30 @@ func (pm *P2PManager) tryRelayConnect(ctx context.Context, peerID string, remote
 	// surface inbound data the same way direct connections do.
 	if rc, ok := conn.(*RelayedConnection); ok {
 		rc.SetOnData(pm.deliverPlaintext)
+
+		// Actually CONNECT the relayed connection. Creating it leaves the
+		// state at New; this function used to return here, the caller logged
+		// "relay connection established" and fired OnPeerConnected, and the
+		// operator saw a connected, counted peer whose Send returned
+		// ErrNotConnected forever — a fake success the connection monitor
+		// never reaped, because it only looks at Failed/Disconnected.
+		pm.mu.RLock()
+		endpoints := append([]netip.AddrPort(nil), pm.endpoints[peerID]...)
+		pm.mu.RUnlock()
+		if len(endpoints) == 0 {
+			_ = rc.Close() //nolint:errcheck // best-effort cleanup of the unconnected relay
+			return nil, fmt.Errorf("p2p: no known endpoints for peer %s to authorize on the relay", peerID)
+		}
+		var lastErr error
+		for _, ep := range endpoints {
+			if connectErr := rc.Connect(ctx, ep); connectErr == nil {
+				return conn, nil
+			} else {
+				lastErr = connectErr
+			}
+		}
+		_ = rc.Close() //nolint:errcheck // best-effort cleanup after failed connect
+		return nil, fmt.Errorf("p2p: relay connect to %s failed: %w", peerID, lastErr)
 	}
 
 	return conn, nil
