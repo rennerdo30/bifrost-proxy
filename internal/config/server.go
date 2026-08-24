@@ -82,12 +82,22 @@ type ListenerConfig struct {
 	WriteTimeout Duration `yaml:"write_timeout" json:"write_timeout"`
 
 	// IdleTimeout bounds a connection with no request in flight: one that has
-	// been accepted but has sent nothing, the wait between exchanges on a
-	// kept-alive intercepted tunnel, and an established CONNECT tunnel or
-	// SOCKS5 relay in which NEITHER direction has carried data. An actively
-	// transferring tunnel is never interrupted regardless of how long it lives.
-	// Set to 0 to let idle tunnels live until a peer closes them.
+	// been accepted but has sent nothing, or the wait between exchanges on a
+	// kept-alive loop (including a MITM-intercepted tunnel). It deliberately
+	// does NOT apply to an established opaque CONNECT tunnel or SOCKS5 relay:
+	// protocols like SSH, IMAP IDLE, or a WebSocket without keepalive pings
+	// legitimately hold an open tunnel in silence, and reaping them would break
+	// working traffic. Use TunnelIdleTimeout to opt into reaping those.
 	IdleTimeout Duration `yaml:"idle_timeout" json:"idle_timeout"`
+
+	// TunnelIdleTimeout, when set, reaps an ESTABLISHED opaque tunnel (CONNECT
+	// or SOCKS5 relay) in which NEITHER direction has carried data for the
+	// given period. An actively transferring tunnel is never interrupted, even
+	// to a very slow receiver: each window only requires progress, not
+	// completion. Off (0) by default, because a quiet-but-open tunnel is valid
+	// application behavior; enable it on listeners exposed to untrusted
+	// clients that could park connections.
+	TunnelIdleTimeout Duration `yaml:"tunnel_idle_timeout,omitempty" json:"tunnel_idle_timeout,omitempty"`
 
 	MaxConnections int `yaml:"max_connections" json:"max_connections"` // 0 = unlimited
 }

@@ -68,24 +68,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   both listeners:
   - `read_timeout` — an absolute bound on a complete inbound request arriving
     (HTTP request line and headers, or the whole SOCKS5 handshake) measured from
-    the client's first byte, then a per-read bound for the request body
-  - `write_timeout` — a per-*write* deadline, deliberately not an absolute one
-    over the whole response, so a streaming response (server-sent events, a
-    chunked feed, a large download) is never truncated while it is still making
-    progress
+    the client's first byte, then a per-read bound for the request body. It
+    covers the TLS handshake on TLS-terminated listeners and every decrypted
+    request on a MITM-intercepted tunnel, so neither a stalled handshake nor a
+    trickled decrypted header can pin a connection
+  - `write_timeout` — a **no-progress** bound: each window of `write_timeout`
+    must deliver at least one byte to the client, so a streaming response
+    (server-sent events, a chunked feed, a large download) is never truncated
+    while it keeps moving — even to a very slow receiver — while a client that
+    has stopped reading entirely is timed out within one window. (On a
+    TLS-terminated listener a stalled window is fatal, a Go TLS constraint; a
+    progressing response is still never cut off)
   - `idle_timeout` — a bound on a connection with nothing in flight: accepted
-    but silent, between exchanges on an intercepted tunnel, or an established
-    `CONNECT` tunnel / SOCKS5 relay in which *neither* direction has carried
-    data. Activity in either direction resets it, so an actively transferring
-    tunnel is never interrupted however long it lives
+    but silent, or between exchanges on a kept-alive (including intercepted)
+    loop. It deliberately does NOT reap an established opaque `CONNECT` tunnel
+    or SOCKS5 relay — a quiet-but-open tunnel (SSH, IMAP IDLE, a WebSocket
+    without pings) is valid traffic
+  - `tunnel_idle_timeout` (new, off by default) — the explicit opt-in that
+    reaps an established tunnel in which *neither* direction has carried data
+    for the period; an actively transferring tunnel is never interrupted
 
-  Two consequences to check before upgrading. **Outbound dials no longer follow
-  `read_timeout`**: they take `network.dial_timeout`, or a backend's own
-  `connect_timeout`, falling back to 30s. If you raised `read_timeout` to work
-  around slow backend connects, move that value to `network.dial_timeout`.
-  **Quiet tunnels are now reaped**: a protocol that holds a `CONNECT` tunnel open
-  without traffic (SSH, IMAP IDLE, a WebSocket with no keepalive pings) needs
-  `idle_timeout` raised above its quiet period, or set to `0` to disable reaping
+  The same triad now also applies to the client's `proxy.http` and
+  `proxy.socks5` listeners (default `0` = disabled there), and the client no
+  longer repurposes `proxy.http.read_timeout` as its outbound dial timeout.
+
+  One consequence to check before upgrading. **Outbound dials no longer follow
+  `read_timeout`**: a backend's own `connect_timeout` wins, then
+  `network.dial_timeout`, then a 30s default — and a backend-specific value is
+  no longer silently capped at 30s by the handler. If you raised `read_timeout`
+  to work around slow backend connects, move that value to
+  `network.dial_timeout` or the backend's `connect_timeout`
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
   rejecting every login. This affects `ntlm` (no credential source exists to

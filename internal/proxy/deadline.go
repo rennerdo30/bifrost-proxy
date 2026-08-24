@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"errors"
 	"log/slog"
 	"net"
 	"sync/atomic"
@@ -140,6 +141,39 @@ func (c *deadlineConn) idleWait() time.Duration {
 	return c.readTimeout
 }
 
+// beginHandshake bounds the TLS handshake that must complete before the first
+// request can be read. The handshake happens inside the tls.Conn, below this
+// wrapper's Read, so the deadline is armed directly on the socket; without it
+// a client could complete a TCP connect, start a handshake and stall forever,
+// pinning a goroutine and a file descriptor — the original slowloris finding,
+// resurfacing one layer down on TLS-enabled listeners. Returns whether a
+// deadline was armed so the caller knows to clear it afterwards.
+func (c *deadlineConn) beginHandshake() bool {
+	if c == nil {
+		return false
+	}
+	d := c.readTimeout
+	if d <= 0 {
+		d = c.idleWait()
+	}
+	if d <= 0 {
+		return false
+	}
+	c.arm(c.Conn.SetReadDeadline, d)
+	c.arm(c.Conn.SetWriteDeadline, d)
+	return true
+}
+
+// endHandshake clears the absolute deadlines beginHandshake armed, so they
+// cannot fire later inside a long response or an established tunnel.
+func (c *deadlineConn) endHandshake() {
+	if c == nil {
+		return
+	}
+	c.arm(c.Conn.SetReadDeadline, 0)
+	c.arm(c.Conn.SetWriteDeadline, 0)
+}
+
 // beginRequest arms the inbound-request deadlines: idle_timeout until the first
 // byte arrives, then read_timeout for the rest of the header block, with
 // per-write deadlines active so an error response cannot block forever.
@@ -241,12 +275,41 @@ func (c *deadlineConn) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// Write applies the per-write deadline, then writes.
+// Write applies write_timeout as a NO-PROGRESS bound: each window of
+// write_timeout must move at least one byte toward the client, so a slow but
+// steadily consuming receiver is never cut off, while a receiver that has
+// stopped reading entirely still times out. A single fixed deadline over the
+// whole Write call — the previous behavior — killed a large response to a slow
+// consumer even though every window carried data.
+//
+// One documented caveat: on a TLS-terminated listener a timed-out window is
+// fatal, because crypto/tls corrupts its record state on a write timeout and
+// rejects all further writes. There the semantics degrade to a per-window
+// absolute bound; a progressing plaintext response is never truncated.
 func (c *deadlineConn) Write(b []byte) (int, error) {
-	if c.writeDeadlines.Load() && c.writeTimeout > 0 {
-		c.arm(c.Conn.SetWriteDeadline, c.writeTimeout)
+	if !c.writeDeadlines.Load() || c.writeTimeout <= 0 {
+		return c.Conn.Write(b)
 	}
-	return c.Conn.Write(b)
+	total := 0
+	for {
+		c.arm(c.Conn.SetWriteDeadline, c.writeTimeout)
+		n, err := c.Conn.Write(b[total:])
+		total += n
+		if err == nil {
+			return total, nil
+		}
+		if n > 0 && isTimeoutErr(err) {
+			// Progress inside the window: keep pushing the remainder.
+			continue
+		}
+		return total, err
+	}
+}
+
+// isTimeoutErr reports whether err is a network timeout.
+func isTimeoutErr(err error) bool {
+	var ne net.Error
+	return errors.As(err, &ne) && ne.Timeout()
 }
 
 // CloseWrite forwards a write half-close when the underlying connection
@@ -268,9 +331,14 @@ func (c *deadlineConn) CloseRead() error {
 	return nil
 }
 
-// activityClock records when a set of connections last carried any data.
+// activityClock records when a set of connections last carried any data, and
+// whether the watchdog has already condemned the pair. The expired flag exists
+// because progress-aware writes re-arm their own deadlines: without it, a
+// write making progress could silently override the watchdog's expiry and keep
+// a condemned tunnel alive.
 type activityClock struct {
-	last atomic.Int64
+	last    atomic.Int64
+	expired atomic.Bool
 }
 
 func newActivityClock() *activityClock {
@@ -289,9 +357,16 @@ func (c *activityClock) idleFor() time.Duration {
 
 // activityConn marks a shared activity clock after every successful read or
 // write, so an idle watchdog can tell a quiet connection from a busy one.
+//
+// window, when positive, makes Write progress-aware: each window must move at
+// least one byte or the write fails as timed out. Marking the clock only after
+// a whole Write returned — the previous behavior — misclassified a large
+// transfer to a slow receiver as idle, because one multi-second Write never
+// updated the clock while it steadily drained.
 type activityConn struct {
 	net.Conn
-	clock *activityClock
+	clock  *activityClock
+	window time.Duration
 }
 
 func (c *activityConn) Read(b []byte) (int, error) {
@@ -303,11 +378,37 @@ func (c *activityConn) Read(b []byte) (int, error) {
 }
 
 func (c *activityConn) Write(b []byte) (int, error) {
-	n, err := c.Conn.Write(b)
-	if n > 0 {
-		c.clock.mark()
+	if c.window <= 0 {
+		n, err := c.Conn.Write(b)
+		if n > 0 {
+			c.clock.mark()
+		}
+		return n, err
 	}
-	return n, err
+	total := 0
+	for {
+		if err := c.Conn.SetWriteDeadline(time.Now().Add(c.window)); err != nil {
+			slog.Debug("failed to arm tunnel write window", "error", err)
+		}
+		n, err := c.Conn.Write(b[total:])
+		if n > 0 {
+			c.clock.mark()
+		}
+		total += n
+		if err == nil {
+			// Leave no stale deadline behind for the next unbounded read/write.
+			if clearErr := c.Conn.SetWriteDeadline(time.Time{}); clearErr != nil {
+				slog.Debug("failed to clear tunnel write window", "error", clearErr)
+			}
+			return total, nil
+		}
+		if n > 0 && isTimeoutErr(err) && !c.clock.expired.Load() {
+			// Progress inside the window and the watchdog has not condemned
+			// the pair: keep pushing the remainder.
+			continue
+		}
+		return total, err
+	}
 }
 
 // CloseWrite forwards a write half-close so the tunnel copy loop can still
