@@ -79,7 +79,9 @@ func TestDashboardSession_LoginUnavailableWithoutSessionStore(t *testing.T) {
 		Token:    authFlowToken,
 		// No SessionManager: mirrors a server with no `session:` block.
 	})
-	hub := NewWebSocketHub()
+	// NewWebSocketHub was a thin wrapper removed as dead code in #312; this is
+	// the surviving constructor, and MaxWebSocketClients is the default it passed.
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	go hub.Run()
 	t.Cleanup(hub.Stop)
 	srv := httptest.NewServer(api.RouterWithWebSocket(hub))
