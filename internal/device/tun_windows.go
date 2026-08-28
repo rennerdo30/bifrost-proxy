@@ -3,18 +3,25 @@
 package device
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
 	"os/exec"
 	"sync"
 
+	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
 )
 
 const (
 	// Ring buffer sizes for WinTun
 	tunRingCapacity = 0x400000 // 4 MiB
+
+	// How long Read blocks on the ring's read-wait event before re-checking
+	// whether the device was closed. Bounded so Close is never stuck behind
+	// an idle interface.
+	tunReadWaitMillis = 250
 )
 
 // windowsTUN implements NetworkDevice for Windows using WinTun.
@@ -153,26 +160,35 @@ func (t *windowsTUN) Type() DeviceType {
 	return DeviceTUN
 }
 
-// Read reads a packet from the TUN device.
+// Read reads a packet from the TUN device. It blocks on the ring's
+// read-wait event while the interface is idle instead of spinning on
+// ERROR_NO_MORE_ITEMS.
 func (t *windowsTUN) Read(buf []byte) (int, error) {
-	t.mu.Lock()
-	if t.closed {
+	for {
+		t.mu.Lock()
+		if t.closed {
+			t.mu.Unlock()
+			return 0, ErrDeviceClosed
+		}
+		session := t.session
 		t.mu.Unlock()
-		return 0, ErrDeviceClosed
+
+		pkt, err := session.ReceivePacket()
+		if err == nil {
+			n := copy(buf, pkt)
+			session.ReleaseReceivePacket(pkt)
+			return n, nil
+		}
+		if !errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
+			return 0, &DeviceError{Op: "receive", Err: err}
+		}
+
+		// Ring is empty: wait until WinTun signals a packet, or the wait
+		// times out so the closed flag above is re-checked.
+		if _, err := windows.WaitForSingleObject(session.ReadWaitEvent(), tunReadWaitMillis); err != nil {
+			return 0, &DeviceError{Op: "receive wait", Err: err}
+		}
 	}
-	session := t.session
-	t.mu.Unlock()
-
-	// Receive packet from WinTun
-	pkt, err := session.ReceivePacket()
-	if err != nil {
-		return 0, &DeviceError{Op: "receive", Err: err}
-	}
-
-	n := copy(buf, pkt)
-	session.ReleaseReceivePacket(pkt)
-
-	return n, nil
 }
 
 // Write writes a packet to the TUN device.
