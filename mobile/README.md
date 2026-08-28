@@ -16,12 +16,34 @@ cd mobile
 npm install
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint
+npm test            # node --test (service-layer unit tests)
 npm start           # expo start (Expo Go: management UI only, no native VPN)
 ```
 
-`node_modules/` is gitignored and must be installed locally; there is no test
-runner wired up yet (no `jest`/`jest-expo`), so `npm run typecheck` +
-`npm run lint` are the CI gates for this package.
+`node_modules/` is gitignored and must be installed locally.
+
+### Tests
+
+`npm test` runs the service-layer unit tests (`src/services/__tests__/`) on
+Node's built-in test runner, using Node's TypeScript type stripping. There is
+deliberately **no** `jest`/`jest-expo` dependency: the tests cover `api.ts` and
+`storage.ts`, which need no renderer.
+
+Two mechanics make that work:
+
+- `scripts/node-test-resolver.mjs` fills in the file extension that Metro would
+  otherwise resolve, so app sources keep using plain `./storage` imports.
+- `src/services/__tests__/helpers.ts` swaps
+  `@react-native-async-storage/async-storage` for an in-memory stand-in and
+  stubs `fetch`, recording every request so header, route and body expectations
+  can be asserted.
+
+Type stripping is *strip-only*: TypeScript constructs that need code generation
+(parameter properties, `enum`, `namespace`) will not load. Avoid them in any file
+reachable from a test.
+
+Screen components are not yet covered — that needs React Native Testing Library,
+which Expo SDK 55 does not pin.
 
 ## Project layout
 
@@ -37,6 +59,7 @@ mobile/
 │   │   ├── BifrostVpn.ts   # JS bridge to native modules (safe no-op stub)
 │   │   └── index.ts        # barrel + selectVpnMode/buildNativeVpnConfig
 │   ├── services/api.ts     # REST client for the Bifrost client API
+│   ├── services/storage.ts # AsyncStorage persistence (address, token, rules)
 │   └── screens/ ...        # UI
 ├── ios/BifrostVPN/
 │   └── PacketTunnelProvider.swift   # iOS NEPacketTunnelProvider (NOT linked)

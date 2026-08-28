@@ -2,7 +2,14 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 import { api } from '../api/client'
 import { useWebSocket } from './useWebSocket'
-import { WS_EVENT_BACKEND_HEALTH, WS_EVENT_STATS } from '../api/types'
+import {
+  WS_EVENT_BACKEND_HEALTH,
+  WS_EVENT_CONFIG_RELOAD,
+  WS_EVENT_CONFIG_SAVED,
+  WS_EVENT_CONNECTION_CLOSE,
+  WS_EVENT_CONNECTION_NEW,
+  WS_EVENT_STATS,
+} from '../api/types'
 import type { WSEvent, Backend, ServerStats, StatsEventData } from '../api/types'
 
 export function useStats(refetchInterval = 5000) {
@@ -22,6 +29,22 @@ export function useStats(refetchInterval = 5000) {
         })
       } else if (event.type === WS_EVENT_BACKEND_HEALTH) {
         queryClient.invalidateQueries({ queryKey: ['backends'] })
+      } else if (event.type === WS_EVENT_CONNECTION_NEW || event.type === WS_EVENT_CONNECTION_CLOSE) {
+        // Keep the connection counters live between stats pushes.
+        const delta = event.type === WS_EVENT_CONNECTION_NEW ? 1 : -1
+        queryClient.setQueryData<ServerStats>(['stats'], (prev) => {
+          if (!prev) return prev
+          return {
+            ...prev,
+            active_connections: Math.max(0, (prev.active_connections || 0) + delta),
+            total_connections:
+              delta > 0 ? (prev.total_connections || 0) + 1 : prev.total_connections,
+          }
+        })
+      } else if (event.type === WS_EVENT_CONFIG_RELOAD || event.type === WS_EVENT_CONFIG_SAVED) {
+        // An external reload (SIGHUP) or another admin's save changed the
+        // config - refetch so the Config page never shows stale content.
+        queryClient.invalidateQueries({ queryKey: ['config'] })
       }
     },
     [queryClient]

@@ -22,6 +22,11 @@ export function WebUISection() {
       <div className="space-y-6">
         <div>
           <h4 className="text-sm font-medium text-bifrost-text mb-3">Web UI</h4>
+          <div className="p-3 mb-4 bg-bifrost-warning/10 border border-bifrost-warning/30 rounded-lg text-xs text-bifrost-warning" role="note">
+            This dashboard is always served on the <strong>API listener</strong> below. The Web UI address
+            here is only used as a fallback target for the tray&apos;s &quot;Open Web UI&quot; action when the API is
+            disabled — it does not start a separate listener.
+          </div>
           <div className="space-y-4">
             <FormToggle
               label="Enable Web UI"

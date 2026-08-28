@@ -690,7 +690,7 @@ func TestDarwinCreateFunctions(t *testing.T) {
 			MTU:     1400,
 		}
 
-		dev, err := CreateTUN(cfg)
+		dev, err := Create(withType(cfg, DeviceTUN))
 		if err != nil {
 			// Expected without root
 			assert.Error(t, err)
@@ -706,7 +706,7 @@ func TestDarwinCreateFunctions(t *testing.T) {
 			MTU:     1400,
 		}
 
-		dev, err := CreateTAP(cfg)
+		dev, err := Create(withType(cfg, DeviceTAP))
 		if err != nil {
 			// Expected - TAP driver usually not installed
 			assert.Error(t, err)
@@ -930,7 +930,7 @@ func TestCreateTAPInterfaceTypeAssertion(t *testing.T) {
 			MTU:     1400,
 		}
 
-		dev, err := CreateTAP(cfg)
+		dev, err := Create(withType(cfg, DeviceTAP))
 		if err == nil {
 			// If we got a device, verify it's usable
 			assert.NotNil(t, dev)

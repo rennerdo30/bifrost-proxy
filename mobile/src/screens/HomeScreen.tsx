@@ -9,18 +9,19 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, formatBytes, getCurrentServerAddress } from '../services/api'
+import { APIError, api, formatBytes, getCurrentServerAddress } from '../services/api'
 import { getStoredSplitTunnelConfig } from '../services/storage'
 import { StatusCard } from '../components/StatusCard'
-import { getConnectionStatusColor } from '../utils/status'
+import { ConnectionStatus, getConnectionStatusColor } from '../utils/status'
 import { useToast } from '../components/Toast'
-
-type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
 
 // Constants for exponential backoff
 const BASE_RETRY_DELAY = 1000 // 1 second
 const MAX_RETRY_DELAY = 30000 // 30 seconds
 const MAX_RETRY_COUNT = 5
+
+const STATUS_REFETCH_INTERVAL = 5000
+const SERVER_REFETCH_INTERVAL = 30000
 
 export function HomeScreen() {
   const queryClient = useQueryClient()
@@ -29,68 +30,95 @@ export function HomeScreen() {
   const retryCountRef = useRef(0)
   const lastRetryTimeRef = useRef(0)
 
-  const { data: status } = useQuery({
+  const {
+    data: status,
+    isLoading: statusLoading,
+    isError: statusIsError,
+    error: statusError,
+  } = useQuery({
     queryKey: ['status'],
     queryFn: api.getStatus,
-    refetchInterval: 5000,
+    refetchInterval: STATUS_REFETCH_INTERVAL,
   })
 
-  const { data: vpnStatus } = useQuery({
+  const {
+    data: vpnStatus,
+    isLoading: vpnLoading,
+    isError: vpnIsError,
+    error: vpnError,
+  } = useQuery({
     queryKey: ['vpn-status'],
     queryFn: api.getVPNStatus,
-    refetchInterval: 5000,
+    refetchInterval: STATUS_REFETCH_INTERVAL,
   })
 
   const { data: activeServer } = useQuery({
     queryKey: ['active-server'],
     queryFn: api.getActiveServer,
-    refetchInterval: 30000,
+    refetchInterval: SERVER_REFETCH_INTERVAL,
   })
 
-  // Sync split tunnel rules to server before enabling VPN
-  const syncSplitTunnelRules = async () => {
+  /**
+   * Push the locally stored split tunnel rules to the client before enabling the
+   * VPN, and report how many pushes failed.
+   *
+   * Known limitation: this only *adds* rules. Rules the operator disabled or
+   * deleted on the phone are not removed from the client, because reconciling
+   * against the client's own rule set needs `GET /vpn/split/rules` to return
+   * a stable JSON shape, which it does not yet (`internal/vpn.SplitTunnelConfig`
+   * carries `yaml:` tags only). Sync failures are surfaced rather than swallowed
+   * so the operator is not misled about which rules are in force.
+   */
+  const syncSplitTunnelRules = async (): Promise<number> => {
+    let failures = 0
+    const push = async (operation: () => Promise<unknown>) => {
+      try {
+        await operation()
+      } catch (error) {
+        failures += 1
+        console.warn('Split tunnel rule sync failed:', error)
+      }
+    }
+
     try {
       const config = await getStoredSplitTunnelConfig()
 
-      // Set mode
-      await api.setSplitTunnelMode(config.mode).catch(() => {
-        // Ignore errors if server doesn't support split tunneling mode endpoint
-      })
+      await push(() => api.setSplitTunnelMode(config.mode))
 
-      // Sync enabled apps
-      for (const app of config.apps.filter(a => a.enabled)) {
-        await api.addSplitTunnelApp({ name: app.name, path: app.packageId }).catch(() => {
-          // Ignore individual app sync errors
-        })
+      for (const app of config.apps.filter((a) => a.enabled)) {
+        await push(() => api.addSplitTunnelApp({ name: app.name, path: app.packageId }))
       }
-
-      // Sync enabled domains
-      for (const domain of config.domains.filter(d => d.enabled)) {
-        await api.addSplitTunnelDomain(domain.domain).catch(() => {
-          // Ignore individual domain sync errors
-        })
+      for (const domain of config.domains.filter((d) => d.enabled)) {
+        await push(() => api.addSplitTunnelDomain(domain.domain))
       }
-
-      // Sync enabled IPs
-      for (const ip of config.ips.filter(i => i.enabled)) {
-        await api.addSplitTunnelIP(ip.cidr).catch(() => {
-          // Ignore individual IP sync errors
-        })
+      for (const ip of config.ips.filter((i) => i.enabled)) {
+        await push(() => api.addSplitTunnelIP(ip.cidr))
       }
     } catch (error) {
-      // Continue with VPN connection even if split tunnel sync fails
-      console.warn('Failed to sync split tunnel rules:', error)
+      // Continue with VPN connection even if the local config cannot be read
+      console.warn('Failed to read stored split tunnel rules:', error)
+      failures += 1
     }
+
+    return failures
   }
 
   const connectMutation = useMutation({
     mutationFn: async () => {
       // Sync split tunnel rules before enabling VPN
-      await syncSplitTunnelRules()
-      return api.enableVPN()
+      const syncFailures = await syncSplitTunnelRules()
+      await api.enableVPN()
+      return { syncFailures }
     },
-    onSuccess: () => {
+    onSuccess: ({ syncFailures }) => {
       queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
+      if (syncFailures > 0) {
+        showToast(
+          `VPN connected, but ${syncFailures} split tunnel rule(s) could not be applied`,
+          'error'
+        )
+        return
+      }
       showToast('VPN connected successfully', 'success')
     },
     onError: (error: Error) => {
@@ -163,11 +191,24 @@ export function HomeScreen() {
     }
   }, [queryClient, showToast])
 
-  const isConnected = vpnStatus?.status === 'connected' || vpnStatus?.status === 'running'
+  const isConnected = vpnStatus?.status === 'connected'
   const isToggling = connectMutation.isPending || disconnectMutation.isPending
+  const isInitialLoading = statusLoading || vpnLoading
+
+  // The client itself could not be reached. Without this the screen would render
+  // "Not Connected" and 0 B, indistinguishable from a healthy idle client.
+  const isUnreachable = statusIsError || vpnIsError
+  const unreachableError = vpnError ?? statusError
+  const unreachableReason =
+    unreachableError instanceof APIError && unreachableError.isUnauthorized
+      ? 'Authentication failed. Check the API token in Settings.'
+      : unreachableError instanceof Error
+        ? unreachableError.message
+        : 'Could not reach the Bifrost client'
 
   const getConnectionStatus = (): ConnectionStatus => {
     if (isToggling) return 'connecting'
+    if (isUnreachable) return 'unreachable'
     if (vpnStatus?.last_error) return 'error'
     if (isConnected) return 'connected'
     return 'disconnected'
@@ -193,9 +234,35 @@ export function HomeScreen() {
         return 'Connecting...'
       case 'error':
         return 'Error'
+      case 'unreachable':
+        return 'Client Unreachable'
       default:
         return 'Not Connected'
     }
+  }
+
+  const getStatusDescription = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return 'Your connection is secure'
+      case 'connecting':
+        return 'Establishing secure connection...'
+      case 'error':
+        return 'Connection failed - tap to retry'
+      case 'unreachable':
+        return `Cannot reach ${getCurrentServerAddress()} - pull down to retry`
+      default:
+        return 'Tap the button to connect'
+    }
+  }
+
+  if (isInitialLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={styles.loadingText}>Contacting Bifrost client...</Text>
+      </View>
+    )
   }
 
   return (
@@ -217,12 +284,18 @@ export function HomeScreen() {
           <TouchableOpacity
             style={[styles.connectButton, { backgroundColor: statusColor }]}
             onPress={handleToggle}
-            disabled={isToggling}
+            disabled={isToggling || isUnreachable}
             activeOpacity={0.8}
             accessibilityLabel={isConnected ? 'Disconnect from VPN' : 'Connect to VPN'}
             accessibilityRole="button"
-            accessibilityState={{ disabled: isToggling }}
-            accessibilityHint={isToggling ? 'Connection in progress' : undefined}
+            accessibilityState={{ disabled: isToggling || isUnreachable }}
+            accessibilityHint={
+              isUnreachable
+                ? 'The Bifrost client cannot be reached'
+                : isToggling
+                  ? 'Connection in progress'
+                  : undefined
+            }
           >
             {isToggling ? (
               <ActivityIndicator size="large" color="#ffffff" />
@@ -238,19 +311,28 @@ export function HomeScreen() {
         >
           {getStatusText()}
         </Text>
-        <Text style={styles.statusDescriptionText}>
-          {connectionStatus === 'connected' && 'Your connection is secure'}
-          {connectionStatus === 'connecting' && 'Establishing secure connection...'}
-          {connectionStatus === 'error' && 'Connection failed - tap to retry'}
-          {connectionStatus === 'disconnected' && 'Tap the button to connect'}
-        </Text>
+        <Text style={styles.statusDescriptionText}>{getStatusDescription()}</Text>
         {status?.version && (
           <Text style={styles.versionText}>v{status.version}</Text>
         )}
       </View>
 
+      {/* Unreachable client */}
+      {isUnreachable && (
+        <View
+          style={styles.errorCard}
+          accessible={true}
+          accessibilityRole="alert"
+          accessibilityLabel={`Client unreachable: ${unreachableReason}`}
+        >
+          <Text style={styles.errorText} importantForAccessibility="no">
+            {unreachableReason}
+          </Text>
+        </View>
+      )}
+
       {/* Error Message */}
-      {vpnStatus?.last_error && (
+      {!isUnreachable && vpnStatus?.last_error && (
         <View
           style={styles.errorCard}
           accessible={true}
@@ -263,21 +345,23 @@ export function HomeScreen() {
         </View>
       )}
 
-      {/* Stats Cards */}
-      <View style={styles.statsGrid}>
-        <StatusCard
-          title="Upload"
-          value={formatBytes(vpnStatus?.bytes_sent || 0)}
-          icon="↑"
-          color="#22c55e"
-        />
-        <StatusCard
-          title="Download"
-          value={formatBytes(vpnStatus?.bytes_received || 0)}
-          icon="↓"
-          color="#3b82f6"
-        />
-      </View>
+      {/* Stats Cards - suppressed while unreachable so 0 B is never a false reading */}
+      {!isUnreachable && (
+        <View style={styles.statsGrid}>
+          <StatusCard
+            title="Upload"
+            value={formatBytes(vpnStatus?.bytes_sent || 0)}
+            icon="↑"
+            color="#22c55e"
+          />
+          <StatusCard
+            title="Download"
+            value={formatBytes(vpnStatus?.bytes_received || 0)}
+            icon="↓"
+            color="#3b82f6"
+          />
+        </View>
+      )}
 
       {/* Server Info */}
       {isConnected && (
@@ -310,6 +394,18 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0a0e17',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6b7280',
   },
   statusSection: {
     alignItems: 'center',

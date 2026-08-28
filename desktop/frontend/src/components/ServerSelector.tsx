@@ -139,15 +139,13 @@ export function ServerSelector({ servers, currentServer, onSelect, disabled, onA
                   onSelect(server.name);
                   setIsOpen(false);
                 }}
-                disabled={server.status === 'offline'}
                 className={`w-full px-4 py-3 flex items-center justify-between transition-colors ${
                   server.name === currentServer
                     ? 'bg-bifrost-accent/10 border-l-2 border-bifrost-accent'
                     : 'hover:bg-bifrost-border/50'
-                } ${server.status === 'offline' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                } cursor-pointer`}
                 role="option"
                 aria-selected={server.name === currentServer}
-                aria-disabled={server.status === 'offline'}
               >
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1.5 min-w-[60px]">

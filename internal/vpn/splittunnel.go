@@ -2,6 +2,7 @@ package vpn
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"strings"
@@ -38,6 +39,14 @@ const (
 	ActionBypass Action = "bypass"
 )
 
+// Split tunnel modes.
+const (
+	// ModeExclude routes listed destinations around the VPN; everything else is tunneled.
+	ModeExclude = "exclude"
+	// ModeInclude tunnels only listed destinations; everything else bypasses the VPN.
+	ModeInclude = "include"
+)
+
 // Decision represents a split tunnel routing decision.
 type Decision struct {
 	Action    Action // ActionTunnel or ActionBypass
@@ -50,35 +59,64 @@ type SplitTunnelConfig struct {
 	// Mode determines the split tunnel behavior.
 	// "exclude": Traffic to listed items bypasses the VPN (default goes through VPN)
 	// "include": Only traffic to listed items goes through VPN (default bypasses)
-	Mode string `yaml:"mode"`
+	Mode string `yaml:"mode" json:"mode"`
 
 	// Apps lists applications to include/exclude from VPN.
-	Apps []AppRule `yaml:"apps"`
+	Apps []AppRule `yaml:"apps" json:"apps"`
 
 	// Domains lists domain patterns to include/exclude.
-	Domains []string `yaml:"domains"`
+	Domains []string `yaml:"domains" json:"domains"`
 
 	// IPs lists IP addresses or CIDR ranges to include/exclude.
-	IPs []string `yaml:"ips"`
+	IPs []string `yaml:"ips" json:"ips"`
 
 	// AlwaysBypass lists destinations that always bypass the VPN.
 	// These are checked before other rules (e.g., LAN, localhost).
-	AlwaysBypass []string `yaml:"always_bypass"`
+	AlwaysBypass []string `yaml:"always_bypass" json:"always_bypass"`
 }
 
 // AppRule defines a rule for matching applications.
 type AppRule struct {
-	Name string `yaml:"name"` // Process name (e.g., "slack", "zoom")
-	Path string `yaml:"path"` // Full executable path (optional, more specific)
+	Name string `yaml:"name" json:"name"` // Process name (e.g., "slack", "zoom")
+	Path string `yaml:"path" json:"path"` // Full executable path (optional, more specific)
 }
 
 // Validate validates the split tunnel configuration.
 func (c *SplitTunnelConfig) Validate() error {
 	if c.Mode == "" {
-		c.Mode = "exclude"
+		c.Mode = DefaultSplitTunnelMode
 	}
-	if c.Mode != "exclude" && c.Mode != "include" {
+	if c.Mode != ModeExclude && c.Mode != ModeInclude {
 		return &ConfigError{Field: "split_tunnel.mode", Message: "must be 'exclude' or 'include'"}
+	}
+
+	// Every rule the operator wrote must be usable. The engine used to drop
+	// malformed entries silently at construction; in include mode the default
+	// action is bypass, so a dropped include rule sent that traffic OUTSIDE
+	// the tunnel in cleartext with nothing but a discarded error to show.
+	probe := NewIPMatcher()
+	for _, ip := range c.IPs {
+		if err := probe.Add(ip); err != nil {
+			return &ConfigError{Field: "split_tunnel.ips", Message: fmt.Sprintf("invalid entry %q: %v", ip, err)}
+		}
+	}
+	bypassProbe := NewIPMatcher()
+	for _, cidr := range c.AlwaysBypass {
+		if err := bypassProbe.Add(cidr); err != nil {
+			return &ConfigError{Field: "split_tunnel.always_bypass", Message: fmt.Sprintf("invalid entry %q: %v", cidr, err)}
+		}
+	}
+	appProbe := NewAppMatcher()
+	for _, app := range c.Apps {
+		if err := appProbe.AddRule(app); err != nil {
+			return &ConfigError{Field: "split_tunnel.apps", Message: fmt.Sprintf("invalid rule %q: %v", app.Name, err)}
+		}
+	}
+	domainProbe := matcher.NewStrict()
+	for _, d := range c.Domains {
+		if err := domainProbe.AddPattern(d); err != nil {
+			return &ConfigError{Field: "split_tunnel.domains", Message: fmt.Sprintf("invalid pattern %q: %v", d, err)}
+		}
 	}
 	return nil
 }
@@ -236,10 +274,14 @@ func (e *SplitTunnelEngine) Decide(packet *IPPacket, procInfo *ProcessInfo) Deci
 }
 
 // AddApp adds an app rule to the split tunnel.
-func (e *SplitTunnelEngine) AddApp(app AppRule) {
+//
+// Returns an error when the rule is rejected - malformed, or the rule limit is
+// reached. Split tunneling decides what bypasses the tunnel, so a rule that
+// was not installed must not be reported as added.
+func (e *SplitTunnelEngine) AddApp(app AppRule) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	_ = e.appMatcher.AddRule(app) //nolint:errcheck // Silently ignore invalid app rules
+	return e.appMatcher.AddRule(app)
 }
 
 // RemoveApp removes an app rule from the split tunnel.
@@ -250,10 +292,12 @@ func (e *SplitTunnelEngine) RemoveApp(name string) {
 }
 
 // AddDomain adds a domain pattern to the split tunnel.
-func (e *SplitTunnelEngine) AddDomain(pattern string) {
+//
+// Returns an error when the pattern is rejected; see AddApp.
+func (e *SplitTunnelEngine) AddDomain(pattern string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	_ = e.domainMatcher.AddPattern(pattern) //nolint:errcheck // Silently ignore invalid domain patterns
+	return e.domainMatcher.AddPattern(pattern)
 }
 
 // RemoveDomain removes a domain pattern from the split tunnel.
@@ -264,10 +308,12 @@ func (e *SplitTunnelEngine) RemoveDomain(pattern string) {
 }
 
 // AddIP adds an IP or CIDR to the split tunnel.
-func (e *SplitTunnelEngine) AddIP(cidr string) {
+//
+// Returns an error when the entry is rejected; see AddApp.
+func (e *SplitTunnelEngine) AddIP(cidr string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	_ = e.ipMatcher.Add(cidr) //nolint:errcheck // Silently ignore invalid IP patterns
+	return e.ipMatcher.Add(cidr)
 }
 
 // RemoveIP removes an IP or CIDR from the split tunnel.
@@ -312,6 +358,12 @@ func (m *AppMatcher) AddRule(rule AppRule) error {
 	// Check limit
 	if len(m.rules) >= MaxAppRules {
 		return ErrAppRulesAtLimit
+	}
+
+	// A rule with no name (and no path) can never match a process; accepting
+	// it silently was part of the dropped-rule problem.
+	if strings.TrimSpace(rule.Name) == "" && strings.TrimSpace(rule.Path) == "" {
+		return fmt.Errorf("app rule needs a name or a path")
 	}
 
 	m.rules = append(m.rules, rule)
@@ -424,7 +476,11 @@ func (m *IPMatcher) Add(entry string) error {
 		}
 	}
 
-	return nil
+	// Nothing parsed it. Returning nil here accepted the entry while storing
+	// nothing, so an operator's typo became a rule that matched no traffic and
+	// reported no problem - and any caller validating entries by checking this
+	// error saw success.
+	return fmt.Errorf("invalid IP or CIDR %q", entry)
 }
 
 // Remove removes an IP address or CIDR range.
