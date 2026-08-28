@@ -43,7 +43,7 @@ func dialWS(ctx context.Context, t *testing.T, srv *httptest.Server, opts *webso
 // This asserts the connection survives a control-frame ping and still carries
 // application traffic afterwards.
 func TestWebSocket_SurvivesProtocolPing(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	go hub.Run()
 	defer hub.Stop()
 
@@ -118,7 +118,7 @@ func TestWebSocket_SurvivesProtocolPing(t *testing.T) {
 // working: some clients send a literal "ping" text message instead of a
 // control frame, and expect "pong" back.
 func TestWebSocket_LegacyTextPing(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	go hub.Run()
 	defer hub.Stop()
 
@@ -154,7 +154,7 @@ func TestWebSocket_UpgradeThroughProxiedHost(t *testing.T) {
 	const ingressOrigin = "http://homeassistant.local:8123"
 
 	t.Run("refused without an allowlist entry", func(t *testing.T) {
-		hub := NewWebSocketHub()
+		hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 		go hub.Run()
 		defer hub.Stop()
 
@@ -167,7 +167,7 @@ func TestWebSocket_UpgradeThroughProxiedHost(t *testing.T) {
 	})
 
 	t.Run("accepted when allowlisted", func(t *testing.T) {
-		hub := NewWebSocketHub()
+		hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 		hub.SetAllowedOrigins([]string{ingressOrigin})
 		go hub.Run()
 		defer hub.Stop()

@@ -9,18 +9,21 @@ import {
   RefreshControl,
 } from 'react-native'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, formatBytes, getCurrentServerAddress } from '../services/api'
+import { APIError, api, formatBytes, getCurrentServerAddress } from '../services/api'
 import { getStoredSplitTunnelConfig } from '../services/storage'
+import { replaceRemoteSplitTunnelConfig } from '../services/splitTunnelSync'
 import { StatusCard } from '../components/StatusCard'
-import { getConnectionStatusColor } from '../utils/status'
+import { ConnectionStatus, getConnectionStatusColor } from '../utils/status'
 import { useToast } from '../components/Toast'
-
-type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
+import { t } from '../i18n'
 
 // Constants for exponential backoff
 const BASE_RETRY_DELAY = 1000 // 1 second
 const MAX_RETRY_DELAY = 30000 // 30 seconds
 const MAX_RETRY_COUNT = 5
+
+const STATUS_REFETCH_INTERVAL = 5000
+const SERVER_REFETCH_INTERVAL = 30000
 
 export function HomeScreen() {
   const queryClient = useQueryClient()
@@ -29,72 +32,49 @@ export function HomeScreen() {
   const retryCountRef = useRef(0)
   const lastRetryTimeRef = useRef(0)
 
-  const { data: status } = useQuery({
+  const {
+    data: status,
+    isLoading: statusLoading,
+    isError: statusIsError,
+    error: statusError,
+  } = useQuery({
     queryKey: ['status'],
     queryFn: api.getStatus,
-    refetchInterval: 5000,
+    refetchInterval: STATUS_REFETCH_INTERVAL,
   })
 
-  const { data: vpnStatus } = useQuery({
+  const {
+    data: vpnStatus,
+    isLoading: vpnLoading,
+    isError: vpnIsError,
+    error: vpnError,
+  } = useQuery({
     queryKey: ['vpn-status'],
     queryFn: api.getVPNStatus,
-    refetchInterval: 5000,
+    refetchInterval: STATUS_REFETCH_INTERVAL,
   })
 
   const { data: activeServer } = useQuery({
     queryKey: ['active-server'],
     queryFn: api.getActiveServer,
-    refetchInterval: 30000,
+    refetchInterval: SERVER_REFETCH_INTERVAL,
   })
-
-  // Sync split tunnel rules to server before enabling VPN
-  const syncSplitTunnelRules = async () => {
-    try {
-      const config = await getStoredSplitTunnelConfig()
-
-      // Set mode
-      await api.setSplitTunnelMode(config.mode).catch(() => {
-        // Ignore errors if server doesn't support split tunneling mode endpoint
-      })
-
-      // Sync enabled apps
-      for (const app of config.apps.filter(a => a.enabled)) {
-        await api.addSplitTunnelApp({ name: app.name, path: app.packageId }).catch(() => {
-          // Ignore individual app sync errors
-        })
-      }
-
-      // Sync enabled domains
-      for (const domain of config.domains.filter(d => d.enabled)) {
-        await api.addSplitTunnelDomain(domain.domain).catch(() => {
-          // Ignore individual domain sync errors
-        })
-      }
-
-      // Sync enabled IPs
-      for (const ip of config.ips.filter(i => i.enabled)) {
-        await api.addSplitTunnelIP(ip.cidr).catch(() => {
-          // Ignore individual IP sync errors
-        })
-      }
-    } catch (error) {
-      // Continue with VPN connection even if split tunnel sync fails
-      console.warn('Failed to sync split tunnel rules:', error)
-    }
-  }
 
   const connectMutation = useMutation({
     mutationFn: async () => {
-      // Sync split tunnel rules before enabling VPN
-      await syncSplitTunnelRules()
+      // Replace remote active rules with the locally enabled policy before the
+      // tunnel comes up. A partial sync is fail-closed: VPN enable is never
+      // attempted, and the exact failed operation reaches onError.
+      const splitConfig = await getStoredSplitTunnelConfig()
+      await replaceRemoteSplitTunnelConfig(api, splitConfig)
       return api.enableVPN()
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
-      showToast('VPN connected successfully', 'success')
+      showToast(t('home.vpnConnected'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to connect VPN', 'error')
+      showToast(error.message || t('home.connectFailed'), 'error')
     },
   })
 
@@ -102,10 +82,10 @@ export function HomeScreen() {
     mutationFn: api.disableVPN,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
-      showToast('VPN disconnected', 'info')
+      showToast(t('home.vpnDisconnected'), 'info')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to disconnect VPN', 'error')
+      showToast(error.message || t('home.disconnectFailed'), 'error')
     },
   })
 
@@ -150,11 +130,11 @@ export function HomeScreen() {
 
       // Show error toast with backoff information
       if (retryCountRef.current >= MAX_RETRY_COUNT) {
-        showToast('Refresh failed. Please check your connection.', 'error')
+        showToast(t('home.refreshFailed'), 'error')
       } else {
         const nextRetrySeconds = Math.round(backoffDelay / 1000)
         showToast(
-          `Refresh failed. Retry in ${nextRetrySeconds}s (attempt ${retryCountRef.current}/${MAX_RETRY_COUNT})`,
+          t('home.refreshRetry', { seconds: nextRetrySeconds, attempt: retryCountRef.current, max: MAX_RETRY_COUNT }),
           'error'
         )
       }
@@ -163,11 +143,24 @@ export function HomeScreen() {
     }
   }, [queryClient, showToast])
 
-  const isConnected = vpnStatus?.status === 'connected' || vpnStatus?.status === 'running'
+  const isConnected = vpnStatus?.status === 'connected'
   const isToggling = connectMutation.isPending || disconnectMutation.isPending
+  const isInitialLoading = statusLoading || vpnLoading
+
+  // The client itself could not be reached. Without this the screen would render
+  // "Not Connected" and 0 B, indistinguishable from a healthy idle client.
+  const isUnreachable = statusIsError || vpnIsError
+  const unreachableError = vpnError ?? statusError
+  const unreachableReason =
+    unreachableError instanceof APIError && unreachableError.isUnauthorized
+      ? t('home.authFailed')
+      : unreachableError instanceof Error
+        ? unreachableError.message
+        : t('home.unreachable')
 
   const getConnectionStatus = (): ConnectionStatus => {
     if (isToggling) return 'connecting'
+    if (isUnreachable) return 'unreachable'
     if (vpnStatus?.last_error) return 'error'
     if (isConnected) return 'connected'
     return 'disconnected'
@@ -188,14 +181,40 @@ export function HomeScreen() {
   const getStatusText = () => {
     switch (connectionStatus) {
       case 'connected':
-        return 'Protected'
+        return t('home.protected')
       case 'connecting':
-        return 'Connecting...'
+        return t('home.connecting')
       case 'error':
-        return 'Error'
+        return t('common.error')
+      case 'unreachable':
+        return t('home.clientUnreachable')
       default:
-        return 'Not Connected'
+        return t('home.notConnected')
     }
+  }
+
+  const getStatusDescription = () => {
+    switch (connectionStatus) {
+      case 'connected':
+        return t('home.secure')
+      case 'connecting':
+        return t('home.establishing')
+      case 'error':
+        return t('home.failedRetry')
+      case 'unreachable':
+        return t('home.cannotReach', { address: getCurrentServerAddress() })
+      default:
+        return t('home.tapConnect')
+    }
+  }
+
+  if (isInitialLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={styles.loadingText}>{t('home.contacting')}</Text>
+      </View>
+    )
   }
 
   return (
@@ -207,7 +226,7 @@ export function HomeScreen() {
           refreshing={isRefreshing}
           onRefresh={onRefresh}
           tintColor="#3b82f6"
-          accessibilityLabel="Pull to refresh connection status"
+          accessibilityLabel={t('home.pullRefresh')}
         />
       }
     >
@@ -217,12 +236,18 @@ export function HomeScreen() {
           <TouchableOpacity
             style={[styles.connectButton, { backgroundColor: statusColor }]}
             onPress={handleToggle}
-            disabled={isToggling}
+            disabled={isToggling || isUnreachable}
             activeOpacity={0.8}
-            accessibilityLabel={isConnected ? 'Disconnect from VPN' : 'Connect to VPN'}
+            accessibilityLabel={isConnected ? t('home.disconnectVPN') : t('home.connectVPN')}
             accessibilityRole="button"
-            accessibilityState={{ disabled: isToggling }}
-            accessibilityHint={isToggling ? 'Connection in progress' : undefined}
+            accessibilityState={{ disabled: isToggling || isUnreachable }}
+            accessibilityHint={
+              isUnreachable
+                ? t('home.unreachableHint')
+                : isToggling
+                  ? t('home.connectionInProgress')
+                  : undefined
+            }
           >
             {isToggling ? (
               <ActivityIndicator size="large" color="#ffffff" />
@@ -234,28 +259,37 @@ export function HomeScreen() {
         <Text
           style={[styles.statusText, { color: statusColor }]}
           accessibilityRole="text"
-          accessibilityLabel={`Connection status: ${getStatusText()}`}
+          accessibilityLabel={t('home.connectionStatus', { status: getStatusText() })}
         >
           {getStatusText()}
         </Text>
-        <Text style={styles.statusDescriptionText}>
-          {connectionStatus === 'connected' && 'Your connection is secure'}
-          {connectionStatus === 'connecting' && 'Establishing secure connection...'}
-          {connectionStatus === 'error' && 'Connection failed - tap to retry'}
-          {connectionStatus === 'disconnected' && 'Tap the button to connect'}
-        </Text>
+        <Text style={styles.statusDescriptionText}>{getStatusDescription()}</Text>
         {status?.version && (
           <Text style={styles.versionText}>v{status.version}</Text>
         )}
       </View>
 
-      {/* Error Message */}
-      {vpnStatus?.last_error && (
+      {/* Unreachable client */}
+      {isUnreachable && (
         <View
           style={styles.errorCard}
           accessible={true}
           accessibilityRole="alert"
-          accessibilityLabel={`Connection error: ${vpnStatus.last_error}`}
+          accessibilityLabel={t('home.unreachableLabel', { reason: unreachableReason })}
+        >
+          <Text style={styles.errorText} importantForAccessibility="no">
+            {unreachableReason}
+          </Text>
+        </View>
+      )}
+
+      {/* Error Message */}
+      {!isUnreachable && vpnStatus?.last_error && (
+        <View
+          style={styles.errorCard}
+          accessible={true}
+          accessibilityRole="alert"
+          accessibilityLabel={t('home.connectionError', { error: vpnStatus.last_error })}
         >
           <Text style={styles.errorText} importantForAccessibility="no">
             {vpnStatus.last_error}
@@ -263,21 +297,23 @@ export function HomeScreen() {
         </View>
       )}
 
-      {/* Stats Cards */}
-      <View style={styles.statsGrid}>
-        <StatusCard
-          title="Upload"
-          value={formatBytes(vpnStatus?.bytes_sent || 0)}
-          icon="↑"
-          color="#22c55e"
-        />
-        <StatusCard
-          title="Download"
-          value={formatBytes(vpnStatus?.bytes_received || 0)}
-          icon="↓"
-          color="#3b82f6"
-        />
-      </View>
+      {/* Stats Cards - suppressed while unreachable so 0 B is never a false reading */}
+      {!isUnreachable && (
+        <View style={styles.statsGrid}>
+          <StatusCard
+            title={t('home.upload')}
+            value={formatBytes(vpnStatus?.bytes_sent || 0)}
+            icon="↑"
+            color="#22c55e"
+          />
+          <StatusCard
+            title={t('home.download')}
+            value={formatBytes(vpnStatus?.bytes_received || 0)}
+            icon="↓"
+            color="#3b82f6"
+          />
+        </View>
+      )}
 
       {/* Server Info */}
       {isConnected && (
@@ -285,13 +321,13 @@ export function HomeScreen() {
           style={styles.serverCard}
           accessible={true}
           accessibilityRole="text"
-          accessibilityLabel={`Connected to ${activeServer?.name || 'Bifrost Server'} at ${activeServer?.address || getCurrentServerAddress()}`}
+          accessibilityLabel={t('home.connectedToA11y', { name: activeServer?.name || t('home.defaultServer'), address: activeServer?.address || getCurrentServerAddress() })}
         >
           <Text style={styles.serverLabel} importantForAccessibility="no">
-            Connected to
+            {t('home.connectedTo')}
           </Text>
           <Text style={styles.serverName} importantForAccessibility="no">
-            {activeServer?.name || 'Bifrost Server'}
+            {activeServer?.name || t('home.defaultServer')}
           </Text>
           <Text style={styles.serverAddress} importantForAccessibility="no">
             {activeServer?.address || getCurrentServerAddress()}
@@ -310,6 +346,18 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     alignItems: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#0a0e17',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: '#6b7280',
   },
   statusSection: {
     alignItems: 'center',

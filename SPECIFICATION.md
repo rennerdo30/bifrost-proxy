@@ -111,6 +111,26 @@ graph TD
 
 ## 3. Configuration
 
+### 3.0 Loading Rules
+
+Every config file — server, client and node — is read by `internal/config.Load`,
+which applies two rules before any schema-specific validation:
+
+1. **Environment expansion.** Exactly three forms are recognized in the raw file:
+   `${NAME}` (empty string plus a warning when `NAME` is unset),
+   `${NAME:-fallback}` (the fallback when `NAME` is unset or empty; the fallback
+   is literal and is not itself expanded), and `$$` (a literal `$`). A bare
+   `$NAME` is **not** expanded and every other `$` is literal, so credentials
+   containing a dollar sign are preserved. Expansion is a single pass, so a
+   substituted value is never re-expanded. `config.Save` escapes `$` that would
+   otherwise be read back as a reference, keeping save/load round trips faithful.
+2. **Strict keys.** Decoding uses `yaml.Decoder` with `KnownFields(true)`. A key
+   with no corresponding setting fails the load, naming every offending key, its
+   line and the enclosing config type. Setting
+   `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` downgrades this to a per-key warning as
+   a documented, transitional migration aid; type errors always fail. This
+   applies to startup, `config validate`, hot reload and the config API.
+
 ### 3.1 Server Configuration (`server-config.yaml`)
 
 > [!NOTE]
@@ -124,9 +144,9 @@ graph TD
 server:
   http:
     listen: ":7080"           # HTTP/HTTPS (CONNECT) proxy listen address
-    read_timeout: "60s"
-    write_timeout: "60s"
-    idle_timeout: "120s"
+    read_timeout: "60s"       # Inbound request must fully arrive within this
+    write_timeout: "60s"      # Deadline for a single write to the client
+    idle_timeout: "120s"      # Bound on a connection with nothing in flight
     max_connections: 0        # 0 = unlimited
     # tls:                    # Optional TLS for the HTTP listener
     #   enabled: true
@@ -134,8 +154,20 @@ server:
     #   key_file: "/path/to/key.pem"
   socks5:
     listen: ":7180"           # SOCKS5 proxy listen address
+    read_timeout: "30s"       # Bounds the SOCKS5 handshake
+    write_timeout: "30s"
+    idle_timeout: "60s"
     max_connections: 0
   graceful_period: "30s"      # Drain time on shutdown
+
+> [!IMPORTANT]
+> The three listener timeouts describe the **inbound** client connection only.
+> `read_timeout` is an absolute bound on a request arriving (from the client's
+> first byte), `write_timeout` bounds a *single* write to the client so
+> streaming responses are not truncated, and `idle_timeout` bounds a connection
+> with nothing in flight — including an established `CONNECT` tunnel or SOCKS5
+> relay in which neither direction has carried data. Outbound dial timeouts come
+> from `network.dial_timeout` or a backend's own `connect_timeout`.
 
 > [!TIP]
 > Use environment variables (e.g., `${OAUTH_CLIENT_SECRET}`) for sensitive credentials to avoid committing them to version control.
@@ -282,9 +314,9 @@ api:
 proxy:
   http:
     listen: "127.0.0.1:7380"    # Local HTTP/HTTPS proxy
-    read_timeout: "30s"
-    write_timeout: "30s"
-    idle_timeout: "60s"
+    read_timeout: "30s"         # inbound request deadline (0 = disabled; the client default)
+    write_timeout: "30s"        # no-progress bound on writes to the local client
+    idle_timeout: "60s"         # bound on a connection with nothing in flight
   socks5:
     listen: "127.0.0.1:7381"    # Local SOCKS5 proxy
 
@@ -505,10 +537,12 @@ bifrost-server ctl config reload
 bifrost-server ctl stats
 bifrost-server ctl health
 
-# Service management (install as system service)
+# Service management
 bifrost-server service install --config /path/to/config.yaml
-bifrost-server service uninstall
+bifrost-server service start
 bifrost-server service status
+bifrost-server service stop
+bifrost-server service uninstall
 
 # Update management
 bifrost-server update check
@@ -549,10 +583,12 @@ bifrost-client ctl vpn disable
 bifrost-client ctl vpn split list
 bifrost-client ctl vpn split add-domain "*.internal.company.com"
 
-# Service management (install as system service)
+# Service management
 bifrost-client service install --config /path/to/config.yaml
-bifrost-client service uninstall
+bifrost-client service start
 bifrost-client service status
+bifrost-client service stop
+bifrost-client service uninstall
 
 # Update management
 bifrost-client update check
@@ -671,6 +707,22 @@ GET    /api/v1/logs             - Log streaming
 GET    /api/v1/config           - Get config
 POST   /api/v1/config/reload    - Reload config
 ```
+
+**JSON encoding of configuration.** Config structs serialize with the same
+snake_case names their YAML keys use, so a response body is a valid request body.
+Durations are duration strings in both directions (`"30s"`, `"1m30s"`), never
+nanosecond counts; a bare number is still accepted on input and read as
+nanoseconds (an integral float such as `3e+11` counts — old releases persisted
+that form — but a fractional nanosecond is an error). There is exactly one
+duration contract: `internal/config.Duration` is an alias of
+`internal/duration.Duration`, which also serves `internal/vpn` and
+`internal/mesh`.
+
+For compatibility, imports of JSON exports written before the structs carried
+`json:` tags also accept the legacy Go field names (`SplitTunnel`, `CacheTTL`,
+`NetworkID`, `HeartbeatInterval`, …). A document naming both spellings of the
+same field with different values is rejected as ambiguous. Output is always
+canonical snake_case.
 
 ## 6. Technical Details
 
@@ -1584,53 +1636,56 @@ vpn:
 
 ## 19. Desktop Client
 
-A native desktop client built with [Wails](https://wails.io/) providing a GUI for managing the proxy.
+The desktop client is a native [Wails](https://wails.io/) quick-access wrapper around the same embedded Go client used by `bifrost-client`. It is deliberately smaller than the web dashboard.
 
-### 19.1 Features
+### 19.1 Implemented Surface
 
-- **Quick GUI**: Floating window for quick access to common controls
-- **System Tray**: Background operation with status indicators
-- **Connection Dashboard**: Real-time connection statistics
-- **Server Management**: Configure and switch between servers
-- **Split Tunneling**: Visual rule editor for app/domain exclusions
-- **Logs Viewer**: Real-time log streaming
+- Start and stop the embedded local proxy client
+- Report local lifecycle and upstream reachability separately
+- Show active connections, cumulative bytes sent/received, local proxy addresses, uptime, VPN state, and the last error
+- Add, edit, delete, select, and mark named upstream servers as default
+- Edit the upstream address/protocol and local HTTP/SOCKS5 ports; restart the client to apply listener changes
+- Enable/disable an already-configured VPN manager
+- Persist Auto-connect and Start-minimized GUI preferences
+- Provide one process-lifetime tray across client Start/Stop cycles
+
+The desktop window does not implement split-tunnel rule editing, traffic-log viewing, recent-connection tables, bandwidth graphs, or update controls. Those remain web-dashboard/config-file surfaces.
 
 ### 19.2 Architecture
 
 ```mermaid
-graph TD
-    subgraph "Wails UI System"
-        FE[Frontend<br/>React] <--> BE[Backend<br/>Go Wrapper]
-        Tray[Native Tray<br/>Go] <--> BE
-    end
-
-    BE <--> Core[Bifrost Client Core<br/>Go Library]
+graph LR
+    FE[Wails React quick-access UI] <--> APP[desktop.App bindings]
+    APP <--> CORE[Embedded Bifrost client]
+    CORE --> HTTP[Local HTTP proxy]
+    CORE --> SOCKS[Local SOCKS5 proxy]
+    CORE --> API[Client API and web dashboard]
+    CORE --> VPN[Optional VPN manager]
+    CORE --> TRAY[Process-wide system tray]
+    CORE --> UPSTREAM[Configured Bifrost server]
+    TRAY --> FE
 ```
 
-### 19.3 Building
+The tray's **Connect/Disconnect** action controls operating-system proxy settings; it is distinct from both the Wails window's local-client lifecycle button and its VPN-mode toggle. **Quick Access** restores the Wails window; **Open Dashboard** opens the client web UI.
+
+### 19.3 Configuration
+
+The app loads the ordinary `config.ClientConfig` YAML, forces the local API on for the embedded dashboard, and saves server/listener changes back to that file. GUI-only preferences live in `quick-preferences.json` below the user config directory. Auto-connect defaults to true. Start-minimized hides the initial Wails window, which can be restored from the tray.
+
+### 19.4 Building and Releases
+
+Wails GUI binaries are built on native Linux, Windows, and macOS GitHub runners. Tagged releases attach:
+
+- `bifrost-desktop-linux-amd64.tar.gz`
+- `bifrost-desktop-windows-amd64.exe`
+- `bifrost-desktop-darwin-universal.zip`
 
 ```bash
-# Install Wails CLI
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-# Build for current platform
-cd desktop
-wails build
-
-# Build for all platforms
-wails build -platform darwin/amd64
-wails build -platform windows/amd64
-wails build -platform linux/amd64
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+make desktop-build
 ```
 
-### 19.4 Quick GUI
-
-The Quick GUI is a small floating window that provides:
-- Connection status indicator
-- Quick connect/disconnect toggle
-- Bandwidth usage graph
-- Recent connections list
-- Quick access to full dashboard
+Ubuntu 24.04 builds require GTK3 and WebKitGTK 4.1 development packages and the `webkit2_41` build tag. See the desktop-client documentation for exact commands and runtime requirements.
 
 ## 20. Mobile Client
 
@@ -1734,8 +1789,12 @@ Bifrost provides native service management for Windows (SCM), macOS (launchd), a
 
 ### 22.1 Service Commands
 - `install`: Registers the binary as a system service with specified configuration.
+- `start`: Starts an installed service through systemd, launchd, or Windows SCM.
+- `stop`: Stops an installed service without removing it.
 - `uninstall`: Unregisters and removes the service.
 - `status`: Displays the current service status.
+
+Every control command returns platform-tool failures and their diagnostic output; missing service tools and permission errors never report success.
 
 ### 22.2 Platform Specifics
 - **Windows**: Registers as a Windows Service using the SCM. Supports START, STOP, and SHUTDOWN events.

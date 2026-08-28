@@ -145,28 +145,42 @@ export function MeshPeerDetails({ peer, onClose, onRemove }: MeshPeerDetailsProp
           </dl>
         </div>
 
-        {/* Connection */}
-        <div className="card bg-bifrost-bg/50">
-          <h4 className="text-sm font-medium text-bifrost-muted mb-3">Connection</h4>
-          <dl className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <dt className="text-bifrost-muted">Type</dt>
-              <dd className="text-bifrost-heading">{getConnectionTypeLabel(extPeer.connection_type)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-bifrost-muted">Latency</dt>
-              <dd className="text-bifrost-heading font-mono">{formatDuration(extPeer.latency)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-bifrost-muted">Last Seen</dt>
-              <dd className="text-bifrost-heading text-xs">{formatTimestamp(extPeer.last_seen)}</dd>
-            </div>
-            <div className="flex justify-between">
-              <dt className="text-bifrost-muted">Joined</dt>
-              <dd className="text-bifrost-heading text-xs">{formatTimestamp(extPeer.joined_at)}</dd>
-            </div>
-          </dl>
-        </div>
+        {/* Connection - the coordinator does not send this telemetry today,
+            so the card only appears when a field is actually present. */}
+        {(extPeer.connection_type !== undefined ||
+          extPeer.latency !== undefined ||
+          extPeer.last_seen !== undefined ||
+          extPeer.joined_at !== undefined) && (
+          <div className="card bg-bifrost-bg/50">
+            <h4 className="text-sm font-medium text-bifrost-muted mb-3">Connection</h4>
+            <dl className="space-y-2 text-sm">
+              {extPeer.connection_type !== undefined && (
+                <div className="flex justify-between">
+                  <dt className="text-bifrost-muted">Type</dt>
+                  <dd className="text-bifrost-heading">{getConnectionTypeLabel(extPeer.connection_type)}</dd>
+                </div>
+              )}
+              {extPeer.latency !== undefined && (
+                <div className="flex justify-between">
+                  <dt className="text-bifrost-muted">Latency</dt>
+                  <dd className="text-bifrost-heading font-mono">{formatDuration(extPeer.latency)}</dd>
+                </div>
+              )}
+              {extPeer.last_seen !== undefined && (
+                <div className="flex justify-between">
+                  <dt className="text-bifrost-muted">Last Seen</dt>
+                  <dd className="text-bifrost-heading text-xs">{formatTimestamp(extPeer.last_seen)}</dd>
+                </div>
+              )}
+              {extPeer.joined_at !== undefined && (
+                <div className="flex justify-between">
+                  <dt className="text-bifrost-muted">Joined</dt>
+                  <dd className="text-bifrost-heading text-xs">{formatTimestamp(extPeer.joined_at)}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+        )}
 
         {/* Throughput */}
         {(extPeer.bytes_sent !== undefined || extPeer.bytes_received !== undefined) && (

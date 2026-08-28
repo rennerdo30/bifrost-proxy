@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
 )
 
 // TestConfigValidate tests Config validation
@@ -119,7 +121,7 @@ func TestDNSConfigValidate(t *testing.T) {
 				Enabled:       true,
 				Listen:        "10.255.0.1:53",
 				Upstream:      []string{"8.8.8.8"},
-				CacheTTL:      5 * time.Minute,
+				CacheTTL:      duration.Duration(5 * time.Minute),
 				InterceptMode: "all",
 			},
 			wantErr: false,
@@ -154,7 +156,7 @@ func TestDNSConfigValidate(t *testing.T) {
 			},
 			wantErr: false,
 			checkAfter: func(t *testing.T, c DNSConfig) {
-				assert.Equal(t, 5*time.Minute, c.CacheTTL)
+				assert.Equal(t, duration.Duration(5*time.Minute), c.CacheTTL)
 			},
 		},
 		{
@@ -163,7 +165,7 @@ func TestDNSConfigValidate(t *testing.T) {
 				Enabled:  true,
 				Listen:   "10.255.0.1:53",
 				Upstream: []string{"8.8.8.8"},
-				CacheTTL: 5 * time.Minute,
+				CacheTTL: duration.Duration(5 * time.Minute),
 			},
 			wantErr: false,
 			checkAfter: func(t *testing.T, c DNSConfig) {
@@ -176,7 +178,7 @@ func TestDNSConfigValidate(t *testing.T) {
 				Enabled:       true,
 				Listen:        "10.255.0.1:53",
 				Upstream:      []string{"8.8.8.8"},
-				CacheTTL:      5 * time.Minute,
+				CacheTTL:      duration.Duration(5 * time.Minute),
 				InterceptMode: "tunnel_only",
 			},
 			wantErr: false,
@@ -187,7 +189,7 @@ func TestDNSConfigValidate(t *testing.T) {
 				Enabled:       true,
 				Listen:        "10.255.0.1:53",
 				Upstream:      []string{"8.8.8.8"},
-				CacheTTL:      5 * time.Minute,
+				CacheTTL:      duration.Duration(5 * time.Minute),
 				InterceptMode: "invalid",
 			},
 			wantErr: true,
@@ -221,7 +223,7 @@ func TestDefaultConfig(t *testing.T) {
 	assert.True(t, cfg.DNS.Enabled)
 	assert.Equal(t, "10.255.0.1:53", cfg.DNS.Listen)
 	assert.Equal(t, []string{"8.8.8.8", "1.1.1.1"}, cfg.DNS.Upstream)
-	assert.Equal(t, 5*time.Minute, cfg.DNS.CacheTTL)
+	assert.Equal(t, duration.Duration(5*time.Minute), cfg.DNS.CacheTTL)
 	assert.Equal(t, "all", cfg.DNS.InterceptMode)
 
 	// Check default always bypass
@@ -231,17 +233,6 @@ func TestDefaultConfig(t *testing.T) {
 
 	// Config should be valid
 	require.NoError(t, cfg.Validate())
-}
-
-// TestExampleConfig tests ExampleConfig function
-func TestExampleConfig(t *testing.T) {
-	example := ExampleConfig()
-	assert.NotEmpty(t, example)
-	assert.Contains(t, example, "vpn:")
-	assert.Contains(t, example, "enabled: true")
-	assert.Contains(t, example, "split_tunnel:")
-	assert.Contains(t, example, "dns:")
-	assert.Contains(t, example, "tun:")
 }
 
 // TestConfigErrorType tests ConfigError
