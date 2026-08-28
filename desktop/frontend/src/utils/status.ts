@@ -2,19 +2,27 @@
  * Shared utility functions for status display
  */
 
-export type ServerStatus = 'online' | 'offline' | 'busy' | 'unknown'
+/**
+ * The vocabulary the Go side actually emits (desktop/app.go GetServers):
+ * 'connected'    — the selected server answered a reachability probe
+ * 'disconnected' — the selected server did not answer
+ * 'available'    — configured but not selected (never probed)
+ * The previous set here (online/offline/busy) matched nothing the backend
+ * ever sent, so every server rendered the fallback style.
+ */
+export type ServerStatus = 'connected' | 'disconnected' | 'available' | 'unknown'
 
 /**
  * Get the CSS color class for a server status
  */
 export function getStatusColor(status: ServerStatus | string): string {
   switch (status) {
-    case 'online':
+    case 'connected':
       return 'bg-bifrost-success'
-    case 'offline':
+    case 'disconnected':
       return 'bg-bifrost-error'
-    case 'busy':
-      return 'bg-bifrost-warning'
+    case 'available':
+      return 'bg-bifrost-accent'
     default:
       return 'bg-bifrost-muted'
   }
@@ -25,12 +33,12 @@ export function getStatusColor(status: ServerStatus | string): string {
  */
 export function getStatusLabel(status: ServerStatus | string): string {
   switch (status) {
-    case 'online':
-      return 'Online'
-    case 'offline':
-      return 'Offline'
-    case 'busy':
-      return 'Busy'
+    case 'connected':
+      return 'Connected'
+    case 'disconnected':
+      return 'Unreachable'
+    case 'available':
+      return 'Available'
     default:
       return 'Unknown'
   }

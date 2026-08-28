@@ -161,26 +161,35 @@ curl -x http://localhost:7080 https://example.com https://example.com/path -v 2>
 
 **Solution:**
 
-Keep inbound connections alive longer so clients can reuse them:
+:::caution[Inbound connections are not reused]
+The HTTP listener handles exactly one request per accepted connection and then
+closes it, so raising `idle_timeout` will **not** make clients reuse inbound
+connections — earlier revisions of this page said it would. `idle_timeout`
+bounds a connection with nothing in flight (see
+[Listener timeouts](/configuration#listener-timeouts)); it does not create a
+keep-alive loop. `CONNECT` tunnels, which carry all HTTPS traffic, are
+unaffected either way: one tunnel serves the whole TLS session.
+:::
 
-```yaml
-server:
-  http:
-    idle_timeout: "120s"  # Keep client connections alive longer
-```
+What genuinely reduces per-request setup cost:
 
-Outbound keep-alive is tuned in the top-level `network` section:
+- **Route HTTPS through `CONNECT`** (the default for any `https://` origin), so
+  one tunnel carries many requests instead of one connection per request.
+- **Tune outbound keep-alive** in the top-level `network` section, so the
+  backend-side connection is not re-established for every request:
 
 ```yaml
 network:
   keepalive: "30s"  # TCP keep-alive period for outbound dials
+  dial_timeout: "10s"
 ```
+
+- **Enable caching** so repeat requests never reach a backend at all.
 
 :::note[Outbound pooling is not configurable]
 Bifrost does not expose connection-pool knobs (idle connection counts, per-host
 limits, idle connection lifetime) for outbound requests — Go's HTTP transport
-defaults apply. Tune `idle_timeout` on the listener and `network.keepalive`
-instead.
+defaults apply. Tune `network.keepalive` instead.
 :::
 
 ### Cause 4: TLS Handshake Overhead
@@ -530,11 +539,12 @@ server:
     listen: ":7080"
     read_timeout: "30s"
     write_timeout: "30s"
-    idle_timeout: "120s"
+    idle_timeout: "120s"   # also reaps quiet CONNECT tunnels; raise for SSH/IMAP IDLE
     max_connections: 50000
 
 network:
   keepalive: "30s"
+  dial_timeout: "10s"
   max_connections: 50000
 
 api:

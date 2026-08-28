@@ -58,13 +58,48 @@ type ServerSettings struct {
 }
 
 // ListenerConfig contains settings for a network listener.
+//
+// The three timeouts all describe the INBOUND client connection. None of them
+// affects outbound dials to a backend -- that is network.dial_timeout, or a
+// backend's own connect_timeout. Each is applied as a real socket deadline by
+// the proxy handlers (internal/proxy); a zero value disables that deadline and
+// leaves the connection bounded only by its peer.
 type ListenerConfig struct {
-	Listen         string     `yaml:"listen" json:"listen"`
-	TLS            *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
-	ReadTimeout    Duration   `yaml:"read_timeout" json:"read_timeout"`
-	WriteTimeout   Duration   `yaml:"write_timeout" json:"write_timeout"`
-	IdleTimeout    Duration   `yaml:"idle_timeout" json:"idle_timeout"`
-	MaxConnections int        `yaml:"max_connections" json:"max_connections"` // 0 = unlimited
+	Listen string     `yaml:"listen" json:"listen"`
+	TLS    *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+
+	// ReadTimeout bounds reading an inbound request from the client: the
+	// complete request line and header block (HTTP) or the complete handshake
+	// (SOCKS5) must arrive within it, measured from the client's first byte.
+	// After the headers it applies per read, so a slow-but-progressing upload
+	// is not cut off.
+	ReadTimeout Duration `yaml:"read_timeout" json:"read_timeout"`
+
+	// WriteTimeout bounds a single write back to the client. It is deliberately
+	// per-write rather than absolute over the whole response, so a streaming
+	// response (SSE, chunked, a large download) is never truncated while it is
+	// still making progress.
+	WriteTimeout Duration `yaml:"write_timeout" json:"write_timeout"`
+
+	// IdleTimeout bounds a connection with no request in flight: one that has
+	// been accepted but has sent nothing, or the wait between exchanges on a
+	// kept-alive loop (including a MITM-intercepted tunnel). It deliberately
+	// does NOT apply to an established opaque CONNECT tunnel or SOCKS5 relay:
+	// protocols like SSH, IMAP IDLE, or a WebSocket without keepalive pings
+	// legitimately hold an open tunnel in silence, and reaping them would break
+	// working traffic. Use TunnelIdleTimeout to opt into reaping those.
+	IdleTimeout Duration `yaml:"idle_timeout" json:"idle_timeout"`
+
+	// TunnelIdleTimeout, when set, reaps an ESTABLISHED opaque tunnel (CONNECT
+	// or SOCKS5 relay) in which NEITHER direction has carried data for the
+	// given period. An actively transferring tunnel is never interrupted, even
+	// to a very slow receiver: each window only requires progress, not
+	// completion. Off (0) by default, because a quiet-but-open tunnel is valid
+	// application behavior; enable it on listeners exposed to untrusted
+	// clients that could park connections.
+	TunnelIdleTimeout Duration `yaml:"tunnel_idle_timeout,omitempty" json:"tunnel_idle_timeout,omitempty"`
+
+	MaxConnections int `yaml:"max_connections" json:"max_connections"` // 0 = unlimited
 }
 
 // TLSConfig contains TLS settings.
@@ -503,6 +538,13 @@ func DefaultServerConfig() ServerConfig {
 			},
 			SOCKS5: ListenerConfig{
 				Listen: ":7180",
+				// Mirrors the HTTP listener. Without these the SOCKS5
+				// handshake is unbounded, so a client that connects and never
+				// sends a handshake byte holds a goroutine and a file
+				// descriptor for as long as it likes.
+				ReadTimeout:  Duration(30 * time.Second),
+				WriteTimeout: Duration(30 * time.Second),
+				IdleTimeout:  Duration(60 * time.Second),
 			},
 			GracefulPeriod: Duration(30 * time.Second),
 		},

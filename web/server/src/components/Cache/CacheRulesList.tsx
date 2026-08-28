@@ -121,6 +121,8 @@ export function CacheRulesList({
                 </td>
                 <td className="table-cell text-center">
                   <button
+                    role="switch"
+                    aria-checked={rule.enabled}
                     onClick={() => onToggle(rule.name, !rule.enabled)}
                     className={`w-10 h-5 rounded-full relative transition-colors ${
                       rule.enabled ? 'bg-bifrost-success' : 'bg-bifrost-border'

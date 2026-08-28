@@ -155,11 +155,66 @@ function PasswordField({
   )
 }
 
+// RawJSONConfigEditor edits a provider config as JSON. It is the fallback for
+// provider types whose config is nested (mfa_wrapper's inline primary/secondary
+// blocks) and cannot be expressed as a flat field schema. Without it those
+// providers rendered no editor at all.
+function RawJSONConfigEditor({
+  type,
+  config,
+  onChange,
+}: AuthProviderConfigFormProps) {
+  const [text, setText] = useState(() => JSON.stringify(config, null, 2))
+  const [parseError, setParseError] = useState<string | null>(null)
+
+  const handleChange = (value: string) => {
+    setText(value)
+    try {
+      const parsed = JSON.parse(value)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        setParseError(null)
+        onChange(parsed as Record<string, unknown>)
+      } else {
+        setParseError('Config must be a JSON object')
+      }
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : 'Invalid JSON')
+    }
+  }
+
+  const id = `auth-${type}-raw-json`
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className="block text-sm font-medium text-bifrost-text">
+        Provider Config (JSON)
+      </label>
+      <textarea
+        id={id}
+        value={text}
+        onChange={(e) => handleChange(e.target.value)}
+        rows={12}
+        spellCheck={false}
+        aria-invalid={!!parseError}
+        className="input font-mono text-xs"
+      />
+      {parseError ? (
+        <p className="text-xs text-bifrost-error" role="alert">
+          {parseError} — changes are not applied until the JSON parses
+        </p>
+      ) : (
+        <p className="text-xs text-bifrost-muted">
+          This provider&apos;s config is nested and edited as JSON. It is validated by the server on save
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function AuthProviderConfigForm({ type, config, onChange }: AuthProviderConfigFormProps) {
   const schema = FIELD_SCHEMAS[type]
 
   if (!schema) {
-    return null
+    return <RawJSONConfigEditor type={type} config={config} onChange={onChange} />
   }
 
   const update = (key: string, value: unknown) => {
