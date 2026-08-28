@@ -349,7 +349,7 @@ func TestTray_onReady_SetsUpMenu(t *testing.T) {
 	// ShowQuickGUI true so the full 6-item menu (including Quick Access) is built.
 	tray := NewWithAdapter(Config{ShowQuickGUI: true}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// Verify title and tooltip were set
 	assert.Equal(t, "Bifrost", adapter.GetTitle())
@@ -380,7 +380,7 @@ func TestTray_onReady_OmitsQuickAccessWhenDisabled(t *testing.T) {
 	// ShowQuickGUI false (the zero value): the Quick Access entry must be omitted.
 	tray := NewWithAdapter(Config{ShowQuickGUI: false}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// 5 items: Status, Connect, Disconnect, Open Dashboard, Quit.
 	assert.Equal(t, 5, len(adapter.menuItems))
@@ -400,7 +400,7 @@ func TestTray_onReady_ConnectClick(t *testing.T) {
 		OnConnect: func() { connectCalled.Store(true) },
 	}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// Simulate connect click
 	adapter.GetMenuItem(1).Click()
@@ -421,7 +421,7 @@ func TestTray_onReady_DisconnectClick(t *testing.T) {
 		OnDisconnect: func() { disconnectCalled.Store(true) },
 	}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// First connect to enable disconnect
 	adapter.GetMenuItem(1).Click()
@@ -446,7 +446,7 @@ func TestTray_onReady_OpenQuickClick(t *testing.T) {
 		ShowQuickGUI: true,
 	}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// Simulate quick access click
 	adapter.GetMenuItem(3).Click()
@@ -463,7 +463,7 @@ func TestTray_onReady_OpenUIClick(t *testing.T) {
 		ShowQuickGUI: true,
 	}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// Simulate open dashboard click (index 4 when Quick Access is present)
 	adapter.GetMenuItem(4).Click()
@@ -480,7 +480,7 @@ func TestTray_onReady_QuitClick(t *testing.T) {
 		ShowQuickGUI: true,
 	}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// Simulate quit click (index 5 when Quick Access is present)
 	adapter.GetMenuItem(5).Click()
@@ -495,7 +495,7 @@ func TestTray_onReady_NilCallbacks(t *testing.T) {
 	// Create tray with nil callbacks. ShowQuickGUI true so all 6 items exist.
 	tray := NewWithAdapter(Config{ShowQuickGUI: true}, adapter)
 
-	tray.Run(context.Background())
+	tray.onReady()
 
 	// Click all menu items - should not panic
 	adapter.GetMenuItem(1).Click() // Connect
@@ -516,8 +516,39 @@ func TestTray_onExit(t *testing.T) {
 	adapter := newMockAdapter()
 	tray := NewWithAdapter(Config{}, adapter)
 
-	// onExit should not panic
+	// onExit terminates workers and remains safe if an adapter invokes it
+	// more than once.
 	tray.onExit()
+	tray.onExit()
+
+	select {
+	case <-tray.done:
+	default:
+		t.Fatal("onExit did not close the tray done channel")
+	}
+}
+
+func TestTray_RunHonorsContextCancellation(t *testing.T) {
+	adapter := newMockAdapter()
+	adapter.runBlocking = true
+	tray := NewWithAdapter(Config{}, adapter)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan struct{})
+	go func() {
+		tray.Run(ctx)
+		close(runDone)
+	}()
+
+	require.Eventually(t, adapter.WasOnReadyCalled, time.Second, 10*time.Millisecond)
+	cancel()
+
+	require.Eventually(t, adapter.IsQuitCalled, time.Second, 10*time.Millisecond, "context cancellation should quit the tray")
+	select {
+	case <-runDone:
+	case <-time.After(time.Second):
+		t.Fatal("Run did not return after context cancellation")
+	}
 }
 
 func TestTray_updateIcon(t *testing.T) {

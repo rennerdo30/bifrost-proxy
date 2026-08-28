@@ -1632,53 +1632,56 @@ vpn:
 
 ## 19. Desktop Client
 
-A native desktop client built with [Wails](https://wails.io/) providing a GUI for managing the proxy.
+The desktop client is a native [Wails](https://wails.io/) quick-access wrapper around the same embedded Go client used by `bifrost-client`. It is deliberately smaller than the web dashboard.
 
-### 19.1 Features
+### 19.1 Implemented Surface
 
-- **Quick GUI**: Floating window for quick access to common controls
-- **System Tray**: Background operation with status indicators
-- **Connection Dashboard**: Real-time connection statistics
-- **Server Management**: Configure and switch between servers
-- **Split Tunneling**: Visual rule editor for app/domain exclusions
-- **Logs Viewer**: Real-time log streaming
+- Start and stop the embedded local proxy client
+- Report local lifecycle and upstream reachability separately
+- Show active connections, cumulative bytes sent/received, local proxy addresses, uptime, VPN state, and the last error
+- Add, edit, delete, select, and mark named upstream servers as default
+- Edit the upstream address/protocol and local HTTP/SOCKS5 ports; restart the client to apply listener changes
+- Enable/disable an already-configured VPN manager
+- Persist Auto-connect and Start-minimized GUI preferences
+- Provide one process-lifetime tray across client Start/Stop cycles
+
+The desktop window does not implement split-tunnel rule editing, traffic-log viewing, recent-connection tables, bandwidth graphs, or update controls. Those remain web-dashboard/config-file surfaces.
 
 ### 19.2 Architecture
 
 ```mermaid
-graph TD
-    subgraph "Wails UI System"
-        FE[Frontend<br/>React] <--> BE[Backend<br/>Go Wrapper]
-        Tray[Native Tray<br/>Go] <--> BE
-    end
-
-    BE <--> Core[Bifrost Client Core<br/>Go Library]
+graph LR
+    FE[Wails React quick-access UI] <--> APP[desktop.App bindings]
+    APP <--> CORE[Embedded Bifrost client]
+    CORE --> HTTP[Local HTTP proxy]
+    CORE --> SOCKS[Local SOCKS5 proxy]
+    CORE --> API[Client API and web dashboard]
+    CORE --> VPN[Optional VPN manager]
+    CORE --> TRAY[Process-wide system tray]
+    CORE --> UPSTREAM[Configured Bifrost server]
+    TRAY --> FE
 ```
 
-### 19.3 Building
+The tray's **Connect/Disconnect** action controls operating-system proxy settings; it is distinct from both the Wails window's local-client lifecycle button and its VPN-mode toggle. **Quick Access** restores the Wails window; **Open Dashboard** opens the client web UI.
+
+### 19.3 Configuration
+
+The app loads the ordinary `config.ClientConfig` YAML, forces the local API on for the embedded dashboard, and saves server/listener changes back to that file. GUI-only preferences live in `quick-preferences.json` below the user config directory. Auto-connect defaults to true. Start-minimized hides the initial Wails window, which can be restored from the tray.
+
+### 19.4 Building and Releases
+
+Wails GUI binaries are built on native Linux, Windows, and macOS GitHub runners. Tagged releases attach:
+
+- `bifrost-desktop-linux-amd64.tar.gz`
+- `bifrost-desktop-windows-amd64.exe`
+- `bifrost-desktop-darwin-universal.zip`
 
 ```bash
-# Install Wails CLI
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-# Build for current platform
-cd desktop
-wails build
-
-# Build for all platforms
-wails build -platform darwin/amd64
-wails build -platform windows/amd64
-wails build -platform linux/amd64
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+make desktop-build
 ```
 
-### 19.4 Quick GUI
-
-The Quick GUI is a small floating window that provides:
-- Connection status indicator
-- Quick connect/disconnect toggle
-- Bandwidth usage graph
-- Recent connections list
-- Quick access to full dashboard
+Ubuntu 24.04 builds require GTK3 and WebKitGTK 4.1 development packages and the `webkit2_41` build tag. See the desktop-client documentation for exact commands and runtime requirements.
 
 ## 20. Mobile Client
 

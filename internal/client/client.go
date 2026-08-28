@@ -62,6 +62,7 @@ type Client struct {
 	meshManager     apiclient.MeshManager
 	sysProxyManager sysproxy.Manager
 	tray            *tray.Tray
+	openQuick       func()
 	updater         *updater.Updater
 
 	httpListener   net.Listener
@@ -95,6 +96,26 @@ type Client struct {
 	bytesSent     atomic.Int64
 	bytesReceived atomic.Int64
 	activeConns   atomic.Int64
+}
+
+// SetOpenQuickHandler overrides what the process tray's Quick Access item
+// opens. The desktop wrapper uses this to reveal its Wails window; headless
+// clients fall back to the web dashboard.
+func (c *Client) SetOpenQuickHandler(handler func()) {
+	c.mu.Lock()
+	c.openQuick = handler
+	c.mu.Unlock()
+}
+
+func (c *Client) openQuickAccess() {
+	c.mu.RLock()
+	handler := c.openQuick
+	c.mu.RUnlock()
+	if handler != nil {
+		handler()
+		return
+	}
+	c.openUI()
 }
 
 // recordProxyTraffic accumulates the per-request byte counters reported by the
@@ -1357,7 +1378,7 @@ func (c *Client) startTray(ctx context.Context) {
 			},
 			OnOpenQuick: func() {
 				if cl := trayClient(); cl != nil {
-					cl.openUI()
+					cl.openQuickAccess()
 				}
 			},
 			OnQuit: func() {
@@ -1372,8 +1393,9 @@ func (c *Client) startTray(ctx context.Context) {
 		})
 		processTray.tray = t
 		processTray.started = true
-		// The context of the first tray-enabled Start is deliberately unused
-		// for cancellation: the tray outlives every run by design.
+		// The first Start's parent context defines the process lifetime. Stop's
+		// per-run cancellation does not cancel it, so the tray still outlives
+		// every Start/Stop cycle while application shutdown can terminate it.
 		go t.Run(ctx)
 	}
 	t := processTray.tray
