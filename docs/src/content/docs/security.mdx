@@ -218,6 +218,48 @@ curl -H "Authorization: Bearer your-token" http://localhost:7082/api/v1/status
 curl "http://localhost:7082/api/v1/status?token=your-token"
 ```
 
+### Dashboard sign-in and session cookies
+
+The web dashboard authenticates with the same `api.token`, but it does not keep
+the token in the browser when a session store is configured. Signing in POSTs
+the token once to `/api/v1/login`, which returns an **HttpOnly** session cookie:
+
+```yaml
+api:
+  enabled: true
+  token: "${BIFROST_API_TOKEN}"
+
+session:
+  store: memory        # or redis
+  duration: "12h"
+```
+
+With that block present:
+
+- The token is sent once and **not** written to `localStorage`. The cookie is
+  HttpOnly, so injected script cannot read it — a stored bearer token can be
+  read by any XSS on the page.
+- The cookie also authenticates the WebSocket handshake, so no credential is
+  placed in a URL. A browser cannot set headers on a WS upgrade, which is why
+  the `?token=` form exists at all.
+- **Sign out** (in the dashboard's credential dialog) calls `/api/v1/logout`,
+  which destroys the session server-side rather than only clearing browser
+  state.
+- When the session expires the dashboard prompts for the token again instead of
+  showing failures on every page.
+
+Without a `session:` block, `/api/v1/login` answers `503` and the dashboard
+falls back to storing the token in `localStorage` and sending
+`Authorization: Bearer`. That still works, and the dialog says plainly that it
+is the weaker posture. Configuring a session store is the recommended
+production setup.
+
+:::caution
+Serve the dashboard over HTTPS in production. A session cookie sent over plain
+HTTP can be captured in transit, and `session.secure_cookies` cannot protect a
+connection that is not encrypted.
+:::
+
 ### Restrict API Access
 
 Bind the API to localhost if only local access is needed:

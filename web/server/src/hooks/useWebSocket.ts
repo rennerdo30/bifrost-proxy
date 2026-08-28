@@ -20,9 +20,11 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
     if (!enabled) return
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    // Browsers cannot set the Authorization header on a WS handshake, so when
-    // an API token is configured we pass it via the ?token= query parameter
-    // that the server's auth middleware also accepts.
+    // Browsers cannot set the Authorization header on a WS handshake. With a
+    // session the HttpOnly cookie is sent automatically and authenticates the
+    // upgrade, so no credential goes in the URL. Only the bearer-token
+    // fallback (a server with no session store) needs ?token=, which
+    // getApiToken() returns solely in that mode.
     const token = getApiToken()
     const query = token ? `?token=${encodeURIComponent(token)}` : ''
     const wsUrl = `${protocol}//${window.location.host}${BASE_PATH}/api/v1/ws${query}`
