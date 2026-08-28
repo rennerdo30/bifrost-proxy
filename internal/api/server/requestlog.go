@@ -14,6 +14,13 @@ const (
 
 	// topHostsLimit caps how many hosts RequestLogStats.TopHosts reports.
 	topHostsLimit = 10
+
+	// statsMapSizeHint is the initial capacity of the aggregation maps built by
+	// Stats. Their real cardinality is bounded by distinct methods, status codes
+	// and hosts — not by the ring buffer length, which can be a million entries.
+	// Sizing them to len(entries) allocated ~171 MB per Stats call on a full
+	// buffer, all while holding the read lock the writers contend on.
+	statsMapSizeHint = 16
 )
 
 // RequestLogEntry represents a single request log entry.
@@ -193,17 +200,24 @@ func (r *RequestLog) Stats() RequestLogStats {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	byMethod := make(map[string]int, len(r.entries))
-	byStatus := make(map[string]int, len(r.entries))
-	byHost := make(map[string]int, len(r.entries))
+	byMethod := make(map[string]int, statsMapSizeHint)
+	byStatusCode := make(map[int]int, statsMapSizeHint)
+	byHost := make(map[string]int, statsMapSizeHint)
 
 	for i := range r.entries {
 		e := &r.entries[i]
 		byMethod[e.Method]++
-		byStatus[strconv.Itoa(e.StatusCode)]++
+		byStatusCode[e.StatusCode]++
 		if e.Host != "" {
 			byHost[e.Host]++
 		}
+	}
+
+	// Convert status codes to the string keys the JSON payload documents,
+	// allocating once per distinct code instead of once per entry.
+	byStatus := make(map[string]int, len(byStatusCode))
+	for code, count := range byStatusCode {
+		byStatus[strconv.Itoa(code)] = count
 	}
 
 	return RequestLogStats{

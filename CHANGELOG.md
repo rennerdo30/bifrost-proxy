@@ -514,10 +514,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   started without a `cache:` section — including the shipped example config. The
   cache API is only mounted when caching is configured, and the page had no error
   state, so it showed permanent loading skeletons, no explanation, and live
-  Purge Domain / Clear All / Add Rule buttons. It now reports "Caching is not
-  configured", disables the destructive actions, stops polling the missing
-  endpoints and surfaces other failures with a retry. The Mesh page gained the
-  same treatment for `mesh.enabled: false`
+  Purge Domain / Clear All / Add Rule buttons. It now reports "Caching is
+  disabled or not configured" — the server omits the cache API both when the
+  `cache:` section is absent and when it is present with `enabled: false`, and
+  the page cannot tell the two apart — disables the destructive actions, stops
+  polling the missing endpoints and surfaces other failures with a retry. The
+  Mesh page gained the same treatment for `mesh.enabled: false`
+- `GET /api/v1/requests/stats` no longer sizes its aggregation maps to the ring
+  buffer length. On a full buffer at the maximum configured size, every poll
+  allocated on the order of 170 MB while holding the lock request logging
+  writes under; the maps now grow with the number of distinct methods, status
+  codes and hosts instead
 - The "Skip to main content" link blanked the whole dashboard in both the server
   and the client UI. Both run under a `HashRouter`, where the URL fragment *is*
   the route, so following the link set the route to `main-content`, matched
