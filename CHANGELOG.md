@@ -73,7 +73,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literal; the implicit port is omitted for `https`
 - Mobile app: `npm test` runs service-layer unit tests on Node's built-in test
   runner with no new dependencies, covering the CSRF header on every mutation,
-  the server-select route and body, token persistence and scheme handling
+  the server-select route and body, token persistence and scheme handling. The
+  suite now also covers split-tunnel reconciliation and replace semantics, the
+  connection-status helpers, and the translation catalogue; mobile CI runs
+  `npm run lint` and `npm test` alongside the existing typecheck and
+  `expo-doctor` checks
+- Mobile app: German translations. Every string on all five screens — including
+  accessibility labels, hints and toasts — resolves through a typed catalogue in
+  `src/i18n.ts`, and the language follows the device locale. Counts and
+  durations use locale-aware formatting. A key missing its German translation is
+  a compile error, so English text cannot leak into a German build
 - The server dashboard's auth provider list gained `mfa_wrapper`, which was
   registered and working but missing from the UI entirely, with a default config
   in the inline `primary`/`secondary` format the server actually accepts
@@ -132,6 +141,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   phone-side behavior, split-tunneling rule switches and toasts got
   accessibility labels/roles, and the mobile docs no longer claim stats the
   API does not report
+- **Mobile split tunneling now reflects and replaces the remote policy.** The
+  screen fetched `GET /vpn/split/rules` and discarded the response, so it showed
+  only what the phone remembered; it now reconciles the two, importing rules
+  added elsewhere and keeping locally parked rules visible but disabled. The
+  pre-connect sync was additive, so a rule disabled on the phone stayed in force
+  on the client — it now *replaces* the client's active rules with the enabled
+  local policy (removing stale ones) and is fail-closed: any failed operation
+  aborts before the VPN is enabled and names the rule and operation that failed,
+  instead of connecting with a partially applied policy
+- Mobile assets are three distinct images instead of three copies of one file.
+  The Android adaptive icon is now a transparent foreground whose artwork stays
+  inside the platform's 66% safe-zone circle (a baked-in background became a
+  squircle inside a squircle once Android applied its mask), and the splash is
+  its own centred composition. `app.json` no longer carries a fabricated
+  all-zero EAS `projectId` that looked configured while pointing at nothing —
+  run `eas init` to link the project before the first build
 - **Breaking:** a configuration key that no setting corresponds to is now
   rejected at load time, naming the key, its line and its config block, instead
   of being ignored. A misspelled key (`listem` for `listen`) or an obsolete one

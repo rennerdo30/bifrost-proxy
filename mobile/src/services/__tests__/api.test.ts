@@ -294,7 +294,7 @@ describe('formatBytes', () => {
   })
 
   it('clamps beyond the largest known unit', () => {
-    assert.equal(apiModule.formatBytes(Math.pow(1024, 6)), '1048576 TB')
+    assert.equal(apiModule.formatBytes(Math.pow(1024, 6)), '1,048,576 TB')
   })
 })
 

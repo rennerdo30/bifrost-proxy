@@ -6,6 +6,7 @@ import {
   setStoredAPIToken,
   setStoredServerUrl,
 } from './storage'
+import { formatDecimal, t } from '../i18n'
 
 const DEFAULT_TIMEOUT = 10000
 
@@ -173,7 +174,7 @@ export function parseServerAddress(
 ): { address: ParsedServerAddress } | { error: string } {
   const raw = input.trim()
   if (!raw) {
-    return { error: 'Server address is required' }
+    return { error: t('api.addressRequired') }
   }
 
   let scheme: ParsedServerAddress['scheme'] = DEFAULT_SCHEME
@@ -183,7 +184,7 @@ export function parseServerAddress(
   if (schemeMatch) {
     const candidate = schemeMatch[1].toLowerCase()
     if (candidate !== HTTP_SCHEME && candidate !== HTTPS_SCHEME) {
-      return { error: `Unsupported scheme "${candidate}". Use ${HTTP_SCHEME}:// or ${HTTPS_SCHEME}://` }
+      return { error: t('api.unsupportedScheme', { scheme: candidate }) }
     }
     scheme = candidate
     remainder = schemeMatch[2]
@@ -192,7 +193,7 @@ export function parseServerAddress(
   // Drop any path/query the operator pasted along with the host.
   remainder = remainder.split('/')[0].split('?')[0]
   if (!remainder) {
-    return { error: 'Host cannot be empty' }
+    return { error: t('api.hostEmpty') }
   }
 
   let host = remainder
@@ -202,13 +203,13 @@ export function parseServerAddress(
     // Bracketed IPv6 literal, optionally followed by :port
     const closing = remainder.indexOf(']')
     if (closing < 0) {
-      return { error: 'Unterminated IPv6 address - expected a closing "]"' }
+      return { error: t('api.ipv6Closing') }
     }
     host = remainder.slice(0, closing + 1)
     const rest = remainder.slice(closing + 1)
     if (rest) {
       if (!rest.startsWith(':')) {
-        return { error: 'Address must be in host:port format (e.g., example.com:7383)' }
+        return { error: t('api.hostPortFormat') }
       }
       const parsed = parsePort(rest.slice(1))
       if ('error' in parsed) return parsed
@@ -217,12 +218,12 @@ export function parseServerAddress(
   } else {
     const colonCount = (remainder.match(/:/g) || []).length
     if (colonCount > 1) {
-      return { error: 'Wrap IPv6 addresses in brackets (e.g., [::1]:7383)' }
+      return { error: t('api.ipv6Brackets') }
     }
     if (colonCount === 1) {
       const [hostPart, portPart] = remainder.split(':')
       if (!hostPart) {
-        return { error: 'Host cannot be empty' }
+        return { error: t('api.hostEmpty') }
       }
       host = hostPart
       const parsed = parsePort(portPart)
@@ -232,7 +233,7 @@ export function parseServerAddress(
   }
 
   if (!host.trim()) {
-    return { error: 'Host cannot be empty' }
+    return { error: t('api.hostEmpty') }
   }
 
   return { address: { scheme, host, port } }
@@ -240,11 +241,11 @@ export function parseServerAddress(
 
 function parsePort(value: string): { port: number } | { error: string } {
   if (!/^\d+$/.test(value)) {
-    return { error: `Port must be between ${MIN_PORT} and ${MAX_PORT}` }
+    return { error: t('api.portRange', { min: MIN_PORT, max: MAX_PORT }) }
   }
   const port = parseInt(value, 10)
   if (port < MIN_PORT || port > MAX_PORT) {
-    return { error: `Port must be between ${MIN_PORT} and ${MAX_PORT}` }
+    return { error: t('api.portRange', { min: MIN_PORT, max: MAX_PORT }) }
   }
   return { port }
 }
@@ -337,7 +338,7 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
 
     if (!res.ok) {
       const text = await res.text().catch(() => '')
-      throw new APIError(res.status, text || `Request failed with status ${res.status}`)
+      throw new APIError(res.status, text || t('api.requestFailed', { status: res.status }))
     }
 
     return res.json()
@@ -349,12 +350,12 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
     if (err instanceof Error && err.name === 'AbortError') {
       throw new APIError(
         HTTP_STATUS_NETWORK_ERROR,
-        'Request timed out. Check your connection and try again.'
+        t('api.timeout')
       )
     }
     throw new APIError(
       HTTP_STATUS_NETWORK_ERROR,
-      err instanceof Error ? err.message : 'Network error - check your connection'
+      err instanceof Error ? err.message : t('api.network')
     )
   }
 }
@@ -543,7 +544,7 @@ export const api = {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Connection failed',
+        error: error instanceof Error ? error.message : t('api.connectionFailed'),
       }
     }
   },
@@ -557,7 +558,7 @@ export function formatBytes(bytes: number): string {
     BYTE_UNITS.length - 1
   )
   const value = bytes / Math.pow(BYTES_PER_UNIT, exponent)
-  return `${parseFloat(value.toFixed(1))} ${BYTE_UNITS[exponent]}`
+  return `${formatDecimal(value)} ${BYTE_UNITS[exponent]}`
 }
 
 export function formatDuration(seconds: number): string {
@@ -566,12 +567,12 @@ export function formatDuration(seconds: number): string {
   const secs = Math.floor(seconds % SECONDS_PER_MINUTE)
 
   if (hours > 0) {
-    return `${hours}h ${minutes}m`
+    return t('duration.hoursMinutes', { hours, minutes })
   }
   if (minutes > 0) {
-    return `${minutes}m ${secs}s`
+    return t('duration.minutesSeconds', { minutes, seconds: secs })
   }
-  return `${secs}s`
+  return t('duration.seconds', { seconds: secs })
 }
 
 /**

@@ -22,6 +22,8 @@ import {
   SplitTunnelIP,
 } from '../services/storage'
 import { useToast } from '../components/Toast'
+import { reconcileSplitTunnelConfig } from '../services/splitTunnelSync'
+import { t } from '../i18n'
 
 type TabType = 'apps' | 'domains' | 'ips'
 
@@ -53,35 +55,55 @@ export function SplitTunnelingScreen() {
   const [newAppName, setNewAppName] = useState('')
   const [newAppPackage, setNewAppPackage] = useState('')
 
-  // Fetch server-side split tunnel rules
-  const { isLoading: isLoadingRules, refetch: refetchRules } = useQuery({
+  // Fetch the remote client's active split-tunnel policy. The data is merged
+  // into the local editor model below; it is never fetched and discarded.
+  const {
+    data: remoteConfig,
+    isLoading: isLoadingRules,
+    error: rulesError,
+    refetch: refetchRules,
+  } = useQuery({
     queryKey: ['split-tunnel-rules'],
     queryFn: api.getSplitTunnelRules,
     retry: 1,
   })
 
-  // Load local config on mount
-  useEffect(() => {
-    loadLocalConfig()
-  }, [])
-
-  const loadLocalConfig = async () => {
+  const loadLocalConfig = useCallback(async () => {
     try {
       const config = await getStoredSplitTunnelConfig()
       setLocalConfig(config)
     } catch {
-      showToast('Failed to load configuration', 'error')
+      showToast(t('split.loadFailed'), 'error')
     }
-  }
+  }, [showToast])
 
-  const saveLocalConfig = async (config: StoredSplitTunnelConfig) => {
-    try {
-      await setStoredSplitTunnelConfig(config)
-      setLocalConfig(config)
-    } catch {
-      showToast('Failed to save configuration', 'error')
+  const saveLocalConfig = useCallback(
+    async (config: StoredSplitTunnelConfig) => {
+      try {
+        await setStoredSplitTunnelConfig(config)
+        setLocalConfig(config)
+      } catch {
+        showToast(t('split.saveFailed'), 'error')
+      }
+    },
+    [showToast]
+  )
+
+  // Load the locally remembered editor state on mount.
+  useEffect(() => {
+    void loadLocalConfig()
+  }, [loadLocalConfig])
+
+  // Remote rules are the source of truth for what is active now. Import remote
+  // additions and mark locally remembered-but-absent rules disabled. Equality
+  // check prevents a storage/state loop after writing the reconciled model.
+  useEffect(() => {
+    if (!localConfig || !remoteConfig) return
+    const reconciled = reconcileSplitTunnelConfig(localConfig, remoteConfig)
+    if (JSON.stringify(reconciled) !== JSON.stringify(localConfig)) {
+      void saveLocalConfig(reconciled)
     }
-  }
+  }, [localConfig, remoteConfig, saveLocalConfig])
 
   // Mutations for server-side updates
   const setModeMutation = useMutation({
@@ -90,7 +112,7 @@ export function SplitTunnelingScreen() {
       queryClient.invalidateQueries({ queryKey: ['split-tunnel-rules'] })
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to update mode', 'error')
+      showToast(error.message || t('split.modeFailed'), 'error')
     },
   })
 
@@ -98,21 +120,30 @@ export function SplitTunnelingScreen() {
     mutationFn: (app: { name: string; path?: string }) => api.addSplitTunnelApp(app),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['split-tunnel-rules'] })
-      showToast('App added', 'success')
+      showToast(t('split.appAdded'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to add app', 'error')
+      showToast(error.message || t('split.appAddFailed'), 'error')
     },
   })
 
   const removeAppMutation = useMutation({
-    mutationFn: (name: string) => api.removeSplitTunnelApp(name),
-    onSuccess: () => {
+    mutationFn: ({ name }: { name: string; retainLocal: boolean }) =>
+      api.removeSplitTunnelApp(name),
+    onSuccess: async (_, { name, retainLocal }) => {
+      if (localConfig) {
+        const apps = retainLocal
+          ? localConfig.apps.map((app) =>
+              app.name === name ? { ...app, enabled: false } : app
+            )
+          : localConfig.apps.filter((app) => app.name !== name)
+        await saveLocalConfig({ ...localConfig, apps })
+      }
       queryClient.invalidateQueries({ queryKey: ['split-tunnel-rules'] })
-      showToast('App removed', 'success')
+      showToast(retainLocal ? t('split.appDisabled') : t('split.appRemoved'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to remove app', 'error')
+      showToast(error.message || t('split.appRemoveFailed'), 'error')
     },
   })
 
@@ -120,21 +151,30 @@ export function SplitTunnelingScreen() {
     mutationFn: (domain: string) => api.addSplitTunnelDomain(domain),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['split-tunnel-rules'] })
-      showToast('Domain added', 'success')
+      showToast(t('split.domainAdded'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to add domain', 'error')
+      showToast(error.message || t('split.domainAddFailed'), 'error')
     },
   })
 
   const removeDomainMutation = useMutation({
-    mutationFn: (domain: string) => api.removeSplitTunnelDomain(domain),
-    onSuccess: () => {
+    mutationFn: ({ domain }: { domain: string; retainLocal: boolean }) =>
+      api.removeSplitTunnelDomain(domain),
+    onSuccess: async (_, { domain, retainLocal }) => {
+      if (localConfig) {
+        const domains = retainLocal
+          ? localConfig.domains.map((item) =>
+              item.domain === domain ? { ...item, enabled: false } : item
+            )
+          : localConfig.domains.filter((item) => item.domain !== domain)
+        await saveLocalConfig({ ...localConfig, domains })
+      }
       queryClient.invalidateQueries({ queryKey: ['split-tunnel-rules'] })
-      showToast('Domain removed', 'success')
+      showToast(retainLocal ? t('split.domainDisabled') : t('split.domainRemoved'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to remove domain', 'error')
+      showToast(error.message || t('split.domainRemoveFailed'), 'error')
     },
   })
 
@@ -142,21 +182,30 @@ export function SplitTunnelingScreen() {
     mutationFn: (cidr: string) => api.addSplitTunnelIP(cidr),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['split-tunnel-rules'] })
-      showToast('IP range added', 'success')
+      showToast(t('split.ipAdded'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to add IP range', 'error')
+      showToast(error.message || t('split.ipAddFailed'), 'error')
     },
   })
 
   const removeIPMutation = useMutation({
-    mutationFn: (cidr: string) => api.removeSplitTunnelIP(cidr),
-    onSuccess: () => {
+    mutationFn: ({ cidr }: { cidr: string; retainLocal: boolean }) =>
+      api.removeSplitTunnelIP(cidr),
+    onSuccess: async (_, { cidr, retainLocal }) => {
+      if (localConfig) {
+        const ips = retainLocal
+          ? localConfig.ips.map((item) =>
+              item.cidr === cidr ? { ...item, enabled: false } : item
+            )
+          : localConfig.ips.filter((item) => item.cidr !== cidr)
+        await saveLocalConfig({ ...localConfig, ips })
+      }
       queryClient.invalidateQueries({ queryKey: ['split-tunnel-rules'] })
-      showToast('IP range removed', 'success')
+      showToast(retainLocal ? t('split.ipDisabled') : t('split.ipRemoved'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to remove IP range', 'error')
+      showToast(error.message || t('split.ipRemoveFailed'), 'error')
     },
   })
 
@@ -164,16 +213,11 @@ export function SplitTunnelingScreen() {
     setIsRefreshing(true)
     await Promise.all([refetchRules(), loadLocalConfig()])
     setIsRefreshing(false)
-  }, [refetchRules])
+  }, [refetchRules, loadLocalConfig])
 
-  const handleModeChange = async (newMode: 'exclude' | 'include') => {
-    if (!localConfig) return
-
-    // Update local config
-    const updatedConfig = { ...localConfig, mode: newMode }
-    await saveLocalConfig(updatedConfig)
-
-    // Try to update server (will fail silently if server doesn't support it)
+  const handleModeChange = (newMode: 'exclude' | 'include') => {
+    // The remote client is canonical; the query refetch reconciles local
+    // storage after the mutation succeeds.
     setModeMutation.mutate(newMode)
   }
 
@@ -182,25 +226,10 @@ export function SplitTunnelingScreen() {
     const packageId = newAppPackage.trim()
 
     if (!name) {
-      showToast('App name is required', 'error')
+      showToast(t('split.appNameRequired'), 'error')
       return
     }
 
-    // Add to local config
-    if (localConfig) {
-      const newApp: SplitTunnelApp = {
-        name,
-        packageId: packageId || name,
-        enabled: true,
-      }
-      const updatedConfig = {
-        ...localConfig,
-        apps: [...localConfig.apps, newApp],
-      }
-      await saveLocalConfig(updatedConfig)
-    }
-
-    // Try to sync with server
     addAppMutation.mutate({ name, path: packageId || undefined })
 
     setNewAppName('')
@@ -209,36 +238,27 @@ export function SplitTunnelingScreen() {
 
   const handleRemoveApp = async (app: SplitTunnelApp) => {
     Alert.alert(
-      'Remove App',
-      `Remove "${app.name}" from split tunneling?`,
+      t('split.removeAppTitle'),
+      t('split.removeAppMessage', { name: app.name }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('common.remove'),
           style: 'destructive',
-          onPress: async () => {
-            if (localConfig) {
-              const updatedConfig = {
-                ...localConfig,
-                apps: localConfig.apps.filter((a) => a.packageId !== app.packageId),
-              }
-              await saveLocalConfig(updatedConfig)
-            }
-            removeAppMutation.mutate(app.name)
+          onPress: () => {
+            removeAppMutation.mutate({ name: app.name, retainLocal: false })
           },
         },
       ]
     )
   }
 
-  const handleToggleApp = async (app: SplitTunnelApp) => {
-    if (!localConfig) return
-
-    const updatedApps = localConfig.apps.map((a) =>
-      a.packageId === app.packageId ? { ...a, enabled: !a.enabled } : a
-    )
-    const updatedConfig = { ...localConfig, apps: updatedApps }
-    await saveLocalConfig(updatedConfig)
+  const handleToggleApp = (app: SplitTunnelApp) => {
+    if (app.enabled) {
+      removeAppMutation.mutate({ name: app.name, retainLocal: true })
+    } else {
+      addAppMutation.mutate({ name: app.name, path: app.packageId || undefined })
+    }
   }
 
   const validateDomain = (domain: string): boolean => {
@@ -250,66 +270,47 @@ export function SplitTunnelingScreen() {
     const domain = newDomain.trim().toLowerCase()
 
     if (!domain) {
-      showToast('Domain is required', 'error')
+      showToast(t('split.domainRequired'), 'error')
       return
     }
 
     if (!validateDomain(domain)) {
-      showToast('Invalid domain format', 'error')
+      showToast(t('split.invalidDomain'), 'error')
       return
     }
 
-    // Add to local config
-    if (localConfig) {
-      if (localConfig.domains.some((d) => d.domain === domain)) {
-        showToast('Domain already exists', 'error')
-        return
-      }
-      const newDomainEntry: SplitTunnelDomain = { domain, enabled: true }
-      const updatedConfig = {
-        ...localConfig,
-        domains: [...localConfig.domains, newDomainEntry],
-      }
-      await saveLocalConfig(updatedConfig)
+    if (localConfig?.domains.some((d) => d.domain === domain && d.enabled)) {
+      showToast(t('split.domainExists'), 'error')
+      return
     }
 
-    // Try to sync with server
     addDomainMutation.mutate(domain)
     setNewDomain('')
   }
 
   const handleRemoveDomain = async (domainEntry: SplitTunnelDomain) => {
     Alert.alert(
-      'Remove Domain',
-      `Remove "${domainEntry.domain}" from split tunneling?`,
+      t('split.removeDomainTitle'),
+      t('split.removeDomainMessage', { domain: domainEntry.domain }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('common.remove'),
           style: 'destructive',
-          onPress: async () => {
-            if (localConfig) {
-              const updatedConfig = {
-                ...localConfig,
-                domains: localConfig.domains.filter((d) => d.domain !== domainEntry.domain),
-              }
-              await saveLocalConfig(updatedConfig)
-            }
-            removeDomainMutation.mutate(domainEntry.domain)
+          onPress: () => {
+            removeDomainMutation.mutate({ domain: domainEntry.domain, retainLocal: false })
           },
         },
       ]
     )
   }
 
-  const handleToggleDomain = async (domainEntry: SplitTunnelDomain) => {
-    if (!localConfig) return
-
-    const updatedDomains = localConfig.domains.map((d) =>
-      d.domain === domainEntry.domain ? { ...d, enabled: !d.enabled } : d
-    )
-    const updatedConfig = { ...localConfig, domains: updatedDomains }
-    await saveLocalConfig(updatedConfig)
+  const handleToggleDomain = (domainEntry: SplitTunnelDomain) => {
+    if (domainEntry.enabled) {
+      removeDomainMutation.mutate({ domain: domainEntry.domain, retainLocal: true })
+    } else {
+      addDomainMutation.mutate(domainEntry.domain)
+    }
   }
 
   const validateCIDR = (cidr: string): boolean => {
@@ -337,66 +338,47 @@ export function SplitTunnelingScreen() {
     const cidr = newIP.trim()
 
     if (!cidr) {
-      showToast('IP/CIDR is required', 'error')
+      showToast(t('split.ipRequired'), 'error')
       return
     }
 
     if (!validateCIDR(cidr)) {
-      showToast('Invalid IP/CIDR format (e.g., 192.168.1.0/24)', 'error')
+      showToast(t('split.invalidIP'), 'error')
       return
     }
 
-    // Add to local config
-    if (localConfig) {
-      if (localConfig.ips.some((i) => i.cidr === cidr)) {
-        showToast('IP range already exists', 'error')
-        return
-      }
-      const newIPEntry: SplitTunnelIP = { cidr, enabled: true }
-      const updatedConfig = {
-        ...localConfig,
-        ips: [...localConfig.ips, newIPEntry],
-      }
-      await saveLocalConfig(updatedConfig)
+    if (localConfig?.ips.some((item) => item.cidr === cidr && item.enabled)) {
+      showToast(t('split.ipExists'), 'error')
+      return
     }
 
-    // Try to sync with server
     addIPMutation.mutate(cidr)
     setNewIP('')
   }
 
   const handleRemoveIP = async (ipEntry: SplitTunnelIP) => {
     Alert.alert(
-      'Remove IP Range',
-      `Remove "${ipEntry.cidr}" from split tunneling?`,
+      t('split.removeIPTitle'),
+      t('split.removeIPMessage', { cidr: ipEntry.cidr }),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Remove',
+          text: t('common.remove'),
           style: 'destructive',
-          onPress: async () => {
-            if (localConfig) {
-              const updatedConfig = {
-                ...localConfig,
-                ips: localConfig.ips.filter((i) => i.cidr !== ipEntry.cidr),
-              }
-              await saveLocalConfig(updatedConfig)
-            }
-            removeIPMutation.mutate(ipEntry.cidr)
+          onPress: () => {
+            removeIPMutation.mutate({ cidr: ipEntry.cidr, retainLocal: false })
           },
         },
       ]
     )
   }
 
-  const handleToggleIP = async (ipEntry: SplitTunnelIP) => {
-    if (!localConfig) return
-
-    const updatedIPs = localConfig.ips.map((i) =>
-      i.cidr === ipEntry.cidr ? { ...i, enabled: !i.enabled } : i
-    )
-    const updatedConfig = { ...localConfig, ips: updatedIPs }
-    await saveLocalConfig(updatedConfig)
+  const handleToggleIP = (ipEntry: SplitTunnelIP) => {
+    if (ipEntry.enabled) {
+      removeIPMutation.mutate({ cidr: ipEntry.cidr, retainLocal: true })
+    } else {
+      addIPMutation.mutate(ipEntry.cidr)
+    }
   }
 
   const isLoading = isLoadingRules && !localConfig
@@ -413,7 +395,7 @@ export function SplitTunnelingScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading configuration...</Text>
+        <Text style={styles.loadingText}>{t('split.loading')}</Text>
       </View>
     )
   }
@@ -431,14 +413,24 @@ export function SplitTunnelingScreen() {
         <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} tintColor="#3b82f6" />
       }
     >
+      {rulesError && (
+        <View style={styles.errorCard} accessible={true} accessibilityRole="alert">
+          <Text style={styles.errorText}>{t('split.remoteLoadFailed')}</Text>
+          <Text style={styles.errorDetail}>
+            {rulesError instanceof Error ? rulesError.message : t('common.unknownError')}
+          </Text>
+          <Text style={styles.errorDetail}>{t('split.localFallback')}</Text>
+        </View>
+      )}
+
       {/* Mode Selection */}
       <View style={styles.modeSection}>
         <SectionHeader
-          title="Split Tunnel Mode"
+          title={t('split.modeTitle')}
           subtitle={
             currentMode === 'exclude'
-              ? 'Selected items bypass the VPN'
-              : 'Only selected items use the VPN'
+              ? t('split.excludeSubtitle')
+              : t('split.includeSubtitle')
           }
         />
         <View style={styles.modeButtons}>
@@ -446,7 +438,7 @@ export function SplitTunnelingScreen() {
             style={[styles.modeButton, currentMode === 'exclude' && styles.modeButtonActive]}
             onPress={() => handleModeChange('exclude')}
             disabled={isMutating}
-            accessibilityLabel="Exclude mode"
+            accessibilityLabel={t('split.exclude')}
             accessibilityRole="button"
             accessibilityState={{ selected: currentMode === 'exclude' }}
           >
@@ -456,15 +448,15 @@ export function SplitTunnelingScreen() {
                 currentMode === 'exclude' && styles.modeButtonTextActive,
               ]}
             >
-              Exclude
+              {t('split.exclude')}
             </Text>
-            <Text style={styles.modeButtonDesc}>Bypass VPN</Text>
+            <Text style={styles.modeButtonDesc}>{t('split.bypassVPN')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.modeButton, currentMode === 'include' && styles.modeButtonActive]}
             onPress={() => handleModeChange('include')}
             disabled={isMutating}
-            accessibilityLabel="Include mode"
+            accessibilityLabel={t('split.include')}
             accessibilityRole="button"
             accessibilityState={{ selected: currentMode === 'include' }}
           >
@@ -474,9 +466,9 @@ export function SplitTunnelingScreen() {
                 currentMode === 'include' && styles.modeButtonTextActive,
               ]}
             >
-              Include
+              {t('split.include')}
             </Text>
-            <Text style={styles.modeButtonDesc}>Use VPN</Text>
+            <Text style={styles.modeButtonDesc}>{t('split.useVPN')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -486,34 +478,34 @@ export function SplitTunnelingScreen() {
         <TouchableOpacity
           style={[styles.tab, activeTab === 'apps' && styles.tabActive]}
           onPress={() => setActiveTab('apps')}
-          accessibilityLabel="Apps tab"
+          accessibilityLabel={t('split.appsTab')}
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'apps' }}
         >
           <Text style={[styles.tabText, activeTab === 'apps' && styles.tabTextActive]}>
-            Apps ({apps.length})
+            {t('split.appsCount', { count: apps.length })}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'domains' && styles.tabActive]}
           onPress={() => setActiveTab('domains')}
-          accessibilityLabel="Domains tab"
+          accessibilityLabel={t('split.domainsTab')}
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'domains' }}
         >
           <Text style={[styles.tabText, activeTab === 'domains' && styles.tabTextActive]}>
-            Domains ({domains.length})
+            {t('split.domainsCount', { count: domains.length })}
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'ips' && styles.tabActive]}
           onPress={() => setActiveTab('ips')}
-          accessibilityLabel="IP Ranges tab"
+          accessibilityLabel={t('split.ipsTab')}
           accessibilityRole="tab"
           accessibilityState={{ selected: activeTab === 'ips' }}
         >
           <Text style={[styles.tabText, activeTab === 'ips' && styles.tabTextActive]}>
-            IPs ({ips.length})
+            {t('split.ipsCount', { count: ips.length })}
           </Text>
         </TouchableOpacity>
       </View>
@@ -522,15 +514,15 @@ export function SplitTunnelingScreen() {
       {activeTab === 'apps' && (
         <View style={styles.tabContent}>
           <SectionHeader
-            title="Applications"
-            subtitle="Add apps to include/exclude from VPN routing"
+            title={t('split.applications')}
+            subtitle={t('split.appsSubtitle')}
           />
           <View style={styles.addForm}>
             <TextInput
               style={[styles.input, styles.inputHalf]}
               value={newAppName}
               onChangeText={setNewAppName}
-              placeholder="App name"
+              placeholder={t('split.appNamePlaceholder')}
               placeholderTextColor="#6b7280"
               autoCapitalize="none"
               autoCorrect={false}
@@ -540,7 +532,7 @@ export function SplitTunnelingScreen() {
               style={[styles.input, styles.inputHalf]}
               value={newAppPackage}
               onChangeText={setNewAppPackage}
-              placeholder="Package ID (optional)"
+              placeholder={t('split.packagePlaceholder')}
               placeholderTextColor="#6b7280"
               autoCapitalize="none"
               autoCorrect={false}
@@ -550,18 +542,18 @@ export function SplitTunnelingScreen() {
               style={[styles.addButton, isMutating && styles.addButtonDisabled]}
               onPress={handleAddApp}
               disabled={isMutating}
-              accessibilityLabel="Add app"
+              accessibilityLabel={t('split.addApp')}
               accessibilityRole="button"
             >
               {addAppMutation.isPending ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <Text style={styles.addButtonText}>Add</Text>
+                <Text style={styles.addButtonText}>{t('common.add')}</Text>
               )}
             </TouchableOpacity>
           </View>
           {apps.length === 0 ? (
-            <EmptyState message="No apps configured. Add an app to get started." />
+            <EmptyState message={t('split.noApps')} />
           ) : (
             <View style={styles.listContainer}>
               {apps.map((app) => (
@@ -576,7 +568,7 @@ export function SplitTunnelingScreen() {
                     <Switch
                       value={app.enabled}
                       onValueChange={() => handleToggleApp(app)}
-                      accessibilityLabel={`Toggle rule for ${app.name}`}
+                      accessibilityLabel={t('split.toggleRule', { name: app.name })}
                       trackColor={{ false: '#374151', true: '#3b82f6' }}
                       thumbColor="#ffffff"
                       disabled={isMutating}
@@ -585,7 +577,7 @@ export function SplitTunnelingScreen() {
                       style={styles.removeButton}
                       onPress={() => handleRemoveApp(app)}
                       disabled={isMutating}
-                      accessibilityLabel={`Remove ${app.name}`}
+                      accessibilityLabel={t('split.removeNamed', { name: app.name })}
                       accessibilityRole="button"
                     >
                       <Text style={styles.removeButtonText}>X</Text>
@@ -602,15 +594,15 @@ export function SplitTunnelingScreen() {
       {activeTab === 'domains' && (
         <View style={styles.tabContent}>
           <SectionHeader
-            title="Domains"
-            subtitle="Add domains to include/exclude (supports wildcards like *.example.com)"
+            title={t('split.domains')}
+            subtitle={t('split.domainsSubtitle')}
           />
           <View style={styles.addForm}>
             <TextInput
               style={[styles.input, styles.inputFull]}
               value={newDomain}
               onChangeText={setNewDomain}
-              placeholder="example.com or *.example.com"
+              placeholder={t('split.domainPlaceholder')}
               placeholderTextColor="#6b7280"
               autoCapitalize="none"
               autoCorrect={false}
@@ -621,18 +613,18 @@ export function SplitTunnelingScreen() {
               style={[styles.addButton, isMutating && styles.addButtonDisabled]}
               onPress={handleAddDomain}
               disabled={isMutating}
-              accessibilityLabel="Add domain"
+              accessibilityLabel={t('split.addDomain')}
               accessibilityRole="button"
             >
               {addDomainMutation.isPending ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <Text style={styles.addButtonText}>Add</Text>
+                <Text style={styles.addButtonText}>{t('common.add')}</Text>
               )}
             </TouchableOpacity>
           </View>
           {domains.length === 0 ? (
-            <EmptyState message="No domains configured. Add a domain to get started." />
+            <EmptyState message={t('split.noDomains')} />
           ) : (
             <View style={styles.listContainer}>
               {domains.map((domainEntry) => (
@@ -644,7 +636,7 @@ export function SplitTunnelingScreen() {
                     <Switch
                       value={domainEntry.enabled}
                       onValueChange={() => handleToggleDomain(domainEntry)}
-                      accessibilityLabel={`Toggle rule for ${domainEntry.domain}`}
+                      accessibilityLabel={t('split.toggleRule', { name: domainEntry.domain })}
                       trackColor={{ false: '#374151', true: '#3b82f6' }}
                       thumbColor="#ffffff"
                       disabled={isMutating}
@@ -653,7 +645,7 @@ export function SplitTunnelingScreen() {
                       style={styles.removeButton}
                       onPress={() => handleRemoveDomain(domainEntry)}
                       disabled={isMutating}
-                      accessibilityLabel={`Remove ${domainEntry.domain}`}
+                      accessibilityLabel={t('split.removeNamed', { name: domainEntry.domain })}
                       accessibilityRole="button"
                     >
                       <Text style={styles.removeButtonText}>X</Text>
@@ -670,15 +662,15 @@ export function SplitTunnelingScreen() {
       {activeTab === 'ips' && (
         <View style={styles.tabContent}>
           <SectionHeader
-            title="IP Ranges"
-            subtitle="Add IP addresses or CIDR ranges (e.g., 192.168.1.0/24)"
+            title={t('split.ipRanges')}
+            subtitle={t('split.ipsSubtitle')}
           />
           <View style={styles.addForm}>
             <TextInput
               style={[styles.input, styles.inputFull]}
               value={newIP}
               onChangeText={setNewIP}
-              placeholder="192.168.1.0/24 or 10.0.0.1"
+              placeholder={t('split.ipPlaceholder')}
               placeholderTextColor="#6b7280"
               autoCapitalize="none"
               autoCorrect={false}
@@ -689,18 +681,18 @@ export function SplitTunnelingScreen() {
               style={[styles.addButton, isMutating && styles.addButtonDisabled]}
               onPress={handleAddIP}
               disabled={isMutating}
-              accessibilityLabel="Add IP range"
+              accessibilityLabel={t('split.addIP')}
               accessibilityRole="button"
             >
               {addIPMutation.isPending ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
-                <Text style={styles.addButtonText}>Add</Text>
+                <Text style={styles.addButtonText}>{t('common.add')}</Text>
               )}
             </TouchableOpacity>
           </View>
           {ips.length === 0 ? (
-            <EmptyState message="No IP ranges configured. Add an IP range to get started." />
+            <EmptyState message={t('split.noIPs')} />
           ) : (
             <View style={styles.listContainer}>
               {ips.map((ipEntry) => (
@@ -712,7 +704,7 @@ export function SplitTunnelingScreen() {
                     <Switch
                       value={ipEntry.enabled}
                       onValueChange={() => handleToggleIP(ipEntry)}
-                      accessibilityLabel={`Toggle rule for ${ipEntry.cidr}`}
+                      accessibilityLabel={t('split.toggleRule', { name: ipEntry.cidr })}
                       trackColor={{ false: '#374151', true: '#3b82f6' }}
                       thumbColor="#ffffff"
                       disabled={isMutating}
@@ -721,7 +713,7 @@ export function SplitTunnelingScreen() {
                       style={styles.removeButton}
                       onPress={() => handleRemoveIP(ipEntry)}
                       disabled={isMutating}
-                      accessibilityLabel={`Remove ${ipEntry.cidr}`}
+                      accessibilityLabel={t('split.removeNamed', { name: ipEntry.cidr })}
                       accessibilityRole="button"
                     >
                       <Text style={styles.removeButtonText}>X</Text>
@@ -737,7 +729,7 @@ export function SplitTunnelingScreen() {
       {/* Info Footer */}
       <View style={styles.footer}>
         <Text style={styles.footerText}>
-          Split tunneling rules are applied when the VPN connects. Changes take effect on the next connection.
+          {t('split.footer')}
         </Text>
       </View>
     </ScrollView>
@@ -764,6 +756,25 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontSize: 16,
     color: '#6b7280',
+  },
+  errorCard: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.3)',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 20,
+  },
+  errorText: {
+    color: '#ef4444',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  errorDetail: {
+    color: '#9ca3af',
+    fontSize: 12,
+    lineHeight: 18,
   },
   modeSection: {
     marginBottom: 20,
