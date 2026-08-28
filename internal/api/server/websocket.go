@@ -85,11 +85,6 @@ type WebSocketHub struct {
 	skipOriginCheck bool
 }
 
-// NewWebSocketHub creates a new WebSocket hub with default max clients.
-func NewWebSocketHub() *WebSocketHub {
-	return NewWebSocketHubWithMaxClients(MaxWebSocketClients)
-}
-
 // NewWebSocketHubWithMaxClients creates a new WebSocket hub with a custom max clients limit.
 // For low-power devices (OpenWrt routers), use 5-10 to reduce memory usage.
 func NewWebSocketHubWithMaxClients(maxClients int) *WebSocketHub {

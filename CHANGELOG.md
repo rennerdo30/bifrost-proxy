@@ -43,6 +43,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the inline `primary`/`secondary` format the server actually accepts
 
 ### Removed
+- Vestigial convenience constructors superseded by the `…With…` variants the
+  production code calls: `metrics.NewCollector`, `router.NewLoadBalancer`,
+  `NewMeshAPI`, `NewWebSocketHub`, `health.DefaultConfig`, and
+  `device.CreateTUN`/`CreateTAP`/`ParseDeviceType`. The tests that used them now
+  construct through the same entry points production does, so they exercise the
+  shipped path
 - Dead code the audit identified as unreachable: the `internal/auth` HTTP
   middleware (a parallel authentication abstraction the live proxy never used,
   whose `tryClientCert` implied mTLS-via-middleware was the real path when it

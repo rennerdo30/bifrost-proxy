@@ -30,40 +30,6 @@ func TestDeviceTypeString(t *testing.T) {
 	}
 }
 
-func TestParseDeviceType(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected DeviceType
-		hasError bool
-	}{
-		{"tun", DeviceTUN, false},
-		{"TUN", DeviceTUN, false},
-		{"", DeviceTUN, false},
-		{"tap", DeviceTAP, false},
-		{"TAP", DeviceTAP, false},
-		{"invalid", DeviceTUN, true},
-		{"TuN", DeviceTUN, true},
-		{"TaP", DeviceTUN, true},
-		{"tunX", DeviceTUN, true},
-		{"tapX", DeviceTUN, true},
-		{" tun", DeviceTUN, true},
-		{"tun ", DeviceTUN, true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			deviceType, err := ParseDeviceType(tt.input)
-			if tt.hasError {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), "unknown device type")
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.expected, deviceType)
-			}
-		})
-	}
-}
-
 func TestConfigValidate(t *testing.T) {
 	t.Run("default values", func(t *testing.T) {
 		cfg := Config{}
@@ -422,7 +388,7 @@ func TestCreateTUNValidation(t *testing.T) {
 			Address: "invalid",
 		}
 
-		_, err := CreateTUN(cfg)
+		_, err := Create(withType(cfg, DeviceTUN))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid device address")
 	})
@@ -433,7 +399,7 @@ func TestCreateTUNValidation(t *testing.T) {
 			Address: "invalid",
 		}
 
-		_, err := CreateTUN(cfg)
+		_, err := Create(withType(cfg, DeviceTUN))
 		assert.Error(t, err)
 		// The error should be from validation, not from wrong type
 		assert.Contains(t, err.Error(), "invalid device address")
@@ -447,7 +413,7 @@ func TestCreateTAPValidation(t *testing.T) {
 			Address: "invalid",
 		}
 
-		_, err := CreateTAP(cfg)
+		_, err := Create(withType(cfg, DeviceTAP))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "invalid device address")
 	})
@@ -979,4 +945,11 @@ func TestConfigNameDefaults(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "custom0", cfg.Name)
 	})
+}
+
+// withType returns cfg with its device type set, replacing the removed
+// CreateTUN/CreateTAP shorthands so these tests exercise Create directly.
+func withType(cfg Config, t DeviceType) Config {
+	cfg.Type = t
+	return cfg
 }
