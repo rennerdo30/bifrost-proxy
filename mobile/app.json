@@ -37,11 +37,6 @@
         "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
       ]
     },
-    "extra": {
-      "eas": {
-        "projectId": "00000000-0000-0000-0000-000000000000"
-      }
-    },
     "plugins": [
       "./plugins/withBifrostVpn"
     ]

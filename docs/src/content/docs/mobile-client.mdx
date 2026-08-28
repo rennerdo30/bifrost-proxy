@@ -81,6 +81,10 @@ npm install -g eas-cli
 # Login to Expo account
 eas login
 
+# Link this project to your Expo account (writes extra.eas.projectId).
+# The repository ships unlinked, so this is required before the first build.
+eas init
+
 # Build for iOS
 eas build --platform ios
 
@@ -279,6 +283,38 @@ remote client's tray configuration (`tray.auto_connect`,
 have no effect on the phone: the app has no launch-time auto-connect and no push
 notifications. There is no Kill Switch — that would require a tunnel on the
 device, which this app deliberately does not implement.
+
+## Split tunneling
+
+The Split Tunneling screen edits the **remote client's** policy, and the remote
+client is the source of truth:
+
+- On open (and on pull-to-refresh) the app reads
+  `GET /api/v1/vpn/split/rules` and reconciles it with what the phone
+  remembers. Rules the client currently enforces show as **enabled**; rules
+  added from another client are imported rather than ignored.
+- A rule you remember locally but the client no longer enforces stays visible
+  and **disabled**, so parking a rule for later does not lose it.
+- Toggling a rule off removes it from the client but keeps it on the phone;
+  the trash action removes it from both.
+- If the client cannot be reached, the screen says so and falls back to the
+  locally remembered rules instead of showing an empty policy.
+
+Before the VPN is enabled, the app **replaces** the client's active rules with
+the enabled portion of the local policy: stale remote rules are removed,
+missing ones added, and changed app paths re-created. This is fail-closed — if
+any single operation fails, the VPN is not enabled and the error names the rule
+and operation that failed. The previous behaviour only ever *added* rules, so a
+rule disabled on the phone stayed in force on the client.
+
+## Languages
+
+The interface ships English and German. The language follows the device locale
+(a locale starting with `de` selects German; everything else falls back to
+English). Counts and durations use locale-aware formatting, so a German device
+reads `1.234` where an English one reads `1,234`. Strings live in
+`mobile/src/i18n.ts`; the catalogue is typed, so a key missing a German
+translation fails the build rather than leaking English text.
 
 ## Configuration
 
