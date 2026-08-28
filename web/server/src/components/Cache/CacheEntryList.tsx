@@ -129,8 +129,16 @@ export function CacheEntryList({
               return (
                 <React.Fragment key={entry.key}>
                   <tr
+                    tabIndex={0}
+                    aria-expanded={expandedKey === entry.key}
                     onClick={() => setExpandedKey(expandedKey === entry.key ? null : entry.key)}
-                    className="border-b border-bifrost-border/50 hover:bg-bifrost-card-hover transition-colors cursor-pointer animate-slide-up"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setExpandedKey(expandedKey === entry.key ? null : entry.key)
+                      }
+                    }}
+                    className="border-b border-bifrost-border/50 hover:bg-bifrost-card-hover transition-colors cursor-pointer animate-slide-up focus:outline-none focus:bg-bifrost-card-hover"
                     style={{ animationDelay: `${index * 20}ms` }}
                   >
                     <td className="table-cell">

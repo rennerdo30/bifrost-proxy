@@ -65,13 +65,13 @@ export function ApiTokenButton() {
         size="md"
       >
         <div className="space-y-4">
-          <p className="text-sm text-gray-300">
+          <p className="text-sm text-bifrost-text">
             When the server is configured with an API token (<code className="font-mono">api.token</code>),
             the dashboard must send it with every request. Paste the token below;
             it is stored in this browser&apos;s local storage only.
           </p>
           <div>
-            <label htmlFor="api-token-input" className="block text-sm font-medium text-gray-300 mb-1">
+            <label htmlFor="api-token-input" className="block text-sm font-medium text-bifrost-text mb-1">
               Token
             </label>
             <div className="relative">
@@ -87,7 +87,7 @@ export function ApiTokenButton() {
               <button
                 type="button"
                 onClick={() => setShow(!show)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-white"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-bifrost-heading"
                 aria-label={show ? 'Hide token' : 'Show token'}
               >
                 {show ? (
