@@ -26,14 +26,12 @@ import {
 } from '../services/api'
 import { useToast } from '../components/Toast'
 import { RootStackParamList } from '../navigation/RootNavigator'
+import { t, vpnStatusLabel } from '../i18n'
 
 type SettingsNavigationProp = NativeStackNavigationProp<RootStackParamList>
 
 const CONFIG_REFETCH_INTERVAL = 30000
 
-/** Placeholder shown instead of a stored token, which is never displayed. */
-const TOKEN_PLACEHOLDER_SAVED = 'Token saved - enter a new one to replace'
-const TOKEN_PLACEHOLDER_EMPTY = 'API token (leave empty if none)'
 
 interface SettingItemProps {
   title: string
@@ -105,38 +103,38 @@ function ClientConnectionSection({
   const tokenBusy = disabled || isSavingToken
 
   return (
-    <SettingSection title="Bifrost Client">
+    <SettingSection title={t('settings.clientSection')}>
       <View style={styles.inputRow}>
         <TextInput
           style={styles.input}
           value={clientAddress}
           onChangeText={onChangeClientAddress}
-          placeholder="host:port or https://host:port"
+          placeholder={t('settings.addressPlaceholder')}
           placeholderTextColor="#6b7280"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="url"
           editable={!addressBusy}
-          accessibilityLabel="Bifrost client address"
-          accessibilityHint="Enter host and port, optionally prefixed with http:// or https://"
+          accessibilityLabel={t('settings.addressLabel')}
+          accessibilityHint={t('settings.addressHint')}
         />
         <TouchableOpacity
           style={[styles.saveButton, addressBusy && styles.saveButtonDisabled]}
           onPress={onSaveClientAddress}
           disabled={addressBusy}
-          accessibilityLabel="Save client address"
+          accessibilityLabel={t('settings.saveAddress')}
           accessibilityRole="button"
           accessibilityState={{ disabled: addressBusy }}
         >
           {isSavingServer ? (
             <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <Text style={styles.saveButtonText}>Save</Text>
+            <Text style={styles.saveButtonText}>{t('common.save')}</Text>
           )}
         </TouchableOpacity>
       </View>
       <Text style={styles.inputHint}>
-        Plain host:port uses HTTP. Prefix with https:// for a TLS-terminated client.
+        {t('settings.httpHint')}
       </Text>
 
       <View style={styles.inputRow}>
@@ -144,49 +142,49 @@ function ClientConnectionSection({
           style={styles.input}
           value={tokenInput}
           onChangeText={onChangeToken}
-          placeholder={tokenConfigured ? TOKEN_PLACEHOLDER_SAVED : TOKEN_PLACEHOLDER_EMPTY}
+          placeholder={tokenConfigured ? t('settings.tokenSavedPlaceholder') : t('settings.tokenEmptyPlaceholder')}
           placeholderTextColor="#6b7280"
           autoCapitalize="none"
           autoCorrect={false}
           secureTextEntry={true}
           editable={!tokenBusy}
-          accessibilityLabel="API token"
-          accessibilityHint="Bearer token required when the client has api.token configured"
+          accessibilityLabel={t('settings.tokenLabel')}
+          accessibilityHint={t('settings.tokenHint')}
         />
         <TouchableOpacity
           style={[styles.saveButton, tokenBusy && styles.saveButtonDisabled]}
           onPress={onSaveToken}
           disabled={tokenBusy}
-          accessibilityLabel="Save API token"
+          accessibilityLabel={t('settings.saveToken')}
           accessibilityRole="button"
           accessibilityState={{ disabled: tokenBusy }}
         >
           {isSavingToken ? (
             <ActivityIndicator size="small" color="#ffffff" />
           ) : (
-            <Text style={styles.saveButtonText}>Save</Text>
+            <Text style={styles.saveButtonText}>{t('common.save')}</Text>
           )}
         </TouchableOpacity>
       </View>
       <View style={styles.tokenStatusRow}>
         <Text style={styles.inputHint}>
-          {tokenConfigured ? 'A token is stored on this device.' : 'No token stored.'}
+          {tokenConfigured ? t('settings.tokenStored') : t('settings.tokenNotStored')}
         </Text>
         {tokenConfigured && (
           <TouchableOpacity
             onPress={onClearToken}
             disabled={tokenBusy}
-            accessibilityLabel="Clear stored API token"
+            accessibilityLabel={t('settings.clearToken')}
             accessibilityRole="button"
             accessibilityState={{ disabled: tokenBusy }}
           >
-            <Text style={styles.clearTokenText}>Clear</Text>
+            <Text style={styles.clearTokenText}>{t('common.clear')}</Text>
           </TouchableOpacity>
         )}
       </View>
 
       <View style={styles.aboutItem}>
-        <Text style={styles.aboutLabel}>API Endpoint</Text>
+        <Text style={styles.aboutLabel}>{t('settings.apiEndpoint')}</Text>
         <Text style={styles.aboutValue} numberOfLines={1}>
           {baseUrl}
         </Text>
@@ -221,10 +219,10 @@ export function SettingsScreen() {
     mutationFn: (updates: Partial<ClientConfig>) => api.updateConfig(updates),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['config'] })
-      showToast('Settings saved', 'success')
+      showToast(t('settings.saved'), 'success')
     },
     onError: (err) => {
-      showToast(err instanceof Error ? err.message : 'Failed to update settings', 'error')
+      showToast(err instanceof Error ? err.message : t('settings.updateFailed'), 'error')
     },
   })
 
@@ -232,10 +230,10 @@ export function SettingsScreen() {
     mutationFn: api.clearCache,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['status'] })
-      showToast('Cache cleared successfully', 'success')
+      showToast(t('settings.cacheCleared'), 'success')
     },
     onError: (err) => {
-      showToast(err instanceof Error ? err.message : 'Failed to clear cache', 'error')
+      showToast(err instanceof Error ? err.message : t('settings.cacheClearFailed'), 'error')
     },
   })
 
@@ -297,16 +295,16 @@ export function SettingsScreen() {
       // Test connection to the new client
       const testResult = await api.testConnection()
       if (!testResult.success) {
-        showToast(`Could not connect to client: ${testResult.error}`, 'error')
+        showToast(t('settings.clientUnreachable', { error: testResult.error || t('common.unknownError') }), 'error')
         return
       }
 
       // Invalidate queries to refetch against the new client
       queryClient.invalidateQueries()
 
-      showToast('Client address saved and connected', 'success')
+      showToast(t('settings.addressConnected'), 'success')
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save client address'
+      const errorMessage = error instanceof Error ? error.message : t('settings.addressSaveFailed')
       showToast(errorMessage, 'error')
     } finally {
       setIsSavingServer(false)
@@ -323,7 +321,7 @@ export function SettingsScreen() {
 
         const testResult = await api.testConnection()
         if (!testResult.success) {
-          showToast(`Saved, but the client rejected it: ${testResult.error}`, 'error')
+          showToast(t('settings.tokenRejected', { error: testResult.error || t('common.unknownError') }), 'error')
           return
         }
 
@@ -331,7 +329,7 @@ export function SettingsScreen() {
         showToast(successMessage, 'success')
       } catch (err) {
         // Never include the token itself in an error message.
-        showToast(err instanceof Error ? err.message : 'Failed to save API token', 'error')
+        showToast(err instanceof Error ? err.message : t('settings.tokenSaveFailed'), 'error')
       } finally {
         setIsSavingToken(false)
       }
@@ -341,20 +339,20 @@ export function SettingsScreen() {
 
   const handleSaveToken = () => {
     if (!tokenInput.trim()) {
-      showToast('Enter a token, or use Clear to remove the stored one', 'error')
+      showToast(t('settings.enterToken'), 'error')
       return
     }
-    void applyToken(tokenInput, 'API token saved')
+    void applyToken(tokenInput, t('settings.tokenSaved'))
   }
 
   const handleClearToken = () => {
-    Alert.alert('Clear API Token', 'Remove the stored API token from this device?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('settings.clearTokenTitle'), t('settings.clearTokenMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Clear',
+        text: t('common.clear'),
         style: 'destructive',
         onPress: () => {
-          void applyToken('', 'API token cleared')
+          void applyToken('', t('settings.tokenCleared'))
         },
       },
     ])
@@ -362,12 +360,12 @@ export function SettingsScreen() {
 
   const handleClearData = () => {
     Alert.alert(
-      'Clear Data',
-      'Are you sure you want to clear all cached data?',
+      t('settings.clearDataTitle'),
+      t('settings.clearDataMessage'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Clear',
+          text: t('common.clear'),
           style: 'destructive',
           onPress: () => clearCacheMutation.mutate(),
         },
@@ -379,7 +377,7 @@ export function SettingsScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading settings...</Text>
+        <Text style={styles.loadingText}>{t('settings.loading')}</Text>
       </View>
     )
   }
@@ -391,14 +389,14 @@ export function SettingsScreen() {
         <View style={styles.errorPanel} accessible={true} accessibilityRole="alert">
           <Text style={styles.errorIcon}>!</Text>
           <Text style={styles.errorText}>
-            {isUnauthorized ? 'Authentication required' : 'Failed to load settings'}
+            {isUnauthorized ? t('settings.authRequired') : t('settings.loadFailed')}
           </Text>
           <Text style={styles.errorDetail}>
             {isUnauthorized
-              ? 'The Bifrost client rejected the request. Enter a valid API token below.'
+              ? t('settings.authDetail')
               : error instanceof Error
                 ? error.message
-                : 'Unknown error'}
+                : t('common.unknownError')}
           </Text>
           <TouchableOpacity
             style={styles.retryButton}
@@ -406,9 +404,9 @@ export function SettingsScreen() {
               void refetchConfig()
             }}
             accessibilityRole="button"
-            accessibilityLabel="Retry loading settings"
+            accessibilityLabel={t('settings.retryLoading')}
           >
-            <Text style={styles.retryButtonText}>Retry</Text>
+            <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
           </TouchableOpacity>
         </View>
 
@@ -435,10 +433,10 @@ export function SettingsScreen() {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Connection Settings */}
-      <SettingSection title="Connection">
+      <SettingSection title={t('settings.connection')}>
         <SettingItem
-          title="Client auto-connect"
-          description="Connect when the Bifrost client starts (remote setting)"
+          title={t('settings.autoConnect')}
+          description={t('settings.autoConnectDescription')}
           disabled={isMutating}
         >
           <Switch
@@ -447,15 +445,15 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
-            accessibilityLabel="Client auto-connect toggle"
-            accessibilityHint="When enabled, the Bifrost client connects automatically on startup"
+            accessibilityLabel={t('settings.autoConnectLabel')}
+            accessibilityHint={t('settings.autoConnectHint')}
             accessibilityState={{ checked: config?.tray?.auto_connect ?? false }}
           />
         </SettingItem>
 
         <SettingItem
-          title="VPN Mode"
-          description="Route all traffic through VPN tunnel"
+          title={t('settings.vpnMode')}
+          description={t('settings.vpnModeDescription')}
           disabled={isMutating}
         >
           <Switch
@@ -464,24 +462,24 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
-            accessibilityLabel="VPN mode toggle"
-            accessibilityHint="When enabled, all traffic will be routed through VPN tunnel"
+            accessibilityLabel={t('settings.vpnModeLabel')}
+            accessibilityHint={t('settings.vpnModeHint')}
             accessibilityState={{ checked: config?.vpn?.enabled ?? false }}
           />
         </SettingItem>
 
         <SettingItem
-          title="Split Tunneling"
-          description="Exclude certain apps from VPN"
+          title={t('nav.splitTunneling')}
+          description={t('settings.splitDescription')}
           disabled={isMutating}
         >
           <TouchableOpacity
             style={styles.linkButton}
             onPress={() => navigation.navigate('SplitTunneling')}
-            accessibilityLabel="Configure split tunneling"
+            accessibilityLabel={t('settings.configureSplit')}
             accessibilityRole="button"
           >
-            <Text style={styles.linkButtonText}>Configure</Text>
+            <Text style={styles.linkButtonText}>{t('common.configure')}</Text>
           </TouchableOpacity>
         </SettingItem>
       </SettingSection>
@@ -503,10 +501,10 @@ export function SettingsScreen() {
       />
 
       {/* Notifications */}
-      <SettingSection title="Notifications">
+      <SettingSection title={t('settings.notifications')}>
         <SettingItem
-          title="Client Notifications"
-          description="Desktop notifications on the Bifrost client (remote setting)"
+          title={t('settings.clientNotifications')}
+          description={t('settings.clientNotificationsDescription')}
           disabled={isMutating}
         >
           <Switch
@@ -515,58 +513,58 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
-            accessibilityLabel="Client notifications toggle"
-            accessibilityHint="When enabled, the Bifrost client shows desktop notifications on connect and disconnect"
+            accessibilityLabel={t('settings.clientNotificationsLabel')}
+            accessibilityHint={t('settings.clientNotificationsHint')}
             accessibilityState={{ checked: config?.tray?.show_notifications ?? true }}
           />
         </SettingItem>
       </SettingSection>
 
       {/* Data */}
-      <SettingSection title="Data & Privacy">
+      <SettingSection title={t('settings.dataPrivacy')}>
         <TouchableOpacity
           style={[styles.dangerButton, clearCacheMutation.isPending && styles.dangerButtonDisabled]}
           onPress={handleClearData}
           disabled={clearCacheMutation.isPending}
-          accessibilityLabel="Clear cached data"
+          accessibilityLabel={t('settings.clearCachedData')}
           accessibilityRole="button"
           accessibilityState={{ disabled: clearCacheMutation.isPending }}
         >
           {clearCacheMutation.isPending ? (
             <ActivityIndicator size="small" color="#ef4444" />
           ) : (
-            <Text style={styles.dangerButtonText}>Clear Cached Data</Text>
+            <Text style={styles.dangerButtonText}>{t('settings.clearCachedData')}</Text>
           )}
         </TouchableOpacity>
       </SettingSection>
 
       {/* About */}
-      <SettingSection title="About">
+      <SettingSection title={t('settings.about')}>
         <View style={styles.aboutItem}>
-          <Text style={styles.aboutLabel}>Version</Text>
+          <Text style={styles.aboutLabel}>{t('stats.version')}</Text>
           <Text style={styles.aboutValue}>{status?.version || '1.0.0'}</Text>
         </View>
         <View style={styles.aboutItem}>
-          <Text style={styles.aboutLabel}>Server Status</Text>
+          <Text style={styles.aboutLabel}>{t('settings.serverStatus')}</Text>
           <Text
             style={[
               styles.aboutValue,
               { color: status?.server_connected ? '#22c55e' : '#f59e0b' },
             ]}
           >
-            {status ? (status.server_connected ? 'Connected' : 'Disconnected') : 'Unknown'}
+            {status ? (status.server_connected ? t('common.connected') : t('common.disconnected')) : t('servers.unknown')}
           </Text>
         </View>
         <View style={styles.aboutItem}>
-          <Text style={styles.aboutLabel}>VPN Status</Text>
-          <Text style={styles.aboutValue}>{status?.vpn_status || 'Unknown'}</Text>
+          <Text style={styles.aboutLabel}>{t('stats.vpnStatus')}</Text>
+          <Text style={styles.aboutValue}>{vpnStatusLabel(status?.vpn_status)}</Text>
         </View>
       </SettingSection>
 
       {/* Footer */}
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Bifrost VPN</Text>
-        <Text style={styles.footerSubtext}>MIT License</Text>
+        <Text style={styles.footerText}>{t('settings.footer')}</Text>
+        <Text style={styles.footerSubtext}>{t('settings.license')}</Text>
       </View>
     </ScrollView>
   )

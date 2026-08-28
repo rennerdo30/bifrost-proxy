@@ -6,6 +6,7 @@ import { ServersScreen } from '../screens/ServersScreen'
 import { SettingsScreen } from '../screens/SettingsScreen'
 import { StatsScreen } from '../screens/StatsScreen'
 import { SplitTunnelingScreen } from '../screens/SplitTunnelingScreen'
+import { t } from '../i18n'
 
 // Navigation types
 export type RootStackParamList = {
@@ -28,13 +29,13 @@ function TabIcon({ name, focused }: { name: string; focused: boolean }) {
   const getIconAndLabel = () => {
     switch (name) {
       case 'Home':
-        return { icon: '⚡', label: 'Home tab' }
+        return { icon: '⚡', label: t('nav.homeTab') }
       case 'Servers':
-        return { icon: '🌐', label: 'Servers tab' }
+        return { icon: '🌐', label: t('nav.serversTab') }
       case 'Stats':
-        return { icon: '📊', label: 'Statistics tab' }
+        return { icon: '📊', label: t('nav.statisticsTab') }
       case 'Settings':
-        return { icon: '⚙️', label: 'Settings tab' }
+        return { icon: '⚙️', label: t('nav.settingsTab') }
       default:
         return { icon: '•', label: name }
     }
@@ -95,17 +96,17 @@ function MainTabs() {
       <Tab.Screen
         name="Servers"
         component={ServersScreen}
-        options={{ title: 'Servers' }}
+        options={{ title: t('nav.servers') }}
       />
       <Tab.Screen
         name="Stats"
         component={StatsScreen}
-        options={{ title: 'Statistics' }}
+        options={{ title: t('nav.statistics') }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ title: 'Settings' }}
+        options={{ title: t('nav.settings') }}
       />
     </Tab.Navigator>
   )
@@ -122,7 +123,7 @@ export function RootNavigator() {
         headerTitleStyle: {
           fontWeight: '600',
         },
-        headerBackTitle: 'Back',
+        headerBackTitle: t('nav.back'),
       }}
     >
       <Stack.Screen
@@ -133,7 +134,7 @@ export function RootNavigator() {
       <Stack.Screen
         name="SplitTunneling"
         component={SplitTunnelingScreen}
-        options={{ title: 'Split Tunneling' }}
+        options={{ title: t('nav.splitTunneling') }}
       />
     </Stack.Navigator>
   )
