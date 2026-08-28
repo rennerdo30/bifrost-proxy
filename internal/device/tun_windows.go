@@ -212,8 +212,3 @@ func (t *windowsTUN) MTU() int {
 func (t *windowsTUN) LUID() uint64 {
 	return uint64(t.adapter.LUID())
 }
-
-// Index returns the adapter's interface index.
-func (t *windowsTUN) Index() (int, error) {
-	return 0, nil
-}
