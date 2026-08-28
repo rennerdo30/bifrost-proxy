@@ -5,6 +5,7 @@ package device
 import (
 	"encoding/binary"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"os/exec"
@@ -254,8 +255,14 @@ func (t *windowsTAP) configure(cfg Config) error {
 		"store=persistent",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		// Non-fatal
-		_ = output
+		// Same reasoning as the TUN device: non-fatal, but never silent — an
+		// MTU mismatch surfaces later as blackholed large packets.
+		slog.Warn("failed to set TAP interface MTU; the interface keeps the system default",
+			"interface", t.name,
+			"requested_mtu", cfg.MTU,
+			"error", err,
+			"output", string(output),
+		)
 	}
 
 	return nil
