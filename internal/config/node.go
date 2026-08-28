@@ -125,6 +125,12 @@ func valueToNode(v interface{}) (*yaml.Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Values inserted through this path come from the API as literal data, so
+	// a `${` inside one (a password, say) must survive the next load's
+	// environment expansion. Escaping happens here, on the inserted value
+	// only — pre-existing nodes keep their intentional `${VAR}` references.
+	// This mirrors what config.Save does for whole-struct saves.
+	data = EscapeEnvRefs(data)
 	var node yaml.Node
 	if err := yaml.Unmarshal(data, &node); err != nil {
 		return nil, err

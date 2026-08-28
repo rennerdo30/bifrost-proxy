@@ -359,10 +359,96 @@ auth:
             password_hash: "${ADMIN_PASSWORD_HASH}"
 ```
 
-> **No default-value syntax.** Expansion uses Go's `os.ExpandEnv`, which
-> understands `${VAR}` and `$VAR` only. Shell-style forms such as
-> `${VAR:-fallback}` are **not** supported: the whole `VAR:-fallback` string is
-> treated as the variable name, no such variable exists, and the value expands to
-> the empty string — which for something like `listen: ":${HTTP_PORT:-8080}"`
-> silently yields `listen: ":"`. Set the variable explicitly, or rely on the
-> config file's own literal value.
+### Expansion syntax
+
+The whole grammar is three forms. Everything else is literal text.
+
+| Form | Meaning |
+|------|---------|
+| `${NAME}` | Value of `NAME`. If `NAME` is not set the reference expands to the empty string and the loader logs a warning naming the variable and the line. |
+| `${NAME:-fallback}` | Value of `NAME` when it is set and non-empty, otherwise the literal `fallback`. The fallback is used verbatim and is not itself expanded. |
+| `$$` | A literal `$`. Only needed in front of a `{` or another `$`. |
+
+```yaml
+server:
+  http:
+    # Defaults to :8080 when HTTP_PORT is unset or empty
+    listen: ":${HTTP_PORT:-8080}"
+```
+
+### Literal dollar signs are safe
+
+A `$` that is not followed by `{` or `$` is literal, so passwords, API keys and
+bcrypt hashes pass through untouched:
+
+```yaml
+auth:
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            # Kept exactly as written
+            password_hash: "$2a$10$N9qo8uLOickgx2ZMRZoMye"
+```
+
+Write `$$` only where a value must literally contain `${`, for example
+`token: "a$${not_expanded}b"`, which loads as `a${not_expanded}b`.
+
+> **Bare `$NAME` is not expanded.** Only the braced forms above are. This is what
+> makes a literal `$` in a value safe — expansion runs on the raw file before
+> YAML parsing, so quoting cannot protect a value. If a bare `$NAME` names a
+> variable that *is* set in the environment, the loader warns with the line
+> number so the mismatch is visible; add the braces to expand it.
+
+> **Expansion is a single pass.** A value substituted from the environment is
+> never expanded again, so a secret that itself contains `${` is safe.
+
+## Unknown Keys Are Rejected
+
+A key that does not correspond to a setting is an error, not a silent no-op. The
+loader reports every offending key in one pass, with its line and the config
+block it appeared in:
+
+```
+Error: config file /etc/bifrost/config.yaml contains 2 unknown key(s):
+line 3: "listem" (in ListenerConfig); line 12: "max_conns" (in ListenerConfig);
+remove or correct the key, or set BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1 to
+downgrade unknown keys to warnings while migrating
+```
+
+This applies everywhere a config file is read: server and client startup,
+`bifrost-server config validate`, hot reload, and the dashboard's config API. A
+rejected hot reload leaves the running configuration in place.
+
+The check reaches into the dynamic sections too: `backends[].config` and
+`auth.providers[].config` are validated against the exact keys their backend
+type or provider plugin reads — including nested blocks such as a WireGuard
+`peer`, a native `users` entry, or an inline `mfa_wrapper` authenticator. A
+config file must also contain exactly one YAML document; content after a `---`
+separator used to be silently ignored and is now an error.
+
+Every shipped example config and both `init` templates pass this check, so a file
+that follows this guide is unaffected. A hand-edited file carrying a typo, or a
+key from an older release, will now fail to start — which is the point: a
+misspelled key used to look exactly like a setting that does not work.
+
+### Escape hatch
+
+If a deployment has to come up before the file can be cleaned, set
+`BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` (or `true`, `yes`, `on`). Unknown keys are
+then logged as warnings and ignored:
+
+```
+WARN ignoring unknown configuration key config=/etc/bifrost/config.yaml line=3
+     key=listem section=ListenerConfig hint="this key has no effect; ..."
+```
+
+Treat this as temporary. A key that is ignored is a setting that is not applied,
+and the variable is documented as a migration aid rather than a supported mode.
+
+Genuine type errors — a string where a number belongs, for instance — always
+fail, with or without the variable set.

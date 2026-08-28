@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 )
 
@@ -149,8 +150,12 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The same strictness the file loader applies: an unknown key in the
+	// request body is a typo about to be persisted, not something to drop.
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
 	var req ConfigSaveRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := dec.Decode(&req); err != nil {
 		a.writeJSON(w, http.StatusBadRequest, ConfigSaveResponse{
 			Success: false,
 			Message: "Invalid request body",
@@ -165,6 +170,17 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 			Success: false,
 			Message: "Configuration validation failed",
 			Errors:  []ValidationError{{Section: "general", Message: err.Error()}},
+		})
+		return
+	}
+
+	// DisallowUnknownFields cannot see into the dynamic map sections, so the
+	// backend config blocks get the same key check startup applies.
+	if err := backend.ValidateConfigs(req.Config.Backends); err != nil {
+		a.writeJSON(w, http.StatusBadRequest, ConfigSaveResponse{
+			Success: false,
+			Message: "Configuration validation failed",
+			Errors:  []ValidationError{{Section: "backends", Message: err.Error()}},
 		})
 		return
 	}
@@ -279,8 +295,12 @@ func (a *API) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 
 // handleValidateConfig validates config without saving.
 func (a *API) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
+	// Validation must reject exactly what save and startup reject — a lenient
+	// decode here reports "valid" for a body whose typo save would persist.
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
 	var cfg config.ServerConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+	if err := dec.Decode(&cfg); err != nil {
 		a.writeJSON(w, http.StatusBadRequest, map[string]interface{}{
 			"valid":   false,
 			"message": "Invalid request body",
@@ -294,6 +314,15 @@ func (a *API) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
 			"valid":   false,
 			"message": "Configuration validation failed",
 			"errors":  []ValidationError{{Section: "general", Message: err.Error()}},
+		})
+		return
+	}
+
+	if err := backend.ValidateConfigs(cfg.Backends); err != nil {
+		a.writeJSON(w, http.StatusOK, map[string]interface{}{
+			"valid":   false,
+			"message": "Configuration validation failed",
+			"errors":  []ValidationError{{Section: "backends", Message: err.Error()}},
 		})
 		return
 	}
