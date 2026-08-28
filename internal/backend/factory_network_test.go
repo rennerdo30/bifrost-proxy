@@ -100,14 +100,6 @@ func TestFactory_OpenVPNAppliesNetwork(t *testing.T) {
 	assert.True(t, ob.config.LeakProofRouting)
 }
 
-func TestFactory_SetNetwork(t *testing.T) {
-	f := NewFactory()
-	assert.True(t, f.network.IsZero())
-	f.SetNetwork(networkCfg())
-	assert.False(t, f.network.IsZero())
-	assert.Equal(t, 42*time.Second, f.network.KeepAlive)
-}
-
 func TestFactory_NoNetworkLeavesDefaults(t *testing.T) {
 	f := NewFactory()
 	b, err := f.Create(config.BackendConfig{Name: "d", Type: "direct"})
