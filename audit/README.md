@@ -72,10 +72,13 @@ see "What is still open" below.
 2. **One dead symbol left**: `Factory.SetNetwork`. `internal/backend/factory.go`
    is rewritten by #293, so removing it there would only create a conflict. Do
    it after that merges. Every other §4 symbol is gone.
-3. **The session/login flow** (`go-backend.md` §4): the server half is built and
-   config-gated, but the dashboard still keeps a bearer token in
-   `localStorage` — which is what the session flow exists to avoid. Finishing it
-   is a feature, not a cleanup.
+3. ~~The session/login flow~~ — **done** in #315. The dashboard now exchanges the
+   token for an HttpOnly cookie and no longer stores it. Writing the contract
+   test first also surfaced two server-side defects the audit had not found: the
+   `503 "not enabled"` branches in both handlers were unreachable because the
+   routes were conditionally mounted, and mounting them unconditionally exposed
+   a latent chi startup panic for a server with a session store but no
+   `api.token`.
 4. **HTTP/1.1 keep-alive request loop.** The proxy answers one request per
    connection and advertises that honestly with `Connection: close`. The full
    loop fits the phase machinery added in #297.
