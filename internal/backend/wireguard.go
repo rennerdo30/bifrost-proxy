@@ -124,7 +124,7 @@ func (b *WireGuardBackend) Dial(ctx context.Context, network, address string) (n
 
 // DialTimeout creates a connection with a specific timeout.
 func (b *WireGuardBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := withDialBound(ctx, timeout)
 	defer cancel()
 	return b.Dial(ctx, network, address)
 }

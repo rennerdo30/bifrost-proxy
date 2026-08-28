@@ -694,10 +694,17 @@ func (c *Client) serveHTTP(ctx context.Context, listener net.Listener, done <-ch
 	defer c.wg.Done()
 
 	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
-		GetBackend:  c.getBackend,
-		DialTimeout: c.config.Proxy.HTTP.ReadTimeout.Duration(),
-		OnConnect:   c.onConnect,
-		OnError:     c.onError,
+		GetBackend: c.getBackend,
+		// The listener triad, applied exactly as on the server side. The old
+		// wiring passed read_timeout as the OUTBOUND DialTimeout — the very
+		// repurposing the audit called out — and applied no inbound deadline
+		// at all. DialTimeout stays zero: backends own the connect-timeout
+		// precedence (see internal/backend).
+		ReadTimeout:  c.config.Proxy.HTTP.ReadTimeout.Duration(),
+		WriteTimeout: c.config.Proxy.HTTP.WriteTimeout.Duration(),
+		IdleTimeout:  c.config.Proxy.HTTP.IdleTimeout.Duration(),
+		OnConnect:    c.onConnect,
+		OnError:      c.onError,
 		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
 			c.recordProxyTraffic(sent, recv)
 		},
@@ -732,6 +739,11 @@ func (c *Client) serveSOCKS5(ctx context.Context, listener net.Listener, done <-
 		GetBackend:   c.getBackend,
 		AuthRequired: false, // Client doesn't require auth
 		DialTimeout:  clientSOCKS5DialTimeout,
+		// The listener triad, applied exactly as on the server side; zero
+		// values (the client default) leave the deadlines disabled.
+		ReadTimeout:  c.config.Proxy.SOCKS5.ReadTimeout.Duration(),
+		WriteTimeout: c.config.Proxy.SOCKS5.WriteTimeout.Duration(),
+		IdleTimeout:  c.config.Proxy.SOCKS5.IdleTimeout.Duration(),
 		OnConnect:    c.onConnect,
 		OnError:      c.onError,
 		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
