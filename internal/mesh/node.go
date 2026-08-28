@@ -16,6 +16,10 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/p2p"
 )
 
+// defaultTURNTimeout bounds TURN allocation requests. The mesh TURN server
+// config carries no per-server timeout, so this package-level default applies.
+const defaultTURNTimeout = 30 * time.Second
+
 // MeshNode errors.
 var (
 	ErrNodeNotStarted      = errors.New("mesh: node not started")
@@ -26,6 +30,20 @@ var (
 
 // NodeStatus represents the current status of the mesh node.
 type NodeStatus string
+
+// Backoff applied when the mesh device read fails repeatedly. A broken device
+// fd returns its error immediately, so a bare retry spins a core at 100% while
+// the node still reports healthy. The delay doubles up to a cap and resets on
+// the first successful read.
+const (
+	deviceReadBackoffInitial = 5 * time.Millisecond
+	deviceReadBackoffMax     = time.Second
+
+	// Consecutive failures before the condition is escalated from debug to a
+	// warning, so a genuinely dead device is visible at the default log level
+	// without a transient hiccup becoming noise.
+	deviceReadFailuresBeforeWarn = 20
+)
 
 const (
 	NodeStatusStopped  NodeStatus = "stopped"
@@ -365,12 +383,16 @@ func (n *MeshNode) initializeP2PManager() error {
 	// Build TURN config if configured
 	var turnConfig *p2p.TURNConfig
 	if n.config.TURN.Enabled && len(n.config.TURN.Servers) > 0 {
+		if len(n.config.TURN.Servers) > 1 {
+			slog.Warn("only the first configured TURN server is used; the rest are ignored",
+				"configured", len(n.config.TURN.Servers))
+		}
 		server := n.config.TURN.Servers[0]
 		turnConfig = &p2p.TURNConfig{
 			Server:   server.URL,
 			Username: server.Username,
 			Password: server.Password,
-			Timeout:  30 * time.Second,
+			Timeout:  defaultTURNTimeout,
 		}
 	}
 
@@ -378,6 +400,7 @@ func (n *MeshNode) initializeP2PManager() error {
 		LocalPeerID:          n.localPeerID,
 		LocalPrivateKey:      privateKey,
 		STUNServers:          n.config.STUN.Servers,
+		STUNTimeout:          n.config.STUN.Timeout,
 		TURNConfig:           turnConfig,
 		ConnectTimeout:       n.config.Connection.ConnectTimeout.Duration(),
 		KeepAliveInterval:    n.config.Connection.KeepAliveInterval.Duration(),
@@ -652,6 +675,9 @@ func (n *MeshNode) packetLoop() {
 
 	buf := make([]byte, 65536)
 
+	readFailures := 0
+	backoff := deviceReadBackoffInitial
+
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -665,8 +691,40 @@ func (n *MeshNode) packetLoop() {
 			if n.ctx.Err() != nil {
 				return
 			}
-			slog.Debug("device read error", "error", err)
+
+			readFailures++
+			if readFailures == deviceReadFailuresBeforeWarn {
+				slog.Warn("mesh device read is failing repeatedly; backing off",
+					"error", err, "consecutive_failures", readFailures,
+					"backoff", backoff)
+			} else {
+				slog.Debug("device read error", "error", err,
+					"consecutive_failures", readFailures)
+			}
+
+			// Sleep, but stay cancellable: a stopping node must not wait out
+			// the backoff before noticing.
+			select {
+			case <-n.ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			if backoff < deviceReadBackoffMax {
+				backoff *= 2
+				if backoff > deviceReadBackoffMax {
+					backoff = deviceReadBackoffMax
+				}
+			}
 			continue
+		}
+
+		if readFailures > 0 {
+			if readFailures >= deviceReadFailuresBeforeWarn {
+				slog.Info("mesh device read recovered",
+					"after_consecutive_failures", readFailures)
+			}
+			readFailures = 0
+			backoff = deviceReadBackoffInitial
 		}
 
 		if nr == 0 {
@@ -1188,6 +1246,26 @@ func (n *MeshNode) performMaintenance() {
 			})
 		}
 		_ = n.discovery.UpdateEndpoints(meshEndpoints) //nolint:errcheck // Best effort endpoint update
+	}
+
+	// Refresh measured peer latencies so routing metrics track the
+	// keep-alive round-trip instead of the value captured at connect time,
+	// which is 0 for inbound and relayed peers before their first PONG.
+	if n.p2pManager != nil {
+		for peerID, conn := range n.p2pManager.GetConnections() {
+			latency := conn.Latency()
+			if latency <= 0 {
+				continue
+			}
+			peer, exists := n.peerRegistry.Get(peerID)
+			if !exists || peer.GetLatency() == latency {
+				continue
+			}
+			peer.SetLatency(latency)
+			if peer.VirtualIP.IsValid() {
+				n.protocol.UpdatePeerLatency(peerID, peer.VirtualIP, latency)
+			}
+		}
 	}
 }
 

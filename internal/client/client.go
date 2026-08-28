@@ -839,6 +839,15 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Reject unknown keys before anything is applied or persisted. Without
+	// this, an API update carrying a typo reported success, wrote the bogus
+	// key to disk, and then the next strict reload refused the whole file —
+	// a 200 that bricked the config. The route pseudo-keys below are internal
+	// and checked after their translation.
+	if err := validateUpdateKeys(updates); err != nil {
+		return err
+	}
+
 	// Handle route add/remove operations specially. These pseudo-keys are sent
 	// by the routes CRUD handlers and must mutate c.config.Routes directly.
 	// They are translated into a full "routes" replacement so they never reach
@@ -1529,6 +1538,26 @@ func intFromJSON(v interface{}) (int, bool) {
 	default:
 		return 0, false
 	}
+}
+
+// routePseudoKeys are internal update-map keys the routes CRUD handlers send;
+// they are translated in updateConfig and never persisted.
+var routePseudoKeys = []string{"_add_route", "_remove_route"}
+
+// validateUpdateKeys applies the strict loader's unknown-key rejection to a
+// partial config-update map: the map is re-encoded and strict-decoded against
+// the full client schema, so a key the config does not have cannot be applied
+// or written to disk. Partial updates stay partial — absent keys are absent.
+func validateUpdateKeys(updates map[string]interface{}) error {
+	checked := make(map[string]interface{}, len(updates))
+	for k, v := range updates {
+		checked[k] = v
+	}
+	for _, pseudo := range routePseudoKeys {
+		delete(checked, pseudo)
+	}
+	var prototype config.ClientConfig
+	return config.ValidateKnownKeys("config update", checked, &prototype)
 }
 
 func parseDuration(s string) time.Duration {

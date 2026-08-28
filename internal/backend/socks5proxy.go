@@ -104,13 +104,19 @@ func (b *SOCKS5ProxyBackend) Dial(ctx context.Context, network, address string) 
 	}
 	b.mu.RUnlock()
 
-	// Connect to the proxy
+	// Connect to the proxy, honoring the caller's address-family restriction
+	// (network.ipv6/prefer settings arrive here as "tcp4"/"tcp6"). This used
+	// to hardcode "tcp", so ipv6: false was honored by direct and wireguard
+	// backends but silently ignored by the proxy-chaining ones.
+	if network == "" {
+		network = "tcp"
+	}
 	var proxyConn net.Conn
 	var err error
 	if b.preferIPv6 {
-		proxyConn, err = dialPreferIPv6(ctx, b.dialer, "tcp", b.address)
+		proxyConn, err = dialPreferIPv6(ctx, b.dialer, network, b.address)
 	} else {
-		proxyConn, err = b.dialer.DialContext(ctx, "tcp", b.address)
+		proxyConn, err = b.dialer.DialContext(ctx, network, b.address)
 	}
 	if err != nil {
 		b.recordError(err)

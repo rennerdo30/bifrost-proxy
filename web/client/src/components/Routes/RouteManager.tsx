@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { Route, RouteTestResult } from '../../api/types'
@@ -170,15 +170,17 @@ function EditRouteModal({ isOpen, onClose, onSave, route, existingNames }: EditR
   const [priority, setPriority] = useState(route?.priority || 100)
   const [error, setError] = useState('')
 
-  // Update form when route changes
-  useState(() => {
+  // Re-seed the form when the edited route changes. This was a useState call
+  // — its initializer runs exactly once, so editing a second route showed the
+  // first route's values.
+  useEffect(() => {
     if (route) {
       setName(route.name)
       setPatterns(route.patterns.join('\n'))
       setAction(route.action)
       setPriority(route.priority)
     }
-  })
+  }, [route])
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()

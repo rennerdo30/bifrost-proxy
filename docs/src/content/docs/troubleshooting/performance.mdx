@@ -205,9 +205,10 @@ curl -x http://localhost:7080 https://example.com -o /dev/null -s -w "TLS handsh
 
 **Solution:**
 
-1. Enable connection keep-alive (reduces handshakes)
-2. Use TLS session resumption (automatic in Go)
-3. Consider HTTP/2 for multiplexed connections
+1. Use TLS session resumption (automatic in Go)
+2. Route HTTP/2-capable traffic through `CONNECT` tunnels: ALPN is
+   end-to-end there, so h2 works through the tunnel even though the proxy's
+   own plain-HTTP path speaks HTTP/1.1 with one request per connection
 
 ---
 

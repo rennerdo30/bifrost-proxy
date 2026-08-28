@@ -15,13 +15,13 @@ import (
 )
 
 func TestNewMeshAPI(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 	require.NotNil(t, api)
 	assert.NotNil(t, api.networks)
 }
 
 func TestMeshAPI_RegisterRoutes(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	r := chi.NewRouter()
 	api.RegisterRoutes(r)
@@ -44,7 +44,7 @@ func TestMeshAPI_RegisterRoutes(t *testing.T) {
 }
 
 func TestMeshAPI_HandleListNetworks(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("GET", "/api/v1/mesh/networks", nil)
@@ -59,7 +59,7 @@ func TestMeshAPI_HandleListNetworks(t *testing.T) {
 }
 
 func TestMeshAPI_HandleListNetworks_WithNetworks(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create a network
 	_, err := api.CreateNetwork("test-network", "Test Network", "10.100.0.0/16")
@@ -80,7 +80,7 @@ func TestMeshAPI_HandleListNetworks_WithNetworks(t *testing.T) {
 }
 
 func TestMeshAPI_HandleCreateNetwork(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	body := `{
 		"id": "test-network",
@@ -104,7 +104,7 @@ func TestMeshAPI_HandleCreateNetwork(t *testing.T) {
 }
 
 func TestMeshAPI_HandleCreateNetwork_DefaultCIDR(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	body := `{
 		"id": "test-network",
@@ -124,7 +124,7 @@ func TestMeshAPI_HandleCreateNetwork_DefaultCIDR(t *testing.T) {
 }
 
 func TestMeshAPI_HandleCreateNetwork_InvalidJSON(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/v1/mesh/networks", strings.NewReader("{invalid}"))
@@ -134,7 +134,7 @@ func TestMeshAPI_HandleCreateNetwork_InvalidJSON(t *testing.T) {
 }
 
 func TestMeshAPI_HandleCreateNetwork_MissingID(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	body := `{"name": "Test"}`
 
@@ -146,7 +146,7 @@ func TestMeshAPI_HandleCreateNetwork_MissingID(t *testing.T) {
 }
 
 func TestMeshAPI_HandleCreateNetwork_Conflict(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create first network
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -163,7 +163,7 @@ func TestMeshAPI_HandleCreateNetwork_Conflict(t *testing.T) {
 }
 
 func TestMeshAPI_HandleCreateNetwork_InvalidCIDR(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	body := `{
 		"id": "test-network",
@@ -178,7 +178,7 @@ func TestMeshAPI_HandleCreateNetwork_InvalidCIDR(t *testing.T) {
 }
 
 func TestMeshAPI_HandleGetNetwork(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create a network
 	_, err := api.CreateNetwork("test-network", "Test Network", "10.100.0.0/16")
@@ -200,7 +200,7 @@ func TestMeshAPI_HandleGetNetwork(t *testing.T) {
 }
 
 func TestMeshAPI_HandleGetNetwork_NotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Get("/api/v1/mesh/networks/{networkID}", api.handleGetNetwork)
@@ -213,7 +213,7 @@ func TestMeshAPI_HandleGetNetwork_NotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleDeleteNetwork(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create a network
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -234,7 +234,7 @@ func TestMeshAPI_HandleDeleteNetwork(t *testing.T) {
 }
 
 func TestMeshAPI_HandleDeleteNetwork_NotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Delete("/api/v1/mesh/networks/{networkID}", api.handleDeleteNetwork)
@@ -247,7 +247,7 @@ func TestMeshAPI_HandleDeleteNetwork_NotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleRegisterPeer(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create a network
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -278,7 +278,7 @@ func TestMeshAPI_HandleRegisterPeer(t *testing.T) {
 }
 
 func TestMeshAPI_HandleRegisterPeer_NetworkNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Post("/api/v1/mesh/networks/{networkID}/peers", api.handleRegisterPeer)
@@ -293,7 +293,7 @@ func TestMeshAPI_HandleRegisterPeer_NetworkNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleRegisterPeer_InvalidJSON(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -309,7 +309,7 @@ func TestMeshAPI_HandleRegisterPeer_InvalidJSON(t *testing.T) {
 }
 
 func TestMeshAPI_HandleRegisterPeer_MissingPeerID(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -327,7 +327,7 @@ func TestMeshAPI_HandleRegisterPeer_MissingPeerID(t *testing.T) {
 }
 
 func TestMeshAPI_HandleListPeers(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register a peer
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -361,7 +361,7 @@ func TestMeshAPI_HandleListPeers(t *testing.T) {
 }
 
 func TestMeshAPI_HandleListPeers_NetworkNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Get("/api/v1/mesh/networks/{networkID}/peers", api.handleListPeers)
@@ -374,7 +374,7 @@ func TestMeshAPI_HandleListPeers_NetworkNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleGetPeer(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register a peer
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -400,7 +400,7 @@ func TestMeshAPI_HandleGetPeer(t *testing.T) {
 }
 
 func TestMeshAPI_HandleGetPeer_NetworkNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Get("/api/v1/mesh/networks/{networkID}/peers/{peerID}", api.handleGetPeer)
@@ -413,7 +413,7 @@ func TestMeshAPI_HandleGetPeer_NetworkNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleGetPeer_PeerNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -429,7 +429,7 @@ func TestMeshAPI_HandleGetPeer_PeerNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleUpdatePeer(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register a peer
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -459,7 +459,7 @@ func TestMeshAPI_HandleUpdatePeer(t *testing.T) {
 }
 
 func TestMeshAPI_HandleUpdatePeer_NetworkNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Patch("/api/v1/mesh/networks/{networkID}/peers/{peerID}", api.handleUpdatePeer)
@@ -472,7 +472,7 @@ func TestMeshAPI_HandleUpdatePeer_NetworkNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleUpdatePeer_PeerNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -488,7 +488,7 @@ func TestMeshAPI_HandleUpdatePeer_PeerNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleUpdatePeer_InvalidJSON(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register a peer
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -513,7 +513,7 @@ func TestMeshAPI_HandleUpdatePeer_InvalidJSON(t *testing.T) {
 }
 
 func TestMeshAPI_HandleDeregisterPeer(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register a peer
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -539,7 +539,7 @@ func TestMeshAPI_HandleDeregisterPeer(t *testing.T) {
 }
 
 func TestMeshAPI_HandleDeregisterPeer_NetworkNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Delete("/api/v1/mesh/networks/{networkID}/peers/{peerID}", api.handleDeregisterPeer)
@@ -552,7 +552,7 @@ func TestMeshAPI_HandleDeregisterPeer_NetworkNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleDeregisterPeer_PeerNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -568,7 +568,7 @@ func TestMeshAPI_HandleDeregisterPeer_PeerNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleHeartbeat(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register a peer
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -594,7 +594,7 @@ func TestMeshAPI_HandleHeartbeat(t *testing.T) {
 }
 
 func TestMeshAPI_HandleHeartbeat_NetworkNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	router := chi.NewRouter()
 	router.Post("/api/v1/mesh/networks/{networkID}/peers/{peerID}/heartbeat", api.handleHeartbeat)
@@ -607,7 +607,7 @@ func TestMeshAPI_HandleHeartbeat_NetworkNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_HandleHeartbeat_PeerNotFound(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -623,7 +623,7 @@ func TestMeshAPI_HandleHeartbeat_PeerNotFound(t *testing.T) {
 }
 
 func TestMeshAPI_GetNetwork(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Network doesn't exist
 	_, exists := api.GetNetwork("test-network")
@@ -641,7 +641,7 @@ func TestMeshAPI_GetNetwork(t *testing.T) {
 }
 
 func TestMeshAPI_CreateNetwork(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	network, err := api.CreateNetwork("test-network", "Test Network", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -656,7 +656,7 @@ func TestMeshAPI_CreateNetwork(t *testing.T) {
 }
 
 func TestMeshAPI_CreateNetwork_Duplicate(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -666,7 +666,7 @@ func TestMeshAPI_CreateNetwork_Duplicate(t *testing.T) {
 }
 
 func TestMeshAPI_CreateNetwork_InvalidCIDR(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	_, err := api.CreateNetwork("test-network", "Test", "invalid")
 	assert.Error(t, err)
@@ -738,7 +738,7 @@ func TestRegisterPeerResponse_Struct(t *testing.T) {
 }
 
 func TestMeshAPI_RegisterPeerReturnsOtherPeers(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register two peers
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -771,7 +771,7 @@ func TestMeshAPI_RegisterPeerReturnsOtherPeers(t *testing.T) {
 }
 
 func TestMeshAPI_UpdatePeerWithEndpointsAndMetadata(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	// Create network and register a peer
 	_, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
@@ -812,7 +812,7 @@ func TestMeshAPI_UpdatePeerWithEndpointsAndMetadata(t *testing.T) {
 }
 
 func TestMeshNetwork_BroadcastEvent(t *testing.T) {
-	api := NewMeshAPI()
+	api := newTestMeshAPI(t)
 
 	network, err := api.CreateNetwork("test-network", "Test", "10.100.0.0/16")
 	require.NoError(t, err)
@@ -820,4 +820,13 @@ func TestMeshNetwork_BroadcastEvent(t *testing.T) {
 	// broadcastEvent should not panic even with no clients
 	// This tests the internal method indirectly through normal operations
 	assert.NotNil(t, network.wsClients)
+}
+
+// newTestMeshAPI builds a MeshAPI with default config, replacing the removed
+// NewMeshAPI() shorthand so these tests use the constructor production uses.
+func newTestMeshAPI(t *testing.T) *MeshAPI {
+	t.Helper()
+	m, err := NewMeshAPIWithConfig(config.MeshConfig{})
+	require.NoError(t, err)
+	return m
 }

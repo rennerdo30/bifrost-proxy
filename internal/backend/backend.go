@@ -3,9 +3,6 @@ package backend
 
 import (
 	"context"
-	"errors"
-	"io"
-	"log/slog"
 	"net"
 	"time"
 )
@@ -102,97 +99,4 @@ func (c *TrackedConn) Close() error {
 		c.OnClose(c.BytesRead, c.BytesWritten)
 	}
 	return err
-}
-
-// CopyBidirectional copies data between two connections in both directions.
-// Returns bytes sent (conn1→conn2), bytes received (conn2→conn1), and the first non-EOF error.
-func CopyBidirectional(ctx context.Context, conn1, conn2 io.ReadWriteCloser) (sent, received int64, err error) {
-	type copyResult struct {
-		n   int64
-		err error
-	}
-	sentCh := make(chan copyResult, 1)
-	receivedCh := make(chan copyResult, 1)
-
-	// Copy conn1 -> conn2 (data sent from conn1 to conn2)
-	go func() {
-		n, copyErr := io.Copy(conn2, conn1)
-		sentCh <- copyResult{n, copyErr}
-	}()
-
-	// Copy conn2 -> conn1 (data received from conn2 to conn1)
-	go func() {
-		n, copyErr := io.Copy(conn1, conn2)
-		receivedCh <- copyResult{n, copyErr}
-	}()
-
-	// Track which results we've received
-	var sentResult, receivedResult copyResult
-	var sentReceived, receivedReceived bool
-
-	// Wait for first copy to finish or context cancellation
-	select {
-	case sentResult = <-sentCh:
-		sentReceived = true
-		err = sentResult.err
-	case receivedResult = <-receivedCh:
-		receivedReceived = true
-		err = receivedResult.err
-	case <-ctx.Done():
-		err = ctx.Err()
-	}
-
-	// Close both connections to unblock the other goroutine
-	conn1.Close()
-	conn2.Close()
-
-	// Wait for the other copy to finish and collect its result
-	if !sentReceived {
-		sentResult = <-sentCh
-	}
-	if !receivedReceived {
-		receivedResult = <-receivedCh
-	}
-
-	// Log the second error if it's significant (not just a connection close)
-	// This helps diagnose connection issues that might otherwise be hidden
-	var secondErr error
-	if sentReceived && receivedResult.err != nil {
-		secondErr = receivedResult.err
-	} else if receivedReceived && sentResult.err != nil {
-		secondErr = sentResult.err
-	}
-
-	if secondErr != nil && !isExpectedCloseError(secondErr) {
-		slog.Debug("bidirectional copy secondary error",
-			"error", secondErr.Error(),
-			"sent_bytes", sentResult.n,
-			"received_bytes", receivedResult.n,
-		)
-	}
-
-	// Return the first error, or nil if both are just EOF/close errors
-	if err != nil && isExpectedCloseError(err) {
-		err = nil
-	}
-
-	return sentResult.n, receivedResult.n, err
-}
-
-// isExpectedCloseError returns true if the error is an expected connection close.
-func isExpectedCloseError(err error) bool {
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, io.EOF) {
-		return true
-	}
-	if errors.Is(err, net.ErrClosed) {
-		return true
-	}
-	// Check for "use of closed network connection" which is common on connection close
-	if err.Error() == "use of closed network connection" {
-		return true
-	}
-	return false
 }

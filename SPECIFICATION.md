@@ -111,6 +111,26 @@ graph TD
 
 ## 3. Configuration
 
+### 3.0 Loading Rules
+
+Every config file — server, client and node — is read by `internal/config.Load`,
+which applies two rules before any schema-specific validation:
+
+1. **Environment expansion.** Exactly three forms are recognized in the raw file:
+   `${NAME}` (empty string plus a warning when `NAME` is unset),
+   `${NAME:-fallback}` (the fallback when `NAME` is unset or empty; the fallback
+   is literal and is not itself expanded), and `$$` (a literal `$`). A bare
+   `$NAME` is **not** expanded and every other `$` is literal, so credentials
+   containing a dollar sign are preserved. Expansion is a single pass, so a
+   substituted value is never re-expanded. `config.Save` escapes `$` that would
+   otherwise be read back as a reference, keeping save/load round trips faithful.
+2. **Strict keys.** Decoding uses `yaml.Decoder` with `KnownFields(true)`. A key
+   with no corresponding setting fails the load, naming every offending key, its
+   line and the enclosing config type. Setting
+   `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` downgrades this to a per-key warning as
+   a documented, transitional migration aid; type errors always fail. This
+   applies to startup, `config validate`, hot reload and the config API.
+
 ### 3.1 Server Configuration (`server-config.yaml`)
 
 > [!NOTE]

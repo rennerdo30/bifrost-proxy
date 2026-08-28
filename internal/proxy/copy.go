@@ -183,35 +183,3 @@ func copyWithContext(ctx context.Context, dst, src net.Conn) (int64, error) {
 		}
 	}
 }
-
-// CopyBidirectionalWithStats copies data and returns statistics.
-func CopyBidirectionalWithStats(ctx context.Context, conn1, conn2 net.Conn) CopyStats {
-	start := time.Now()
-	sent, received := CopyBidirectional(ctx, conn1, conn2)
-
-	return CopyStats{
-		BytesSent:     sent,
-		BytesReceived: received,
-		Duration:      time.Since(start),
-	}
-}
-
-// CopyStats holds statistics about a bidirectional copy operation.
-type CopyStats struct {
-	BytesSent     int64
-	BytesReceived int64
-	Duration      time.Duration
-}
-
-// TotalBytes returns the total bytes transferred.
-func (s CopyStats) TotalBytes() int64 {
-	return s.BytesSent + s.BytesReceived
-}
-
-// Throughput returns the average throughput in bytes per second.
-func (s CopyStats) Throughput() float64 {
-	if s.Duration == 0 {
-		return 0
-	}
-	return float64(s.TotalBytes()) / s.Duration.Seconds()
-}

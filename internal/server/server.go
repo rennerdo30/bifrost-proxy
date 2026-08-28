@@ -426,7 +426,22 @@ func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 			return nil, err
 		}
 		reportProviderAvailability(providers)
-		return factory.CreateChain(providers)
+		chain, err := factory.CreateChain(providers)
+		if err != nil {
+			return nil, err
+		}
+		// Wrap the whole chain in failed-login lockout when configured. The
+		// decorator existed, fully tested, with no config key and no caller.
+		if cfg.BruteForce != nil && cfg.BruteForce.Enabled {
+			protector := auth.NewBruteForceProtector(auth.BruteForceConfig{
+				MaxAttempts: cfg.BruteForce.MaxAttempts,
+				LockoutTime: cfg.BruteForce.LockoutTime.Duration(),
+				MaxLockout:  cfg.BruteForce.MaxLockout.Duration(),
+				WindowSize:  cfg.BruteForce.WindowSize.Duration(),
+			})
+			return auth.NewBruteForceAuthenticator(chain, protector), nil
+		}
+		return chain, nil
 	}
 
 	// No auth config explicitly set; default to "none".
