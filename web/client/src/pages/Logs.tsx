@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { QueryError } from '../components/QueryError'
 import { useQuery } from '@tanstack/react-query'
 import { api, LogEntry, logStreamUrl } from '../api/client'
 
@@ -12,7 +13,7 @@ export function Logs() {
   const eventSourceRef = useRef<EventSource | null>(null)
 
   // Fetch historical logs
-  const { data: logsData, isLoading, refetch } = useQuery({
+  const { data: logsData, isLoading, error, refetch } = useQuery({
     queryKey: ['logs', level],
     queryFn: () => api.getLogs(200, 0, level || undefined),
     refetchInterval: streaming ? false : 5000,
@@ -187,7 +188,11 @@ export function Logs() {
       {/* Log List */}
       <div className="card p-0 overflow-hidden">
         <div className="max-h-[600px] overflow-y-auto font-mono text-sm">
-          {isLoading ? (
+          {!streaming && error ? (
+            <div className="font-sans">
+              <QueryError what="logs" error={error} onRetry={() => refetch()} />
+            </div>
+          ) : isLoading ? (
             <div className="flex items-center justify-center gap-3 py-12 text-bifrost-muted">
               <span className="spinner h-6 w-6 text-bifrost-accent" role="status" aria-label="Loading logs" />
             </div>

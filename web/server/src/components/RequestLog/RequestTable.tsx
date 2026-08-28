@@ -134,8 +134,16 @@ export function RequestTable({ requests, isLoading, enabled }: RequestTableProps
             {requests.map((request, index) => (
               <React.Fragment key={request.id}>
                 <tr
+                  tabIndex={0}
+                  aria-expanded={expandedId === request.id}
                   onClick={() => setExpandedId(expandedId === request.id ? null : request.id)}
-                  className="border-b border-bifrost-border/50 hover:bg-bifrost-card-hover transition-colors cursor-pointer animate-slide-up"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setExpandedId(expandedId === request.id ? null : request.id)
+                    }
+                  }}
+                  className="border-b border-bifrost-border/50 hover:bg-bifrost-card-hover transition-colors cursor-pointer animate-slide-up focus:outline-none focus:bg-bifrost-card-hover"
                   style={{ animationDelay: `${index * 20}ms` }}
                 >
                   <td className="table-cell">

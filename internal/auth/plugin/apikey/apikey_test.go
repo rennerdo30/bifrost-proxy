@@ -722,21 +722,25 @@ func TestToStringSlice_NonStringItems(t *testing.T) {
 }
 
 func TestToStringSlice_NonSliceValue(t *testing.T) {
-	// Test with groups being a non-slice value
-	authenticator := createAPIKeyAuthenticator(t, map[string]any{
-		"keys": []map[string]any{
-			{
-				"key_plain": "sk_test",
-				"name":      "TestKey",
-				"groups":    "not-a-slice", // Invalid type, should result in nil groups
+	// A wrong-typed value used to be silently ignored (groups quietly became
+	// nil); the strict key/shape check now rejects the config instead.
+	factory := auth.NewFactory()
+	_, err := factory.Create(auth.ProviderConfig{
+		Name:    "apikey-test",
+		Type:    "apikey",
+		Enabled: true,
+		Config: map[string]any{
+			"keys": []map[string]any{
+				{
+					"key_plain": "sk_test",
+					"name":      "TestKey",
+					"groups":    "not-a-slice",
+				},
 			},
 		},
 	})
-
-	user, err := authenticator.Authenticate(context.Background(), "", "sk_test")
-	require.NoError(t, err)
-	// Groups should be empty when given invalid type
-	assert.Empty(t, user.Groups)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "cannot unmarshal")
 }
 
 func TestAPIKeyAuthenticator_WithAddedHashedKey(t *testing.T) {

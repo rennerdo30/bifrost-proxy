@@ -254,6 +254,16 @@ GET /api/v1/config
 
 **Response:** Full `ClientConfig` object.
 
+Field names match the YAML configuration keys exactly, so a response can be
+edited and sent straight back to `PUT /api/v1/config`.
+
+Durations are duration strings, not numbers — `"30s"`, `"1m30s"`, `"5m0s"` — in
+both directions. This covers `vpn.dns.cache_ttl`,
+`mesh.discovery.heartbeat_interval`, `mesh.discovery.peer_timeout`,
+`mesh.stun.timeout`, `mesh.connection.connect_timeout` and
+`mesh.connection.keep_alive_interval`, alongside the `proxy` and `server`
+timeouts. On input a bare number is also accepted and read as nanoseconds.
+
 ---
 
 ### Update Config
@@ -595,7 +605,8 @@ GET /api/v1/vpn/split/rules
     {"name": "Zoom", "path": "/Applications/zoom.us.app"}
   ],
   "domains": ["*.local", "localhost", "*.lan"],
-  "ips": ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"]
+  "ips": ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"],
+  "always_bypass": ["127.0.0.0/8", "169.254.0.0/16"]
 }
 ```
 

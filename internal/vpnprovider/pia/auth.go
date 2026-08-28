@@ -3,7 +3,6 @@ package pia
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -15,13 +14,6 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/vpnprovider"
 )
-
-// ErrPortForwardingNotImplemented is retained for backward compatibility.
-//
-// Deprecated: the port-forwarding flow is now implemented (see PortForwarder and
-// RequestPortForwardParams). Operations that lack the tunnel gateway parameters
-// return ErrPortForwardingNotAvailable instead.
-var ErrPortForwardingNotImplemented = errors.New("pia: port forwarding not implemented")
 
 // Token represents a PIA authentication token.
 type Token struct {
