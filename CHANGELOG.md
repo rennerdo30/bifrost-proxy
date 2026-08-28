@@ -342,6 +342,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   did not
 
 ### Fixed
+- A validation request that fails no longer reports the configuration as
+  valid: the server dashboard's pre-save validation swallowed request errors
+  and returned `{valid: true}`, letting a save proceed on the strength of a
+  network hiccup
+- Editing a backend whose source configuration could not be loaded is refused
+  with an explanation. Edit is implemented as remove-then-add, and the dialog
+  used to silently substitute an empty config — saving destroyed the backend's
+  settings (WireGuard keys, credentials) with a success toast
+- Unmatched paths CONTAINING `/api/v1/` get a JSON 404 instead of the SPA
+  page. A leading-prefix-only check let a corrupted base path (`/config/api/…`)
+  fall through to index.html, where the 200 + text/html made every missing
+  route look healthy
+- The client dashboard's "Reset to defaults" no longer nulls out the routes
+  section: the defaults payload carries `routes: null`, which was persisted
+  verbatim
+- Disabling a cache preset sticks in the dashboard: the enabled computation
+  counted a preset as enabled whenever its rule existed, ignoring the disabled
+  flag the toggle had just set
+- Route reordering in the config editor changes route priority. The buttons
+  reordered array positions while both the router and the display order are
+  driven by priority, so they did nothing visible or effective
+- The Setup Guide shows the server's real listener ports instead of hardcoded
+  8080/1080 — ports the shipped config never uses — and the PAC links respect
+  a sub-path deployment; the copy button works without a secure context and is
+  reachable by keyboard
+- The client dashboard's Edit Route dialog shows the route being edited: the
+  form was seeded with a `useState` call whose initializer runs once, so
+  editing a second route displayed the first one's values
+- The Add Backend dialog stops offering a Priority field (the setting has no
+  effect anywhere) and labels Weight and Health Check with when they actually
+  take effect; the Test Backend dialog defaults to a host:port target instead
+  of a URL the endpoint always rejected
+- The traffic debugger's `duration_ms` field carries milliseconds: the raw
+  `time.Duration` marshaled as nanoseconds under that name, making the traffic
+  table off by a factor of a million
 - The HTTP forward proxy is honest about its HTTP/1.1, one-request-per-
   connection nature and follows the RFCs it silently violated: hop-by-hop
   headers (the RFC 7230 §6.1 set plus everything named in `Connection`) are
