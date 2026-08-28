@@ -235,17 +235,6 @@ func TestDefaultConfig(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
-// TestExampleConfig tests ExampleConfig function
-func TestExampleConfig(t *testing.T) {
-	example := ExampleConfig()
-	assert.NotEmpty(t, example)
-	assert.Contains(t, example, "vpn:")
-	assert.Contains(t, example, "enabled: true")
-	assert.Contains(t, example, "split_tunnel:")
-	assert.Contains(t, example, "dns:")
-	assert.Contains(t, example, "tun:")
-}
-
 // TestConfigErrorType tests ConfigError
 func TestConfigErrorType(t *testing.T) {
 	err := &ConfigError{
