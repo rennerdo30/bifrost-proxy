@@ -157,8 +157,10 @@ Install Bifrost as a system service to ensure it runs in the background.
 # Install as service
 sudo bifrost-client service install --config /path/to/config.yaml
 
-# Check status
+# Start, inspect, and stop it without platform-specific commands
+sudo bifrost-client service start
 bifrost-client service status
+sudo bifrost-client service stop
 ```
 
 ---

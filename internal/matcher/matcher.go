@@ -3,6 +3,7 @@ package matcher
 
 import (
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 )
@@ -33,13 +34,30 @@ type pattern struct {
 	hasGlob  bool // contains glob wildcards within parts (e.g., sf-*)
 }
 
-// New creates a new Matcher with the given patterns.
+// New creates a new Matcher with the given patterns. Invalid or over-limit
+// patterns are skipped, but never silently: each drop is logged with the
+// pattern and the reason, because a dropped route pattern means those domains
+// quietly fall through to the default backend. Config validation catches these
+// up front via NewStrict; this constructor is the runtime path that must not
+// take a working process down over one bad pattern arriving through a hot
+// reload race.
 func New(patterns []string) *Matcher {
 	m := &Matcher{}
 	for _, p := range patterns {
-		_ = m.AddPattern(p) //nolint:errcheck // Silently skip invalid patterns during construction
+		if err := m.AddPattern(p); err != nil {
+			slog.Warn("dropping unusable domain pattern; matching traffic falls through to the default backend",
+				"pattern", p,
+				"error", err,
+			)
+		}
 	}
 	return m
+}
+
+// NewStrict creates an empty Matcher for validation use: callers add patterns
+// one by one and treat any error as a configuration error.
+func NewStrict() *Matcher {
+	return &Matcher{}
 }
 
 // AddPattern adds a pattern to the matcher. Returns error if duplicate or at limit.

@@ -343,7 +343,7 @@ export interface MeshConnectionConfig {
   relay_enabled?: boolean
   relay_via_peers?: boolean
   connect_timeout?: string
-  keepalive_interval?: string
+  keep_alive_interval?: string
 }
 
 export interface MeshSecurityConfig {

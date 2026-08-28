@@ -105,15 +105,6 @@ type RouterConfig struct {
 	PathCostFunc PathCostFunc
 }
 
-// DefaultRouterConfig returns a default router configuration.
-func DefaultRouterConfig() RouterConfig {
-	return RouterConfig{
-		MaxHops:      8,
-		RouteTimeout: 5 * time.Minute,
-		PathCostFunc: DefaultPathCostFunc,
-	}
-}
-
 // DefaultPathCostFunc is the default path cost function.
 func DefaultPathCostFunc(latency time.Duration, hopCount int) int {
 	// Cost = latency_ms + (hopCount * 100)

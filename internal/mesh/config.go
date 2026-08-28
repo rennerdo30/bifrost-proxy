@@ -9,6 +9,21 @@ import (
 	"time"
 
 	"github.com/rennerdo30/bifrost-proxy/internal/device"
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
+)
+
+// Mesh configuration defaults.
+const (
+	// DefaultHeartbeatInterval is how often heartbeats are sent to discovery.
+	DefaultHeartbeatInterval = duration.Duration(30 * time.Second)
+	// DefaultPeerTimeout is how long before a silent peer is considered offline.
+	DefaultPeerTimeout = duration.Duration(90 * time.Second)
+	// DefaultSTUNTimeout is the timeout for a single STUN request.
+	DefaultSTUNTimeout = duration.Duration(5 * time.Second)
+	// DefaultConnectTimeout is the timeout for establishing a peer connection.
+	DefaultConnectTimeout = duration.Duration(30 * time.Second)
+	// DefaultKeepAliveInterval is the interval between keep-alive packets.
+	DefaultKeepAliveInterval = duration.Duration(25 * time.Second)
 )
 
 // Config contains mesh network configuration.
@@ -65,10 +80,10 @@ type DiscoveryConfig struct {
 	Server string `yaml:"server" json:"server"`
 
 	// HeartbeatInterval is how often to send heartbeats (default: 30s).
-	HeartbeatInterval time.Duration `yaml:"heartbeat_interval" json:"heartbeat_interval"`
+	HeartbeatInterval duration.Duration `yaml:"heartbeat_interval" json:"heartbeat_interval"`
 
 	// PeerTimeout is how long before a peer is considered offline (default: 90s).
-	PeerTimeout time.Duration `yaml:"peer_timeout" json:"peer_timeout"`
+	PeerTimeout duration.Duration `yaml:"peer_timeout" json:"peer_timeout"`
 
 	// Token is the authentication token for the discovery server.
 	Token string `yaml:"token,omitempty" json:"token,omitempty"`
@@ -80,7 +95,7 @@ type STUNConfig struct {
 	Servers []string `yaml:"servers" json:"servers"`
 
 	// Timeout is the timeout for STUN requests (default: 5s).
-	Timeout time.Duration `yaml:"timeout" json:"timeout"`
+	Timeout duration.Duration `yaml:"timeout" json:"timeout"`
 }
 
 // TURNConfig contains TURN server configuration.
@@ -123,10 +138,12 @@ type ConnectionConfig struct {
 	RelayViaPeers bool `yaml:"relay_via_peers" json:"relay_via_peers"`
 
 	// ConnectTimeout is the timeout for establishing connections (default: 30s).
-	ConnectTimeout time.Duration `yaml:"connect_timeout" json:"connect_timeout"`
+	ConnectTimeout duration.Duration `yaml:"connect_timeout" json:"connect_timeout"`
 
 	// KeepAliveInterval is the interval for keep-alive packets (default: 25s).
-	KeepAliveInterval time.Duration `yaml:"keep_alive_interval" json:"keep_alive_interval"`
+	//
+	// The wire name is keep_alive_interval, matching the documented YAML key.
+	KeepAliveInterval duration.Duration `yaml:"keep_alive_interval" json:"keep_alive_interval"`
 }
 
 // SecurityConfig contains security settings.
@@ -164,15 +181,15 @@ func DefaultConfig() Config {
 			MTU:  1400,
 		},
 		Discovery: DiscoveryConfig{
-			HeartbeatInterval: 30 * time.Second,
-			PeerTimeout:       90 * time.Second,
+			HeartbeatInterval: DefaultHeartbeatInterval,
+			PeerTimeout:       DefaultPeerTimeout,
 		},
 		STUN: STUNConfig{
 			Servers: []string{
 				"stun:stun.l.google.com:19302",
 				"stun:stun1.l.google.com:19302",
 			},
-			Timeout: 5 * time.Second,
+			Timeout: DefaultSTUNTimeout,
 		},
 		TURN: TURNConfig{
 			Enabled: true,
@@ -184,8 +201,8 @@ func DefaultConfig() Config {
 			// Peer relaying is not yet functional on the data plane; keep it
 			// off by default. See the RelayViaPeers field documentation.
 			RelayViaPeers:     false,
-			ConnectTimeout:    30 * time.Second,
-			KeepAliveInterval: 25 * time.Second,
+			ConnectTimeout:    DefaultConnectTimeout,
+			KeepAliveInterval: DefaultKeepAliveInterval,
 		},
 		Security: SecurityConfig{
 			RequireEncryption: true,
@@ -236,19 +253,19 @@ func (c *Config) Validate() error {
 	}
 
 	if c.Discovery.HeartbeatInterval <= 0 {
-		c.Discovery.HeartbeatInterval = 30 * time.Second
+		c.Discovery.HeartbeatInterval = DefaultHeartbeatInterval
 	}
 
 	if c.Discovery.PeerTimeout <= 0 {
-		c.Discovery.PeerTimeout = 90 * time.Second
+		c.Discovery.PeerTimeout = DefaultPeerTimeout
 	}
 
 	if c.Connection.ConnectTimeout <= 0 {
-		c.Connection.ConnectTimeout = 30 * time.Second
+		c.Connection.ConnectTimeout = DefaultConnectTimeout
 	}
 
 	if c.Connection.KeepAliveInterval <= 0 {
-		c.Connection.KeepAliveInterval = 25 * time.Second
+		c.Connection.KeepAliveInterval = DefaultKeepAliveInterval
 	}
 
 	// Peer relaying (multi-hop) is not yet implemented on the data plane.

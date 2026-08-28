@@ -218,10 +218,10 @@ func TestSystemMetrics(t *testing.T) {
 
 func TestNewCollector(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	if c == nil {
-		t.Fatal("NewCollector() returned nil")
+		t.Fatal("NewCollectorWithInterval(, DefaultCollectionInterval) returned nil")
 	}
 
 	if c.metrics != m {
@@ -231,7 +231,7 @@ func TestNewCollector(t *testing.T) {
 
 func TestCollectorStartStop(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// Start
 	c.Start()
@@ -254,7 +254,7 @@ func TestCollectorStartStop(t *testing.T) {
 
 func TestCollectorCollect(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// Collect should update uptime and goroutines
 	c.collect()
@@ -284,7 +284,7 @@ func TestCollectorCollect(t *testing.T) {
 
 func TestCollectorRecordConnection(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// Record connection start
 	done := c.RecordConnection("http")
@@ -300,7 +300,7 @@ func TestCollectorRecordConnection(t *testing.T) {
 
 func TestCollectorRecordRequest(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordRequest("http", "GET", "200", 100*time.Millisecond)
 
@@ -309,7 +309,7 @@ func TestCollectorRecordRequest(t *testing.T) {
 
 func TestCollectorRecordRequestSize(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordRequestSize("http", 512)
 	c.RecordRequestSize("http", 1024)
@@ -323,7 +323,7 @@ func TestCollectorRecordRequestSize(t *testing.T) {
 
 func TestCollectorRecordResponseSize(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordResponseSize("http", 2048)
 	c.RecordResponseSize("http", -100) // ignored
@@ -350,7 +350,7 @@ func histogramSampleCount(t *testing.T, vec *prometheus.HistogramVec, labels ...
 
 func TestCollectorRecordBytes(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordBytes("backend1", 1024, 2048)
 
@@ -359,7 +359,7 @@ func TestCollectorRecordBytes(t *testing.T) {
 
 func TestCollectorRecordBackendError(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordBackendError("backend1", "connection")
 
@@ -368,7 +368,7 @@ func TestCollectorRecordBackendError(t *testing.T) {
 
 func TestCollectorRecordRateLimit(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordRateLimit("ip")
 
@@ -377,7 +377,7 @@ func TestCollectorRecordRateLimit(t *testing.T) {
 
 func TestCollectorRecordAuthAttempt(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// Successful auth
 	c.RecordAuthAttempt("native", true, "")
@@ -390,7 +390,7 @@ func TestCollectorRecordAuthAttempt(t *testing.T) {
 
 func TestCollectorLoop(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// Start the collector loop
 	c.Start()
@@ -505,7 +505,7 @@ func TestCollectorCollectWithBackends(t *testing.T) {
 	err = mgr.Add(unhealthyBackend)
 	require.NoError(t, err)
 
-	c := NewCollector(m, mgr)
+	c := NewCollectorWithInterval(m, mgr, DefaultCollectionInterval)
 	c.collect()
 
 	// Gather metrics and verify backend metrics are collected
@@ -550,7 +550,7 @@ func TestCollectorCollectWithHealthyBackend(t *testing.T) {
 	err := mgr.Add(healthyBackend)
 	require.NoError(t, err)
 
-	c := NewCollector(m, mgr)
+	c := NewCollectorWithInterval(m, mgr, DefaultCollectionInterval)
 	c.collect()
 
 	// Verify backend health is set to 1.0
@@ -585,7 +585,7 @@ func TestCollectorCollectWithUnhealthyBackend(t *testing.T) {
 	err := mgr.Add(unhealthyBackend)
 	require.NoError(t, err)
 
-	c := NewCollector(m, mgr)
+	c := NewCollectorWithInterval(m, mgr, DefaultCollectionInterval)
 	c.collect()
 
 	// Verify backend health is set to 0.0
@@ -620,7 +620,7 @@ func TestCollectorCollectWithZeroLatency(t *testing.T) {
 	err := mgr.Add(backendWithZeroLatency)
 	require.NoError(t, err)
 
-	c := NewCollector(m, mgr)
+	c := NewCollectorWithInterval(m, mgr, DefaultCollectionInterval)
 
 	// Collect multiple times
 	c.collect()
@@ -662,7 +662,7 @@ func TestCollectorCollectWithPositiveLatency(t *testing.T) {
 	err := mgr.Add(backendWithLatency)
 	require.NoError(t, err)
 
-	c := NewCollector(m, mgr)
+	c := NewCollectorWithInterval(m, mgr, DefaultCollectionInterval)
 
 	// Collect multiple times
 	c.collect()
@@ -730,7 +730,7 @@ func TestCollectorCollectLoopWithBackends(t *testing.T) {
 // TestCollectorRecordConnectionVerifyMetrics verifies actual metric values for connection recording.
 func TestCollectorRecordConnectionVerifyMetrics(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// Record connection start. The backend is not yet known, so the active gauge
 	// is tracked at protocol scope with an empty backend label.
@@ -800,7 +800,7 @@ func TestCollectorRecordConnectionVerifyMetrics(t *testing.T) {
 // TestCollectorRecordRequestVerifyMetrics verifies actual metric values for request recording.
 func TestCollectorRecordRequestVerifyMetrics(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordRequest("http", "POST", "201", 250*time.Millisecond)
 
@@ -828,7 +828,7 @@ func TestCollectorRecordRequestVerifyMetrics(t *testing.T) {
 // TestCollectorRecordBytesVerifyMetrics verifies actual metric values for bytes recording.
 func TestCollectorRecordBytesVerifyMetrics(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordBytes("byte-test", 5000, 10000)
 
@@ -868,7 +868,7 @@ func TestCollectorRecordBytesVerifyMetrics(t *testing.T) {
 // TestCollectorRecordBackendErrorVerifyMetrics verifies actual metric values for backend error recording.
 func TestCollectorRecordBackendErrorVerifyMetrics(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordBackendError("error-test", "timeout")
 
@@ -896,7 +896,7 @@ func TestCollectorRecordBackendErrorVerifyMetrics(t *testing.T) {
 // TestCollectorRecordRateLimitVerifyMetrics verifies actual metric values for rate limit recording.
 func TestCollectorRecordRateLimitVerifyMetrics(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.RecordRateLimit("connection")
 	c.RecordRateLimit("connection")
@@ -934,7 +934,7 @@ func TestCollectorRecordRateLimitVerifyMetrics(t *testing.T) {
 // TestCollectorRecordAuthAttemptVerifyMetrics verifies actual metric values for auth attempt recording.
 func TestCollectorRecordAuthAttemptVerifyMetrics(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// Successful attempt
 	c.RecordAuthAttempt("oauth", true, "")
@@ -995,7 +995,7 @@ func TestCollectorMultipleBackends(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	c := NewCollector(m, mgr)
+	c := NewCollectorWithInterval(m, mgr, DefaultCollectionInterval)
 	c.collect()
 
 	families, err := m.registry.Gather()
@@ -1041,7 +1041,7 @@ func TestCollectorStartStopMultipleTimes(t *testing.T) {
 // TestCollectorUptimeIncreases tests that uptime metric increases over time.
 func TestCollectorUptimeIncreases(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	// First collection
 	c.collect()
@@ -1080,7 +1080,7 @@ func TestCollectorUptimeIncreases(t *testing.T) {
 // TestCollectorGoRoutinesRealistic tests that goroutines metric returns a realistic value.
 func TestCollectorGoRoutinesRealistic(t *testing.T) {
 	m := New()
-	c := NewCollector(m, nil)
+	c := NewCollectorWithInterval(m, nil, DefaultCollectionInterval)
 
 	c.collect()
 

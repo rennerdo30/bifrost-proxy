@@ -31,6 +31,9 @@ func main() {
 
 	// Create application with options
 	app := NewApp()
+	// Preferences must be loaded before the window options are built, or the
+	// Start Minimized preference below reads its default.
+	app.loadPreferences()
 
 	err := wails.Run(&options.App{
 		Title:     "Bifrost Quick Access",
@@ -51,8 +54,9 @@ func main() {
 		},
 		// Frameless window for modern look
 		Frameless: false,
-		// Start hidden for tray-first experience
-		StartHidden: false,
+		// Honor the persisted Start Minimized preference. It was saved by the
+		// settings toggle and never read; the window always opened visible.
+		StartHidden: app.preferences.StartMinimized,
 		// Windows-specific options
 		Windows: &windows.Options{
 			WebviewIsTransparent:              false,
