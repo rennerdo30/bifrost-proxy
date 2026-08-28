@@ -48,5 +48,58 @@ now only in git history; `git show 9b1c8a9:TODO.md` retrieves them.
 
 ## Current status
 
+The findings have been worked through on a set of branches, each with its own
+pull request. **None of the remediation has been independently reviewed yet** —
+see "What is still open" below.
+
+| Area | State |
+|---|---|
+| `go-backend.md` §1–3 (inert config, silent stubs, fake success) | Fixed across #292–#297, #302, #303, #304 |
+| `go-backend.md` §3 (fabricated telemetry, NAT detection, Windows TUN spin) | Fixed in #307 |
+| `go-backend.md` §4 (dead code) | Complete but for one symbol: #312 (isolated code + vestigial constructors), #313 (proxy/util, stacked on #297), #314 (client route table, stacked on #304). The server-side `Router` row is resolved without deletion — see the corrected row in the report. `Factory.SetNetwork` waits on #293 |
+| `web-dashboards.md` items 1–14 | Fixed in #301, #305 and earlier |
+| `web-dashboards.md` items 15–29 | Fixed in #308 |
+| `desktop.md` P0–P1 | Fixed in #292 |
+| `desktop.md` P2 | Fixed in #309, plus service start/stop in #310 |
+| `mobile.md` items 1–14 | Fixed in #295, #311 (#306 superseded) |
+
+### What is still open
+
+1. **No independent review.** Every branch above was written and self-checked by
+   the same pass. The adversarial second-opinion review these changes are
+   supposed to get could not be run — the tooling for it failed for the whole
+   session — so treat all of it as unreviewed.
+2. **One dead symbol left**: `Factory.SetNetwork`. `internal/backend/factory.go`
+   is rewritten by #293, so removing it there would only create a conflict. Do
+   it after that merges. Every other §4 symbol is gone.
+3. ~~The session/login flow~~ — **done** in #315. The dashboard now exchanges the
+   token for an HttpOnly cookie and no longer stores it. Writing the contract
+   test first also surfaced two server-side defects the audit had not found: the
+   `503 "not enabled"` branches in both handlers were unreachable because the
+   routes were conditionally mounted, and mounting them unconditionally exposed
+   a latent chi startup panic for a server with a session store but no
+   `api.token`.
+4. **HTTP/1.1 keep-alive request loop.** The proxy answers one request per
+   connection and advertises that honestly with `Connection: close`. The full
+   loop fits the phase machinery added in #297.
+5. **Client-side caching** (`web-dashboards.md` item 20). No implementation
+   exists; the inert dashboard tab was removed rather than left showing zeros.
+6. **On-device VPN** (`mobile.md` item 15). Weeks of work, a paid Apple
+   Developer account and real devices. The scaffold stays gated off and
+   documented as insecure.
+
+Three REMOVE rows changed under inspection, which is why the list should be
+treated as leads to verify rather than instructions:
+
+- `internal/auth/middleware.go` was **not** wholly dead — four symbols are on
+  live paths and deleting the file breaks the build.
+- `securityHeadersMiddleware` is **live**: `HandlerWithUI` uses it once the
+  headers moved there.
+- The server-side `(*API).Router` is **resolved without deletion** — it and
+  `RouterWithWebSocket` already share one `addAPIRoutes`, so the drift the row
+  describes cannot recur.
+
+Each row now records its correction.
+
 `ISSUES.md` at the repo root carries the short list of deliberate limitations and
 open work. This directory is the detail behind it.

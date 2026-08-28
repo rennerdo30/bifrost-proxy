@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="t-disconnected">
-  <title id="t-disconnected">Bifrost: disconnected</title>
-  <g fill="#8fa0b8">
-    <path d="M36 138Q100 44 164 138" fill="none" stroke="#8fa0b8" stroke-width="26" stroke-linecap="round"/>
-    <circle cx="36" cy="138" r="17"/><circle cx="164" cy="138" r="17"/>
-  </g>
-</svg>

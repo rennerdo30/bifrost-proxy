@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useModalA11y } from '../../hooks/useModalA11y'
 
 interface PurgeDomainDialogProps {
   isOpen: boolean
@@ -60,18 +61,25 @@ export function PurgeDomainDialog({
     }
   }
 
+  const modalRef = useModalA11y(isOpen, onClose)
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
 
       {/* Modal */}
-      <div className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="purge-domain-title"
+        className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-          <h2 className="text-xl font-semibold text-bifrost-heading">Purge Domain Cache</h2>
+          <h2 id="purge-domain-title" className="text-xl font-semibold text-bifrost-heading">Purge Domain Cache</h2>
           <button
             onClick={onClose}
             className="p-1 text-bifrost-muted hover:text-bifrost-heading transition-colors"

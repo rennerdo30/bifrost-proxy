@@ -6,7 +6,7 @@
   "description": "Bifrost Proxy Client Web UI",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && touch ../../internal/api/client/static/.gitkeep",
     "preview": "vite preview",
     "lint": "eslint ."
   },

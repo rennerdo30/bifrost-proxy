@@ -161,6 +161,10 @@ func BuildARPFrame(dstMAC, srcMAC net.HardwareAddr, arpPacket []byte) ([]byte, e
 }
 
 // BuildARPRequestFrame builds a complete Ethernet ARP request frame.
+//
+// Kept despite having no production caller: the ARP interceptor tests use it to
+// construct the request frames they feed to HandleFrame/HandlePacket, which are
+// live. Removing it would push hand-rolled frame bytes into those tests.
 func BuildARPRequestFrame(senderMAC net.HardwareAddr, senderIP, targetIP netip.Addr) ([]byte, error) {
 	arp, err := BuildARPRequest(senderMAC, senderIP, targetIP)
 	if err != nil {
@@ -181,31 +185,6 @@ func BuildARPReplyFrame(senderMAC net.HardwareAddr, senderIP netip.Addr, targetM
 // IsRequest returns true if this is an ARP request.
 func (a *ARPPacket) IsRequest() bool {
 	return a.Operation == ARPRequest
-}
-
-// IsReply returns true if this is an ARP reply.
-func (a *ARPPacket) IsReply() bool {
-	return a.Operation == ARPReply
-}
-
-// String returns a string representation of the ARP packet.
-func (a *ARPPacket) String() string {
-	opStr := "unknown"
-	switch a.Operation {
-	case ARPRequest:
-		opStr = "request"
-	case ARPReply:
-		opStr = "reply"
-	}
-	return fmt.Sprintf("ARP %s: %s (%s) -> %s (%s)",
-		opStr,
-		a.SenderProtocolAddr, a.SenderHardwareAddr,
-		a.TargetProtocolAddr, a.TargetHardwareAddr)
-}
-
-// MarshalBinary returns the binary representation of the ARP packet.
-func (a *ARPPacket) MarshalBinary() ([]byte, error) {
-	return BuildARPPacket(a.Operation, a.SenderHardwareAddr, a.SenderProtocolAddr, a.TargetHardwareAddr, a.TargetProtocolAddr)
 }
 
 // ARPInterceptor handles ARP requests and responses for a virtual network interface.

@@ -30,12 +30,10 @@ backends:
   - name: direct
     type: direct
     enabled: true
-    priority: 10
 
   - name: wireguard
     type: wireguard
     enabled: true
-    priority: 20
     config:
       private_key: "${WG_PRIVATE_KEY}"
       address: "10.0.0.2/24"
@@ -94,10 +92,72 @@ logging:
 |-------|------|---------|-------------|
 | `server.http.listen` | string | `:7080` | HTTP proxy listen address |
 | `server.socks5.listen` | string | `:7180` | SOCKS5 proxy listen address |
+| `server.<listener>.read_timeout` | duration | `30s` | Inbound request read deadline (see below) |
+| `server.<listener>.write_timeout` | duration | `30s` | No-progress bound on writes back to the client |
+| `server.<listener>.idle_timeout` | duration | `60s` | Bound on a connection with nothing in flight |
+| `server.<listener>.tunnel_idle_timeout` | duration | unset | Opt-in reaper for established tunnels quiet in both directions |
+| `server.<listener>.max_connections` | int | `0` | Per-listener ceiling; 0 = unlimited |
 | `server.graceful_period` | duration | `30s` | Graceful shutdown period |
 
 A listener is active when its `listen` address is set; there is no per-listener
 `enabled` flag. At least one of the two listeners must be configured.
+
+#### HTTP proxy protocol support
+
+The plain-HTTP forward-proxy path speaks **HTTP/1.1 with one request per
+connection** — the proxy now says so on the wire (`Connection: close` on both
+hops) instead of implying persistence and closing. `CONNECT` tunnels are
+opaque, so HTTP/2 and WebSocket-over-TLS work end-to-end through them; a
+plain-HTTP `Upgrade` (e.g. `ws://`) is honored by switching the connection to
+an opaque tunnel after the origin's `101`. An h2c prior-knowledge request is
+rejected with `505 HTTP Version Not Supported` — HTTP/2 to the proxy itself is
+not supported. Hop-by-hop headers (RFC 7230 §6.1) are stripped in both
+directions and the proxy appends itself to `Via`.
+#### Listener timeouts
+
+All three timeouts describe the **inbound** client connection. None of them
+affects outbound dials to a backend — see
+[Network Settings](#network-settings) for `network.dial_timeout`. Set any of
+them to `0` to disable that deadline and leave the connection bounded only by
+its peer.
+
+- **`read_timeout`** — the complete inbound request must arrive within it,
+  measured from the client's first byte: the request line and header block for
+  HTTP, the whole handshake (method negotiation, optional username/password
+  exchange, connect request) for SOCKS5. This is an absolute bound, which is
+  what makes it effective against a client that trickles a request one byte at
+  a time. It applies to TLS-terminated listeners too — the TLS handshake must
+  complete within it — and to every decrypted request on a MITM-intercepted
+  tunnel. Once the headers are in it applies per read instead, so a large
+  upload may take arbitrarily long overall as long as it keeps making progress.
+- **`write_timeout`** — a **no-progress** bound on writes back to the client:
+  each window of `write_timeout` must deliver at least one byte. A streaming
+  response (server-sent events, a chunked feed, a large download) is never
+  truncated while it keeps moving — even to a very slow receiver — but a
+  client that has stopped reading entirely is timed out within one window.
+  (On a TLS-terminated listener a stalled window is fatal to the connection, a
+  constraint of Go's TLS implementation; a progressing response is still never
+  cut off.)
+- **`idle_timeout`** — bounds a connection with no request in flight: one that
+  has been accepted but has sent nothing, or the wait between exchanges on a
+  kept-alive loop, including a MITM-intercepted tunnel. It deliberately does
+  **not** apply to an established opaque `CONNECT` tunnel or SOCKS5 relay.
+- **`tunnel_idle_timeout`** — off by default. When set, an **established**
+  tunnel or relay in which *neither* direction has carried data for the period
+  is closed. An actively transferring tunnel is never interrupted, even to a
+  very slow receiver — each window only requires progress, not completion.
+
+:::caution[quiet tunnels are valid traffic]
+A protocol that holds a `CONNECT` tunnel open in silence — SSH, IMAP IDLE, a
+WebSocket without keepalive pings — is working as intended, which is why idle
+tunnels are **not** reaped by default. Set `tunnel_idle_timeout` only on
+listeners exposed to untrusted clients that could park connections, and above
+the longest legitimate quiet period you expect.
+:::
+
+The same three listener timeouts exist on the client's `proxy.http` and
+`proxy.socks5` blocks and are applied the same way; they default to `0`
+(disabled) there, since the client's listeners are typically loopback-only.
 
 #### SOCKS5 protocol support
 
@@ -179,9 +239,11 @@ web_ui:
   base_path: "/bifrost"        # serve the dashboard under a sub-path
 ```
 
-Set `base_path` when a reverse proxy mounts the dashboard somewhere other than
-the root. If that proxy also rewrites `Host`, add the browser-visible origin to
-`api.allowed_origins` as well, or the dashboard's WebSocket will be refused.
+`base_path` is optional in every setup: the dashboard derives its prefix from
+the browser URL at runtime, so serving it under a sub-path behind a reverse
+proxy works with or without this setting (the Go server does not consume the
+value). If the proxy also rewrites `Host`, add the browser-visible origin to
+`api.allowed_origins`, or the dashboard's WebSocket will be refused.
 
 ### Network Settings
 

@@ -444,7 +444,7 @@ func TestEventConfigSaved(t *testing.T) {
 
 func TestHandleSaveConfig_WithWebSocket(t *testing.T) {
 	mgr := backend.NewManager()
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	cfg := Config{
 		Backends: mgr,

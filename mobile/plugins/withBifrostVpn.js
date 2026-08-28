@@ -27,6 +27,19 @@ const {
   withAndroidManifest,
   withInfoPlist,
 } = require('@expo/config-plugins')
+const fs = require('fs')
+const path = require('path')
+
+// Relative location of the VPN service source inside the generated Android
+// project. The <service> declaration is only injected when this file actually
+// exists — `expo prebuild --clean` regenerates android/ WITHOUT it, and an APK
+// that declares a VpnService class it does not contain is a booby trap: the
+// app appears in Settings -> VPN, and selecting it (or configuring Always-on
+// VPN with "block connections without VPN") makes the OS try to start a class
+// that is not in the binary — a device-wide connectivity failure.
+const VPN_SERVICE_SOURCE = path.join(
+  'app', 'src', 'main', 'java', 'com', 'bifrost', 'vpn', 'BifrostVpnService.kt'
+)
 
 const VPN_SERVICE_CLASS = 'com.bifrost.vpn.BifrostVpnService'
 const BIND_VPN_SERVICE = 'android.permission.BIND_VPN_SERVICE'
@@ -36,6 +49,17 @@ const BIND_VPN_SERVICE = 'android.permission.BIND_VPN_SERVICE'
  */
 function withBifrostAndroidService(config) {
   return withAndroidManifest(config, (cfg) => {
+    // Gate on the class actually being present in the generated project.
+    const servicePath = path.join(cfg.modRequest.platformProjectRoot, VPN_SERVICE_SOURCE)
+    if (!fs.existsSync(servicePath)) {
+      console.warn(
+        `[withBifrostVpn] ${VPN_SERVICE_SOURCE} is not present in the generated ` +
+        'Android project (expo prebuild removes it); skipping the <service> ' +
+        'declaration so the APK does not advertise a VPN service class it does not contain.'
+      )
+      return cfg
+    }
+
     const app = AndroidConfig.Manifest.getMainApplicationOrThrow(cfg.modResults)
 
     app.service = app.service || []
@@ -77,9 +101,11 @@ function withBifrostAndroidService(config) {
 }
 
 /**
- * Ensure the iOS app declares the packet-tunnel-provider Network Extension
- * entitlement. (The extension target itself must be added separately — see
- * mobile/README.md.)
+ * iOS hook point. The packet-tunnel-provider entitlement was REMOVED from
+ * app.json: the extension target does not exist, and requesting an
+ * entitlement for a missing extension breaks provisioning. Re-add it (and the
+ * extension target wiring) when the real data path lands — see
+ * mobile/README.md.
  */
 function withBifrostIosEntitlement(config) {
   return withInfoPlist(config, (cfg) => {

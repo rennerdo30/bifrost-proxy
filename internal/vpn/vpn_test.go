@@ -227,9 +227,6 @@ func TestManagerConfigure(t *testing.T) {
 	connector := &mockServerConnector{}
 	m.Configure(WithServerConnector(connector))
 	assert.Equal(t, connector, m.serverConn)
-
-	// Test WithLogger (no-op for now but should not panic)
-	m.Configure(WithLogger(nil))
 }
 
 // TestManagerEnabled tests the Enabled method
