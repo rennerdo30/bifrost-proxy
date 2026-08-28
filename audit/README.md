@@ -56,7 +56,7 @@ see "What is still open" below.
 |---|---|
 | `go-backend.md` §1–3 (inert config, silent stubs, fake success) | Fixed across #292–#297, #302, #303, #304 |
 | `go-backend.md` §3 (fabricated telemetry, NAT detection, Windows TUN spin) | Fixed in #307 |
-| `go-backend.md` §4 (dead code) | Mostly removed in #312; the rest waits on the PRs that rewrite the same files |
+| `go-backend.md` §4 (dead code) | Complete: #312 (isolated), #313 (proxy/util, stacked on #297), #314 (client route table, stacked on #304). The server-side `Router` row is resolved without deletion — see the corrected row in the report |
 | `web-dashboards.md` items 1–14 | Fixed in #301, #305 and earlier |
 | `web-dashboards.md` items 15–29 | Fixed in #308 |
 | `desktop.md` P0–P1 | Fixed in #292 |
@@ -69,10 +69,13 @@ see "What is still open" below.
    the same pass. The adversarial second-opinion review these changes are
    supposed to get could not be run — the tooling for it failed for the whole
    session — so treat all of it as unreviewed.
-2. **Remaining dead code** (`go-backend.md` §4): the duplicate API route tables,
-   the copy helpers, the thin constructors, and `util`'s `WithStartTime`/
-   `WithDomain` pair. Each lives in a file that an open PR rewrites; removing
-   them now would only create conflicts. Do them after those merge.
+2. **Thin vestigial constructors** (`go-backend.md` §4): `NewWebSocketHub`,
+   `NewMeshAPI`, `NewCollector`, `NewLoadBalancer`, `Factory.SetNetwork`,
+   `health.DefaultConfig` and the `device.CreateTUN`/`CreateTAP`/
+   `ParseDeviceType` trio, each superseded by a `…With…` variant the production
+   code calls. They are spread across packages that several open PRs touch, and
+   unlike the route tables they have caused no defect — worth doing, but after
+   the stack merges.
 3. **The session/login flow** (`go-backend.md` §4): the server half is built and
    config-gated, but the dashboard still keeps a bearer token in
    `localStorage` — which is what the session flow exists to avoid. Finishing it
@@ -86,10 +89,18 @@ see "What is still open" below.
    Developer account and real devices. The scaffold stays gated off and
    documented as insecure.
 
-One correction was made to a report while acting on it: `go-backend.md`'s verdict
-that all of `internal/auth/middleware.go` was dead is wrong — four symbols in it
-are on live paths, and deleting the file wholesale breaks the build. The row now
-says so. Treat the remaining REMOVE rows as leads to verify, not as instructions.
+Three REMOVE rows changed under inspection, which is why the list should be
+treated as leads to verify rather than instructions:
+
+- `internal/auth/middleware.go` was **not** wholly dead — four symbols are on
+  live paths and deleting the file breaks the build.
+- `securityHeadersMiddleware` is **live**: `HandlerWithUI` uses it once the
+  headers moved there.
+- The server-side `(*API).Router` is **resolved without deletion** — it and
+  `RouterWithWebSocket` already share one `addAPIRoutes`, so the drift the row
+  describes cannot recur.
+
+Each row now records its correction.
 
 `ISSUES.md` at the repo root carries the short list of deliberate limitations and
 open work. This directory is the detail behind it.
