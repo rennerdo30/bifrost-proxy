@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	clicmd "github.com/rennerdo30/bifrost-proxy/internal/cli/server"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
@@ -67,6 +68,11 @@ func init() {
 			}
 			if err := server.ValidateAuthConfig(cfg.Auth); err != nil {
 				return fmt.Errorf("configuration invalid: auth: %w", err)
+			}
+			// Dynamic backend config blocks escape the loader's KnownFields
+			// check, so validate must inspect them exactly as startup does.
+			if err := backend.ValidateConfigs(cfg.Backends); err != nil {
+				return fmt.Errorf("configuration invalid: %w", err)
 			}
 			fmt.Println("Configuration is valid")
 			return nil
@@ -304,7 +310,7 @@ func newServiceCommand() *cobra.Command {
 	serviceCmd := &cobra.Command{
 		Use:   "service",
 		Short: "Manage system service installation",
-		Long:  `Install, uninstall, or check status of bifrost-server as a system service.`,
+		Long:  `Install, start, stop, uninstall, or check bifrost-server as a system service.`,
 	}
 
 	// Install command
@@ -330,6 +336,21 @@ On Windows: Registers a Windows Service`,
 	}
 	uninstallCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-server)")
 
+	// Start/stop commands
+	startCmd := &cobra.Command{
+		Use:   "start",
+		Short: "Start the installed service",
+		RunE:  runServiceStart,
+	}
+	startCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-server)")
+
+	stopCmd := &cobra.Command{
+		Use:   "stop",
+		Short: "Stop the installed service",
+		RunE:  runServiceStop,
+	}
+	stopCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-server)")
+
 	// Status command
 	statusCmd := &cobra.Command{
 		Use:   "status",
@@ -338,7 +359,7 @@ On Windows: Registers a Windows Service`,
 	}
 	statusCmd.Flags().StringVar(&serviceName, "name", "", "Service name (default: bifrost-server)")
 
-	serviceCmd.AddCommand(installCmd, uninstallCmd, statusCmd)
+	serviceCmd.AddCommand(installCmd, startCmd, stopCmd, uninstallCmd, statusCmd)
 	return serviceCmd
 }
 
@@ -376,6 +397,22 @@ func runServiceUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	return mgr.Uninstall()
+}
+
+func runServiceStart(cmd *cobra.Command, args []string) error {
+	mgr, err := service.New(service.Config{Type: service.TypeServer, Name: serviceName})
+	if err != nil {
+		return fmt.Errorf("create service manager: %w", err)
+	}
+	return mgr.Start()
+}
+
+func runServiceStop(cmd *cobra.Command, args []string) error {
+	mgr, err := service.New(service.Config{Type: service.TypeServer, Name: serviceName})
+	if err != nil {
+		return fmt.Errorf("create service manager: %w", err)
+	}
+	return mgr.Stop()
 }
 
 func runServiceStatus(cmd *cobra.Command, args []string) error {

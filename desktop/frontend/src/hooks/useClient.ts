@@ -25,7 +25,6 @@ declare global {
           OpenWebDashboard: () => Promise<void>;
           Quit: () => Promise<void>;
           IsConnected: () => Promise<boolean>;
-          GetAPIBaseURL: () => Promise<string>;
         };
       };
     };
@@ -85,7 +84,16 @@ export interface ProxySettings {
   socks5_proxy_port: number;
 }
 
-export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error' | 'offline';
+/**
+ * Connection state as the UI understands it.
+ *
+ * 'unreachable' is a running local client whose upstream server does not
+ * answer. It is distinct from 'disconnected' (client stopped) because the
+ * available action differs: a running client can only be disconnected —
+ * deriving the button from reachability alone made it offer "Connect" while
+ * Connect was a no-op on the already-running client.
+ */
+export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'unreachable' | 'error' | 'offline';
 
 // Check if we're running in Wails or browser dev mode
 const isWails = () => typeof window !== 'undefined' && window.go !== undefined;
@@ -141,7 +149,6 @@ const mockAPI = {
   OpenWebDashboard: async () => { window.open('http://127.0.0.1:3129', '_blank'); },
   Quit: async () => { if (import.meta.env.DEV) console.log('Mock: Quit'); },
   IsConnected: async () => false,
-  GetAPIBaseURL: async () => 'http://127.0.0.1:7383',
 };
 
 // Get the API (real or mock)
@@ -168,15 +175,15 @@ export function useClient() {
       setStatus(newStatus);
       setError(null);
 
-      // Determine connection status
-      if (newStatus.status === 'offline') {
-        setConnectionStatus('offline');
+      // The button state follows the LOCAL client lifecycle; upstream
+      // reachability refines a running client's state but never turns it
+      // back into "disconnected" — a running client's action is Disconnect.
+      if (newStatus.status === 'stopped' || newStatus.status === 'not_initialized') {
+        setConnectionStatus(newStatus.last_error ? 'error' : 'disconnected');
       } else if (newStatus.server_connected) {
         setConnectionStatus('connected');
-      } else if (newStatus.last_error) {
-        setConnectionStatus('error');
       } else {
-        setConnectionStatus('disconnected');
+        setConnectionStatus('unreachable');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to get status');

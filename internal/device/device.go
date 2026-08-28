@@ -31,18 +31,6 @@ func (t DeviceType) String() string {
 	}
 }
 
-// ParseDeviceType parses a device type from a string.
-func ParseDeviceType(s string) (DeviceType, error) {
-	switch s {
-	case "tun", "TUN", "":
-		return DeviceTUN, nil
-	case "tap", "TAP":
-		return DeviceTAP, nil
-	default:
-		return DeviceTUN, fmt.Errorf("unknown device type: %s", s)
-	}
-}
-
 // NetworkDevice represents a TUN or TAP network interface.
 type NetworkDevice interface {
 	// Name returns the interface name (e.g., "bifrost0", "utun5").
@@ -167,27 +155,6 @@ func Create(cfg Config) (NetworkDevice, error) {
 	default:
 		return nil, fmt.Errorf("unsupported device type: %v", cfg.Type)
 	}
-}
-
-// CreateTUN creates a new TUN device (shorthand for Create with DeviceTUN).
-func CreateTUN(cfg Config) (NetworkDevice, error) {
-	cfg.Type = DeviceTUN
-	return Create(cfg)
-}
-
-// CreateTAP creates a new TAP device (shorthand for Create with DeviceTAP).
-func CreateTAP(cfg Config) (TAPDevice, error) {
-	cfg.Type = DeviceTAP
-	dev, err := Create(cfg)
-	if err != nil {
-		return nil, err
-	}
-	tap, ok := dev.(TAPDevice)
-	if !ok {
-		dev.Close()
-		return nil, errors.New("created device does not implement TAPDevice interface")
-	}
-	return tap, nil
 }
 
 // DeviceError represents a device-specific error.

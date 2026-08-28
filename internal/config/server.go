@@ -1,17 +1,16 @@
 package config
 
 import (
-	"encoding/json"
 	"fmt"
 	"path"
 	"strings"
 	"time"
 	"unicode"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
+	"github.com/rennerdo30/bifrost-proxy/internal/matcher"
 )
 
 // ServerConfig is the main configuration for the Bifrost server.
@@ -58,13 +57,48 @@ type ServerSettings struct {
 }
 
 // ListenerConfig contains settings for a network listener.
+//
+// The three timeouts all describe the INBOUND client connection. None of them
+// affects outbound dials to a backend -- that is network.dial_timeout, or a
+// backend's own connect_timeout. Each is applied as a real socket deadline by
+// the proxy handlers (internal/proxy); a zero value disables that deadline and
+// leaves the connection bounded only by its peer.
 type ListenerConfig struct {
-	Listen         string     `yaml:"listen" json:"listen"`
-	TLS            *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
-	ReadTimeout    Duration   `yaml:"read_timeout" json:"read_timeout"`
-	WriteTimeout   Duration   `yaml:"write_timeout" json:"write_timeout"`
-	IdleTimeout    Duration   `yaml:"idle_timeout" json:"idle_timeout"`
-	MaxConnections int        `yaml:"max_connections" json:"max_connections"` // 0 = unlimited
+	Listen string     `yaml:"listen" json:"listen"`
+	TLS    *TLSConfig `yaml:"tls,omitempty" json:"tls,omitempty"`
+
+	// ReadTimeout bounds reading an inbound request from the client: the
+	// complete request line and header block (HTTP) or the complete handshake
+	// (SOCKS5) must arrive within it, measured from the client's first byte.
+	// After the headers it applies per read, so a slow-but-progressing upload
+	// is not cut off.
+	ReadTimeout Duration `yaml:"read_timeout" json:"read_timeout"`
+
+	// WriteTimeout bounds a single write back to the client. It is deliberately
+	// per-write rather than absolute over the whole response, so a streaming
+	// response (SSE, chunked, a large download) is never truncated while it is
+	// still making progress.
+	WriteTimeout Duration `yaml:"write_timeout" json:"write_timeout"`
+
+	// IdleTimeout bounds a connection with no request in flight: one that has
+	// been accepted but has sent nothing, or the wait between exchanges on a
+	// kept-alive loop (including a MITM-intercepted tunnel). It deliberately
+	// does NOT apply to an established opaque CONNECT tunnel or SOCKS5 relay:
+	// protocols like SSH, IMAP IDLE, or a WebSocket without keepalive pings
+	// legitimately hold an open tunnel in silence, and reaping them would break
+	// working traffic. Use TunnelIdleTimeout to opt into reaping those.
+	IdleTimeout Duration `yaml:"idle_timeout" json:"idle_timeout"`
+
+	// TunnelIdleTimeout, when set, reaps an ESTABLISHED opaque tunnel (CONNECT
+	// or SOCKS5 relay) in which NEITHER direction has carried data for the
+	// given period. An actively transferring tunnel is never interrupted, even
+	// to a very slow receiver: each window only requires progress, not
+	// completion. Off (0) by default, because a quiet-but-open tunnel is valid
+	// application behavior; enable it on listeners exposed to untrusted
+	// clients that could park connections.
+	TunnelIdleTimeout Duration `yaml:"tunnel_idle_timeout,omitempty" json:"tunnel_idle_timeout,omitempty"`
+
+	MaxConnections int `yaml:"max_connections" json:"max_connections"` // 0 = unlimited
 }
 
 // TLSConfig contains TLS settings.
@@ -94,10 +128,14 @@ type TLSConfig struct {
 
 // BackendConfig describes a backend configuration.
 type BackendConfig struct {
-	Name     string `yaml:"name" json:"name"`
-	Type     string `yaml:"type" json:"type"` // direct, wireguard, openvpn, http_proxy, socks5_proxy
-	Enabled  bool   `yaml:"enabled" json:"enabled"`
-	Priority int    `yaml:"priority" json:"priority"`
+	Name    string `yaml:"name" json:"name"`
+	Type    string `yaml:"type" json:"type"` // direct, wireguard, openvpn, http_proxy, socks5_proxy
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	// Priority is accepted for backward compatibility but has NO effect:
+	// backend selection is driven entirely by routes[].priority. It stays in
+	// the schema so existing configs keep loading; it is no longer shown in
+	// the shipped examples or documented as functional.
+	Priority int `yaml:"priority" json:"priority"`
 	// Weight is the default relative weight for this backend in "weighted"
 	// load-balancing routes. It seeds RouteConfig.Weights for any weighted
 	// route that lists this backend without an explicit per-route weight
@@ -423,6 +461,17 @@ const HealthCheckTypeHTTP = "http"
 // and only rejects values the health checker cannot act on, so that an operator
 // gets an error at save/load time rather than a silently ignored setting.
 func (c *HealthCheckConfig) Validate() error {
+	// The checker factory used to substitute a bare TCP connect for any
+	// unrecognized type — silently, and Checker.Type() then answered "tcp",
+	// hiding the substitution from the API too. A typo ("htpp") produced a
+	// health check that reports green for a backend whose application layer
+	// is dead. Unknown types are a config error now.
+	switch c.Type {
+	case "", HealthCheckTypeHTTP, "tcp", "ping":
+	default:
+		return fmt.Errorf("health_check type must be %q, %q or %q, got %q", "tcp", HealthCheckTypeHTTP, "ping", c.Type)
+	}
+
 	switch c.Scheme {
 	case "", HealthCheckSchemeHTTP, HealthCheckSchemeHTTPS:
 	default:
@@ -463,50 +512,13 @@ type AutoUpdateConfig struct {
 	Channel       string   `yaml:"channel" json:"channel"` // stable, prerelease
 }
 
-// Duration is a time.Duration that can be unmarshaled from YAML.
-type Duration time.Duration
-
-func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
-	var s string
-	if err := value.Decode(&s); err != nil {
-		return err
-	}
-	dur, err := time.ParseDuration(s)
-	if err != nil {
-		return err
-	}
-	*d = Duration(dur)
-	return nil
-}
-
-func (d Duration) MarshalYAML() (interface{}, error) {
-	return time.Duration(d).String(), nil
-}
-
-func (d Duration) MarshalJSON() ([]byte, error) {
-	return json.Marshal(time.Duration(d).String())
-}
-
-func (d *Duration) UnmarshalJSON(b []byte) error {
-	var s string
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	if s == "" {
-		*d = 0
-		return nil
-	}
-	dur, err := time.ParseDuration(s)
-	if err != nil {
-		return err
-	}
-	*d = Duration(dur)
-	return nil
-}
-
-func (d Duration) Duration() time.Duration {
-	return time.Duration(d)
-}
+// Duration is the repository-wide duration wire type. Strings ("30s",
+// "1m30s") are canonical on output; a bare number is accepted on input as a
+// nanosecond count, for payloads written against the old unmarshaled
+// time.Duration representation. It is an alias so there is exactly one
+// duration contract — the implementation lives in internal/duration because
+// vpn and mesh cannot import this package back without a cycle.
+type Duration = duration.Duration
 
 // DefaultServerConfig returns a server configuration with sensible defaults.
 func DefaultServerConfig() ServerConfig {
@@ -520,6 +532,13 @@ func DefaultServerConfig() ServerConfig {
 			},
 			SOCKS5: ListenerConfig{
 				Listen: ":7180",
+				// Mirrors the HTTP listener. Without these the SOCKS5
+				// handshake is unbounded, so a client that connects and never
+				// sends a handshake byte holds a goroutine and a file
+				// descriptor for as long as it likes.
+				ReadTimeout:  Duration(30 * time.Second),
+				WriteTimeout: Duration(30 * time.Second),
+				IdleTimeout:  Duration(60 * time.Second),
 			},
 			GracefulPeriod: Duration(30 * time.Second),
 		},
@@ -596,6 +615,18 @@ func (c *ServerConfig) Validate() error {
 	for _, r := range c.Routes {
 		if len(r.Domains) == 0 {
 			return fmt.Errorf("route must have at least one domain pattern")
+		}
+		// A strict matcher per route — mirroring how the router builds one
+		// matcher per route — enforces the same validity, duplicate and
+		// MaxPatterns limits the runtime applies, so a pattern the router
+		// would silently drop (sending those domains to the default backend)
+		// is rejected here instead. The same pattern on two DIFFERENT routes
+		// stays legal: priority disambiguates it at runtime.
+		routePatterns := matcher.NewStrict()
+		for _, d := range r.Domains {
+			if err := routePatterns.AddPattern(d); err != nil {
+				return fmt.Errorf("route domain pattern %q is unusable: %w", d, err)
+			}
 		}
 		if r.Backend == "" && len(r.Backends) == 0 {
 			return fmt.Errorf("route must specify a backend or backends")

@@ -132,8 +132,8 @@ export function MeshSection() {
             />
             <FormDuration
               label="Keepalive"
-              value={meshConnection.keepalive_interval || '15s'}
-              onChange={(v) => updateField('mesh', 'connection', { ...meshConnection, keepalive_interval: v })}
+              value={meshConnection.keep_alive_interval || '25s'}
+              onChange={(v) => updateField('mesh', 'connection', { ...meshConnection, keep_alive_interval: v })}
             />
             <FormDuration
               label="Connect Timeout"

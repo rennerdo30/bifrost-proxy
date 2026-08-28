@@ -233,11 +233,11 @@ export function RouteForm({ route, availableBackends, onSave, onCancel }: RouteF
 
               {form.load_balance === 'weighted' && (form.backends?.length ?? 0) > 0 && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Backend Weights</label>
+                  <label className="block text-sm font-medium text-bifrost-text mb-2">Backend Weights</label>
                   <div className="space-y-2">
                     {form.backends!.map((b) => (
                       <div key={b} className="flex items-center gap-3">
-                        <span className="text-sm text-gray-300 w-40 truncate">{b}</span>
+                        <span className="text-sm text-bifrost-text w-40 truncate">{b}</span>
                         <input
                           type="number"
                           min={1}

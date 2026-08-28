@@ -15,9 +15,9 @@ type TUNDevice = device.NetworkDevice
 
 // TUNConfig contains TUN device configuration.
 type TUNConfig struct {
-	Name    string `yaml:"name"`    // Interface name (e.g., "bifrost0")
-	Address string `yaml:"address"` // IP address with prefix (e.g., "10.255.0.1/24")
-	MTU     int    `yaml:"mtu"`     // MTU size (default: 1400)
+	Name    string `yaml:"name" json:"name"`       // Interface name (e.g., "bifrost0")
+	Address string `yaml:"address" json:"address"` // IP address with prefix (e.g., "10.255.0.1/24")
+	MTU     int    `yaml:"mtu" json:"mtu"`         // MTU size (default: 1400)
 }
 
 // Validate validates the TUN configuration.
@@ -27,7 +27,7 @@ func (c *TUNConfig) Validate() error {
 	}
 
 	if c.Address == "" {
-		c.Address = "10.255.0.1/24"
+		c.Address = DefaultTUNAddress
 	}
 
 	// Validate address format
@@ -40,7 +40,7 @@ func (c *TUNConfig) Validate() error {
 	}
 
 	if c.MTU <= 0 {
-		c.MTU = 1400
+		c.MTU = DefaultTUNMTU
 	}
 	if c.MTU > 65535 {
 		return fmt.Errorf("MTU too large: %d (max 65535)", c.MTU)

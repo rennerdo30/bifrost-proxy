@@ -20,7 +20,16 @@ export function getStatusColor(status: ServerStatus | string): string {
   }
 }
 
-type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error'
+/**
+ * `unreachable` means the Bifrost client itself could not be contacted, which is
+ * a different condition from a client that reports the VPN as disconnected.
+ */
+export type ConnectionStatus =
+  | 'connected'
+  | 'connecting'
+  | 'disconnected'
+  | 'error'
+  | 'unreachable'
 
 /**
  * Get the color for a connection status
@@ -32,6 +41,7 @@ export function getConnectionStatusColor(status: ConnectionStatus): string {
     case 'connecting':
       return '#f59e0b'
     case 'error':
+    case 'unreachable':
       return '#ef4444'
     default:
       return '#6b7280'
