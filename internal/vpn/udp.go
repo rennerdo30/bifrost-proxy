@@ -71,14 +71,6 @@ type UDPRelayConfig struct {
 	TUNAddr netip.Addr
 }
 
-// DefaultUDPRelayConfig returns the default configuration.
-func DefaultUDPRelayConfig() UDPRelayConfig {
-	return UDPRelayConfig{
-		ListenAddr:  "0.0.0.0:0",
-		IdleTimeout: 30 * time.Second,
-	}
-}
-
 // NewUDPRelay creates a new UDP relay.
 func NewUDPRelay(cfg UDPRelayConfig, tun TUNDevice) (*UDPRelay, error) {
 	if cfg.IdleTimeout <= 0 {

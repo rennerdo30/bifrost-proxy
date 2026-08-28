@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { QueryError } from '../components/QueryError'
 // Link, not <a href>: under a HashRouter a path href leaves the SPA, reloads
 // the page at that path and repoints BASE_PATH at it, which silently breaks
 // every subsequent API call.
@@ -18,7 +19,7 @@ export function VPN() {
   const [domainError, setDomainError] = useState<string | null>(null)
   const [ipError, setIpError] = useState<string | null>(null)
 
-  const { data: vpnStatus, isLoading: statusLoading } = useQuery({
+  const { data: vpnStatus, isLoading: statusLoading, error: statusError, refetch: refetchStatus } = useQuery({
     queryKey: ['vpn-status'],
     queryFn: api.getVPNStatus,
     refetchInterval: 5000,
@@ -143,6 +144,14 @@ export function VPN() {
 
   const isEnabled = vpnStatus?.status === 'connected' || vpnStatus?.status === 'running'
   const isToggling = enableMutation.isPending || disableMutation.isPending
+
+  if (statusError) {
+    return (
+      <div className="card">
+        <QueryError what="VPN status" error={statusError} onRetry={() => refetchStatus()} />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

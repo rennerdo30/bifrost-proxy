@@ -73,6 +73,10 @@ type SOCKS5Handler struct {
 	bandwidth            *ratelimit.BandwidthConfig
 	dialTimeout          time.Duration
 	dialNetwork          string
+	readTimeout          time.Duration
+	writeTimeout         time.Duration
+	idleTimeout          time.Duration
+	tunnelIdleTimeout    time.Duration
 	onConnect            func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
 	onError              func(ctx context.Context, conn net.Conn, host string, err error)
 	recordMetrics        func(protocol, method, status, backend string, duration time.Duration, sent, recv int64)
@@ -88,12 +92,36 @@ type SOCKS5HandlerConfig struct {
 	RateLimitUser        func(username, clientIP string) bool
 	AccessLogger         accesslog.Logger
 	Bandwidth            *ratelimit.BandwidthConfig
-	DialTimeout          time.Duration
+	// DialTimeout bounds an OUTBOUND dial to the selected backend. It comes
+	// from network.dial_timeout, never from a listener timeout.
+	DialTimeout time.Duration
 	// DialNetwork is the network passed to backend dials ("tcp", "tcp4",
 	// "tcp6"). Empty defaults to "tcp".
 	DialNetwork string
-	OnConnect   func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
-	OnError     func(ctx context.Context, conn net.Conn, host string, err error)
+
+	// ReadTimeout is the listener's read_timeout: the maximum time to complete
+	// the inbound SOCKS5 handshake (method negotiation, optional
+	// username/password exchange, and the connect request) once the client has
+	// sent its first byte. Zero disables it.
+	ReadTimeout time.Duration
+
+	// WriteTimeout is the listener's write_timeout, applied as a per-write
+	// deadline on writes back to the client so a client that has stopped
+	// reading cannot pin the connection.
+	WriteTimeout time.Duration
+
+	// IdleTimeout is the listener's idle_timeout. It bounds the wait for the
+	// first handshake byte. It does NOT apply to the established relay: a
+	// quiet-but-open relay is valid traffic. Zero disables it.
+	IdleTimeout time.Duration
+
+	// TunnelIdleTimeout, when positive, opts the ESTABLISHED relay into idle
+	// reaping: it is closed once NEITHER direction has carried data for this
+	// period. Off by default.
+	TunnelIdleTimeout time.Duration
+
+	OnConnect func(ctx context.Context, conn net.Conn, host string, backend backend.Backend)
+	OnError   func(ctx context.Context, conn net.Conn, host string, err error)
 	// RecordMetrics, when set, receives per-request metrics after each SOCKS5
 	// request completes (protocol, method, status, backend, duration, bytes
 	// sent/received), mirroring the HTTP handler so SOCKS5 traffic appears in the
@@ -104,11 +132,10 @@ type SOCKS5HandlerConfig struct {
 
 // NewSOCKS5Handler creates a new SOCKS5 proxy handler.
 func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
-	if cfg.DialTimeout == 0 {
-		cfg.DialTimeout = 30 * time.Second
-	}
+	// DialTimeout keeps its zero value: it is the global network.dial_timeout
+	// fallback, and the backends own the precedence chain (see http.go).
 	if cfg.DialNetwork == "" {
-		cfg.DialNetwork = "tcp"
+		cfg.DialNetwork = defaultDialNetwork
 	}
 	return &SOCKS5Handler{
 		getBackend:           cfg.GetBackend,
@@ -121,6 +148,10 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 		bandwidth:            cfg.Bandwidth,
 		dialTimeout:          cfg.DialTimeout,
 		dialNetwork:          cfg.DialNetwork,
+		readTimeout:          cfg.ReadTimeout,
+		writeTimeout:         cfg.WriteTimeout,
+		idleTimeout:          cfg.IdleTimeout,
+		tunnelIdleTimeout:    cfg.TunnelIdleTimeout,
 		onConnect:            cfg.OnConnect,
 		onError:              cfg.OnError,
 		recordMetrics:        cfg.RecordMetrics,
@@ -131,7 +162,12 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
-	counting := newCountingConn(conn)
+	// Apply the listener's read/write/idle deadlines. Before this the SOCKS5
+	// listener read no timeout at all, so a client that opened a connection and
+	// never sent a handshake byte held a goroutine and a file descriptor until
+	// it chose to go away.
+	deadlines := newDeadlineConn(conn, h.readTimeout, h.writeTimeout, h.idleTimeout)
+	counting := newCountingConn(deadlines)
 
 	// Add client info to context
 	clientIP := ""
@@ -140,7 +176,6 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 	}
 	ctx = util.WithClientIP(ctx, clientIP)
 	startTime := time.Now()
-	ctx = util.WithStartTime(ctx, startTime)
 
 	entry := &accesslog.Entry{
 		Timestamp: startTime,
@@ -167,7 +202,12 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 			entry.StatusCode = int(socks5ReplyGeneralFailure)
 		}
 		if h.accessLogger != nil {
-			_ = h.accessLogger.Log(*entry) //nolint:errcheck // Best effort access logging
+			// The error is intentionally dropped here: this runs in a
+			// deferred block on every request, so there is nothing useful to
+			// do per entry. Write failures are counted and reported by the
+			// logger itself (see accesslog.writeFailures), so a log that has
+			// silently stopped is still visible.
+			_ = h.accessLogger.Log(*entry) //nolint:errcheck // reported by the logger
 		}
 		if h.recordMetrics != nil {
 			method := entry.Method
@@ -177,6 +217,12 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 			h.recordMetrics("socks5", method, strconv.Itoa(entry.StatusCode), entry.Backend, entry.Duration, entry.BytesSent, entry.BytesReceived)
 		}
 	}()
+
+	// The whole handshake -- method negotiation, optional username/password
+	// exchange, and the connect request -- runs under the inbound request
+	// deadlines: idle_timeout until the first byte, then read_timeout for the
+	// remainder.
+	deadlines.beginRequest()
 
 	// Handle authentication
 	userInfo, err := h.handleAuth(ctx, counting)
@@ -412,8 +458,6 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 	} else {
 		target = fmt.Sprintf("%s:%d", host, port)
 	}
-	ctx = util.WithDomain(ctx, util.GetHostFromRequest(host))
-
 	if entry != nil {
 		entry.Host = host
 	}
@@ -526,8 +570,16 @@ func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target
 		h.onConnect(ctx, conn, target, be)
 	}
 
-	// Start bidirectional copy
-	CopyBidirectional(ctx, conn, targetConn)
+	// Start bidirectional copy.
+	//
+	// Drop the handshake deadlines first: the relay is opaque and may sit
+	// silent in one direction for a long time, so read_timeout and
+	// write_timeout must not survive into it. idle_timeout takes over and fires
+	// only when neither direction has moved data.
+	// An idle-but-open relay lives until a peer closes it unless the operator
+	// opted into reaping with tunnel_idle_timeout (see the HTTP CONNECT path).
+	connDeadlines(conn).enterTunnel()
+	CopyBidirectionalWithIdle(ctx, conn, targetConn, h.tunnelIdleTimeout)
 	return nil
 }
 

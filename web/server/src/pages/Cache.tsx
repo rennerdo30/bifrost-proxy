@@ -316,11 +316,11 @@ export function Cache() {
             </svg>
             <div>
               <p className="font-medium text-bifrost-warning">
-                {cacheUnavailable ? 'Caching is not configured' : 'Cache is disabled'}
+                {cacheUnavailable ? 'Caching is disabled or not configured' : 'Cache is disabled'}
               </p>
               <p className="text-sm text-bifrost-muted">
                 {cacheUnavailable
-                  ? 'This server was started without a cache section, so the cache management API is not available. Add a cache configuration and restart the server to use this feature.'
+                  ? 'This server was started with caching disabled or without a cache section, so the cache management API is not available. Add a cache configuration with enabled: true and restart the server to use this feature.'
                   : 'Enable caching in your server configuration to use this feature'}
               </p>
             </div>

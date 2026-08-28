@@ -174,6 +174,11 @@ type DirectConnection struct {
 	state   atomic.Int32
 	latency atomic.Int64 // nanoseconds
 
+	// pingSentAt is the UnixNano timestamp of the most recent keep-alive
+	// PING with no PONG seen yet; 0 when none is outstanding. Written by
+	// keepAliveWorker, consumed by recvWorker to compute a real RTT.
+	pingSentAt atomic.Int64
+
 	sendQueue chan []byte
 	recvQueue chan []byte
 
@@ -417,6 +422,10 @@ func (c *DirectConnection) recvWorker() {
 			}
 
 			if len(decrypted) == 4 && string(decrypted) == "PONG" {
+				// Answer to our keep-alive PING: record the measured RTT.
+				if sentAt := c.pingSentAt.Swap(0); sentAt > 0 {
+					c.latency.Store(time.Now().UnixNano() - sentAt)
+				}
 				continue
 			}
 
@@ -453,22 +462,15 @@ func (c *DirectConnection) keepAliveWorker() {
 				continue
 			}
 
-			start := time.Now()
 			pingMsg := c.crypto.Encrypt([]byte("PING"))
+			c.pingSentAt.Store(time.Now().UnixNano())
 			if _, err := c.conn.WriteTo(pingMsg, remoteAddr); err != nil {
+				c.pingSentAt.Store(0)
 				slog.Debug("failed to send ping", "error", err)
 			}
-
-			// Wait for PONG (handled in recvWorker)
-			// Update latency after response
-			go func() {
-				time.Sleep(c.config.ReadTimeout)
-				// If no response, increase latency estimate
-				currentLatency := time.Duration(c.latency.Load())
-				if time.Since(start) > currentLatency*2 {
-					c.latency.Store(time.Since(start).Nanoseconds())
-				}
-			}()
+			// recvWorker records the RTT when the PONG arrives. A lost PONG
+			// leaves the previous measurement in place rather than storing a
+			// fabricated value.
 		}
 	}
 }
@@ -557,6 +559,14 @@ type RelayedConnection struct {
 	state      atomic.Int32
 	latency    atomic.Int64
 
+	// remoteAddr is the peer address Connect was given; the zero value
+	// until Connect runs.
+	remoteAddr netip.AddrPort
+
+	// pingSentAt mirrors DirectConnection: UnixNano of the outstanding
+	// keep-alive PING, 0 when none, so PONGs yield a measured RTT.
+	pingSentAt atomic.Int64
+
 	sendQueue chan []byte
 	recvQueue chan []byte
 
@@ -614,6 +624,7 @@ func (c *RelayedConnection) Connect(ctx context.Context, peerAddr netip.AddrPort
 	// Bind channel for efficient data transfer (optional, continue if it fails)
 	_, _ = c.turnClient.BindChannel(ctx, peerAddr) //nolint:errcheck // Optional optimization
 
+	c.remoteAddr = peerAddr
 	c.state.Store(int32(ConnectionStateConnected))
 
 	// Start workers
@@ -621,7 +632,39 @@ func (c *RelayedConnection) Connect(ctx context.Context, peerAddr netip.AddrPort
 	go c.sendWorker(peerAddr)
 	go c.recvWorker()
 
+	if c.config.KeepAliveInterval > 0 {
+		c.wg.Add(1)
+		go c.keepAliveWorker(peerAddr)
+	}
+
 	return nil
+}
+
+// keepAliveWorker sends periodic keep-alive PINGs through the relay so the
+// reported latency is a measured relay round-trip rather than a constant 0.
+func (c *RelayedConnection) keepAliveWorker(peerAddr netip.AddrPort) {
+	defer c.wg.Done()
+
+	ticker := time.NewTicker(c.config.KeepAliveInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+			if c.State() != ConnectionStateConnected {
+				continue
+			}
+
+			pingMsg := c.crypto.Encrypt([]byte("PING"))
+			c.pingSentAt.Store(time.Now().UnixNano())
+			if err := c.turnClient.Send(peerAddr, pingMsg); err != nil {
+				c.pingSentAt.Store(0)
+				slog.Debug("failed to send relayed ping", "error", err)
+			}
+		}
+	}
 }
 
 // sendWorker handles outgoing messages through the relay.
@@ -671,8 +714,19 @@ func (c *RelayedConnection) recvWorker() {
 			continue
 		}
 
-		// Filter keep-alive traffic so it does not reach the application layer.
-		if len(decrypted) == 4 && (string(decrypted) == "PING" || string(decrypted) == "PONG") {
+		// Keep-alive traffic: answer PINGs, use PONGs to record a measured
+		// round-trip. Never surfaced to the application layer.
+		if len(decrypted) == 4 && string(decrypted) == "PING" {
+			pong := c.crypto.Encrypt([]byte("PONG"))
+			if err := c.turnClient.Send(c.remoteAddr, pong); err != nil {
+				slog.Debug("failed to send relayed pong", "error", err)
+			}
+			continue
+		}
+		if len(decrypted) == 4 && string(decrypted) == "PONG" {
+			if sentAt := c.pingSentAt.Swap(0); sentAt > 0 {
+				c.latency.Store(time.Now().UnixNano() - sentAt)
+			}
 			continue
 		}
 
@@ -745,9 +799,10 @@ func (c *RelayedConnection) LocalAddr() netip.AddrPort {
 	return addr
 }
 
-// RemoteAddr returns the remote address.
+// RemoteAddr returns the peer address the connection was established to,
+// or the zero AddrPort before Connect has run.
 func (c *RelayedConnection) RemoteAddr() netip.AddrPort {
-	return netip.AddrPort{}
+	return c.remoteAddr
 }
 
 // Close closes the connection.

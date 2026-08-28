@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewWebSocketHub(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	require.NotNil(t, hub)
 	assert.NotNil(t, hub.clients)
 	assert.NotNil(t, hub.broadcast)
@@ -18,7 +18,7 @@ func TestNewWebSocketHub(t *testing.T) {
 }
 
 func TestWebSocketHub_Broadcast(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	// Start hub in background
 	go hub.Run()
@@ -34,7 +34,7 @@ func TestWebSocketHub_Broadcast(t *testing.T) {
 }
 
 func TestWebSocketHub_BroadcastWithData(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	// Test with various data types
 	hub.Broadcast("event1", "string data")
@@ -124,7 +124,7 @@ func TestStatsEvent_Zero(t *testing.T) {
 }
 
 func TestWebSocketHub_BroadcastTypedEvents(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	// Test broadcasting typed events
 	hub.Broadcast(EventBackendHealth, BackendHealthEvent{
@@ -148,7 +148,7 @@ func TestWebSocketHub_BroadcastTypedEvents(t *testing.T) {
 }
 
 func TestWebSocketHub_ChannelBufferSize(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	// Broadcast channel should have buffer size of 256
 	// Send 256 messages without blocking (no consumers)
@@ -163,7 +163,7 @@ func TestWebSocketHub_ChannelBufferSize(t *testing.T) {
 }
 
 func TestWebSocketHub_RunStartsWithoutPanic(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	done := make(chan bool)
 	go func() {
@@ -182,7 +182,7 @@ func TestWebSocketHub_RunStartsWithoutPanic(t *testing.T) {
 }
 
 func TestWebSocketHub_BroadcastMessageFormat(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	// Start hub
 	go hub.Run()

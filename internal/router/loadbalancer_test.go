@@ -40,19 +40,19 @@ func TestRoundRobinBalancer_CounterOverflow(t *testing.T) {
 // TestNewLoadBalancer_Types verifies the factory wires each strategy, including
 // the previously missing "weighted" case.
 func TestNewLoadBalancer_Types(t *testing.T) {
-	if _, ok := NewLoadBalancer("round_robin").(*RoundRobinBalancer); !ok {
+	if _, ok := NewLoadBalancerWithWeights("round_robin", nil).(*RoundRobinBalancer); !ok {
 		t.Errorf("round_robin should produce *RoundRobinBalancer")
 	}
-	if _, ok := NewLoadBalancer("least_conn").(*LeastConnBalancer); !ok {
+	if _, ok := NewLoadBalancerWithWeights("least_conn", nil).(*LeastConnBalancer); !ok {
 		t.Errorf("least_conn should produce *LeastConnBalancer")
 	}
-	if _, ok := NewLoadBalancer("ip_hash").(*IPHashBalancer); !ok {
+	if _, ok := NewLoadBalancerWithWeights("ip_hash", nil).(*IPHashBalancer); !ok {
 		t.Errorf("ip_hash should produce *IPHashBalancer")
 	}
-	if _, ok := NewLoadBalancer("weighted").(*WeightedBalancer); !ok {
+	if _, ok := NewLoadBalancerWithWeights("weighted", nil).(*WeightedBalancer); !ok {
 		t.Errorf("weighted should produce *WeightedBalancer")
 	}
-	if _, ok := NewLoadBalancer("unknown").(*RoundRobinBalancer); !ok {
+	if _, ok := NewLoadBalancerWithWeights("unknown", nil).(*RoundRobinBalancer); !ok {
 		t.Errorf("unknown strategy should fall back to *RoundRobinBalancer")
 	}
 }

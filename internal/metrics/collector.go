@@ -23,11 +23,6 @@ type Collector struct {
 	interval  time.Duration
 }
 
-// NewCollector creates a new metrics collector with the default collection interval.
-func NewCollector(metrics *Metrics, backends *backend.Manager) *Collector {
-	return NewCollectorWithInterval(metrics, backends, DefaultCollectionInterval)
-}
-
 // NewCollectorWithInterval creates a new metrics collector with a custom collection interval.
 // For low-power devices (OpenWrt routers), use 60s-300s to reduce CPU usage.
 func NewCollectorWithInterval(metrics *Metrics, backends *backend.Manager, interval time.Duration) *Collector {
