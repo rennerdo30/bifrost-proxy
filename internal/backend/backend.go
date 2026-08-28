@@ -3,8 +3,6 @@ package backend
 
 import (
 	"context"
-	"errors"
-	"io"
 	"net"
 	"time"
 )
@@ -101,22 +99,4 @@ func (c *TrackedConn) Close() error {
 		c.OnClose(c.BytesRead, c.BytesWritten)
 	}
 	return err
-}
-
-// isExpectedCloseError returns true if the error is an expected connection close.
-func isExpectedCloseError(err error) bool {
-	if err == nil {
-		return true
-	}
-	if errors.Is(err, io.EOF) {
-		return true
-	}
-	if errors.Is(err, net.ErrClosed) {
-		return true
-	}
-	// Check for "use of closed network connection" which is common on connection close
-	if err.Error() == "use of closed network connection" {
-		return true
-	}
-	return false
 }
