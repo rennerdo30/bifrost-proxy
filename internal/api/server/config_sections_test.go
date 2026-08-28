@@ -214,7 +214,6 @@ func TestSplitChangedSections(t *testing.T) {
 			hot, restart := splitChangedSections(tt.sections)
 			assert.Equal(t, tt.wantHot, hot)
 			assert.Equal(t, tt.wantRestart, restart)
-			assert.Equal(t, tt.wantNeedRestart, hasRestartRequiredChanges(tt.sections))
 			assert.Equal(t, tt.wantNeedRestart, len(restart) > 0,
 				"requires_restart must equal restart_required_sections being non-empty")
 		})

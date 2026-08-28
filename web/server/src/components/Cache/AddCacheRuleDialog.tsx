@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useModalA11y } from '../../hooks/useModalA11y'
 import type { AddCacheRuleRequest } from '../../api/types'
 
 interface AddCacheRuleDialogProps {
@@ -120,18 +121,25 @@ export function AddCacheRuleDialog({
     }
   }
 
+  const modalRef = useModalA11y(isOpen, onClose)
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={onClose} aria-hidden="true" />
 
       {/* Modal */}
-      <div className="relative w-full max-w-lg bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="add-cache-rule-title"
+        className="relative w-full max-w-lg bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="sticky top-0 bg-bifrost-card flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-          <h2 className="text-xl font-semibold text-bifrost-heading">Add Cache Rule</h2>
+          <h2 id="add-cache-rule-title" className="text-xl font-semibold text-bifrost-heading">Add Cache Rule</h2>
           <button
             onClick={onClose}
             className="p-1 text-bifrost-muted hover:text-bifrost-heading transition-colors"
@@ -256,6 +264,9 @@ export function AddCacheRuleDialog({
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={enabled}
+                  aria-label="Enabled"
                   onClick={() => setEnabled(!enabled)}
                   className={`w-10 h-5 rounded-full relative transition-colors ${
                     enabled ? 'bg-bifrost-success' : 'bg-bifrost-border'
@@ -276,6 +287,9 @@ export function AddCacheRuleDialog({
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={ignoreQuery}
+                  aria-label="Ignore query string"
                   onClick={() => setIgnoreQuery(!ignoreQuery)}
                   className={`w-10 h-5 rounded-full relative transition-colors ${
                     ignoreQuery ? 'bg-bifrost-success' : 'bg-bifrost-border'
@@ -296,6 +310,9 @@ export function AddCacheRuleDialog({
                 </div>
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={respectCacheControl}
+                  aria-label="Respect Cache-Control"
                   onClick={() => setRespectCacheControl(!respectCacheControl)}
                   className={`w-10 h-5 rounded-full relative transition-colors ${
                     respectCacheControl ? 'bg-bifrost-success' : 'bg-bifrost-border'

@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" role="img" aria-labelledby="t-connected">
-  <title id="t-connected">Bifrost: connected</title>
-  <g fill="#96CEB4">
-    <path d="M36 138Q100 44 164 138" fill="none" stroke="#96CEB4" stroke-width="26" stroke-linecap="round"/>
-    <circle cx="36" cy="138" r="17"/><circle cx="164" cy="138" r="17"/>
-  </g>
-</svg>

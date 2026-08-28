@@ -29,15 +29,14 @@ func NewFactoryWithNetwork(net config.NetworkConfig) *Factory {
 	return &Factory{network: NetworkTuningFromConfig(net)}
 }
 
-// SetNetwork updates the network tuning applied to subsequently-created
-// backends. It is provided so callers that construct the factory before the
-// network config is known can still thread it through.
-func (f *Factory) SetNetwork(net config.NetworkConfig) {
-	f.network = NetworkTuningFromConfig(net)
-}
-
 // Create creates a backend from configuration.
 func (f *Factory) Create(cfg config.BackendConfig) (Backend, error) {
+	// Reject unknown keys before reading the recognized ones, so a typo like
+	// connect_timeot fails loudly instead of silently keeping the default —
+	// KnownFields cannot see into this map, so the check must happen here.
+	if err := ValidateConfigKeys(cfg); err != nil {
+		return nil, err
+	}
 	switch cfg.Type {
 	case "direct":
 		return f.createDirect(cfg)
@@ -396,6 +395,11 @@ func (f *Factory) createMullvad(cfg config.BackendConfig) (Backend, error) {
 
 	if v, ok := cfg.Config["max_load"].(int); ok {
 		mullvadCfg.MaxLoad = v
+		// Honest disclosure: this provider's API integration never populates
+		// Server.Load, so the max_load filter can never trip — the setting
+		// currently has no effect (see audit/go-backend.md).
+		slog.Warn("max_load is configured but this provider does not report server load; the filter has no effect",
+			"backend", cfg.Name, "type", cfg.Type)
 	}
 
 	if v, ok := cfg.Config["refresh_interval"].(string); ok {
@@ -481,6 +485,11 @@ func (f *Factory) createPIA(cfg config.BackendConfig) (Backend, error) {
 
 	if v, ok := cfg.Config["max_load"].(int); ok {
 		piaCfg.MaxLoad = v
+		// Honest disclosure: this provider's API integration never populates
+		// Server.Load, so the max_load filter can never trip — the setting
+		// currently has no effect (see audit/go-backend.md).
+		slog.Warn("max_load is configured but this provider does not report server load; the filter has no effect",
+			"backend", cfg.Name, "type", cfg.Type)
 	}
 
 	if v, ok := cfg.Config["refresh_interval"].(string); ok {
@@ -637,6 +646,15 @@ func (f *Factory) CreateAll(configs []config.BackendConfig) (*Manager, error) {
 			continue
 		}
 		enabledCount++
+
+		// A configuration error is fatal: the skip-and-continue treatment below
+		// exists for runtime initialization failures (an unreachable VPN, a
+		// missing binary), not for a config the operator can only have written
+		// by mistake — a typoed key must fail startup like any other unknown
+		// key, not demote the backend silently.
+		if err := ValidateConfigKeys(cfg); err != nil {
+			return nil, err
+		}
 
 		backend, err := f.Create(cfg)
 		if err != nil {

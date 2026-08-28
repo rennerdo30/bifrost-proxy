@@ -45,9 +45,6 @@ type DirectConfig struct {
 
 // NewDirectBackend creates a new direct connection backend.
 func NewDirectBackend(cfg DirectConfig) *DirectBackend {
-	if cfg.ConnectTimeout == 0 {
-		cfg.ConnectTimeout = 30 * time.Second
-	}
 	if cfg.KeepAlive == 0 {
 		cfg.KeepAlive = 30 * time.Second
 	}
@@ -64,9 +61,14 @@ func NewDirectBackend(cfg DirectConfig) *DirectBackend {
 		KeepAlive: cfg.KeepAlive,
 		LocalAddr: localAddr,
 	}
-	// Apply process-wide network tuning. The backend already derived a timeout
-	// from its own config, so the network default only fills an unset value.
+	// Precedence: an explicit backend connect_timeout stays; the process-wide
+	// network.dial_timeout fills an unset one; the package default is the last
+	// resort. Defaulting BEFORE apply used to make network.dial_timeout inert
+	// here, because the dialer never looked unset.
 	cfg.Network.apply(dialer, false)
+	if dialer.Timeout == 0 {
+		dialer.Timeout = defaultConnectTimeout
+	}
 
 	return &DirectBackend{
 		name:       cfg.Name,
@@ -142,8 +144,11 @@ func (b *DirectBackend) Dial(ctx context.Context, network, address string) (net.
 
 // DialTimeout creates a connection with a specific timeout.
 func (b *DirectBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	// The dialer already encodes the full timeout precedence (backend
+	// connect_timeout > network.dial_timeout > default). Capping the context
+	// with the handler-supplied fallback here used to override a LONGER
+	// backend-specific connect_timeout, which the docs promise wins.
+	_ = timeout
 	return b.Dial(ctx, network, address)
 }
 

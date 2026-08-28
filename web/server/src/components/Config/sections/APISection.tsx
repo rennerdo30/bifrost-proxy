@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Section } from '../Section'
 import { ValidatedInput } from '../../ui/ValidatedInput'
 import { useValidation } from '../../../hooks/useValidation'
@@ -16,8 +16,26 @@ type APIValidationKeys = {
   request_log_size: number
 }
 
+const parseOrigins = (text: string): string[] =>
+  text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+
 export function APISection({ config, onChange }: APISectionProps) {
   const [showToken, setShowToken] = useState(false)
+
+  // The textarea keeps its own raw text so Enter (a momentarily empty line)
+  // is not stripped by the parser on every keystroke. The parsed list is
+  // pushed to the config on change; external config changes (discard,
+  // reload) resync the text when their parsed content actually differs.
+  const [originsText, setOriginsText] = useState(() => (config.allowed_origins || []).join('\n'))
+  useEffect(() => {
+    setOriginsText((current) => {
+      const fromConfig = (config.allowed_origins || []).join('\n')
+      return parseOrigins(current).join('\n') === fromConfig ? current : fromConfig
+    })
+  }, [config.allowed_origins])
 
   const { errors, handleFieldChange } = useValidation<APIValidationKeys>({
     listen: [validators.listenAddress()],
@@ -129,16 +147,11 @@ export function APISection({ config, onChange }: APISectionProps) {
               <textarea
                 id="api-allowed-origins"
                 rows={3}
-                value={(config.allowed_origins || []).join('\n')}
-                onChange={(e) =>
-                  update(
-                    'allowed_origins',
-                    e.target.value
-                      .split('\n')
-                      .map((line) => line.trim())
-                      .filter((line) => line.length > 0)
-                  )
-                }
+                value={originsText}
+                onChange={(e) => {
+                  setOriginsText(e.target.value)
+                  update('allowed_origins', parseOrigins(e.target.value))
+                }}
                 placeholder={'https://bifrost.example.com\nhomeassistant.local:8123'}
                 spellCheck={false}
                 className="input font-mono text-sm"

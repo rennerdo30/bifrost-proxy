@@ -56,7 +56,7 @@ debug:
   max_entries: 1000         # Maximum number of entries to keep in memory
   capture_body: false       # Capture request/response bodies (warning: high memory usage)
   max_body_size: 65536      # 64KB - Max body size to capture if capture_body is true
-  # filter_domains:         # Only capture traffic for these domains (optional)
+  # filter_domains:         # NOT YET IMPLEMENTED - reserved; all traffic is captured regardless
   #   - "*.example.com"
 
 # Application logging
@@ -141,13 +141,11 @@ backends:
   - name: direct
     type: direct
     enabled: true
-    priority: 10
 
   # WireGuard tunnel example
   # - name: wg-tunnel
   #   type: wireguard
   #   enabled: true
-  #   priority: 20
   #   config:
   #     private_key: "YOUR_PRIVATE_KEY_BASE64"
   #     address: "10.0.0.2/24"

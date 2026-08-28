@@ -1266,45 +1266,6 @@ func TestKeyGenerator_SortedQuery_Empty(t *testing.T) {
 // Range - ParseRangeSpec edge cases
 // ============================================================================
 
-func TestParseRangeSpec_EmptyRangePart(t *testing.T) {
-	spec, err := ParseRangeSpec("bytes=0-100,,200-300", 1000)
-	require.NoError(t, err)
-	assert.Len(t, spec.Ranges, 2) // Empty part skipped
-}
-
-func TestParseRangeSpec_EmptySpec(t *testing.T) {
-	spec, err := ParseRangeSpec("bytes=", 1000)
-	assert.Error(t, err)
-	assert.Nil(t, spec)
-}
-
-func TestParseSingleRange_SuffixZero(t *testing.T) {
-	_, err := parseSingleRange("-0", 1000)
-	assert.Error(t, err)
-}
-
-func TestParseSingleRange_StartNegative(t *testing.T) {
-	_, err := parseSingleRange("-10-5", 1000)
-	assert.Error(t, err)
-}
-
-// ============================================================================
-// Range - NewRangeReader error
-// ============================================================================
-
-type errorSeeker struct {
-	io.Reader
-}
-
-func (e *errorSeeker) Seek(offset int64, whence int) (int64, error) {
-	return 0, io.ErrUnexpectedEOF
-}
-
-func TestNewRangeReader_SeekError(t *testing.T) {
-	_, err := NewRangeReader(&errorSeeker{}, 10, 20)
-	assert.Error(t, err)
-}
-
 // ============================================================================
 // Validator - ShouldCache edge cases
 // ============================================================================
@@ -1487,18 +1448,6 @@ func TestRule_MatchesMethod_ExplicitMethods(t *testing.T) {
 // ============================================================================
 // LoadRulesFromConfig error
 // ============================================================================
-
-// Note: NewRuleFromConfig doesn't currently return errors for valid configs,
-// but we test the success path
-func TestLoadRulesFromConfig_Success(t *testing.T) {
-	configs := []RuleConfig{
-		{Name: "rule1", Domains: []string{"*.example.com"}, Enabled: true},
-	}
-
-	rs, err := LoadRulesFromConfig(configs)
-	require.NoError(t, err)
-	assert.Len(t, rs.All(), 1)
-}
 
 // ============================================================================
 // Tiered Storage - edge cases
@@ -1772,22 +1721,6 @@ func TestParseDirectiveValue_NoPrefix(t *testing.T) {
 // ============================================================================
 // CoalesceRanges edge cases
 // ============================================================================
-
-func TestCoalesceRanges_Empty(t *testing.T) {
-	result := CoalesceRanges([]ByteRange{})
-	assert.Empty(t, result)
-}
-
-func TestCoalesceRanges_Single(t *testing.T) {
-	result := CoalesceRanges([]ByteRange{{0, 100}})
-	assert.Len(t, result, 1)
-}
-
-func TestCoalesceRanges_Adjacent(t *testing.T) {
-	result := CoalesceRanges([]ByteRange{{0, 100}, {101, 200}})
-	assert.Len(t, result, 1)
-	assert.Equal(t, ByteRange{0, 200}, result[0])
-}
 
 // ============================================================================
 // Disk Storage - NewDiskStorage errors

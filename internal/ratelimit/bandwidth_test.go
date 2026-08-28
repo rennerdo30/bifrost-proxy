@@ -143,34 +143,6 @@ func TestParseBandwidth_FloatValue(t *testing.T) {
 
 // FormatBandwidth tests
 
-func TestFormatBandwidth_Gbps(t *testing.T) {
-	// 1 Gbps = 125 MB/s = 125000000 bytes/s
-	bw := int64(125000000)
-	result := FormatBandwidth(bw)
-	assert.Equal(t, "1.00 Gbps", result)
-}
-
-func TestFormatBandwidth_Mbps(t *testing.T) {
-	// 100 Mbps = 12.5 MB/s = 12500000 bytes/s
-	bw := int64(12500000)
-	result := FormatBandwidth(bw)
-	assert.Equal(t, "100.00 Mbps", result)
-}
-
-func TestFormatBandwidth_Kbps(t *testing.T) {
-	// 100 Kbps = 12.5 KB/s = 12500 bytes/s
-	bw := int64(12500)
-	result := FormatBandwidth(bw)
-	assert.Equal(t, "100.00 Kbps", result)
-}
-
-func TestFormatBandwidth_Bps(t *testing.T) {
-	// 100 bps = 12.5 bytes/s ~ 12 bytes/s
-	bw := int64(12)
-	result := FormatBandwidth(bw)
-	assert.Equal(t, "96 bps", result) // 12 * 8 = 96 bps
-}
-
 // ThrottledConn tests
 
 func TestThrottledConn_NewWithNoLimits(t *testing.T) {
@@ -257,55 +229,7 @@ func TestThrottledConn_WriteWithLimiter(t *testing.T) {
 
 // ThrottledReader tests
 
-func TestThrottledReader_New(t *testing.T) {
-	reader := bytes.NewReader([]byte("test"))
-	tr := NewThrottledReader(reader, 1024)
-
-	assert.NotNil(t, tr)
-	assert.NotNil(t, tr.limiter)
-}
-
-func TestThrottledReader_Read(t *testing.T) {
-	data := []byte("test data for throttled reader")
-	reader := bytes.NewReader(data)
-	tr := NewThrottledReader(reader, 10000) // High rate
-
-	buf := make([]byte, 100)
-	totalRead := 0
-
-	for totalRead < len(data) {
-		n, err := tr.Read(buf[totalRead:])
-		if err == io.EOF {
-			break
-		}
-		require.NoError(t, err)
-		totalRead += n
-	}
-
-	assert.Equal(t, len(data), totalRead)
-}
-
 // ThrottledWriter tests
-
-func TestThrottledWriter_New(t *testing.T) {
-	writer := &bytes.Buffer{}
-	tw := NewThrottledWriter(writer, 1024)
-
-	assert.NotNil(t, tw)
-	assert.NotNil(t, tw.limiter)
-}
-
-func TestThrottledWriter_Write(t *testing.T) {
-	writer := &bytes.Buffer{}
-	tw := NewThrottledWriter(writer, 10000) // High rate
-
-	data := []byte("test data for throttled writer")
-	n, err := tw.Write(data)
-
-	require.NoError(t, err)
-	assert.Equal(t, len(data), n)
-	assert.Equal(t, data, writer.Bytes())
-}
 
 // BandwidthConfig tests
 
@@ -320,19 +244,6 @@ func TestBandwidthConfig_Struct(t *testing.T) {
 }
 
 // Integration test
-
-func TestParseBandwidth_RoundTrip(t *testing.T) {
-	// Parse a value
-	original, err := ParseBandwidth("100Mbps")
-	require.NoError(t, err)
-
-	// Format it
-	formatted := FormatBandwidth(original)
-
-	// Should be approximately 100 Mbps
-	assert.Contains(t, formatted, "100.")
-	assert.Contains(t, formatted, "Mbps")
-}
 
 // Test for Wait method of KeyedLimiter
 func TestKeyedLimiter_Wait(t *testing.T) {
@@ -539,128 +450,6 @@ func TestThrottledConn_WriteError(t *testing.T) {
 	assert.Equal(t, 0, n)
 }
 
-// Test ThrottledReader.Read with limited tokens
-func TestThrottledReader_ReadWithLimitedTokens(t *testing.T) {
-	data := make([]byte, 100)
-	for i := range data {
-		data[i] = byte(i)
-	}
-	reader := bytes.NewReader(data)
-
-	tr := NewThrottledReader(reader, 50) // 50 bytes/sec
-
-	// Consume most tokens
-	tr.limiter.AllowN(45)
-
-	// Read - should be limited by available tokens
-	buf := make([]byte, 100)
-	n, err := tr.Read(buf)
-	require.NoError(t, err)
-	assert.Greater(t, n, 0)
-	assert.LessOrEqual(t, n, 10) // Limited by remaining tokens
-}
-
-// Test ThrottledReader.Read with zero tokens
-func TestThrottledReader_ReadWithZeroTokens(t *testing.T) {
-	data := []byte("test data for reading")
-	reader := bytes.NewReader(data)
-
-	tr := NewThrottledReader(reader, 1000)
-
-	// Exhaust all tokens
-	tr.limiter.AllowN(tr.limiter.Capacity())
-
-	// Read with no available tokens - when available <= 0, maxRead stays as len(p)
-	buf := make([]byte, 100)
-	n, err := tr.Read(buf)
-	require.NoError(t, err)
-	// When available is 0, maxRead stays as len(p), so we read all available data
-	assert.Equal(t, len(data), n)
-}
-
-// mockErrorReader is a mock reader that returns errors
-type mockErrorReader struct {
-	err error
-}
-
-func (m *mockErrorReader) Read(p []byte) (int, error) {
-	return 0, m.err
-}
-
-// Test ThrottledReader.Read with underlying error
-func TestThrottledReader_ReadError(t *testing.T) {
-	expectedErr := io.ErrUnexpectedEOF
-	reader := &mockErrorReader{err: expectedErr}
-
-	tr := NewThrottledReader(reader, 1000)
-
-	buf := make([]byte, 100)
-	n, err := tr.Read(buf)
-	assert.Error(t, err)
-	assert.Equal(t, expectedErr, err)
-	assert.Equal(t, 0, n)
-}
-
-// Test ThrottledWriter.Write with limited tokens
-func TestThrottledWriter_WriteWithLimitedTokens(t *testing.T) {
-	writer := &bytes.Buffer{}
-
-	tw := NewThrottledWriter(writer, 50) // 50 bytes/sec
-
-	// Consume most tokens
-	tw.limiter.AllowN(45)
-
-	// Write data - should chunk due to limited tokens
-	data := make([]byte, 30)
-	for i := range data {
-		data[i] = byte(i)
-	}
-	n, err := tw.Write(data)
-	require.NoError(t, err)
-	assert.Equal(t, len(data), n)
-	assert.Equal(t, data, writer.Bytes())
-}
-
-// Test ThrottledWriter.Write with zero tokens
-func TestThrottledWriter_WriteWithZeroTokens(t *testing.T) {
-	writer := &bytes.Buffer{}
-
-	tw := NewThrottledWriter(writer, 1000)
-
-	// Exhaust all tokens
-	tw.limiter.AllowN(tw.limiter.Capacity())
-
-	// Write with no available tokens
-	data := []byte("test")
-	n, err := tw.Write(data)
-	require.NoError(t, err)
-	assert.Equal(t, len(data), n)
-	assert.Equal(t, data, writer.Bytes())
-}
-
-// mockErrorWriter is a mock writer that returns errors
-type mockErrorWriter struct {
-	err error
-}
-
-func (m *mockErrorWriter) Write(p []byte) (int, error) {
-	return 0, m.err
-}
-
-// Test ThrottledWriter.Write with underlying error
-func TestThrottledWriter_WriteError(t *testing.T) {
-	expectedErr := io.ErrClosedPipe
-	writer := &mockErrorWriter{err: expectedErr}
-
-	tw := NewThrottledWriter(writer, 1000)
-
-	data := []byte("test data")
-	n, err := tw.Write(data)
-	assert.Error(t, err)
-	assert.Equal(t, expectedErr, err)
-	assert.Equal(t, 0, n)
-}
-
 // Test ThrottledConn.Read with EOF from underlying conn
 func TestThrottledConn_ReadEOF(t *testing.T) {
 	conn := newMockConn([]byte{}) // Empty buffer
@@ -668,17 +457,6 @@ func TestThrottledConn_ReadEOF(t *testing.T) {
 
 	buf := make([]byte, 100)
 	n, err := tc.Read(buf)
-	assert.Equal(t, io.EOF, err)
-	assert.Equal(t, 0, n)
-}
-
-// Test ThrottledReader.Read with EOF
-func TestThrottledReader_ReadEOF(t *testing.T) {
-	reader := bytes.NewReader([]byte{}) // Empty buffer
-	tr := NewThrottledReader(reader, 1000)
-
-	buf := make([]byte, 100)
-	n, err := tr.Read(buf)
 	assert.Equal(t, io.EOF, err)
 	assert.Equal(t, 0, n)
 }

@@ -44,6 +44,12 @@ type Updater struct {
 
 // New creates a new Updater instance.
 func New(cfg Config, binaryType BinaryType, notifier Notifier) (*Updater, error) {
+	// Remove the .old binary a previous self-update left behind. The helper
+	// existed on every platform and had no caller, so every Windows
+	// self-update leaked a stale .old binary forever (Unix replaces
+	// atomically; its variant is a no-op).
+	cleanupOldBinary()
+
 	// Load state
 	statePath := cfg.StateFile
 	if statePath == "" {

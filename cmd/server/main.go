@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/backend"
 	clicmd "github.com/rennerdo30/bifrost-proxy/internal/cli/server"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
@@ -67,6 +68,11 @@ func init() {
 			}
 			if err := server.ValidateAuthConfig(cfg.Auth); err != nil {
 				return fmt.Errorf("configuration invalid: auth: %w", err)
+			}
+			// Dynamic backend config blocks escape the loader's KnownFields
+			// check, so validate must inspect them exactly as startup does.
+			if err := backend.ValidateConfigs(cfg.Backends); err != nil {
+				return fmt.Errorf("configuration invalid: %w", err)
 			}
 			fmt.Println("Configuration is valid")
 			return nil
@@ -280,6 +286,15 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Set config path for hot reload support
 	srv.SetConfigPath(configFile)
+
+	// Release the log file handle on the way out — the documented shutdown
+	// contract that nothing actually honored: with a file output, every
+	// restart leaked the previous handle.
+	defer func() {
+		if err := logging.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "close log output: %v\n", err)
+		}
+	}()
 
 	// Run service (handles signals and Windows Service events)
 	return service.Run("bifrost-server", srv)

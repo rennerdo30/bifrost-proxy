@@ -44,15 +44,6 @@ type Config struct {
 	UnhealthyThreshold int `yaml:"unhealthy_threshold"`
 }
 
-// DefaultConfig returns default health check configuration.
-func DefaultConfig() Config {
-	return Config{
-		Type:     "tcp",
-		Interval: 30 * time.Second,
-		Timeout:  5 * time.Second,
-	}
-}
-
 // New creates a health checker based on configuration.
 func New(cfg Config) Checker {
 	switch cfg.Type {

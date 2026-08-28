@@ -287,15 +287,25 @@ func TestFactoryCreate(t *testing.T) {
 	assert.Equal(t, "none", authenticator.Type())
 }
 
-// TestFactoryCreateWithConfig verifies factory create with config map.
+// TestFactoryCreateWithConfig verifies the none provider accepts no config
+// keys: a key that used to be silently ignored is now rejected, because a
+// configured setting nothing reads is a misconfiguration.
 func TestFactoryCreateWithConfig(t *testing.T) {
 	factory := auth.NewFactory()
+
+	_, err := factory.Create(auth.ProviderConfig{
+		Name:    "none-test",
+		Type:    "none",
+		Enabled: true,
+		Config:  map[string]any{"ignored": "value"},
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "ignored")
 
 	authenticator, err := factory.Create(auth.ProviderConfig{
 		Name:    "none-test",
 		Type:    "none",
 		Enabled: true,
-		Config:  map[string]any{"ignored": "value"},
 	})
 	require.NoError(t, err)
 	assert.NotNil(t, authenticator)

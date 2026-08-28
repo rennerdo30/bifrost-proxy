@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"context"
+	"net"
 	"net/netip"
 	"sync"
 	"time"
@@ -68,11 +69,10 @@ type NATInfo struct {
 	// LocalAddress is our local IP:port.
 	LocalAddress netip.AddrPort `json:"local_address"`
 
-	// IsBehindNAT indicates whether we're behind a NAT.
+	// IsBehindNAT indicates whether we're behind a NAT: the STUN-observed
+	// address is not held by any local interface. Hairpin behavior is not
+	// probed and therefore not reported.
 	IsBehindNAT bool `json:"is_behind_nat"`
-
-	// Hairpin indicates whether hairpin routing works.
-	Hairpin bool `json:"hairpin"`
 
 	// DetectedAt is when the NAT was last detected.
 	DetectedAt time.Time `json:"detected_at"`
@@ -114,19 +114,23 @@ func (d *NATDetector) Detect(ctx context.Context) (*NATInfo, error) {
 		return nil, err
 	}
 
-	// Get local address
-	localPort := d.stunClient.GetLocalPort()
-	localAddr := netip.AddrPortFrom(netip.Addr{}, uint16(localPort)) //nolint:gosec // G115: localPort is from system port allocation (0-65535)
+	// Get local address of the STUN socket
+	localAddr := d.stunClient.GetLocalAddr()
 
-	// Determine if we're behind NAT by comparing local and mapped addresses
-	isBehindNAT := true // Assume NAT unless proven otherwise
+	// We are behind NAT when the server-observed address is not one this
+	// machine actually holds on any interface.
+	isBehindNAT := !addrIsLocal(result1.MappedAddress.Addr())
 
 	// Simple NAT type detection
 	// For full detection, we'd need multiple STUN servers with different behaviors
 	natType := NATTypeUnknown
 
+	switch {
+	case !isBehindNAT:
+		natType = NATTypeNone
+
 	// Try a second STUN server to detect symmetric NAT
-	if len(d.servers) > 1 {
+	case len(d.servers) > 1:
 		client2 := NewSTUNClient(d.servers[1:], d.timeout)
 		defer client2.Close()
 
@@ -141,7 +145,8 @@ func (d *NATDetector) Detect(ctx context.Context) (*NATInfo, error) {
 				natType = NATTypeSymmetric
 			}
 		}
-	} else {
+
+	default:
 		// Can't detect fully with only one server
 		natType = NATTypePortRestricted // Conservative estimate
 	}
@@ -151,7 +156,6 @@ func (d *NATDetector) Detect(ctx context.Context) (*NATInfo, error) {
 		MappedAddress: result1.MappedAddress,
 		LocalAddress:  localAddr,
 		IsBehindNAT:   isBehindNAT,
-		Hairpin:       false, // Would need additional tests
 		DetectedAt:    time.Now(),
 	}
 
@@ -161,6 +165,31 @@ func (d *NATDetector) Detect(ctx context.Context) (*NATInfo, error) {
 	d.mu.Unlock()
 
 	return info, nil
+}
+
+// addrIsLocal reports whether addr is assigned to a local interface.
+func addrIsLocal(addr netip.Addr) bool {
+	if !addr.IsValid() {
+		return false
+	}
+	ifAddrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return false
+	}
+	for _, a := range ifAddrs {
+		ipNet, ok := a.(*net.IPNet)
+		if !ok {
+			continue
+		}
+		ip, ok := netip.AddrFromSlice(ipNet.IP)
+		if !ok {
+			continue
+		}
+		if ip.Unmap() == addr.Unmap() {
+			return true
+		}
+	}
+	return false
 }
 
 // GetCachedInfo returns the cached NAT info.
