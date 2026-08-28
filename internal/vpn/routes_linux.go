@@ -302,10 +302,18 @@ func (r *linuxRouteManager) configureDNS(dnsAddr string) error {
 		if err := cmd.Run(); err != nil {
 			slog.Debug("resolvectl failed, trying resolv.conf", "error", err)
 		} else {
-			// Set as default DNS
+			// Make the tunnel authoritative for DNS. This is the step that
+			// stops queries going to the pre-existing resolver, so it is not
+			// best-effort: if it fails, DNS still resolves - via the original
+			// servers - and the VPN looks healthy while leaking every lookup.
+			// Fall through to the resolv.conf path rather than returning nil.
 			cmd = exec.Command("resolvectl", "default-route", r.tunName, "true") //nolint:gosec // G204: tunName is validated
-			_ = cmd.Run()                                                        //nolint:errcheck // Best effort
-			return nil
+			if err := cmd.Run(); err != nil {
+				slog.Warn("resolvectl could not make the tunnel the default DNS route; falling back to resolv.conf to avoid leaking queries",
+					"interface", r.tunName, "error", err)
+			} else {
+				return nil
+			}
 		}
 	}
 
