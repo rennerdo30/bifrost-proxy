@@ -59,15 +59,6 @@ func ParseVersion(s string) (Version, error) {
 	return v, nil
 }
 
-// String returns the version as a string (without leading 'v').
-func (v Version) String() string {
-	s := fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
-	if v.Prerelease != "" {
-		s += "-" + v.Prerelease
-	}
-	return s
-}
-
 // Compare compares two versions.
 // Returns: -1 if v < other, 0 if equal, 1 if v > other.
 func (v Version) Compare(other Version) int {
@@ -118,9 +109,4 @@ func (v Version) Compare(other Version) int {
 // IsNewerThan returns true if v is newer than other.
 func (v Version) IsNewerThan(other Version) bool {
 	return v.Compare(other) > 0
-}
-
-// IsPrerelease returns true if this is a prerelease version.
-func (v Version) IsPrerelease() bool {
-	return v.Prerelease != ""
 }
