@@ -205,8 +205,13 @@ export function Config() {
         })
       }
       return result
-    } catch {
-      return { valid: true }
+    } catch (err) {
+      // A validation REQUEST that failed is not a validation that passed:
+      // reporting {valid: true} here let a save proceed on the strength of a
+      // network hiccup. Say what happened and do not vouch for the config.
+      const message = err instanceof Error ? err.message : 'validation request failed'
+      showToast(`Could not validate the configuration: ${message}`, 'error')
+      return { valid: false, errors: [{ section: 'general', field: '', message }] }
     }
   }, [showToast])
 

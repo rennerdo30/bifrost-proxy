@@ -28,14 +28,15 @@ func TestNewSOCKS5Handler(t *testing.T) {
 	assert.NotNil(t, handler)
 	assert.Equal(t, 5*time.Second, handler.dialTimeout)
 
-	// Test default timeout
+	// An unset DialTimeout stays zero (fallback semantics — see the HTTP
+	// handler's test): the backends own the connect-timeout precedence.
 	cfg2 := SOCKS5HandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return nil
 		},
 	}
 	handler2 := NewSOCKS5Handler(cfg2)
-	assert.Equal(t, 30*time.Second, handler2.dialTimeout)
+	assert.Equal(t, time.Duration(0), handler2.dialTimeout)
 }
 
 func TestSOCKS5Handler_handleAuth_NoAuth(t *testing.T) {

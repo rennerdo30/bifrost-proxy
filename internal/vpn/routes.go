@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"strings"
 )
 
 // RouteManager manages system routing tables for the VPN.
@@ -38,6 +39,17 @@ type RouteEntry struct {
 type SavedRoute struct {
 	Entry    RouteEntry
 	WasAdded bool // True if this route was added by VPN
+}
+
+// routeAlreadyExists reports whether a route-add command failed only because
+// the desired route is already present. That outcome IS the desired state, so
+// callers treat it as success instead of a setup failure — but every other
+// failure is a real one and must not be papered over.
+func routeAlreadyExists(output string) bool {
+	lower := strings.ToLower(output)
+	return strings.Contains(lower, "file exists") || // macOS/BSD route(8), Linux EEXIST
+		strings.Contains(lower, "already exists") || // Windows route/netsh
+		strings.Contains(lower, "object already exists") // Windows netsh variant
 }
 
 // normalizeCIDR parses a CIDR or bare IP and returns it in canonical CIDR

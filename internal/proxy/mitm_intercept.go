@@ -122,9 +122,18 @@ func (h *HTTPHandler) interceptConnect(ctx context.Context, clientConn, targetCo
 	upstreamReader := bufio.NewReader(tlsUpstream)
 
 	// Process request/response pairs on this (potentially keep-alive) tunnel
-	// until either side closes or an error occurs.
+	// until either side closes or an error occurs. Each decrypted request gets
+	// the same phase treatment as a plaintext one: idle_timeout bounds the
+	// wait for its first (ciphertext) byte, an absolute read_timeout bounds
+	// the rest of the header block -- so a client trickling decrypted headers
+	// cannot pin the loop forever -- and per-read read_timeout bounds the
+	// request body. Staying in the kept-alive mode for the whole loop, as this
+	// used to, refreshed idle_timeout on every read and left the slowloris
+	// window open behind the intercepted TLS.
+	deadlines := connDeadlines(clientConn)
 	for {
-		if err := h.interceptExchange(ctx, serverName, clientReader, tlsClient, upstreamReader, tlsUpstream); err != nil {
+		deadlines.beginRequest()
+		if err := h.interceptExchange(ctx, serverName, deadlines, clientReader, tlsClient, upstreamReader, tlsUpstream); err != nil {
 			if errors.Is(err, io.EOF) || isClosedConnErr(err) {
 				return nil
 			}
@@ -136,13 +145,18 @@ func (h *HTTPHandler) interceptConnect(ctx context.Context, clientConn, targetCo
 // interceptExchange reads one decrypted request from the client, forwards it
 // upstream, reads the response, logs both, and writes the response back to the
 // client. It returns io.EOF when the client closes the tunnel.
-func (h *HTTPHandler) interceptExchange(ctx context.Context, host string, clientReader *bufio.Reader, clientConn net.Conn, upstreamReader *bufio.Reader, upstreamConn net.Conn) error {
+func (h *HTTPHandler) interceptExchange(ctx context.Context, host string, deadlines *deadlineConn, clientReader *bufio.Reader, clientConn net.Conn, upstreamReader *bufio.Reader, upstreamConn net.Conn) error {
 	start := time.Now()
 
 	req, err := http.ReadRequest(clientReader)
 	if err != nil {
 		return err // io.EOF on clean close; surfaced to caller
 	}
+
+	// Headers are in: switch to per-read deadlines for the request body, the
+	// documented slow-upload semantics (progress required per read, unbounded
+	// total).
+	deadlines.beginBody()
 
 	// Capture and restore the request body so we can both forward it (in full)
 	// and log it (possibly truncated).
