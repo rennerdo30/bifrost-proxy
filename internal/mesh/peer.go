@@ -171,6 +171,13 @@ func (p *Peer) SetLatency(latency time.Duration) {
 	p.Latency = latency
 }
 
+// GetLatency returns the measured latency.
+func (p *Peer) GetLatency() time.Duration {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.Latency
+}
+
 // AddEndpoint adds an endpoint to the peer.
 func (p *Peer) AddEndpoint(endpoint Endpoint) {
 	p.mu.Lock()
@@ -215,6 +222,37 @@ func (p *Peer) GetEndpoints() []Endpoint {
 	endpoints := make([]Endpoint, len(p.Endpoints))
 	copy(endpoints, p.Endpoints)
 	return endpoints
+}
+
+// PeerStats is a consistent snapshot of a peer's live status and counters.
+//
+// The fields are mutated through Peer's setters under its mutex, so callers
+// must not read them directly; this returns them all under one RLock so the
+// values are consistent with each other.
+type PeerStats struct {
+	Status         PeerStatus
+	ConnectionType ConnectionType
+	Latency        time.Duration
+	LastSeen       time.Time
+	JoinedAt       time.Time
+	BytesSent      int64
+	BytesReceived  int64
+}
+
+// Stats returns a snapshot of the peer's status and counters.
+func (p *Peer) Stats() PeerStats {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+
+	return PeerStats{
+		Status:         p.Status,
+		ConnectionType: p.ConnectionType,
+		Latency:        p.Latency,
+		LastSeen:       p.LastSeen,
+		JoinedAt:       p.JoinedAt,
+		BytesSent:      p.BytesSent,
+		BytesReceived:  p.BytesReceived,
+	}
 }
 
 // SetMetadata sets a metadata value.

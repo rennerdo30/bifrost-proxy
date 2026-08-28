@@ -133,6 +133,8 @@ export interface ListenerConfig {
   read_timeout?: string
   write_timeout?: string
   idle_timeout?: string
+  /** Opt-in reaper for established tunnels that carry no data in either direction. Off (unset) by default. */
+  tunnel_idle_timeout?: string
   max_connections?: number
 }
 
@@ -574,6 +576,11 @@ export interface LoggingConfig {
   format: 'text' | 'json'
   output?: string
   time_format?: string
+  // File rotation (only applies when output is a file path):
+  // rotate when the file exceeds max_size_mb (<= 0 disables rotation),
+  // keep max_backups rotated files (<= 0 keeps all).
+  max_size_mb?: number
+  max_backups?: number
 }
 
 // Web UI Configuration
@@ -661,6 +668,65 @@ export interface MITMConfig {
   max_cached_certs?: number
 }
 
+// Mesh networking configuration. Matches internal/mesh/config.go. Durations
+// are Go time.Duration values and travel as integer nanoseconds in JSON.
+export interface MeshDeviceConfig {
+  type?: 'tun' | 'tap'
+  name?: string
+  mtu?: number
+  mac_address?: string
+}
+
+export interface MeshDiscoveryConfig {
+  server?: string
+  heartbeat_interval?: number
+  peer_timeout?: number
+  token?: string
+}
+
+export interface MeshSTUNConfig {
+  servers?: string[]
+  timeout?: number
+}
+
+export interface MeshTURNServer {
+  url: string
+  username?: string
+  password?: string
+}
+
+export interface MeshTURNConfig {
+  enabled?: boolean
+  servers?: MeshTURNServer[]
+}
+
+export interface MeshConnectionConfig {
+  direct_connect?: boolean
+  relay_enabled?: boolean
+  relay_via_peers?: boolean
+  connect_timeout?: number
+  keep_alive_interval?: number
+}
+
+export interface MeshSecurityConfig {
+  private_key?: string
+  allowed_peers?: string[]
+  require_encryption?: boolean
+}
+
+export interface MeshConfig {
+  enabled: boolean
+  network_id?: string
+  network_cidr?: string
+  peer_name?: string
+  device?: MeshDeviceConfig
+  discovery?: MeshDiscoveryConfig
+  stun?: MeshSTUNConfig
+  turn?: MeshTURNConfig
+  connection?: MeshConnectionConfig
+  security?: MeshSecurityConfig
+}
+
 // Full Server Configuration
 export interface ServerConfig {
   server: ServerSettings
@@ -680,6 +746,7 @@ export interface ServerConfig {
   network?: NetworkConfig
   session?: SessionConfig
   mitm?: MITMConfig
+  mesh?: MeshConfig
 }
 
 // Metadata for one config section, as returned by GET /config/meta. Matches the
@@ -774,6 +841,7 @@ export const WS_EVENT_BACKEND_HEALTH = 'backend.health'
 export const WS_EVENT_CONNECTION_NEW = 'connection.new'
 export const WS_EVENT_CONNECTION_CLOSE = 'connection.close'
 export const WS_EVENT_CONFIG_RELOAD = 'config.reload'
+export const WS_EVENT_CONFIG_SAVED = 'config.saved'
 
 export type WSEventType =
   | typeof WS_EVENT_STATS
@@ -781,6 +849,24 @@ export type WSEventType =
   | typeof WS_EVENT_CONNECTION_NEW
   | typeof WS_EVENT_CONNECTION_CLOSE
   | typeof WS_EVENT_CONFIG_RELOAD
+  | typeof WS_EVENT_CONFIG_SAVED
+
+// Payload of connection.new / connection.close
+// (internal/api/server/websocket.go ConnectionEvent).
+export interface ConnectionEvent {
+  protocol: string
+  host: string
+  backend: string
+  client_ip: string
+}
+
+// Payload of config.saved (internal/api/server/config_handlers.go).
+export interface ConfigSavedEvent {
+  changed_sections: string[]
+  requires_restart: boolean
+  hot_reloaded_sections: string[]
+  restart_required_sections: string[]
+}
 
 export interface WSEvent {
   type: WSEventType | string
@@ -937,17 +1023,6 @@ export interface MeshPeerInfo {
   metadata: Record<string, string>
 }
 
-// Extended mesh peer with stats (for UI display)
-export interface MeshPeer extends MeshPeerInfo {
-  status?: MeshPeerStatus
-  connection_type?: MeshConnectionType
-  latency?: number
-  last_seen?: string
-  joined_at?: string
-  bytes_sent?: number
-  bytes_received?: number
-}
-
 // Mesh network
 export interface MeshNetwork {
   id: string
@@ -1001,29 +1076,9 @@ export interface MeshPeerEvent {
   timestamp: string
 }
 
-// Mesh route
-export interface MeshRoute {
-  dest_peer_id: string
-  dest_ip: string
-  next_hop?: string
-  type: 'direct' | 'next_hop' | 'relay'
-  metric: number
-  latency?: number
-  hop_count: number
-  last_updated: string
-  active: boolean
+// Error frame the mesh events socket sends before closing
+// (e.g. {"error": "network not found"}).
+export interface MeshEventError {
+  error: string
 }
 
-// Mesh node stats (for overview)
-export interface MeshNodeStats {
-  status: 'stopped' | 'starting' | 'running' | 'stopping' | 'error'
-  peer_count: number
-  connected_peers: number
-  direct_connections: number
-  relayed_connections: number
-  bytes_sent: number
-  bytes_received: number
-  packets_sent: number
-  packets_received: number
-  uptime: number
-}

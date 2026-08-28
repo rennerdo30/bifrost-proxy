@@ -248,15 +248,6 @@ func AllPresets() map[PresetName]Preset {
 	return result
 }
 
-// PresetNames returns the names of all available presets.
-func PresetNames() []PresetName {
-	names := make([]PresetName, 0, len(presets))
-	for name := range presets {
-		names = append(names, name)
-	}
-	return names
-}
-
 // PresetToRule converts a preset to a Rule.
 func PresetToRule(preset Preset) *Rule {
 	return &Rule{
@@ -271,51 +262,4 @@ func PresetToRule(preset Preset) *Rule {
 		IgnoreQuery: true, // CDNs typically use query for cache busting
 		Preset:      string(preset.Name),
 	}
-}
-
-// LoadPresets loads rules from a list of preset names.
-func LoadPresets(names []string) []*Rule {
-	rules := make([]*Rule, 0, len(names))
-	for _, name := range names {
-		preset, ok := GetPresetByString(name)
-		if !ok {
-			continue
-		}
-		rules = append(rules, PresetToRule(preset))
-	}
-	return rules
-}
-
-// PresetInfo provides information about a preset for API responses.
-type PresetInfo struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Domains     []string `json:"domains"`
-	TTL         string   `json:"ttl"`
-	Priority    int      `json:"priority"`
-}
-
-// GetPresetInfo returns preset information.
-func GetPresetInfo(name PresetName) *PresetInfo {
-	preset, ok := GetPreset(name)
-	if !ok {
-		return nil
-	}
-
-	return &PresetInfo{
-		Name:        string(preset.Name),
-		Description: preset.Description,
-		Domains:     preset.Domains,
-		TTL:         preset.TTL.String(),
-		Priority:    preset.Priority,
-	}
-}
-
-// AllPresetInfo returns information about all presets.
-func AllPresetInfo() []*PresetInfo {
-	result := make([]*PresetInfo, 0, len(presets))
-	for name := range presets {
-		result = append(result, GetPresetInfo(name))
-	}
-	return result
 }

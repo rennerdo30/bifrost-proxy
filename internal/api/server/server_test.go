@@ -425,7 +425,7 @@ func TestAPI_HandleGetRequests(t *testing.T) {
 		Host:   "example.com",
 	})
 
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	req := httptest.NewRequest("GET", "/api/v1/requests", nil)
@@ -456,7 +456,7 @@ func TestAPI_HandleGetRequests_WithLimit(t *testing.T) {
 		})
 	}
 
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	req := httptest.NewRequest("GET", "/api/v1/requests?limit=5", nil)
@@ -482,7 +482,7 @@ func TestAPI_HandleGetRequests_WithSince(t *testing.T) {
 		})
 	}
 
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	req := httptest.NewRequest("GET", "/api/v1/requests?since=3", nil)
@@ -500,7 +500,7 @@ func TestAPI_HandleGetRequests_Disabled(t *testing.T) {
 	}
 
 	api := New(cfg)
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	req := httptest.NewRequest("GET", "/api/v1/requests", nil)
@@ -523,7 +523,7 @@ func TestAPI_HandleGetRequestStats(t *testing.T) {
 	}
 
 	api := New(cfg)
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	req := httptest.NewRequest("GET", "/api/v1/requests/stats", nil)
@@ -548,7 +548,7 @@ func TestAPI_HandleClearRequests(t *testing.T) {
 	})
 
 	// Use RouterWithWebSocket to get the requests routes
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	req := httptest.NewRequest("DELETE", "/api/v1/requests", nil)
@@ -571,7 +571,7 @@ func TestAPI_HandleClearRequests_CSRFFails(t *testing.T) {
 	}
 
 	api := New(cfg)
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	// DELETE without X-Requested-With should fail with 403
@@ -601,7 +601,7 @@ func TestAPI_RouterWithWebSocket(t *testing.T) {
 	}
 
 	api := New(cfg)
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 	require.NotNil(t, handler)
 }
@@ -751,7 +751,7 @@ func TestAPI_PAC_Routes(t *testing.T) {
 	}
 
 	api := New(cfg)
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	// Test proxy.pac
@@ -918,7 +918,7 @@ func TestAPI_RouterWithWebSocket_WithAuth(t *testing.T) {
 	}
 
 	api := New(cfg)
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	handler := api.RouterWithWebSocket(hub)
 
 	// API should require auth
@@ -1586,7 +1586,7 @@ func TestAPI_HandleAddRoute_Success(t *testing.T) {
 
 func TestAPI_HandleRemoveRoute_NilConfigManagement(t *testing.T) {
 	api := New(Config{})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	router := api.RouterWithWebSocket(hub)
 
 	w := httptest.NewRecorder()
@@ -1610,7 +1610,7 @@ func TestAPI_HandleRemoveRoute_NilConfig(t *testing.T) {
 			return nil
 		},
 	})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	router := api.RouterWithWebSocket(hub)
 
 	w := httptest.NewRecorder()
@@ -1638,7 +1638,7 @@ func TestAPI_HandleRemoveRoute_NotFound(t *testing.T) {
 			return nil
 		},
 	})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	router := api.RouterWithWebSocket(hub)
 
 	w := httptest.NewRecorder()
@@ -1666,7 +1666,7 @@ func TestAPI_HandleRemoveRoute_Success(t *testing.T) {
 			return nil
 		},
 	})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	router := api.RouterWithWebSocket(hub)
 
 	w := httptest.NewRecorder()
@@ -1688,7 +1688,7 @@ func TestAPI_HandleRemoveRoute_Success(t *testing.T) {
 
 func TestAPI_HandleGetConnections(t *testing.T) {
 	api := New(Config{})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	router := api.RouterWithWebSocket(hub)
 
 	w := httptest.NewRecorder()
@@ -1706,7 +1706,7 @@ func TestAPI_HandleGetConnections(t *testing.T) {
 
 func TestAPI_HandleGetClients(t *testing.T) {
 	api := New(Config{})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	router := api.RouterWithWebSocket(hub)
 
 	w := httptest.NewRecorder()
@@ -1738,7 +1738,7 @@ func TestAPI_ConnectionTracker(t *testing.T) {
 }
 
 func TestWebSocketHub_Stop(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	require.NotNil(t, hub)
 
 	// Stop should not panic even without running
@@ -1747,7 +1747,7 @@ func TestWebSocketHub_Stop(t *testing.T) {
 
 func TestRouterWithWebSocket_SetsHub(t *testing.T) {
 	api := New(Config{})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	// Get the router with websocket
 	router := api.RouterWithWebSocket(hub)
@@ -1797,7 +1797,7 @@ func TestAPI_HandleRemoveRoute_SaveError(t *testing.T) {
 			return assert.AnError
 		},
 	})
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	router := api.RouterWithWebSocket(hub)
 
 	w := httptest.NewRecorder()

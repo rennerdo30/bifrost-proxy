@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
 	"github.com/rennerdo30/bifrost-proxy/internal/mesh"
 )
 
@@ -23,8 +24,8 @@ func TestNewMeshManager_EnabledConstructsAdapter(t *testing.T) {
 	cfg.NetworkCIDR = "10.123.0.0/16"
 	cfg.PeerName = "test-peer"
 	cfg.Discovery.Server = "discovery.example.com:8080"
-	cfg.Discovery.HeartbeatInterval = 30 * time.Second
-	cfg.Discovery.PeerTimeout = 90 * time.Second
+	cfg.Discovery.HeartbeatInterval = duration.Duration(30 * time.Second)
+	cfg.Discovery.PeerTimeout = duration.Duration(90 * time.Second)
 
 	mgr, err := newMeshManager(cfg)
 	require.NoError(t, err)

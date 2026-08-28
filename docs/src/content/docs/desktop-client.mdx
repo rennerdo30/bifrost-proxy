@@ -1,279 +1,226 @@
 ---
 title: "Desktop Client"
-description: "Documentation for Desktop Client"
+description: "Build and use the Wails quick-access client"
 ---
 
 # Desktop Client
 
-The Bifrost Desktop Client is a native application built with [Wails](https://wails.io/) that provides a graphical interface for managing the proxy client.
+The Bifrost Desktop Client is a small [Wails](https://wails.io/) window around the same Go proxy client used by `bifrost-client`. It is a quick-access controller, not a second full dashboard: it starts and stops the local client, manages upstream servers, shows live counters, edits the most common listener settings, and can open the complete web dashboard.
 
-## Features
+## What it provides
 
-- **Quick GUI**: Compact floating window for quick access
-- **System Tray**: Background operation with status indicators
-- **Connection Dashboard**: Real-time statistics and monitoring
-- **Server Management**: Configure and switch between servers
-- **Split Tunneling**: Visual rule editor
-- **Logs Viewer**: Real-time log streaming
+- Start and stop the embedded local proxy client
+- Show upstream reachability, active connections, bytes sent/received, local proxy addresses, VPN state, uptime, and the last error
+- Add, edit, delete, select, and mark named upstream servers as the default
+- Edit the upstream address/protocol and local HTTP/SOCKS5 ports, then restart the client to apply listener changes
+- Enable or disable configured VPN mode
+- Persist **Auto-connect** and **Start minimized** preferences
+- Run a process-wide system tray with status, system-proxy connect/disconnect, Quick Access, web-dashboard, and Quit actions
+
+The desktop window does **not** contain a split-tunneling editor, traffic-log viewer, recent-connections table, bandwidth graph, or updater UI. Use the web dashboard for the broader client feature set. VPN mode must already be valid in the client YAML before its toggle can connect a tunnel.
 
 ## Installation
 
-### Pre-built Binaries
+Download the artifacts attached to a tagged [GitHub release](https://github.com/rennerdo30/bifrost-proxy/releases):
 
-Download the latest release for your platform from the [Releases page](https://github.com/rennerdo30/bifrost-proxy/releases).
-
-| Platform | File |
-|----------|------|
-| Windows | `bifrost-desktop-windows-amd64.exe` |
-| macOS (Intel) | `bifrost-desktop-darwin-amd64` |
-| macOS (Apple Silicon) | `bifrost-desktop-darwin-arm64` |
-| Linux | `bifrost-desktop-linux-amd64` |
-
-### Building from Source
-
-#### Prerequisites
-
-- Go 1.22+
-- Node.js 18+
-- Wails CLI v2
-
-```bash
-# Install Wails CLI
-go install github.com/wailsapp/wails/v2/cmd/wails@latest
-
-# Verify installation
-wails doctor
-```
-
-#### Build Commands
-
-```bash
-# Clone repository
-git clone https://github.com/rennerdo30/bifrost-proxy.git
-cd bifrost-proxy/desktop
-
-# Install frontend dependencies
-cd frontend && npm install && cd ..
-
-# Build for current platform
-wails build
-
-# Build for specific platform
-wails build -platform darwin/amd64
-wails build -platform darwin/arm64
-wails build -platform windows/amd64
-wails build -platform linux/amd64
-
-# Development mode with hot reload
-wails dev
-```
-
-## User Interface
-
-### Main Window
-
-The main window provides a comprehensive dashboard:
-
-```
-┌─────────────────────────────────────────┐
-│  Bifrost Desktop                    ─ □ ×│
-├─────────────────────────────────────────┤
-│  ┌─────────────┐  ┌─────────────┐       │
-│  │   Status    │  │   Traffic   │       │
-│  │  Connected  │  │  ↑ 1.2 GB   │       │
-│  │             │  │  ↓ 3.4 GB   │       │
-│  └─────────────┘  └─────────────┘       │
-│                                         │
-│  Server: us-west.example.com            │
-│  Protocol: WireGuard                    │
-│  Uptime: 2h 34m                         │
-│                                         │
-│  ┌─────────────────────────────────────┐│
-│  │ Recent Connections                  ││
-│  │ ─────────────────────────────────── ││
-│  │ example.com:443      → direct       ││
-│  │ api.service.io:443   → server       ││
-│  │ cdn.assets.com:443   → server       ││
-│  └─────────────────────────────────────┘│
-│                                         │
-│  [Connect]  [Settings]  [View Logs]     │
-└─────────────────────────────────────────┘
-```
-
-### Quick GUI
-
-The Quick GUI is a compact, always-on-top window:
-
-```
-┌─────────────────────┐
-│ ● Connected   [≡]   │
-├─────────────────────┤
-│ ↑ 12.5 MB  ↓ 45.2 MB│
-│ 2h 15m              │
-└─────────────────────┘
-```
-
-Features:
-- Connection status indicator
-- Quick toggle (click status to connect/disconnect)
-- Bandwidth usage
-- Session duration
-- Menu access for full dashboard
-
-### System Tray
-
-The application runs in the system tray with these menu options:
-
-- **Status**: Shows current connection state
-- **Connect/Disconnect**: Toggle VPN connection
-- **Open Dashboard**: Show main window
-- **Quick GUI**: Show/hide compact window
-- **Settings**: Open settings panel
-- **Quit**: Exit application
-
-#### Tray Icon States
-
-| Icon | State | Description |
-|------|-------|-------------|
-| 🟢 | Connected | VPN active and routing traffic |
-| 🟡 | Connecting | Establishing connection |
-| 🔴 | Disconnected | VPN not active |
-| ⚠️ | Error | Connection error occurred |
-
-## Configuration
-
-Configuration is stored in platform-specific locations:
-
-| Platform | Location |
+| Platform | Artifact |
 |----------|----------|
-| Windows | `%APPDATA%\Bifrost\config.yaml` |
-| macOS | `~/Library/Application Support/Bifrost/config.yaml` |
-| Linux | `~/.config/bifrost/config.yaml` |
+| Windows (amd64) | `bifrost-desktop-windows-amd64.exe` |
+| macOS (Intel + Apple Silicon) | `bifrost-desktop-darwin-universal.zip` |
+| Linux (amd64) | `bifrost-desktop-linux-amd64.tar.gz` |
 
-### Example Configuration
+The macOS archive contains an application bundle. Release builds are currently unsigned, so the operating system may ask you to confirm that you trust the downloaded application. Linux requires GTK3 and WebKitGTK 4.1 at runtime.
+
+## Building from source
+
+Wails desktop builds use native GUI libraries. Build on the target operating system; the release workflow uses separate Linux, Windows, and macOS runners rather than attempting all three from one Linux host.
+
+Prerequisites:
+
+- Go 1.25 or newer
+- Node.js 22 or newer
+- Wails CLI v2.15.0
+- Platform dependencies reported by `wails doctor`
+- On Ubuntu 24.04: `libgtk-3-dev` and `libwebkit2gtk-4.1-dev` (build with the `webkit2_41` tag)
+
+From the repository root:
+
+```bash
+# Install the pinned Wails CLI and frontend dependencies, then build
+make desktop-build
+
+# Development mode with frontend hot reload
+make desktop-dev
+```
+
+Equivalent manual commands:
+
+```bash
+go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+cd desktop/frontend
+npm ci
+cd ..
+wails doctor
+wails build
+```
+
+On Ubuntu 24.04:
+
+```bash
+wails build -tags webkit2_41
+```
+
+The Wails output is written below `desktop/build/bin/`.
+
+## Main window
+
+The application intentionally uses a narrow quick-access layout:
+
+```text
+┌──────────────────────────────────┐
+│ Bifrost             [Web] [Quit] │
+├──────────────────────────────────┤
+│             Connect              │
+│                                  │
+│ Server: Primary              ▾   │
+│                                  │
+│ Status                           │
+│ Upstream     Connected           │
+│ Active       3 connections       │
+│ Sent         5.0 MB              │
+│ Received     25.0 MB             │
+│ HTTP         127.0.0.1:7380      │
+│ SOCKS5       127.0.0.1:7381      │
+│                                  │
+│ Servers                          │
+│ Primary   proxy.example:7080     │
+│                     [Edit] […]   │
+│                                  │
+│ Quick Settings                   │
+│ VPN mode                   [off] │
+│ Auto-connect                [on] │
+│ Start minimized            [off] │
+│ Bifrost Server                  ▾│
+│ Local Proxy Ports              ▾│
+└──────────────────────────────────┘
+```
+
+**Connect** starts the local proxy listeners and background client. **Disconnect** stops them. Upstream reachability is displayed separately: a running client whose configured server cannot be reached is shown as **Unreachable**, and its available action remains Disconnect.
+
+Listener, server-address, and protocol changes are saved to the client YAML and require a client restart. The UI marks those controls accordingly.
+
+## System tray
+
+When `tray.enabled` is true, the core client creates one tray for the process and keeps it alive across local client Start/Stop cycles. The menu contains:
+
+- **Status** — current tray/system-proxy state
+- **Connect / Disconnect** — enable or disable the operating system's proxy settings
+- **Quick Access** — restore and show the Wails desktop window (when `tray.show_quick_gui` is true)
+- **Open Dashboard** — open the client web dashboard in the default browser
+- **Quit** — stop the client and exit the process
+
+Canceling the application context terminates the tray and its click worker. The tray icons are generated status dots (green connected, gray disconnected, amber warning, red error); the removed SVG files were never used by the binary.
+
+:::note
+The tray's Connect/Disconnect action controls system-proxy integration. It is not the VPN-mode toggle and is separate from the Wails window's local-client Connect/Disconnect button.
+:::
+
+## Configuration and preferences
+
+The desktop app uses the normal client YAML. It searches, in order:
+
+1. `client-config.yaml` and `bifrost-client.yaml` in the current directory
+2. `bifrost/client-config.yaml` and `bifrost/config.yaml` below the operating system's user-config directory
+3. `~/.bifrost/client-config.yaml` and `~/.config/bifrost/client-config.yaml`
+
+If no file exists, it writes the default config to `<user-config-dir>/bifrost/client-config.yaml`.
+
+Common user-config roots are:
+
+| Platform | User config root |
+|----------|------------------|
+| Windows | `%AppData%` |
+| macOS | `~/Library/Application Support` |
+| Linux | `$XDG_CONFIG_HOME` or `~/.config` |
+
+A minimal desktop-capable client config is:
 
 ```yaml
-# Desktop client configuration
+proxy:
+  http:
+    listen: "127.0.0.1:7380"
+  socks5:
+    listen: "127.0.0.1:7381"
+
 server:
   address: "proxy.example.com:7080"
   protocol: "http"
 
+routes:
+  - domains: ["*"]
+    action: server
+
+api:
+  enabled: true
+  listen: "127.0.0.1:7383"
+
 tray:
   enabled: true
-  start_minimized: false
   show_quick_gui: true
-  auto_connect: false
-  show_notifications: true
 
 vpn:
-  enabled: true
-  tun:
-    name: bifrost0
-    address: "10.255.0.1/24"
-    mtu: 1400
-
-debug:
   enabled: false
 
 logging:
-  level: "info"
+  level: info
+  format: text
 ```
 
-The log level lives in the top-level `logging` section, not under `debug`. The `debug` section
-controls traffic capture only: `enabled`, `max_entries`, `capture_body`, `max_body_size` and
-`filter_domains`.
+The app forces the local API on because the embedded web dashboard depends on it. Named servers are stored in the YAML's `servers` list. The GUI-specific Auto-connect, Start minimized, and selected-server preferences are stored separately in `<user-config-dir>/bifrost/quick-preferences.json`.
 
-## Keyboard Shortcuts
+- **Auto-connect on** (the default) starts the embedded client at launch.
+- **Auto-connect off** constructs it stopped; the Connect button performs the first start.
+- **Start minimized** hides the Wails window at launch. Quick Access in the tray restores it.
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl/Cmd + Q` | Quit application |
-| `Ctrl/Cmd + H` | Hide to tray |
-| `Ctrl/Cmd + Shift + C` | Toggle connection |
-| `Ctrl/Cmd + ,` | Open settings |
-| `Ctrl/Cmd + L` | View logs |
-| `Escape` | Close Quick GUI |
+The desktop app does not register itself with Windows Startup, macOS Login Items, systemd, launchd, or XDG autostart. If you need launch-on-login, configure it with your operating system and pass the same working directory/config environment you use for a manual launch.
 
-## Auto-Start
+## Architecture
 
-### Windows
-
-The application can register itself to start with Windows:
-
-1. Open Settings
-2. Enable "Start with Windows"
-
-Or manually add to startup:
-```
-Win + R → shell:startup → Create shortcut to bifrost-desktop.exe
+```mermaid
+graph LR
+    UI[Wails React quick-access UI] --> APP[desktop.App Go bindings]
+    APP --> CLIENT[Embedded Bifrost client]
+    CLIENT --> HTTP[Local HTTP proxy]
+    CLIENT --> SOCKS[Local SOCKS5 proxy]
+    CLIENT --> API[Client API and web dashboard]
+    CLIENT --> TRAY[Process-wide system tray]
+    CLIENT --> VPN[Optional VPN manager]
+    CLIENT --> SERVER[Configured upstream Bifrost server]
+    TRAY --> UI
 ```
 
-### macOS
-
-Enable "Start at Login" in Settings, or use launchd:
-
-```bash
-# Create launch agent
-cat > ~/Library/LaunchAgents/com.bifrost.desktop.plist << EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.bifrost.desktop</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/Applications/Bifrost.app/Contents/MacOS/Bifrost</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>
-EOF
-
-launchctl load ~/Library/LaunchAgents/com.bifrost.desktop.plist
-```
-
-### Linux
-
-Enable "Start at Login" in Settings, or create autostart entry:
-
-```bash
-mkdir -p ~/.config/autostart
-cat > ~/.config/autostart/bifrost.desktop << EOF
-[Desktop Entry]
-Type=Application
-Name=Bifrost
-Exec=/usr/local/bin/bifrost-desktop
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-EOF
-```
+The frontend calls the Go bindings exposed on `window.go.main.App`. The checked-in generated `wailsjs` directory was removed because the frontend never imported it and it had drifted four methods behind the actual binding surface. Wails regenerates bindings for development/builds as needed.
 
 ## Troubleshooting
 
-### Application Won't Start
+### The window is hidden on launch
 
-1. Check system requirements (Go 1.22+, WebView2 on Windows)
-2. Verify no other instance is running
-3. Check logs in config directory
+Use the tray's **Quick Access** item. If the tray is also unavailable, remove or edit `quick-preferences.json` and set `start_minimized` to `false`.
 
-### System Tray Not Showing
+### The tray is absent
 
-- **Linux**: Ensure you have an app indicator extension (GNOME: AppIndicator, KDE: built-in)
-- **macOS**: Check System Preferences → Dock & Menu Bar
-- **Windows**: Check hidden icons in system tray
+- Verify `tray.enabled: true` in the client YAML.
+- On Linux, ensure your desktop supports StatusNotifier/AppIndicator icons and that WebKitGTK/GTK dependencies are installed.
+- On Windows, check the hidden-icons overflow area.
 
-### Connection Issues
+### The local client is running but the server says Unreachable
 
-1. Verify server address in settings
-2. Check network connectivity
-3. Review logs for error messages
-4. Ensure firewall allows application
+The Connect button controls the local lifecycle, not whether the upstream accepted a connection. Verify `server.address`, protocol, credentials, DNS, and firewall reachability. The status card keeps the last error and upstream reachability separate from the running/stopped state.
 
-### High CPU/Memory Usage
+### Listener changes did not apply
 
-1. Disable debug logging
-2. Reduce log retention
-3. Check for excessive connections
+Server address/protocol and local port changes require **Restart Client**. The save action updates the YAML; the restart action tears down and recreates listeners.
+
+### VPN mode fails to enable
+
+VPN mode is not configured by the desktop form. Configure and validate the `vpn` section in the client YAML first, run with the platform privileges required for a TUN device, and then use the desktop toggle.

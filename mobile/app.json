@@ -19,14 +19,9 @@
       "bundleIdentifier": "com.bifrost.vpn",
       "infoPlist": {
         "UIBackgroundModes": [
-          "fetch",
-          "remote-notification"
-        ]
-      },
-      "entitlements": {
-        "com.apple.developer.networking.networkextension": [
-          "packet-tunnel-provider"
-        ]
+          "fetch"
+        ],
+        "NSLocalNetworkUsageDescription": "Bifrost connects to your Bifrost proxy client on the local network to manage it."
       }
     },
     "android": {
@@ -39,14 +34,8 @@
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.FOREGROUND_SERVICE_SPECIAL_USE"
       ]
-    },
-    "extra": {
-      "eas": {
-        "projectId": "00000000-0000-0000-0000-000000000000"
-      }
     },
     "plugins": [
       "./plugins/withBifrostVpn"

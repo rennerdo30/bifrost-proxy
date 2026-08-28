@@ -49,11 +49,6 @@ func DefaultHandlerConfig() HandlerConfig {
 	}
 }
 
-// AuthenticatorGetter is an interface for getting authenticators by type.
-type AuthenticatorGetter interface {
-	GetAuthenticator(authType string) auth.Authenticator
-}
-
 // Handler handles HTTP Negotiate authentication.
 type Handler struct {
 	config     HandlerConfig

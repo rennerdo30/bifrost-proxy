@@ -395,6 +395,11 @@ func (f *Factory) createMullvad(cfg config.BackendConfig) (Backend, error) {
 
 	if v, ok := cfg.Config["max_load"].(int); ok {
 		mullvadCfg.MaxLoad = v
+		// Honest disclosure: this provider's API integration never populates
+		// Server.Load, so the max_load filter can never trip — the setting
+		// currently has no effect (see audit/go-backend.md).
+		slog.Warn("max_load is configured but this provider does not report server load; the filter has no effect",
+			"backend", cfg.Name, "type", cfg.Type)
 	}
 
 	if v, ok := cfg.Config["refresh_interval"].(string); ok {
@@ -480,6 +485,11 @@ func (f *Factory) createPIA(cfg config.BackendConfig) (Backend, error) {
 
 	if v, ok := cfg.Config["max_load"].(int); ok {
 		piaCfg.MaxLoad = v
+		// Honest disclosure: this provider's API integration never populates
+		// Server.Load, so the max_load filter can never trip — the setting
+		// currently has no effect (see audit/go-backend.md).
+		slog.Warn("max_load is configured but this provider does not report server load; the filter has no effect",
+			"backend", cfg.Name, "type", cfg.Type)
 	}
 
 	if v, ok := cfg.Config["refresh_interval"].(string); ok {

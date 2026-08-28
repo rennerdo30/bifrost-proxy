@@ -115,8 +115,10 @@ nonsense: 1
 }
 
 func TestLoad_UnknownKeyIsNotAcceptedForValidClients(t *testing.T) {
-	// "addres" is a deliberate typo - it is the unknown key under test, so the
-	// misspell linter is exempted here rather than weakening the test data.
+	// The key under test is a deliberate misspelling of "address": it must be
+	// rejected rather than silently ignored. The two lines below exempt the
+	// misspell linter rather than weakening the test data. This comment avoids
+	// writing the misspelled token, which the linter also scans comments for.
 	path := writeConfig(t, "server:\n  addres: \"proxy:7080\"\n") //nolint:misspell // intentional typo under test
 
 	var cfg ClientConfig

@@ -2,9 +2,11 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/pprof"
 	"runtime"
@@ -287,6 +289,12 @@ func (a *API) HandlerWithUI() http.Handler {
 	// CORS for local development
 	r.Use(corsMiddleware)
 
+	// Global security headers, matching the server dashboard. This handler is
+	// the PRODUCTION one, and it had silently drifted from the test-only
+	// Handler(): the static UI responses carried no CSP, no X-Frame-Options
+	// and no nosniff, because apiSecurityHeaders is scoped to /api only.
+	r.Use(securityHeadersMiddleware)
+
 	// API routes with security headers
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiSecurityHeaders)
@@ -367,6 +375,28 @@ func (a *API) HandlerWithUI() http.Handler {
 
 	// Static files for Web UI - serve everything else
 	// Use Mount to properly handle all non-API routes
+	// pprof, behind the same token auth as the API when one is set. The 11
+	// routes were documented with copy-paste curl examples — and reachable
+	// only through the test-only Handler(): the production handler's static
+	// catch-all swallowed /debug/* with a 404, so the first tool anyone
+	// reaches for when chasing a goroutine leak did not exist.
+	r.Route("/debug/pprof", func(r chi.Router) {
+		if a.token != "" {
+			r.Use(a.authMiddleware)
+		}
+		r.HandleFunc("/", pprof.Index)
+		r.HandleFunc("/cmdline", pprof.Cmdline)
+		r.HandleFunc("/profile", pprof.Profile)
+		r.HandleFunc("/symbol", pprof.Symbol)
+		r.HandleFunc("/trace", pprof.Trace)
+		r.Handle("/heap", pprof.Handler("heap"))
+		r.Handle("/goroutine", pprof.Handler("goroutine"))
+		r.Handle("/allocs", pprof.Handler("allocs"))
+		r.Handle("/block", pprof.Handler("block"))
+		r.Handle("/mutex", pprof.Handler("mutex"))
+		r.Handle("/threadcreate", pprof.Handler("threadcreate"))
+	})
+
 	r.Mount("/", StaticHandler())
 
 	return r
@@ -846,13 +876,26 @@ func (a *API) handleTestRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	action := "server"
+	matchedRoute := ""
 	if a.router != nil {
-		action = string(a.router.Match(domain))
+		route, resolved := a.router.MatchRoute(domain)
+		action = string(resolved)
+		if route != nil {
+			matchedRoute = route.Name
+		}
 	}
 
 	response := map[string]interface{}{
 		"domain": domain,
 		"action": action,
+	}
+	// matched_route has always been part of the documented response shape
+	// (RouteTestResult in web/client/src/api/types.ts) but was never emitted,
+	// so the UI could show the decision without the rule behind it. Omitted
+	// rather than sent empty when the default action applied and no rule
+	// matched, which is what the optional field means.
+	if matchedRoute != "" {
+		response["matched_route"] = matchedRoute
 	}
 	a.writeJSON(w, http.StatusOK, response)
 }
@@ -1273,14 +1316,58 @@ func (a *API) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 	a.writeJSON(w, http.StatusOK, config)
 }
 
+// decodeConfigUpdates decodes a JSON object of config updates preserving
+// numeric fidelity. A plain json.Decoder widens every number to float64, and a
+// legacy nanosecond duration such as 300000000000 then persists through the
+// YAML node writer as scientific notation ("3e+11") — a value the next strict
+// config load rejects, so a 200 PUT bricked the reload. Integral numbers stay
+// int64 all the way to disk.
+func decodeConfigUpdates(r io.Reader) (map[string]interface{}, error) {
+	dec := json.NewDecoder(r)
+	dec.UseNumber()
+	var updates map[string]interface{}
+	if err := dec.Decode(&updates); err != nil {
+		return nil, err
+	}
+	normalizeJSONNumbers(updates)
+	return updates, nil
+}
+
+// normalizeJSONNumbers converts every json.Number in a decoded tree to int64
+// when it is integral, falling back to float64.
+func normalizeJSONNumbers(v interface{}) interface{} {
+	switch t := v.(type) {
+	case json.Number:
+		if i, err := t.Int64(); err == nil {
+			return i
+		}
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+		return t.String()
+	case map[string]interface{}:
+		for k, val := range t {
+			t[k] = normalizeJSONNumbers(val)
+		}
+		return t
+	case []interface{}:
+		for i, val := range t {
+			t[i] = normalizeJSONNumbers(val)
+		}
+		return t
+	default:
+		return v
+	}
+}
+
 func (a *API) handleUpdateConfig(w http.ResponseWriter, r *http.Request) {
 	if a.configUpdater == nil {
 		http.Error(w, "config updates not supported", http.StatusServiceUnavailable)
 		return
 	}
 
-	var updates map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+	updates, err := decodeConfigUpdates(r.Body)
+	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -1343,8 +1430,8 @@ func flattenMap(m map[string]interface{}, prefix string) []string {
 }
 
 func (a *API) handleValidateConfig(w http.ResponseWriter, r *http.Request) {
-	var updates map[string]interface{}
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+	updates, err := decodeConfigUpdates(r.Body)
+	if err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
@@ -1503,8 +1590,10 @@ func (a *API) handleImportConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var updates map[string]interface{}
-	if err := json.Unmarshal(cfgBytes, &updates); err != nil {
+	// Same numeric-fidelity decode as PUT /config: the map is persisted via
+	// the YAML node writer, where a float64 becomes scientific notation.
+	updates, err := decodeConfigUpdates(bytes.NewReader(cfgBytes))
+	if err != nil {
 		http.Error(w, "failed to process config", http.StatusInternalServerError)
 		return
 	}
@@ -1855,8 +1944,8 @@ func (a *API) handleSelectServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.serverSelector == nil {
-		// No selector configured, acknowledge the request but do nothing
-		a.writeJSON(w, http.StatusOK, map[string]string{"status": "selected", "server": req.Server})
+		// A 200 here would be a fake success: nothing can change. Say so.
+		http.Error(w, "server selection is not supported by this client", http.StatusNotImplemented)
 		return
 	}
 
