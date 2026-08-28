@@ -2,6 +2,7 @@ package vpn
 
 import (
 	"errors"
+	"fmt"
 	"net"
 	"net/netip"
 	"strings"
@@ -236,10 +237,14 @@ func (e *SplitTunnelEngine) Decide(packet *IPPacket, procInfo *ProcessInfo) Deci
 }
 
 // AddApp adds an app rule to the split tunnel.
-func (e *SplitTunnelEngine) AddApp(app AppRule) {
+//
+// Returns an error when the rule is rejected - malformed, or the rule limit is
+// reached. Split tunneling decides what bypasses the tunnel, so a rule that
+// was not installed must not be reported as added.
+func (e *SplitTunnelEngine) AddApp(app AppRule) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	_ = e.appMatcher.AddRule(app) //nolint:errcheck // Silently ignore invalid app rules
+	return e.appMatcher.AddRule(app)
 }
 
 // RemoveApp removes an app rule from the split tunnel.
@@ -250,10 +255,12 @@ func (e *SplitTunnelEngine) RemoveApp(name string) {
 }
 
 // AddDomain adds a domain pattern to the split tunnel.
-func (e *SplitTunnelEngine) AddDomain(pattern string) {
+//
+// Returns an error when the pattern is rejected; see AddApp.
+func (e *SplitTunnelEngine) AddDomain(pattern string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	_ = e.domainMatcher.AddPattern(pattern) //nolint:errcheck // Silently ignore invalid domain patterns
+	return e.domainMatcher.AddPattern(pattern)
 }
 
 // RemoveDomain removes a domain pattern from the split tunnel.
@@ -264,10 +271,12 @@ func (e *SplitTunnelEngine) RemoveDomain(pattern string) {
 }
 
 // AddIP adds an IP or CIDR to the split tunnel.
-func (e *SplitTunnelEngine) AddIP(cidr string) {
+//
+// Returns an error when the entry is rejected; see AddApp.
+func (e *SplitTunnelEngine) AddIP(cidr string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	_ = e.ipMatcher.Add(cidr) //nolint:errcheck // Silently ignore invalid IP patterns
+	return e.ipMatcher.Add(cidr)
 }
 
 // RemoveIP removes an IP or CIDR from the split tunnel.
@@ -424,7 +433,11 @@ func (m *IPMatcher) Add(entry string) error {
 		}
 	}
 
-	return nil
+	// Nothing parsed it. Returning nil here accepted the entry while storing
+	// nothing, so an operator's typo became a rule that matched no traffic and
+	// reported no problem - and any caller validating entries by checking this
+	// error saw success.
+	return fmt.Errorf("invalid IP or CIDR %q", entry)
 }
 
 // Remove removes an IP address or CIDR range.
