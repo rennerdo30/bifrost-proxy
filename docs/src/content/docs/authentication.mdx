@@ -245,6 +245,13 @@ auth:
         #   tid: "your-tenant-id"
 ```
 
+`required_claims` gates every validated token on exact claim values: a missing
+claim fails, strings compare exactly, booleans and numbers compare by their
+canonical text form (`"true"`, `"42"`), an array claim (`aud`-style) matches
+when the expected value is one of its string elements, and an object-valued
+claim never matches. Enforcement covers both validation paths (introspection
+and userinfo). Leaving the setting out — or empty — enforces nothing.
+
 `client_id` is required, as is at least one of `issuer_url`, `introspect_url` or
 `userinfo_url`. There is no `redirect_url`: Bifrost validates a bearer token the
 client already holds (sent as the proxy password) rather than running a browser
@@ -507,7 +514,11 @@ generation.
 ### Certificate Requirements
 
 - Client must present a valid certificate signed by the configured CA
-- Certificate must not be expired (`verify_time`) or listed in `crl_file`
+- Certificate must not be expired (`verify_time`) or listed in `crl_file`.
+  A configured `crl_file` that cannot be read or parsed is a **fatal startup
+  error**: revocation checking either works or the provider refuses to run.
+  Remove the key to run without revocation checking — it is never disabled
+  implicitly
 - The field named by `subject_mapping.username_field` (default `CN`) becomes the username
 
 ## Kerberos/SPNEGO Authentication

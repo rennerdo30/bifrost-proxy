@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useId } from 'react'
 
 interface FormDurationProps {
   label: string
@@ -105,15 +105,17 @@ export function FormDuration({
   }
 
   const shownError = error ?? parseError ?? undefined
+  const inputId = useId()
 
   return (
     <div className="space-y-1">
-      <label className="block text-sm font-medium text-bifrost-muted">{label}</label>
+      <label htmlFor={inputId} className="block text-sm font-medium text-bifrost-muted">{label}</label>
       {description && (
         <p className="text-xs text-bifrost-muted/70">{description}</p>
       )}
       <div className="flex gap-2">
         <input
+          id={inputId}
           type="number"
           value={numValue}
           onChange={(e) => {
@@ -127,6 +129,7 @@ export function FormDuration({
           className={`input flex-1 ${shownError ? 'border-bifrost-error focus:ring-bifrost-error' : ''}`}
         />
         <select
+          aria-label={`${label} unit`}
           value={unit}
           onChange={(e) => handleChange(numValue, e.target.value)}
           disabled={disabled}
