@@ -123,7 +123,9 @@ mobile/
 - **`src/native/BifrostVpn.ts`** — typed JS bridge. `isNativeVpnAvailable()`
   returns `false` whenever the native module is not linked (Expo Go, the current
   scaffold, web), and every method degrades to a safe no-op / clear error so the
-  app keeps building and running against the REST VPN flow.
+  app keeps building and running against the REST VPN flow. Separately,
+  `NATIVE_DATA_PATH_IS_SECURE` gates *use* of the native path on the data path
+  actually being a tunnel — see "Why it's gated off" below.
 
 ### What is still required (DEFERRED — needs platform toolchains)
 
@@ -162,10 +164,26 @@ account for the NE entitlement, and a real Bifrost server to test against):
 
 ### Why it's gated off
 
-The bridge defaults to the server-side VPN flow (`selectVpnMode()` returns
-`'server'` unless a real native module is linked). This keeps a known-insecure
-raw-UDP forwarder from ever running silently. Wiring the UI to the native path
-should happen only after step 1 above is complete and validated on-device.
+Two independent conditions must both hold before any traffic can take the native
+path, and only one of them is a build-system fact:
+
+1. the native module is linked (`isNativeVpnAvailable()`), and
+2. `NATIVE_DATA_PATH_IS_SECURE` in `src/native/BifrostVpn.ts` is `true`.
+
+Condition 2 is currently `false`, so `selectVpnMode()` returns `'server'` and
+`BifrostVpn.start()` refuses **even in a build where the module is linked**.
+That matters because applying the config plugin — step 2/3 below — is enough to
+satisfy condition 1 on its own; without condition 2, finishing the plumbing
+would silently start routing user traffic over the raw-UDP forwarder while the
+UI said "VPN".
+
+`BifrostVpn.requestPermission()` is gated the same way: the app does not ask the
+OS for tunnel permission for a tunnel it will refuse to start.
+
+`src/native/nativeVpn.test.ts` asserts all of this, including that the flag is
+`false`. Flipping the flag fails that suite by design — updating those
+assertions is how you record that a real data path has landed (step 1) and been
+validated on-device (step 4).
 
 ## Useful commands
 
