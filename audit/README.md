@@ -56,7 +56,7 @@ see "What is still open" below.
 |---|---|
 | `go-backend.md` §1–3 (inert config, silent stubs, fake success) | Fixed across #292–#297, #302, #303, #304 |
 | `go-backend.md` §3 (fabricated telemetry, NAT detection, Windows TUN spin) | Fixed in #307 |
-| `go-backend.md` §4 (dead code) | Complete: #312 (isolated), #313 (proxy/util, stacked on #297), #314 (client route table, stacked on #304). The server-side `Router` row is resolved without deletion — see the corrected row in the report |
+| `go-backend.md` §4 (dead code) | Complete but for one symbol: #312 (isolated code + vestigial constructors), #313 (proxy/util, stacked on #297), #314 (client route table, stacked on #304). The server-side `Router` row is resolved without deletion — see the corrected row in the report. `Factory.SetNetwork` waits on #293 |
 | `web-dashboards.md` items 1–14 | Fixed in #301, #305 and earlier |
 | `web-dashboards.md` items 15–29 | Fixed in #308 |
 | `desktop.md` P0–P1 | Fixed in #292 |
@@ -69,13 +69,9 @@ see "What is still open" below.
    the same pass. The adversarial second-opinion review these changes are
    supposed to get could not be run — the tooling for it failed for the whole
    session — so treat all of it as unreviewed.
-2. **Thin vestigial constructors** (`go-backend.md` §4): `NewWebSocketHub`,
-   `NewMeshAPI`, `NewCollector`, `NewLoadBalancer`, `Factory.SetNetwork`,
-   `health.DefaultConfig` and the `device.CreateTUN`/`CreateTAP`/
-   `ParseDeviceType` trio, each superseded by a `…With…` variant the production
-   code calls. They are spread across packages that several open PRs touch, and
-   unlike the route tables they have caused no defect — worth doing, but after
-   the stack merges.
+2. **One dead symbol left**: `Factory.SetNetwork`. `internal/backend/factory.go`
+   is rewritten by #293, so removing it there would only create a conflict. Do
+   it after that merges. Every other §4 symbol is gone.
 3. **The session/login flow** (`go-backend.md` §4): the server half is built and
    config-gated, but the dashboard still keeps a bearer token in
    `localStorage` — which is what the session flow exists to avoid. Finishing it
