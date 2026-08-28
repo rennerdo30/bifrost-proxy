@@ -2,6 +2,7 @@
 package oauth
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -10,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -222,6 +224,75 @@ func parseStringSlice(v any) []string {
 	return result
 }
 
+// checkRequiredClaims enforces the configured required_claims against the raw
+// claims of a validated token. The setting was parsed, surfaced in the
+// dashboard, and never read — a deployment gating access on, say,
+// hd=example.com was letting every token through. Semantics, exact and
+// deterministic:
+//
+//   - a missing claim fails
+//   - a string claim must equal the expected value exactly
+//   - a boolean or numeric claim must equal the expected value's canonical
+//     text form ("true", "42")
+//   - an array claim (aud-style) matches iff the expected value is one of its
+//     string elements
+//   - an object-valued claim never matches — there is no sensible string
+//     comparison for it
+//
+// Claim VALUES are never logged or included in errors: tokens can carry
+// personal data, and an error message travels further than a token does.
+func checkRequiredClaims(required map[string]string, claims map[string]any) error {
+	for name, expected := range required {
+		value, present := claims[name]
+		if !present {
+			return fmt.Errorf("token is missing required claim %q", name)
+		}
+		if !claimMatches(value, expected) {
+			return fmt.Errorf("token claim %q does not have the required value", name)
+		}
+	}
+	return nil
+}
+
+// claimMatches implements the comparison rules documented on
+// checkRequiredClaims.
+func claimMatches(value any, expected string) bool {
+	switch v := value.(type) {
+	case string:
+		return v == expected
+	case bool:
+		return strconv.FormatBool(v) == expected
+	case json.Number:
+		return v.String() == expected
+	case float64:
+		return strconv.FormatFloat(v, 'f', -1, 64) == expected
+	case []any:
+		for _, elem := range v {
+			if s, ok := elem.(string); ok && s == expected {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+}
+
+// enforceRequiredClaims applies required_claims to a raw validation-endpoint
+// response body. Numbers decode via json.Number so their text form is stable.
+func (a *Authenticator) enforceRequiredClaims(body []byte) error {
+	if len(a.config.requiredClaims) == 0 {
+		return nil
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var claims map[string]any
+	if err := dec.Decode(&claims); err != nil {
+		return fmt.Errorf("decode claims: %w", err)
+	}
+	return checkRequiredClaims(a.config.requiredClaims, claims)
+}
+
 type cachedToken struct {
 	user      *auth.UserInfo
 	expiresAt time.Time
@@ -340,6 +411,11 @@ func (a *Authenticator) introspectToken(ctx context.Context, token string) (*aut
 		return nil, fmt.Errorf("introspect returned status %d", resp.StatusCode)
 	}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read introspect response: %w", err)
+	}
+
 	var result struct {
 		Active   bool   `json:"active"`
 		Username string `json:"username"`
@@ -348,13 +424,16 @@ func (a *Authenticator) introspectToken(ctx context.Context, token string) (*aut
 		Name     string `json:"name"`
 		Scope    string `json:"scope"`
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("decode introspect response: %w", err)
 	}
 
 	if !result.Active {
 		return nil, auth.ErrInvalidCredentials
+	}
+
+	if err := a.enforceRequiredClaims(body); err != nil {
+		return nil, err
 	}
 
 	// Check required scopes
@@ -408,6 +487,11 @@ func (a *Authenticator) getUserInfo(ctx context.Context, token string) (*auth.Us
 		return nil, fmt.Errorf("userinfo returned status %d", resp.StatusCode)
 	}
 
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read userinfo response: %w", err)
+	}
+
 	var result struct {
 		Sub               string   `json:"sub"`
 		Name              string   `json:"name"`
@@ -415,9 +499,12 @@ func (a *Authenticator) getUserInfo(ctx context.Context, token string) (*auth.Us
 		Email             string   `json:"email"`
 		Groups            []string `json:"groups"`
 	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("decode userinfo response: %w", err)
+	}
+
+	if err := a.enforceRequiredClaims(body); err != nil {
+		return nil, err
 	}
 
 	username := result.PreferredUsername

@@ -53,6 +53,7 @@ export function HTTPProxyBackendForm({ config, onChange }: HTTPProxyBackendFormP
             <button
               type="button"
               onClick={() => setShowPassword(!showPassword)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
               className="absolute right-2 top-1/2 -translate-y-1/2 text-bifrost-muted hover:text-bifrost-heading"
             >
               {showPassword ? (

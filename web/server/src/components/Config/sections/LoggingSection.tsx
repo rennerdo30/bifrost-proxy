@@ -49,6 +49,20 @@ export function LoggingSection({ config, onChange }: LoggingSectionProps) {
           placeholder="2006-01-02T15:04:05.000Z07:00"
           helpText="Go time format string (optional)"
         />
+        <ValidatedInput
+          label="Max File Size (MB)"
+          type="number"
+          value={config.max_size_mb ?? 0}
+          onChange={(e) => update('max_size_mb', parseInt(e.target.value) || 0)}
+          helpText="Rotate the log file when it exceeds this size. 0 disables rotation. Only used when Output is a file path"
+        />
+        <ValidatedInput
+          label="Rotated Files to Keep"
+          type="number"
+          value={config.max_backups ?? 0}
+          onChange={(e) => update('max_backups', parseInt(e.target.value) || 0)}
+          helpText="Number of rotated log files to retain. 0 keeps all"
+        />
       </div>
     </Section>
   )

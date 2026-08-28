@@ -30,12 +30,10 @@ backends:
   - name: direct
     type: direct
     enabled: true
-    priority: 10
 
   - name: wireguard
     type: wireguard
     enabled: true
-    priority: 20
     config:
       private_key: "${WG_PRIVATE_KEY}"
       address: "10.0.0.2/24"
@@ -94,6 +92,11 @@ logging:
 |-------|------|---------|-------------|
 | `server.http.listen` | string | `:7080` | HTTP proxy listen address |
 | `server.socks5.listen` | string | `:7180` | SOCKS5 proxy listen address |
+| `server.<listener>.read_timeout` | duration | `30s` | Inbound request read deadline (see below) |
+| `server.<listener>.write_timeout` | duration | `30s` | No-progress bound on writes back to the client |
+| `server.<listener>.idle_timeout` | duration | `60s` | Bound on a connection with nothing in flight |
+| `server.<listener>.tunnel_idle_timeout` | duration | unset | Opt-in reaper for established tunnels quiet in both directions |
+| `server.<listener>.max_connections` | int | `0` | Per-listener ceiling; 0 = unlimited |
 | `server.graceful_period` | duration | `30s` | Graceful shutdown period |
 
 A listener is active when its `listen` address is set; there is no per-listener
@@ -110,6 +113,51 @@ an opaque tunnel after the origin's `101`. An h2c prior-knowledge request is
 rejected with `505 HTTP Version Not Supported` — HTTP/2 to the proxy itself is
 not supported. Hop-by-hop headers (RFC 7230 §6.1) are stripped in both
 directions and the proxy appends itself to `Via`.
+#### Listener timeouts
+
+All three timeouts describe the **inbound** client connection. None of them
+affects outbound dials to a backend — see
+[Network Settings](#network-settings) for `network.dial_timeout`. Set any of
+them to `0` to disable that deadline and leave the connection bounded only by
+its peer.
+
+- **`read_timeout`** — the complete inbound request must arrive within it,
+  measured from the client's first byte: the request line and header block for
+  HTTP, the whole handshake (method negotiation, optional username/password
+  exchange, connect request) for SOCKS5. This is an absolute bound, which is
+  what makes it effective against a client that trickles a request one byte at
+  a time. It applies to TLS-terminated listeners too — the TLS handshake must
+  complete within it — and to every decrypted request on a MITM-intercepted
+  tunnel. Once the headers are in it applies per read instead, so a large
+  upload may take arbitrarily long overall as long as it keeps making progress.
+- **`write_timeout`** — a **no-progress** bound on writes back to the client:
+  each window of `write_timeout` must deliver at least one byte. A streaming
+  response (server-sent events, a chunked feed, a large download) is never
+  truncated while it keeps moving — even to a very slow receiver — but a
+  client that has stopped reading entirely is timed out within one window.
+  (On a TLS-terminated listener a stalled window is fatal to the connection, a
+  constraint of Go's TLS implementation; a progressing response is still never
+  cut off.)
+- **`idle_timeout`** — bounds a connection with no request in flight: one that
+  has been accepted but has sent nothing, or the wait between exchanges on a
+  kept-alive loop, including a MITM-intercepted tunnel. It deliberately does
+  **not** apply to an established opaque `CONNECT` tunnel or SOCKS5 relay.
+- **`tunnel_idle_timeout`** — off by default. When set, an **established**
+  tunnel or relay in which *neither* direction has carried data for the period
+  is closed. An actively transferring tunnel is never interrupted, even to a
+  very slow receiver — each window only requires progress, not completion.
+
+:::caution[quiet tunnels are valid traffic]
+A protocol that holds a `CONNECT` tunnel open in silence — SSH, IMAP IDLE, a
+WebSocket without keepalive pings — is working as intended, which is why idle
+tunnels are **not** reaped by default. Set `tunnel_idle_timeout` only on
+listeners exposed to untrusted clients that could park connections, and above
+the longest legitimate quiet period you expect.
+:::
+
+The same three listener timeouts exist on the client's `proxy.http` and
+`proxy.socks5` blocks and are applied the same way; they default to `0`
+(disabled) there, since the client's listeners are typically loopback-only.
 
 #### SOCKS5 protocol support
 
@@ -191,9 +239,11 @@ web_ui:
   base_path: "/bifrost"        # serve the dashboard under a sub-path
 ```
 
-Set `base_path` when a reverse proxy mounts the dashboard somewhere other than
-the root. If that proxy also rewrites `Host`, add the browser-visible origin to
-`api.allowed_origins` as well, or the dashboard's WebSocket will be refused.
+`base_path` is optional in every setup: the dashboard derives its prefix from
+the browser URL at runtime, so serving it under a sub-path behind a reverse
+proxy works with or without this setting (the Go server does not consume the
+value). If the proxy also rewrites `Host`, add the browser-visible origin to
+`api.allowed_origins`, or the dashboard's WebSocket will be refused.
 
 ### Network Settings
 
@@ -320,10 +370,96 @@ auth:
             password_hash: "${ADMIN_PASSWORD_HASH}"
 ```
 
-> **No default-value syntax.** Expansion uses Go's `os.ExpandEnv`, which
-> understands `${VAR}` and `$VAR` only. Shell-style forms such as
-> `${VAR:-fallback}` are **not** supported: the whole `VAR:-fallback` string is
-> treated as the variable name, no such variable exists, and the value expands to
-> the empty string — which for something like `listen: ":${HTTP_PORT:-8080}"`
-> silently yields `listen: ":"`. Set the variable explicitly, or rely on the
-> config file's own literal value.
+### Expansion syntax
+
+The whole grammar is three forms. Everything else is literal text.
+
+| Form | Meaning |
+|------|---------|
+| `${NAME}` | Value of `NAME`. If `NAME` is not set the reference expands to the empty string and the loader logs a warning naming the variable and the line. |
+| `${NAME:-fallback}` | Value of `NAME` when it is set and non-empty, otherwise the literal `fallback`. The fallback is used verbatim and is not itself expanded. |
+| `$$` | A literal `$`. Only needed in front of a `{` or another `$`. |
+
+```yaml
+server:
+  http:
+    # Defaults to :8080 when HTTP_PORT is unset or empty
+    listen: ":${HTTP_PORT:-8080}"
+```
+
+### Literal dollar signs are safe
+
+A `$` that is not followed by `{` or `$` is literal, so passwords, API keys and
+bcrypt hashes pass through untouched:
+
+```yaml
+auth:
+  providers:
+    - name: native
+      type: native
+      enabled: true
+      priority: 1
+      config:
+        users:
+          - username: admin
+            # Kept exactly as written
+            password_hash: "$2a$10$N9qo8uLOickgx2ZMRZoMye"
+```
+
+Write `$$` only where a value must literally contain `${`, for example
+`token: "a$${not_expanded}b"`, which loads as `a${not_expanded}b`.
+
+> **Bare `$NAME` is not expanded.** Only the braced forms above are. This is what
+> makes a literal `$` in a value safe — expansion runs on the raw file before
+> YAML parsing, so quoting cannot protect a value. If a bare `$NAME` names a
+> variable that *is* set in the environment, the loader warns with the line
+> number so the mismatch is visible; add the braces to expand it.
+
+> **Expansion is a single pass.** A value substituted from the environment is
+> never expanded again, so a secret that itself contains `${` is safe.
+
+## Unknown Keys Are Rejected
+
+A key that does not correspond to a setting is an error, not a silent no-op. The
+loader reports every offending key in one pass, with its line and the config
+block it appeared in:
+
+```
+Error: config file /etc/bifrost/config.yaml contains 2 unknown key(s):
+line 3: "listem" (in ListenerConfig); line 12: "max_conns" (in ListenerConfig);
+remove or correct the key, or set BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1 to
+downgrade unknown keys to warnings while migrating
+```
+
+This applies everywhere a config file is read: server and client startup,
+`bifrost-server config validate`, hot reload, and the dashboard's config API. A
+rejected hot reload leaves the running configuration in place.
+
+The check reaches into the dynamic sections too: `backends[].config` and
+`auth.providers[].config` are validated against the exact keys their backend
+type or provider plugin reads — including nested blocks such as a WireGuard
+`peer`, a native `users` entry, or an inline `mfa_wrapper` authenticator. A
+config file must also contain exactly one YAML document; content after a `---`
+separator used to be silently ignored and is now an error.
+
+Every shipped example config and both `init` templates pass this check, so a file
+that follows this guide is unaffected. A hand-edited file carrying a typo, or a
+key from an older release, will now fail to start — which is the point: a
+misspelled key used to look exactly like a setting that does not work.
+
+### Escape hatch
+
+If a deployment has to come up before the file can be cleaned, set
+`BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` (or `true`, `yes`, `on`). Unknown keys are
+then logged as warnings and ignored:
+
+```
+WARN ignoring unknown configuration key config=/etc/bifrost/config.yaml line=3
+     key=listem section=ListenerConfig hint="this key has no effect; ..."
+```
+
+Treat this as temporary. A key that is ignored is a setting that is not applied,
+and the variable is documented as a migration aid rather than a supported mode.
+
+Genuine type errors — a string where a number belongs, for instance — always
+fail, with or without the variable set.
