@@ -42,8 +42,32 @@ Type stripping is *strip-only*: TypeScript constructs that need code generation
 (parameter properties, `enum`, `namespace`) will not load. Avoid them in any file
 reachable from a test.
 
+Covered today: `api.ts`, `storage.ts`, `splitTunnelSync.ts` (rule reconciliation
+and the replace-semantics policy push), `utils/status.ts`, and `i18n.ts`.
+
 Screen components are not yet covered — that needs React Native Testing Library,
 which Expo SDK 55 does not pin.
+
+## Assets
+
+`assets/` holds three distinct images, not three copies of one:
+
+| File | Role | Constraints |
+|------|------|-------------|
+| `icon.png` | App icon | 1024×1024, opaque, its own rounded-square ground |
+| `adaptive-icon.png` | Android adaptive **foreground** | 1024×1024, transparent; artwork stays inside the 66% safe-zone circle because Android masks the rest. The ground comes from `android.adaptiveIcon.backgroundColor` |
+| `splash.png` | Launch composition | 1024×1024, transparent, vertically centred; the ground comes from `splash.backgroundColor` |
+
+Baking a background into the adaptive foreground produces a squircle inside a
+squircle once Android applies its mask, so keep that file transparent.
+
+## Internationalisation
+
+User-facing strings live in `src/i18n.ts` (English + German) and are read via
+`t('key')`. `formatNumber`/`formatDecimal` and the `duration.*` keys keep counts
+and durations locale-aware. The catalogue is typed: adding a key to the English
+object makes it required in the German one, so a missing translation is a
+compile error rather than an English string leaking into a German build.
 
 ## Project layout
 
@@ -85,8 +109,9 @@ mobile/
     `com.apple.developer.networking.networkextension =
     ["packet-tunnel-provider"]` when the extension target is real.
   - Android `permissions`: `FOREGROUND_SERVICE`,
-    `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` (plus existing
-    `INTERNET` / `ACCESS_NETWORK_STATE`).
+    `FOREGROUND_SERVICE_SPECIAL_USE` (plus existing `INTERNET` /
+    `ACCESS_NETWORK_STATE`). `POST_NOTIFICATIONS` is deliberately absent —
+    nothing in the app posts a notification.
   - Registers the config plugin `./plugins/withBifrostVpn`.
 - **`plugins/withBifrostVpn.js`** — on `expo prebuild` / EAS Build, injects the
   Android `<service android:name="com.bifrost.vpn.BifrostVpnService">` with the
@@ -129,8 +154,11 @@ account for the NE entitlement, and a real Bifrost server to test against):
    eas build --profile development --platform android
    eas build --profile development --platform ios
    ```
-5. **Set a real EAS `projectId`** in `app.json` (`extra.eas.projectId`, currently
-   a placeholder) via `eas init`.
+5. **Link the project to EAS.** `app.json` carries no `extra.eas.projectId`: the
+   project is not linked to an Expo account, and a fabricated placeholder UUID
+   was removed because it looked configured while pointing at nothing. Run
+   `eas init` in this directory with your own Expo account before the first
+   `eas build`; it writes the real `projectId` for you.
 
 ### Why it's gated off
 
