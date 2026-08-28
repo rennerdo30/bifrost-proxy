@@ -330,7 +330,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   certificate, or a placeholder `tls-auth` key is now refused instead of being
   written into a profile
 
+### Security
+- The client dashboard's static UI responses now carry the same global
+  security headers as the server dashboard (CSP, X-Frame-Options, nosniff).
+  The production handler had silently drifted from a test-only duplicate route
+  table that had them
+- Brute-force protection actually ships: `auth.brute_force` wraps the whole
+  provider chain with failed-login lockout (exponential backoff, per
+  username+source). The implementation existed, fully tested, with no config
+  key and no caller — a security control the project believed it shipped and
+  did not
+
 ### Fixed
+- The HTTP forward proxy is honest about its HTTP/1.1, one-request-per-
+  connection nature and follows the RFCs it silently violated: hop-by-hop
+  headers (the RFC 7230 §6.1 set plus everything named in `Connection`) are
+  stripped in both directions instead of traveling to the origin; the proxy
+  appends itself to `Via` (§5.7.1); responses carry `Connection: close`
+  instead of implying persistence and then closing (clients retried into
+  unexpected EOFs); a plain-HTTP `Upgrade` (WebSocket) becomes an opaque
+  tunnel after the origin's `101` — it used to forward the 101 and close both
+  connections with zero post-upgrade bytes ever crossing; and an h2c
+  prior-knowledge request is rejected with a clean 505 instead of being
+  mis-parsed into a dial of ":80" and an HTTP/1.1 502 on a would-be HTTP/2 wire
+- A TURN-relayed P2P connection is actually connected before being reported:
+  the manager used to build it, log "relay connection established", fire the
+  connected callback and count the peer — while Send returned ErrNotConnected
+  forever and the connection monitor never reaped the stuck state. On connect
+  failure the peer's endpoints are tried in turn and the failure is surfaced
+- The tiered cache no longer double-counts every disk hit as a memory miss: a
+  workload served entirely from disk reported a hit rate of 0.5 instead of
+  1.0, skewing any alert keyed on it by up to 2×. Per-tier views stay
+  available; the combined stats now reflect the tiered lookup outcome
+- The memory cache reaps expired entries on a timer. CleanupExpired existed
+  with no caller, so expired entries lingered until LRU pressure pushed them
+  out and reported sizes over-counted indefinitely
+- `bifrost-server` and `bifrost-client` release their log file handle on
+  shutdown — the documented `logging.Close()` contract nothing honored; with a
+  file output every restart leaked the previous handle
+- The 11 documented pprof endpoints exist on the client's production handler
+  (behind the API token when one is set). They were registered only on a
+  test-only duplicate handler; the production static catch-all answered 404 to
+  the exact diagnostics the docs give copy-paste commands for
+- `tools/hashpw` exists. Three documentation pages instruct operators to run
+  it to mint a `password_hash`, and the program was never in the repository
+- Windows self-updates no longer leak a stale `.old` binary forever: the
+  cleanup helper existed on every platform with no caller and now runs at
+  updater start
+- The `system` auth provider reports `build_disabled` on Unix platforms
+  without a password backend (the BSDs, Solaris) instead of "available" with
+  every login failing as invalid credentials
+- The Apache access-log format logs the request target (host+path) in the %r
+  position instead of only the host, so requests to the same host no longer
+  log identically
 - `logging.time_format` is applied. The field was documented, defaulted and
   shown in the monitoring docs — and never read: slog's handlers used their own
   fixed timestamp format, so the setting was pure decoration

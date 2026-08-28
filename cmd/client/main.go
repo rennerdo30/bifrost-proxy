@@ -383,6 +383,15 @@ func run(cmd *cobra.Command, args []string) error {
 	// Set config path so changes can be saved
 	c.SetConfigPath(configFile)
 
+	// Release the log file handle on the way out — the documented shutdown
+	// contract that nothing actually honored: with a file output, every
+	// restart leaked the previous handle.
+	defer func() {
+		if err := logging.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "close log output: %v\n", err)
+		}
+	}()
+
 	// Run service (handles signals and Windows Service events)
 	return service.Run("bifrost-client", c)
 }

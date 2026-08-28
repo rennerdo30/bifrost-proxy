@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
@@ -246,6 +247,16 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 		if err != io.EOF {
 			h.handleError(ctx, counting, "", fmt.Errorf("read request: %w", err))
 		}
+		return
+	}
+
+	// An h2c prior-knowledge preface parses as an ordinary request (method
+	// "PRI", target "*", proto HTTP/2.0). The old behavior dialed ":80" and
+	// wrote an HTTP/1.1 502 body onto a wire the client expects to carry
+	// HTTP/2 frames. This proxy speaks HTTP/1.1 only; say so cleanly.
+	if req.Method == "PRI" && req.RequestURI == "*" && req.Proto == "HTTP/2.0" {
+		h.sendHTTPError(counting, http.StatusHTTPVersionNotSupported,
+			"HTTP/2 prior knowledge is not supported; this proxy speaks HTTP/1.1 (HTTP/2 works end-to-end through CONNECT tunnels)")
 		return
 	}
 
@@ -514,9 +525,35 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 		h.onConnect(ctx, conn, host, be)
 	}
 
-	// Remove proxy headers and forward the request
+	// Whether the client asked to switch protocols (WebSocket etc.). Captured
+	// BEFORE hop-by-hop stripping, which removes the Upgrade header itself;
+	// the upgrade headers are re-added for the upstream leg below.
+	upgradeProto := req.Header.Get("Upgrade")
+	isUpgrade := upgradeProto != "" && headerContainsToken(req.Header.Values("Connection"), "Upgrade")
+
+	// Hop-by-hop hygiene (RFC 7230 §6.1): strip the standard hop-by-hop set
+	// AND every header named in Connection. The old code removed only
+	// Proxy-Connection/Proxy-Authorization, so Connection: keep-alive,
+	// Keep-Alive, TE, Upgrade and any custom Connection-named header traveled
+	// to the origin as if they were end-to-end.
+	stripHopByHopHeaders(req.Header)
 	req.Header.Del("Proxy-Connection")
 	req.Header.Del("Proxy-Authorization")
+
+	// A proxy MUST append itself to Via (RFC 7230 §5.7.1).
+	appendVia(req.Header, req.ProtoMajor, req.ProtoMinor)
+
+	if isUpgrade {
+		// Re-add the upgrade negotiation for the upstream hop.
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Upgrade", upgradeProto)
+	} else {
+		// This handler serves ONE request per connection (see the class
+		// comment on ServeConn): saying nothing implied HTTP/1.1 persistence
+		// and then the socket closed — a spec violation that made clients
+		// retry into unexpected EOFs. Say so honestly on both hops.
+		req.Header.Set("Connection", "close")
+	}
 
 	// Convert to relative URL for the upstream request
 	req.URL.Scheme = ""
@@ -546,6 +583,24 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 		}
 	}
 
+	// A successful protocol switch turns the pair into an opaque tunnel:
+	// forward the 101 and then copy bytes both ways. The old code forwarded
+	// the 101 and returned, closing both connections — the client was told
+	// the WebSocket was established and then got a dead socket with zero
+	// post-upgrade bytes ever crossing.
+	if isUpgrade && resp.StatusCode == http.StatusSwitchingProtocols {
+		if err := resp.Write(conn); err != nil {
+			return fmt.Errorf("write 101 response: %w", err)
+		}
+		entry.StatusCode = resp.StatusCode
+		CopyBidirectional(ctx, conn, targetConn)
+		return nil
+	}
+
+	// One request per connection — make the wire say so (see above).
+	resp.Header.Del("Connection")
+	resp.Close = true
+
 	// Write response to client
 	if err := resp.Write(conn); err != nil {
 		return fmt.Errorf("write response: %w", err)
@@ -553,6 +608,61 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 
 	entry.StatusCode = resp.StatusCode
 	return nil
+}
+
+// hopByHopHeaders is the standard hop-by-hop set of RFC 7230 §6.1.
+var hopByHopHeaders = []string{
+	"Connection",
+	"Proxy-Connection",
+	"Keep-Alive",
+	"Proxy-Authenticate",
+	"Proxy-Authorization",
+	"Te",
+	"Trailer",
+	"Transfer-Encoding",
+	"Upgrade",
+}
+
+// stripHopByHopHeaders removes the standard hop-by-hop headers and every
+// header named in the Connection header, per RFC 7230 §6.1. Transfer-Encoding
+// is re-managed by req.Write/resp.Write, which is why removing it here is
+// safe.
+func stripHopByHopHeaders(h http.Header) {
+	for _, value := range h.Values("Connection") {
+		for _, name := range strings.Split(value, ",") {
+			if name = textproto.TrimString(name); name != "" {
+				h.Del(name)
+			}
+		}
+	}
+	for _, name := range hopByHopHeaders {
+		h.Del(name)
+	}
+}
+
+// headerContainsToken reports whether any of the comma-separated header
+// values contains the given token, case-insensitively.
+func headerContainsToken(values []string, token string) bool {
+	for _, value := range values {
+		for _, part := range strings.Split(value, ",") {
+			if strings.EqualFold(textproto.TrimString(part), token) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// viaToken identifies this proxy in the Via header it appends.
+const viaToken = "bifrost"
+
+// appendVia appends this proxy to the Via header (RFC 7230 §5.7.1).
+func appendVia(h http.Header, major, minor int) {
+	entry := fmt.Sprintf("%d.%d %s", major, minor, viaToken)
+	if prior := h.Get("Via"); prior != "" {
+		entry = prior + ", " + entry
+	}
+	h.Set("Via", entry)
 }
 
 // sendResponse sends an HTTP response for CONNECT.
