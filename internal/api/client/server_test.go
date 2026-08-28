@@ -53,7 +53,7 @@ func TestNew_AllFields(t *testing.T) {
 
 func TestAPI_Handler(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 	require.NotNil(t, handler)
 }
 
@@ -61,7 +61,7 @@ func TestAPI_Handler_WithAuth(t *testing.T) {
 	api := New(Config{
 		Token: "secret",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Without auth
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
@@ -105,7 +105,7 @@ func TestAPI_HandlerWithUI_WithAuth(t *testing.T) {
 
 func TestAPI_HandleHealth(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	w := httptest.NewRecorder()
@@ -126,7 +126,7 @@ func TestAPI_HandleHealth_Connected(t *testing.T) {
 			return true
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	w := httptest.NewRecorder()
@@ -146,7 +146,7 @@ func TestAPI_HandleHealth_Degraded(t *testing.T) {
 			return false
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	w := httptest.NewRecorder()
@@ -162,7 +162,7 @@ func TestAPI_HandleHealth_Degraded(t *testing.T) {
 
 func TestAPI_HandleVersion(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/version", nil)
 	w := httptest.NewRecorder()
@@ -174,7 +174,7 @@ func TestAPI_HandleVersion(t *testing.T) {
 
 func TestAPI_HandleStatus(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -197,7 +197,7 @@ func TestAPI_HandleStatus_Connected(t *testing.T) {
 			return true
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -215,7 +215,7 @@ func TestAPI_HandleStatus_Disconnected(t *testing.T) {
 			return false
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -235,7 +235,7 @@ func TestAPI_HandleStatus_WithDebugger(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -255,7 +255,7 @@ func TestAPI_HandleGetDebugEntries(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/debug/entries", nil)
 	w := httptest.NewRecorder()
@@ -266,7 +266,7 @@ func TestAPI_HandleGetDebugEntries(t *testing.T) {
 
 func TestAPI_HandleGetDebugEntries_NilDebugger(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/debug/entries", nil)
 	w := httptest.NewRecorder()
@@ -288,7 +288,7 @@ func TestAPI_HandleGetLastDebugEntries(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/debug/entries/last/10", nil)
 	w := httptest.NewRecorder()
@@ -299,7 +299,7 @@ func TestAPI_HandleGetLastDebugEntries(t *testing.T) {
 
 func TestAPI_HandleGetLastDebugEntries_NilDebugger(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/debug/entries/last/10", nil)
 	w := httptest.NewRecorder()
@@ -316,7 +316,7 @@ func TestAPI_HandleGetLastDebugEntries_InvalidCount(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Invalid count should default to 100
 	req := httptest.NewRequest("GET", "/api/v1/debug/entries/last/invalid", nil)
@@ -334,7 +334,7 @@ func TestAPI_HandleClearDebugEntries(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/debug/entries", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -351,7 +351,7 @@ func TestAPI_HandleClearDebugEntries(t *testing.T) {
 
 func TestAPI_HandleClearDebugEntries_NilDebugger(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/debug/entries", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -369,7 +369,7 @@ func TestAPI_HandleGetDebugErrors(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/debug/errors", nil)
 	w := httptest.NewRecorder()
@@ -380,7 +380,7 @@ func TestAPI_HandleGetDebugErrors(t *testing.T) {
 
 func TestAPI_HandleGetDebugErrors_NilDebugger(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/debug/errors", nil)
 	w := httptest.NewRecorder()
@@ -395,7 +395,7 @@ func TestAPI_HandleGetRoutes(t *testing.T) {
 	api := New(Config{
 		Router: clientRouter,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/routes", nil)
 	w := httptest.NewRecorder()
@@ -406,7 +406,7 @@ func TestAPI_HandleGetRoutes(t *testing.T) {
 
 func TestAPI_HandleGetRoutes_NilRouter(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/routes", nil)
 	w := httptest.NewRecorder()
@@ -426,7 +426,7 @@ func TestAPI_HandleTestRoute(t *testing.T) {
 	api := New(Config{
 		Router: clientRouter,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/routes/test?domain=example.com", nil)
 	w := httptest.NewRecorder()
@@ -443,7 +443,7 @@ func TestAPI_HandleTestRoute(t *testing.T) {
 
 func TestAPI_HandleTestRoute_NoDomain(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/routes/test", nil)
 	w := httptest.NewRecorder()
@@ -454,7 +454,7 @@ func TestAPI_HandleTestRoute_NoDomain(t *testing.T) {
 
 func TestAPI_HandleTestRoute_NilRouter(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/routes/test?domain=example.com", nil)
 	w := httptest.NewRecorder()
@@ -472,7 +472,7 @@ func TestAPI_AuthMiddleware_QueryToken(t *testing.T) {
 	api := New(Config{
 		Token: "secret",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// With token in query
 	req := httptest.NewRequest("GET", "/api/v1/health?token=secret", nil)
@@ -486,7 +486,7 @@ func TestAPI_AuthMiddleware_InvalidToken(t *testing.T) {
 	api := New(Config{
 		Token: "secret",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	req.Header.Set("Authorization", "Bearer wrong-token")
@@ -500,7 +500,7 @@ func TestAPI_AuthMiddleware_ShortToken(t *testing.T) {
 	api := New(Config{
 		Token: "secret",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Token shorter than "Bearer " prefix
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
@@ -515,7 +515,7 @@ func TestAPI_AuthMiddleware_NoBearer(t *testing.T) {
 	api := New(Config{
 		Token: "secret",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Token without Bearer prefix
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
@@ -528,7 +528,7 @@ func TestAPI_AuthMiddleware_NoBearer(t *testing.T) {
 
 func TestCorsMiddleware(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// CORS only allows localhost origins for security
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
@@ -543,7 +543,7 @@ func TestCorsMiddleware(t *testing.T) {
 
 func TestCorsMiddleware_Options(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("OPTIONS", "/api/v1/health", nil)
 	w := httptest.NewRecorder()
@@ -606,7 +606,7 @@ func TestAPI_AllRoutes(t *testing.T) {
 		Router:   clientRouter,
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Test all routes exist
 	routes := []struct {
@@ -681,7 +681,7 @@ func TestAPI_HandleStatus_NoServerConnected(t *testing.T) {
 
 func TestAPI_HandleVPNStatus_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/status", nil)
 	w := httptest.NewRecorder()
@@ -697,7 +697,7 @@ func TestAPI_HandleVPNStatus_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNEnable_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/enable", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -710,7 +710,7 @@ func TestAPI_HandleVPNEnable_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNDisable_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/disable", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -723,7 +723,7 @@ func TestAPI_HandleVPNDisable_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNConnections_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/connections", nil)
 	w := httptest.NewRecorder()
@@ -739,7 +739,7 @@ func TestAPI_HandleVPNConnections_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNSplitRules_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/split/rules", nil)
 	w := httptest.NewRecorder()
@@ -750,7 +750,7 @@ func TestAPI_HandleVPNSplitRules_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddApp_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "testapp", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
@@ -765,7 +765,7 @@ func TestAPI_HandleVPNSplitAddApp_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddApp_InvalidBody(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -778,7 +778,7 @@ func TestAPI_HandleVPNSplitAddApp_InvalidBody(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddApp_EmptyName(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
@@ -792,7 +792,7 @@ func TestAPI_HandleVPNSplitAddApp_EmptyName(t *testing.T) {
 
 func TestAPI_HandleVPNSplitRemoveApp_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/testapp", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -805,7 +805,7 @@ func TestAPI_HandleVPNSplitRemoveApp_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddDomain_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"pattern": "*.example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
@@ -820,7 +820,7 @@ func TestAPI_HandleVPNSplitAddDomain_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddDomain_InvalidBody(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -833,7 +833,7 @@ func TestAPI_HandleVPNSplitAddDomain_InvalidBody(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddDomain_EmptyPattern(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"pattern": ""}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
@@ -847,7 +847,7 @@ func TestAPI_HandleVPNSplitAddDomain_EmptyPattern(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddIP_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"cidr": "10.0.0.0/8"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
@@ -862,7 +862,7 @@ func TestAPI_HandleVPNSplitAddIP_NilVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddIP_InvalidBody(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -875,7 +875,7 @@ func TestAPI_HandleVPNSplitAddIP_InvalidBody(t *testing.T) {
 
 func TestAPI_HandleVPNSplitAddIP_EmptyCIDR(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"cidr": ""}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
@@ -889,7 +889,7 @@ func TestAPI_HandleVPNSplitAddIP_EmptyCIDR(t *testing.T) {
 
 func TestAPI_HandleVPNDNSCache(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/dns/cache", nil)
 	w := httptest.NewRecorder()
@@ -911,7 +911,7 @@ func TestAPI_HandleVPNDNSCache_WithEntries(t *testing.T) {
 		},
 	}
 	api := New(Config{VPNManager: mvpn})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/dns/cache", nil)
 	w := httptest.NewRecorder()
@@ -933,7 +933,7 @@ func TestAPI_HandleVPNDNSCache_WithEntries(t *testing.T) {
 
 func TestAPI_HandleGetConfig_NilConfigGetter(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/config/", nil)
 	w := httptest.NewRecorder()
@@ -950,7 +950,7 @@ func TestAPI_HandleGetConfig_Success(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/config/", nil)
 	w := httptest.NewRecorder()
@@ -961,7 +961,7 @@ func TestAPI_HandleGetConfig_Success(t *testing.T) {
 
 func TestAPI_HandleUpdateConfig_NilConfigUpdater(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader(body))
@@ -979,7 +979,7 @@ func TestAPI_HandleUpdateConfig_InvalidBody(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -996,7 +996,7 @@ func TestAPI_HandleUpdateConfig_UpdaterError(t *testing.T) {
 			return errors.New("update failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader(body))
@@ -1014,7 +1014,7 @@ func TestAPI_HandleUpdateConfig_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"debug": {"enabled": true}}`
 	req := httptest.NewRequest("PUT", "/api/v1/config/", strings.NewReader(body))
@@ -1037,7 +1037,7 @@ func TestAPI_HandleUpdateConfig_RestartRequired(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Changes to proxy.http.listen require restart
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
@@ -1058,7 +1058,7 @@ func TestAPI_HandleUpdateConfig_RestartRequired(t *testing.T) {
 
 func TestAPI_HandleValidateConfig_InvalidBody(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -1071,7 +1071,7 @@ func TestAPI_HandleValidateConfig_InvalidBody(t *testing.T) {
 
 func TestAPI_HandleValidateConfig_NoConfigGetter(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"debug": {"enabled": true}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader(body))
@@ -1095,7 +1095,7 @@ func TestAPI_HandleValidateConfig_WithConfigGetter(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"debug": {"enabled": true}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/validate", strings.NewReader(body))
@@ -1119,7 +1119,7 @@ func TestAPI_HandleValidateConfig_InvalidConfig(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Invalid config: no proxy listeners
 	body := `{"proxy": {"http": {"listen": ""}, "socks5": {"listen": ""}}}`
@@ -1145,7 +1145,7 @@ func TestAPI_HandleValidateConfig_RestartWarnings(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Changes that require restart
 	body := `{"vpn": {"enabled": true}}`
@@ -1165,7 +1165,7 @@ func TestAPI_HandleValidateConfig_RestartWarnings(t *testing.T) {
 
 func TestAPI_HandleGetConfigDefaults(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/config/defaults", nil)
 	w := httptest.NewRecorder()
@@ -1176,7 +1176,7 @@ func TestAPI_HandleGetConfigDefaults(t *testing.T) {
 
 func TestAPI_HandleExportConfig_NilConfigGetter(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1193,7 +1193,7 @@ func TestAPI_HandleExportConfig_JSON(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export?format=json", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1212,7 +1212,7 @@ func TestAPI_HandleExportConfig_YAML(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export?format=yaml", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1230,7 +1230,7 @@ func TestAPI_HandleExportConfig_DefaultFormat(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1249,7 +1249,7 @@ func TestAPI_HandleExportConfig_UnsupportedFormat(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/export?format=xml", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1261,7 +1261,7 @@ func TestAPI_HandleExportConfig_UnsupportedFormat(t *testing.T) {
 
 func TestAPI_HandleImportConfig_NilConfigUpdater(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"proxy": {"http": {"listen": "127.0.0.1:7380"}}}`
 	req := httptest.NewRequest("POST", "/api/v1/config/import", strings.NewReader(body))
@@ -1279,7 +1279,7 @@ func TestAPI_HandleImportConfig_InvalidJSON(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=json", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -1296,7 +1296,7 @@ func TestAPI_HandleImportConfig_InvalidYAML(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=yaml", strings.NewReader("invalid: yaml: content:"))
 	req.Header.Set("Content-Type", "application/x-yaml")
@@ -1313,7 +1313,7 @@ func TestAPI_HandleImportConfig_UnsupportedFormat(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/import?format=xml", strings.NewReader("<config/>"))
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1329,7 +1329,7 @@ func TestAPI_HandleImportConfig_ValidationFailed(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Invalid config: no proxy listeners
 	body := `{"proxy": {"http": {"listen": ""}, "socks5": {"listen": ""}}}`
@@ -1348,7 +1348,7 @@ func TestAPI_HandleImportConfig_UpdaterError(t *testing.T) {
 			return errors.New("update failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	testConfig := config.DefaultClientConfig()
 	body, _ := json.Marshal(testConfig)
@@ -1367,7 +1367,7 @@ func TestAPI_HandleImportConfig_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	testConfig := config.DefaultClientConfig()
 	body, _ := json.Marshal(testConfig)
@@ -1391,7 +1391,7 @@ func TestAPI_HandleImportConfig_ContentTypeYAML(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	yamlBody := `
 proxy:
@@ -1414,7 +1414,7 @@ debug:
 
 func TestAPI_HandleReloadConfig_NilConfigReloader(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/reload", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1430,7 +1430,7 @@ func TestAPI_HandleReloadConfig_ReloaderError(t *testing.T) {
 			return errors.New("reload failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/reload", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1446,7 +1446,7 @@ func TestAPI_HandleReloadConfig_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/config/reload", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1467,7 +1467,7 @@ func TestAPI_HandleReloadConfig_Success(t *testing.T) {
 
 func TestAPI_HandleGetLogs_NilDebugger(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/logs/", nil)
 	w := httptest.NewRecorder()
@@ -1489,7 +1489,7 @@ func TestAPI_HandleGetLogs_WithPagination(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/logs/?limit=10&offset=5", nil)
 	w := httptest.NewRecorder()
@@ -1512,7 +1512,7 @@ func TestAPI_HandleGetLogs_WithLevelFilter(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/logs/?level=error", nil)
 	w := httptest.NewRecorder()
@@ -1529,7 +1529,7 @@ func TestAPI_HandleGetLogs_InvalidPagination(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/logs/?limit=invalid&offset=invalid", nil)
 	w := httptest.NewRecorder()
@@ -1551,7 +1551,7 @@ func TestAPI_HandleGetLogs_InvalidPagination(t *testing.T) {
 
 func TestAPI_HandleConnect_NilConnector(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/connect", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1572,7 +1572,7 @@ func TestAPI_HandleConnect_ConnectorError(t *testing.T) {
 			return errors.New("connection failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/connect", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1588,7 +1588,7 @@ func TestAPI_HandleConnect_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/connect", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1605,7 +1605,7 @@ func TestAPI_HandleConnect_Success(t *testing.T) {
 
 func TestAPI_HandleDisconnect_NilDisconnector(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/disconnect", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1626,7 +1626,7 @@ func TestAPI_HandleDisconnect_DisconnectorError(t *testing.T) {
 			return errors.New("disconnection failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/disconnect", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1642,7 +1642,7 @@ func TestAPI_HandleDisconnect_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/disconnect", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -1654,7 +1654,7 @@ func TestAPI_HandleDisconnect_Success(t *testing.T) {
 
 func TestAPI_HandleGetServers_NilServersGetter(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/servers", nil)
 	w := httptest.NewRecorder()
@@ -1674,7 +1674,7 @@ func TestAPI_HandleGetServers_NilResult(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/servers", nil)
 	w := httptest.NewRecorder()
@@ -1698,7 +1698,7 @@ func TestAPI_HandleGetServers_Success(t *testing.T) {
 			return servers
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/servers", nil)
 	w := httptest.NewRecorder()
@@ -1714,7 +1714,7 @@ func TestAPI_HandleGetServers_Success(t *testing.T) {
 
 func TestAPI_HandleSelectServer_InvalidBody(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -1727,7 +1727,7 @@ func TestAPI_HandleSelectServer_InvalidBody(t *testing.T) {
 
 func TestAPI_HandleSelectServer_EmptyServer(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"server": ""}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
@@ -1743,7 +1743,7 @@ func TestAPI_HandleSelectServer_EmptyServer(t *testing.T) {
 // the previous fake success made every mobile server selection a silent no-op.
 func TestAPI_HandleSelectServer_NilServerSelector(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"server": "server1"}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
@@ -1761,7 +1761,7 @@ func TestAPI_HandleSelectServer_SelectorError(t *testing.T) {
 			return errors.New("server not found")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"server": "invalid-server"}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
@@ -1779,7 +1779,7 @@ func TestAPI_HandleSelectServer_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"server": "server1"}`
 	req := httptest.NewRequest("POST", "/api/v1/server/select", strings.NewReader(body))
@@ -1793,7 +1793,7 @@ func TestAPI_HandleSelectServer_Success(t *testing.T) {
 
 func TestAPI_HandleGetSettings_NilSettingsGetter(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/settings", nil)
 	w := httptest.NewRecorder()
@@ -1813,7 +1813,7 @@ func TestAPI_HandleGetSettings_NilResult(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/settings", nil)
 	w := httptest.NewRecorder()
@@ -1835,7 +1835,7 @@ func TestAPI_HandleGetSettings_Success(t *testing.T) {
 			return settings
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/settings", nil)
 	w := httptest.NewRecorder()
@@ -1852,7 +1852,7 @@ func TestAPI_HandleGetSettings_Success(t *testing.T) {
 
 func TestAPI_HandleUpdateSettings_InvalidBody(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader("invalid json"))
 	req.Header.Set("Content-Type", "application/json")
@@ -1869,7 +1869,7 @@ func TestAPI_HandleUpdateSettings_UpdaterError(t *testing.T) {
 			return errors.New("update failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"auto_connect": true}`
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader(body))
@@ -1887,7 +1887,7 @@ func TestAPI_HandleUpdateSettings_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"auto_connect": true, "show_notifications": false}`
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader(body))
@@ -1906,7 +1906,7 @@ func TestAPI_HandleUpdateSettings_Success(t *testing.T) {
 
 func TestAPI_HandleUpdateSettings_NilUpdater(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"auto_connect": true}`
 	req := httptest.NewRequest("POST", "/api/v1/settings", strings.NewReader(body))
@@ -2177,7 +2177,7 @@ func TestCheckRestartRequired(t *testing.T) {
 
 func TestSecurityHeadersMiddleware(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	w := httptest.NewRecorder()
@@ -2204,7 +2204,7 @@ func TestAPISecurityHeadersMiddleware(t *testing.T) {
 
 func TestCorsMiddleware_NonLocalOrigin(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	req.Header.Set("Origin", "http://example.com")
@@ -2217,7 +2217,7 @@ func TestCorsMiddleware_NonLocalOrigin(t *testing.T) {
 
 func TestCorsMiddleware_127001(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	req.Header.Set("Origin", "http://127.0.0.1:7080")
@@ -2229,7 +2229,7 @@ func TestCorsMiddleware_127001(t *testing.T) {
 
 func TestCorsMiddleware_IPv6(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	req.Header.Set("Origin", "http://[::1]:7080")
@@ -2241,7 +2241,7 @@ func TestCorsMiddleware_IPv6(t *testing.T) {
 
 func TestCorsMiddleware_NoOrigin(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	// No Origin header
@@ -2254,7 +2254,7 @@ func TestCorsMiddleware_NoOrigin(t *testing.T) {
 
 func TestCorsMiddleware_OptionsWithLocalOrigin(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("OPTIONS", "/api/v1/health", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -2270,7 +2270,7 @@ func TestAuthMiddleware_EmptyToken(t *testing.T) {
 	api := New(Config{
 		Token: "",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
 	w := httptest.NewRecorder()
@@ -2377,7 +2377,7 @@ func TestAPI_HandleStatus_WithBytesAndConns(t *testing.T) {
 			return 5
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -2399,7 +2399,7 @@ func TestAPI_HandleStatus_WithServerAddressAndProxies(t *testing.T) {
 		HTTPProxyAddr:   "127.0.0.1:7380",
 		SOCKS5ProxyAddr: "127.0.0.1:7381",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -2563,7 +2563,7 @@ func TestAPI_HandlerWithUI_AllAPIRoutes(t *testing.T) {
 
 func TestAPI_HandleLogStream_Setup(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Create a request with a context that will be canceled
 	ctx, cancel := context.WithCancel(context.Background())
@@ -2590,7 +2590,7 @@ func TestAPI_HandleLogStream_Setup(t *testing.T) {
 
 func TestAPI_HandleVPNSplitRemoveApp_EmptyName(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// The chi router will return 405 for empty name because the route won't match
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/", nil)
@@ -2728,7 +2728,7 @@ func TestAPI_HandleVPNStatus_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/status", nil)
 	w := httptest.NewRecorder()
@@ -2743,7 +2743,7 @@ func TestAPI_HandleVPNEnable_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/enable", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -2765,7 +2765,7 @@ func TestAPI_HandleVPNEnable_WithMockVPNManager_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/enable", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -2780,7 +2780,7 @@ func TestAPI_HandleVPNDisable_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/disable", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -2802,7 +2802,7 @@ func TestAPI_HandleVPNDisable_WithMockVPNManager_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/vpn/disable", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -2818,7 +2818,7 @@ func TestAPI_HandleVPNConnections_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/connections", nil)
 	w := httptest.NewRecorder()
@@ -2833,7 +2833,7 @@ func TestAPI_HandleVPNSplitRules_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/split/rules", nil)
 	w := httptest.NewRecorder()
@@ -2847,7 +2847,7 @@ func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "testapp", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
@@ -2871,7 +2871,7 @@ func TestAPI_HandleVPNSplitAddApp_WithMockVPNManager_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "testapp", "path": "/usr/bin/testapp"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/apps", strings.NewReader(body))
@@ -2888,7 +2888,7 @@ func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/testapp", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -2910,7 +2910,7 @@ func TestAPI_HandleVPNSplitRemoveApp_WithMockVPNManager_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/apps/testapp", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -2925,7 +2925,7 @@ func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"pattern": "*.example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
@@ -2949,7 +2949,7 @@ func TestAPI_HandleVPNSplitAddDomain_WithMockVPNManager_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"pattern": "*.example.com"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/domains", strings.NewReader(body))
@@ -2966,7 +2966,7 @@ func TestAPI_HandleVPNSplitAddIP_WithMockVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"cidr": "10.0.0.0/8"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
@@ -2990,7 +2990,7 @@ func TestAPI_HandleVPNSplitAddIP_WithMockVPNManager_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"cidr": "10.0.0.0/8"}`
 	req := httptest.NewRequest("POST", "/api/v1/vpn/split/ips", strings.NewReader(body))
@@ -3013,7 +3013,7 @@ func TestAPI_HandleValidateConfig_WithMergedConfig(t *testing.T) {
 			return testConfig
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Partial update that should merge with existing config
 	body := `{"debug": {"enabled": true, "max_entries": 500}}`
@@ -3048,7 +3048,7 @@ func TestAPI_HandleGetLogs_WithDebuggerAndEntries(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/logs/", nil)
 	w := httptest.NewRecorder()
@@ -3075,7 +3075,7 @@ func TestAPI_HandleGetLogs_LevelFilterError(t *testing.T) {
 	api := New(Config{
 		Debugger: debugger,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Filter by error level
 	req := httptest.NewRequest("GET", "/api/v1/logs/?level=error", nil)
@@ -3108,7 +3108,7 @@ func TestAuthMiddleware_BearerPrefixCaseInsensitive(t *testing.T) {
 	api := New(Config{
 		Token: "secret",
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// Using "bearer" lowercase
 	req := httptest.NewRequest("GET", "/api/v1/health", nil)
@@ -3147,7 +3147,7 @@ func TestAPI_HandleStatus_WithVPNEnabled(t *testing.T) {
 			return true
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -3171,7 +3171,7 @@ func TestAPI_HandleImportConfig_ValidYAML(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	yamlBody := `
 proxy:
@@ -3195,7 +3195,7 @@ proxy:
 
 func TestAPI_HandleGetConfigDefaults_VerifyContent(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/config/defaults", nil)
 	w := httptest.NewRecorder()
@@ -3227,7 +3227,7 @@ func TestAPI_HandleGetSettings_WithVPNEnabled(t *testing.T) {
 			return settings
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/settings", nil)
 	w := httptest.NewRecorder()
@@ -3259,7 +3259,7 @@ func TestAPI_HandleTestRoute_WithDirectAction(t *testing.T) {
 	api := New(Config{
 		Router: clientRouter,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/routes/test?domain=test.local", nil)
 	w := httptest.NewRecorder()
@@ -3280,7 +3280,7 @@ func TestAPI_HandleTestRoute_WithDirectAction(t *testing.T) {
 
 func TestCorsMiddleware_AllowedMethods(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("OPTIONS", "/api/v1/health", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -3297,7 +3297,7 @@ func TestCorsMiddleware_AllowedMethods(t *testing.T) {
 
 func TestCorsMiddleware_AllowedHeaders(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("OPTIONS", "/api/v1/health", nil)
 	req.Header.Set("Origin", "http://localhost:3000")
@@ -3315,7 +3315,7 @@ func TestAPI_HandleVPNStatus_NilConcreteVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: mgr, // Pass nil concrete pointer via interface
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/vpn/status", nil)
 	w := httptest.NewRecorder()
@@ -3337,7 +3337,7 @@ func TestAPI_HandleStatus_NilConcreteVPNManager(t *testing.T) {
 	api := New(Config{
 		VPNManager: mgr,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/status", nil)
 	w := httptest.NewRecorder()
@@ -3355,7 +3355,7 @@ func TestAPI_HandleStatus_NilConcreteVPNManager(t *testing.T) {
 
 func TestAPI_HandleVPNSplitSetMode_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"mode": "exclude"}`
 	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
@@ -3372,7 +3372,7 @@ func TestAPI_HandleVPNSplitSetMode_Success(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"mode": "include"}`
 	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
@@ -3394,7 +3394,7 @@ func TestAPI_HandleVPNSplitSetMode_InvalidJSON(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"mode": invalid}`
 	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
@@ -3411,7 +3411,7 @@ func TestAPI_HandleVPNSplitSetMode_EmptyMode(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"mode": ""}`
 	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
@@ -3430,7 +3430,7 @@ func TestAPI_HandleVPNSplitSetMode_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"mode": "invalid"}`
 	req := httptest.NewRequest("PUT", "/api/v1/vpn/split/mode", strings.NewReader(body))
@@ -3449,7 +3449,7 @@ func TestAPI_HandleVPNSplitSetMode_Error(t *testing.T) {
 
 func TestAPI_HandleVPNSplitRemoveDomain_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/domains/%2A.example.com", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3464,7 +3464,7 @@ func TestAPI_HandleVPNSplitRemoveDomain_Success(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/domains/%2A.example.com", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3485,7 +3485,7 @@ func TestAPI_HandleVPNSplitRemoveDomain_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/domains/%2A.nonexistent.com", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3502,7 +3502,7 @@ func TestAPI_HandleVPNSplitRemoveDomain_Error(t *testing.T) {
 
 func TestAPI_HandleVPNSplitRemoveIP_NilVPNManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/ips/10.0.0.0%2F8", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3517,7 +3517,7 @@ func TestAPI_HandleVPNSplitRemoveIP_Success(t *testing.T) {
 	api := New(Config{
 		VPNManager: newMockVPNManager(),
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/ips/10.0.0.0%2F8", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3538,7 +3538,7 @@ func TestAPI_HandleVPNSplitRemoveIP_Error(t *testing.T) {
 	api := New(Config{
 		VPNManager: mock,
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/vpn/split/ips/192.168.0.0%2F16", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3555,7 +3555,7 @@ func TestAPI_HandleVPNSplitRemoveIP_Error(t *testing.T) {
 
 func TestAPI_HandleAddRoute_NilConfigUpdater(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "server"}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3578,7 +3578,7 @@ func TestAPI_HandleAddRoute_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "server", "priority": 100}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3603,7 +3603,7 @@ func TestAPI_HandleAddRoute_InvalidJSON(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": invalid}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3626,7 +3626,7 @@ func TestAPI_HandleAddRoute_MissingName(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"domains": ["*.example.com"], "action": "server"}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3649,7 +3649,7 @@ func TestAPI_HandleAddRoute_MissingDomains(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "test-route", "action": "server"}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3672,7 +3672,7 @@ func TestAPI_HandleAddRoute_InvalidAction(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "invalid"}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3695,7 +3695,7 @@ func TestAPI_HandleAddRoute_DefaultAction(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "test-route", "domains": ["*.example.com"]}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3718,7 +3718,7 @@ func TestAPI_HandleAddRoute_DirectAction(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "direct-route", "domains": ["*.local"], "action": "direct"}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3748,7 +3748,7 @@ func TestAPI_HandleAddRoute_ConflictingName(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "existing-route", "domains": ["*.example.com"], "action": "server"}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3771,7 +3771,7 @@ func TestAPI_HandleAddRoute_ConfigUpdateError(t *testing.T) {
 			return errors.New("config update failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	body := `{"name": "test-route", "domains": ["*.example.com"], "action": "server"}`
 	req := httptest.NewRequest("POST", "/api/v1/routes", strings.NewReader(body))
@@ -3794,7 +3794,7 @@ func TestAPI_HandleAddRoute_ConfigUpdateError(t *testing.T) {
 
 func TestAPI_HandleRemoveRoute_NilConfigUpdater(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/routes/test-route", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3822,7 +3822,7 @@ func TestAPI_HandleRemoveRoute_Success(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/routes/test-route", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3851,7 +3851,7 @@ func TestAPI_HandleRemoveRoute_NotFound(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/routes/nonexistent-route", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3879,7 +3879,7 @@ func TestAPI_HandleRemoveRoute_ConfigUpdateError(t *testing.T) {
 			return errors.New("config update failed")
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/routes/test-route", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3901,7 +3901,7 @@ func TestAPI_HandleRemoveRoute_NoRouter(t *testing.T) {
 			return nil
 		},
 	})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/routes/any-route", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3918,7 +3918,7 @@ func TestAPI_HandleRemoveRoute_NoRouter(t *testing.T) {
 
 func TestAPI_HandleCacheStats_NilCacheManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/cache/stats", nil)
 	w := httptest.NewRecorder()
@@ -3935,7 +3935,7 @@ func TestAPI_HandleCacheStats_NilCacheManager(t *testing.T) {
 
 func TestAPI_HandleCacheEntries_NilCacheManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("GET", "/api/v1/cache/entries", nil)
 	w := httptest.NewRecorder()
@@ -3954,7 +3954,7 @@ func TestAPI_HandleCacheEntries_NilCacheManager(t *testing.T) {
 
 func TestAPI_HandleCacheEntries_WithPagination(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	// When cacheManager is nil, the handler returns defaults regardless of query params
 	req := httptest.NewRequest("GET", "/api/v1/cache/entries?limit=50&offset=10", nil)
@@ -3973,7 +3973,7 @@ func TestAPI_HandleCacheEntries_WithPagination(t *testing.T) {
 
 func TestAPI_HandleCacheDeleteEntry_NilCacheManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("DELETE", "/api/v1/cache/entries/test-key", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")
@@ -3986,7 +3986,7 @@ func TestAPI_HandleCacheDeleteEntry_NilCacheManager(t *testing.T) {
 
 func TestAPI_HandleCacheClear_NilCacheManager(t *testing.T) {
 	api := New(Config{})
-	handler := api.Handler()
+	handler := api.HandlerWithUI()
 
 	req := httptest.NewRequest("POST", "/api/v1/cache/clear", nil)
 	req.Header.Set("X-Requested-With", "XMLHttpRequest")

@@ -370,6 +370,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unconditionally mounted and purely in-memory
 
 ### Removed
+- The client API's duplicate route table. `(*API).Handler` and
+  `addAPIRoutes` maintained a second copy of every route by hand, kept alive
+  only by tests, and it had already drifted from the production
+  `HandlerWithUI` — that drift is what left the static UI without CSP,
+  X-Frame-Options and nosniff. The 172 tests that exercised the duplicate now
+  run against the production handler, so the thing under test is the thing
+  that ships
 - More dead code from the audit's removal list: `backend.CopyBidirectional`
   (a third copy of a function the proxy already provides),
   `proxy.CopyBidirectionalWithStats` with the `CopyStats` type and its
@@ -421,6 +428,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   username+source). The implementation existed, fully tested, with no config
   key and no caller — a security control the project believed it shipped and
   did not
+- **A configured but unusable mTLS CRL no longer fails open.** An unreadable
+  or unparsable `crl_file` was a one-line startup warning, after which every
+  certificate the CRL was supposed to revoke kept authenticating. It is now a
+  fatal startup/creation error: if revocation checking is configured it works,
+  or the provider refuses to run. Remove `crl_file` to run without revocation
+  checking — it is never disabled implicitly
+- **`oauth.required_claims` is enforced.** The setting was parsed and surfaced
+  in the dashboard but never read, so a deployment gating access on, say,
+  `hd: example.com` was letting every active token through. Both validation
+  paths (introspection and userinfo) now enforce it with exact semantics:
+  missing claims fail, strings compare exactly, booleans and numbers compare
+  by canonical text, array claims match by string membership (`aud`-style),
+  object-valued claims never match. Deployments with no `required_claims` (or
+  the empty map the default template shipped) are unaffected. Claim values are
+  never logged or echoed in errors
+
 
 ### Fixed
 - The VPN configuration was invisible over the API. `vpn.Config`, `TUNConfig`,
