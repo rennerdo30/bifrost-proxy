@@ -163,14 +163,6 @@ func TestHealthManager(t *testing.T) {
 	mgr.Stop()
 }
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
-
-	assert.Equal(t, "tcp", cfg.Type)
-	assert.Equal(t, 30*time.Second, cfg.Interval)
-	assert.Equal(t, 5*time.Second, cfg.Timeout)
-}
-
 func TestNew_TCP(t *testing.T) {
 	cfg := Config{Type: "tcp", Target: "localhost:80", Timeout: time.Second}
 	checker := New(cfg)

@@ -412,6 +412,3 @@ func hasRestartRequiredChanges(sections []string) bool {
 	}
 	return false
 }
-
-// EventConfigSaved is broadcast when config is saved.
-const EventConfigSaved = "config.saved"

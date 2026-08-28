@@ -426,7 +426,22 @@ func createAuthenticator(cfg config.AuthConfig) (auth.Authenticator, error) {
 			return nil, err
 		}
 		reportProviderAvailability(providers)
-		return factory.CreateChain(providers)
+		chain, err := factory.CreateChain(providers)
+		if err != nil {
+			return nil, err
+		}
+		// Wrap the whole chain in failed-login lockout when configured. The
+		// decorator existed, fully tested, with no config key and no caller.
+		if cfg.BruteForce != nil && cfg.BruteForce.Enabled {
+			protector := auth.NewBruteForceProtector(auth.BruteForceConfig{
+				MaxAttempts: cfg.BruteForce.MaxAttempts,
+				LockoutTime: cfg.BruteForce.LockoutTime.Duration(),
+				MaxLockout:  cfg.BruteForce.MaxLockout.Duration(),
+				WindowSize:  cfg.BruteForce.WindowSize.Duration(),
+			})
+			return auth.NewBruteForceAuthenticator(chain, protector), nil
+		}
+		return chain, nil
 	}
 
 	// No auth config explicitly set; default to "none".
@@ -820,12 +835,18 @@ func (s *Server) GetSanitizedConfig() interface{} {
 	sanitized := map[string]interface{}{
 		"server": map[string]interface{}{
 			"http": map[string]interface{}{
-				"listen":        s.config.Server.HTTP.Listen,
-				"read_timeout":  time.Duration(s.config.Server.HTTP.ReadTimeout).String(),
-				"write_timeout": time.Duration(s.config.Server.HTTP.WriteTimeout).String(),
+				"listen":              s.config.Server.HTTP.Listen,
+				"read_timeout":        time.Duration(s.config.Server.HTTP.ReadTimeout).String(),
+				"write_timeout":       time.Duration(s.config.Server.HTTP.WriteTimeout).String(),
+				"idle_timeout":        time.Duration(s.config.Server.HTTP.IdleTimeout).String(),
+				"tunnel_idle_timeout": time.Duration(s.config.Server.HTTP.TunnelIdleTimeout).String(),
 			},
 			"socks5": map[string]interface{}{
-				"listen": s.config.Server.SOCKS5.Listen,
+				"listen":              s.config.Server.SOCKS5.Listen,
+				"read_timeout":        time.Duration(s.config.Server.SOCKS5.ReadTimeout).String(),
+				"write_timeout":       time.Duration(s.config.Server.SOCKS5.WriteTimeout).String(),
+				"idle_timeout":        time.Duration(s.config.Server.SOCKS5.IdleTimeout).String(),
+				"tunnel_idle_timeout": time.Duration(s.config.Server.SOCKS5.TunnelIdleTimeout).String(),
 			},
 			"graceful_period": time.Duration(s.config.Server.GracefulPeriod).String(),
 		},
@@ -1113,6 +1134,73 @@ func (s *Server) broadcastWSEvents() {
 	}
 }
 
+// httpHandlerConfig builds the HTTP proxy handler configuration from the server
+// config.
+//
+// The listener timeouts and the outbound dial timeout come from different
+// places on purpose. server.http.{read,write,idle}_timeout describe the INBOUND
+// client connection; network.dial_timeout describes the OUTBOUND dial to the
+// selected backend. read_timeout used to be passed as the dial timeout, which
+// meant raising it to help a slow client instead lengthened backend connect
+// attempts.
+func (s *Server) httpHandlerConfig(bandwidthCfg *ratelimit.BandwidthConfig) proxy.HTTPHandlerConfig {
+	return proxy.HTTPHandlerConfig{
+		GetBackend:        s.getBackend,
+		DialTimeout:       s.config.Network.DialTimeout.Duration(),
+		ReadTimeout:       s.config.Server.HTTP.ReadTimeout.Duration(),
+		WriteTimeout:      s.config.Server.HTTP.WriteTimeout.Duration(),
+		IdleTimeout:       s.config.Server.HTTP.IdleTimeout.Duration(),
+		TunnelIdleTimeout: s.config.Server.HTTP.TunnelIdleTimeout.Duration(),
+		Authenticate:      s.authenticateUser,
+		NegotiateAuth:     s.negotiateAuthHook(),
+		AuthRequired:      s.isAuthRequired(),
+		DialNetwork:       s.config.Network.AddressFamily(),
+		AccessCheck:       s.accessCheck,
+		RateLimitUser:     s.allowUser,
+		AccessLogger:      s.accessLogger,
+		Bandwidth:         bandwidthCfg,
+		OnConnect:         s.onConnect,
+		OnError:           s.onError,
+		CacheInterceptor:  s.cacheInterceptor,
+		MITM:              s.mitmInterceptor,
+		RecordMetrics: func(protocol, method, status, backendName string, duration time.Duration, sent, recv int64) {
+			s.metricsCollector.RecordRequest(protocol, method, status, duration)
+			s.metricsCollector.RecordRequestSize(protocol, recv)
+			s.metricsCollector.RecordResponseSize(protocol, sent)
+			s.metricsCollector.RecordBytes(backendName, sent, recv)
+		},
+	}
+}
+
+// socks5HandlerConfig builds the SOCKS5 proxy handler configuration from the
+// server config. See httpHandlerConfig for why the listener timeouts and the
+// dial timeout have separate sources.
+func (s *Server) socks5HandlerConfig(bandwidthCfg *ratelimit.BandwidthConfig) proxy.SOCKS5HandlerConfig {
+	return proxy.SOCKS5HandlerConfig{
+		GetBackend:           s.getBackend,
+		AuthenticateWithInfo: s.authenticateUser,
+		AuthRequired:         s.isAuthRequired(),
+		DialTimeout:          s.config.Network.DialTimeout.Duration(),
+		ReadTimeout:          s.config.Server.SOCKS5.ReadTimeout.Duration(),
+		WriteTimeout:         s.config.Server.SOCKS5.WriteTimeout.Duration(),
+		IdleTimeout:          s.config.Server.SOCKS5.IdleTimeout.Duration(),
+		TunnelIdleTimeout:    s.config.Server.SOCKS5.TunnelIdleTimeout.Duration(),
+		DialNetwork:          s.config.Network.AddressFamily(),
+		AccessCheck:          s.accessCheck,
+		RateLimitUser:        s.allowUser,
+		AccessLogger:         s.accessLogger,
+		Bandwidth:            bandwidthCfg,
+		OnConnect:            s.onConnect,
+		OnError:              s.onError,
+		RecordMetrics: func(protocol, method, status, backendName string, duration time.Duration, sent, recv int64) {
+			s.metricsCollector.RecordRequest(protocol, method, status, duration)
+			s.metricsCollector.RecordRequestSize(protocol, recv)
+			s.metricsCollector.RecordResponseSize(protocol, sent)
+			s.metricsCollector.RecordBytes(backendName, sent, recv)
+		},
+	}
+}
+
 // serveHTTP handles HTTP proxy connections.
 func (s *Server) serveHTTP(ctx context.Context) {
 	defer s.wg.Done()
@@ -1122,28 +1210,7 @@ func (s *Server) serveHTTP(ctx context.Context) {
 	bandwidthCfg := s.bandwidthConfig
 	s.mu.RUnlock()
 
-	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
-		GetBackend:       s.getBackend,
-		DialTimeout:      s.config.Server.HTTP.ReadTimeout.Duration(),
-		Authenticate:     s.authenticateUser,
-		NegotiateAuth:    s.negotiateAuthHook(),
-		AuthRequired:     s.isAuthRequired(),
-		DialNetwork:      s.config.Network.AddressFamily(),
-		AccessCheck:      s.accessCheck,
-		RateLimitUser:    s.allowUser,
-		AccessLogger:     s.accessLogger,
-		Bandwidth:        bandwidthCfg,
-		OnConnect:        s.onConnect,
-		OnError:          s.onError,
-		CacheInterceptor: s.cacheInterceptor,
-		MITM:             s.mitmInterceptor,
-		RecordMetrics: func(protocol, method, status, backendName string, duration time.Duration, sent, recv int64) {
-			s.metricsCollector.RecordRequest(protocol, method, status, duration)
-			s.metricsCollector.RecordRequestSize(protocol, recv)
-			s.metricsCollector.RecordResponseSize(protocol, sent)
-			s.metricsCollector.RecordBytes(backendName, sent, recv)
-		},
-	})
+	handler := proxy.NewHTTPHandler(s.httpHandlerConfig(bandwidthCfg))
 
 	for {
 		conn, err := s.httpListener.Accept()
@@ -1251,25 +1318,7 @@ func (s *Server) serveSOCKS5(ctx context.Context) {
 	bandwidthCfg := s.bandwidthConfig
 	s.mu.RUnlock()
 
-	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
-		GetBackend:           s.getBackend,
-		AuthenticateWithInfo: s.authenticateUser,
-		AuthRequired:         s.isAuthRequired(),
-		DialTimeout:          30 * time.Second,
-		DialNetwork:          s.config.Network.AddressFamily(),
-		AccessCheck:          s.accessCheck,
-		RateLimitUser:        s.allowUser,
-		AccessLogger:         s.accessLogger,
-		Bandwidth:            bandwidthCfg,
-		OnConnect:            s.onConnect,
-		OnError:              s.onError,
-		RecordMetrics: func(protocol, method, status, backendName string, duration time.Duration, sent, recv int64) {
-			s.metricsCollector.RecordRequest(protocol, method, status, duration)
-			s.metricsCollector.RecordRequestSize(protocol, recv)
-			s.metricsCollector.RecordResponseSize(protocol, sent)
-			s.metricsCollector.RecordBytes(backendName, sent, recv)
-		},
-	})
+	handler := proxy.NewSOCKS5Handler(s.socks5HandlerConfig(bandwidthCfg))
 
 	for {
 		conn, err := s.socks5Listener.Accept()

@@ -7,6 +7,8 @@
 export {
   BifrostVpn,
   isNativeVpnAvailable,
+  isNativeVpnUsable,
+  NATIVE_DATA_PATH_IS_SECURE,
 } from './BifrostVpn'
 export type {
   NativeVpnConfig,
@@ -21,17 +23,19 @@ import type { NativeVpnConfig } from './BifrostVpn'
 /**
  * Decide which VPN path to use.
  *
- * Returns 'native' only when the on-device native VPN module is actually linked
- * into the running build; otherwise 'server' so the app falls back to the
- * existing client/server REST VPN flow (api.enableVPN / api.disableVPN).
+ * Returns 'native' only when the on-device native VPN module is linked into the
+ * running build *and* its data path is a real secure tunnel; otherwise 'server'
+ * so the app falls back to the client/server REST VPN flow (api.enableVPN /
+ * api.disableVPN).
  *
- * NOTE: even when 'native' is returned, the current native data path is a
- * raw-UDP placeholder, not a secure tunnel (see README). Callers should treat
- * the native path as experimental and keep it opt-in until the real
- * WireGuard/OpenVPN integration lands.
+ * The second condition is what keeps this honest. The native forwarders are
+ * currently raw-UDP placeholders, and merely applying the config plugin would
+ * make the module linked -- so gating on "linked" alone would silently route
+ * user traffic over an insecure link labelled VPN. See
+ * NATIVE_DATA_PATH_IS_SECURE in ./BifrostVpn.
  */
 export function selectVpnMode(): 'native' | 'server' {
-  return BifrostVpn.isAvailable() ? 'native' : 'server'
+  return BifrostVpn.isUsable() ? 'native' : 'server'
 }
 
 /**

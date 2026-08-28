@@ -14,8 +14,12 @@
 //   The current native packet forwarders are RAW-UDP PLACEHOLDERS, not a secure
 //   tunnel. They must be replaced with a real WireGuard/OpenVPN data path
 //   (e.g. wireguard-go via gomobile, or the WireGuardKit / wireguard-android
-//   libraries) before being shipped or enabled by default. Do not present the
-//   native path as "secure" until that work lands and is validated on-device.
+//   libraries) before being shipped or enabled by default.
+//
+//   That is enforced, not merely documented: NATIVE_DATA_PATH_IS_SECURE below
+//   is false, so start() refuses and selectVpnMode() keeps returning 'server'
+//   even in a build where the module *is* linked. Linking the native module is
+//   a build-system step and must not by itself be enough to route traffic.
 
 import { NativeModules, NativeEventEmitter, Platform } from 'react-native'
 
@@ -87,8 +91,37 @@ const LINK_HINT =
   'Native VPN module is not linked. See mobile/README.md for the iOS Network ' +
   'Extension / Android VpnService build steps.'
 
-const nativeModule: BifrostVpnNativeModule | undefined =
-  (NativeModules as Record<string, BifrostVpnNativeModule | undefined>).BifrostVpn
+const PLACEHOLDER_HINT =
+  'Native VPN data path is a raw-UDP placeholder, not a secure tunnel. ' +
+  'Refusing to carry traffic over it. See NATIVE_DATA_PATH_IS_SECURE in ' +
+  'src/native/BifrostVpn.ts.'
+
+/**
+ * Whether the on-device native data path is a real, validated secure tunnel.
+ *
+ * This is deliberately a hard-coded constant rather than configuration. The
+ * native packet forwarders are raw-UDP placeholders (see the header comment),
+ * so carrying traffic over them would present an insecure link to the user as
+ * a VPN. Linking the native module is a build-system step -- applying the
+ * config plugin is enough to make `isNativeVpnAvailable()` return true -- and
+ * on its own that must not be sufficient to route traffic.
+ *
+ * Flip this to true only together with a real WireGuard/OpenVPN data path that
+ * has been validated on-device. `nativeVpn.test.ts` asserts it is false and
+ * will fail when it changes; that failure is the point, and updating those
+ * assertions is the deliberate acknowledgement that the data path is real.
+ */
+export const NATIVE_DATA_PATH_IS_SECURE: boolean = false
+
+/**
+ * Look the native module up on every call rather than capturing it at import
+ * time. TurboModules can be registered lazily, so a module captured during the
+ * first import of this file may be missing even in a build that links it.
+ */
+function getNativeModule(): BifrostVpnNativeModule | undefined {
+  return (NativeModules as Record<string, BifrostVpnNativeModule | undefined>)
+    .BifrostVpn
+}
 
 /**
  * Whether the on-device native VPN module is actually linked into this build.
@@ -98,7 +131,18 @@ const nativeModule: BifrostVpnNativeModule | undefined =
  * back to the server-side/client REST VPN flow otherwise.
  */
 export function isNativeVpnAvailable(): boolean {
-  return Platform.OS !== 'web' && nativeModule != null
+  return Platform.OS !== 'web' && getNativeModule() != null
+}
+
+/**
+ * Whether the on-device native VPN may actually be used to carry traffic.
+ *
+ * This is the check callers want. `isNativeVpnAvailable()` answers only "is the
+ * module linked?"; this also requires the data path to be a real tunnel, so a
+ * build that links the placeholder still falls back to the server-side flow.
+ */
+export function isNativeVpnUsable(): boolean {
+  return NATIVE_DATA_PATH_IS_SECURE && isNativeVpnAvailable()
 }
 
 let eventEmitter: NativeEventEmitter | null = null
@@ -106,9 +150,11 @@ let eventEmitter: NativeEventEmitter | null = null
 function getEmitter(): NativeEventEmitter | null {
   if (!isNativeVpnAvailable()) return null
   if (eventEmitter == null) {
-    // nativeModule is non-null here per isNativeVpnAvailable().
+    // The module is non-null here per isNativeVpnAvailable().
     eventEmitter = new NativeEventEmitter(
-      nativeModule as unknown as ConstructorParameters<typeof NativeEventEmitter>[0]
+      getNativeModule() as unknown as ConstructorParameters<
+        typeof NativeEventEmitter
+      >[0]
     )
   }
   return eventEmitter
@@ -132,30 +178,37 @@ const DISCONNECTED_STATUS: NativeVpnStatus = {
  */
 export const BifrostVpn = {
   isAvailable: isNativeVpnAvailable,
+  isUsable: isNativeVpnUsable,
 
   async requestPermission(): Promise<boolean> {
     if (!isNativeVpnAvailable()) return false
-    return nativeModule!.requestPermission()
+    // Do not ask the OS for tunnel permission for a path we will refuse to
+    // start; the prompt would imply a capability the build does not have.
+    if (!NATIVE_DATA_PATH_IS_SECURE) return false
+    return getNativeModule()!.requestPermission()
   },
 
   async start(config: NativeVpnConfig): Promise<void> {
     if (!isNativeVpnAvailable()) {
       throw new Error(LINK_HINT)
     }
+    if (!NATIVE_DATA_PATH_IS_SECURE) {
+      throw new Error(PLACEHOLDER_HINT)
+    }
     if (!config.serverAddress) {
       throw new Error('serverAddress is required to start the native VPN')
     }
-    return nativeModule!.start(config)
+    return getNativeModule()!.start(config)
   },
 
   async stop(): Promise<void> {
     if (!isNativeVpnAvailable()) return
-    return nativeModule!.stop()
+    return getNativeModule()!.stop()
   },
 
   async getStatus(): Promise<NativeVpnStatus> {
     if (!isNativeVpnAvailable()) return { ...DISCONNECTED_STATUS }
-    return nativeModule!.getStatus()
+    return getNativeModule()!.getStatus()
   },
 
   /**

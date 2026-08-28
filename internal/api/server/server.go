@@ -281,7 +281,12 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 // crashed the page. With a JSON 404 the UI can report it honestly instead.
 func (a *API) spaOrAPINotFound(staticHandler http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
+		// Any path CONTAINING /api/v1/ is an API call, not a deep link — a
+		// leading-prefix check alone let a corrupted base path (an SPA bug
+		// once produced /config/api/v1/...) fall through to index.html, where
+		// the 200 + text/html made every missing route look healthy. Failing
+		// loudly here is what surfaces that class of frontend mistake.
+		if strings.HasPrefix(r.URL.Path, "/api/") || strings.Contains(r.URL.Path, "/api/v1/") {
 			a.writeJSON(w, http.StatusNotFound, map[string]interface{}{
 				"error": "not found",
 				"path":  r.URL.Path,

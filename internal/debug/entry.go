@@ -2,6 +2,7 @@
 package debug
 
 import (
+	"encoding/json"
 	"time"
 )
 
@@ -25,6 +26,21 @@ type Entry struct {
 	ResponseHeaders map[string]string `json:"response_headers,omitempty"`
 	RequestBody     []byte            `json:"request_body,omitempty"`
 	ResponseBody    []byte            `json:"response_body,omitempty"`
+}
+
+// MarshalJSON emits Duration in the unit its field name promises. The plain
+// time.Duration marshaled as NANOseconds under a key called duration_ms, so
+// the traffic table read a million times the real value (and disagreed with
+// the /logs endpoint, which uses real milliseconds for the same field name).
+func (e Entry) MarshalJSON() ([]byte, error) {
+	type alias Entry
+	return json.Marshal(struct {
+		alias
+		DurationMS int64 `json:"duration_ms"`
+	}{
+		alias:      alias(e),
+		DurationMS: e.Duration.Milliseconds(),
+	})
 }
 
 // EntryType represents the type of debug entry.

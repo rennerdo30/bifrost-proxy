@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 )
 
 // TieredStorage combines memory and disk storage.
@@ -25,6 +26,12 @@ type TieredStorage struct {
 
 	// closed indicates if the storage has been stopped.
 	closed bool
+
+	// hits/misses are the TIERED lookup outcome. Summing the per-tier
+	// counters double-counted every disk hit as a memory miss, so a workload
+	// served entirely from disk reported a hit rate of 0.5 instead of 1.0.
+	hits   atomic.Int64
+	misses atomic.Int64
 }
 
 // NewTieredStorage creates a new tiered storage.
@@ -107,11 +114,18 @@ func (t *TieredStorage) Get(ctx context.Context, key string) (*Entry, error) {
 	// Check memory first
 	entry, err := t.memory.Get(ctx, key)
 	if err == nil {
+		t.hits.Add(1)
 		return entry, nil
 	}
 
 	// Check disk
-	return t.disk.Get(ctx, key)
+	entry, err = t.disk.Get(ctx, key)
+	if err == nil {
+		t.hits.Add(1)
+		return entry, nil
+	}
+	t.misses.Add(1)
+	return nil, err
 }
 
 // Put stores a cache entry in the appropriate tier.
@@ -302,12 +316,15 @@ func (t *TieredStorage) Stats() StorageStats {
 	}
 
 	return StorageStats{
-		Entries:       memStats.Entries + diskStats.Entries,
-		TotalSize:     totalSize,
-		MaxSize:       maxSize,
-		UsedPercent:   usedPercent,
-		HitCount:      memStats.HitCount + diskStats.HitCount,
-		MissCount:     memStats.MissCount + diskStats.MissCount,
+		Entries:     memStats.Entries + diskStats.Entries,
+		TotalSize:   totalSize,
+		MaxSize:     maxSize,
+		UsedPercent: usedPercent,
+		// The combined counters are the tiered lookup outcome, not the sum of
+		// the per-tier counters (which double-count a disk hit as a memory
+		// miss). The per-tier views remain available via MemoryStats/DiskStats.
+		HitCount:      t.hits.Load(),
+		MissCount:     t.misses.Load(),
 		EvictionCount: memStats.EvictionCount + diskStats.EvictionCount,
 	}
 }
