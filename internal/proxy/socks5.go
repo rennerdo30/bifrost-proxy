@@ -176,7 +176,6 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 	}
 	ctx = util.WithClientIP(ctx, clientIP)
 	startTime := time.Now()
-	ctx = util.WithStartTime(ctx, startTime)
 
 	entry := &accesslog.Entry{
 		Timestamp: startTime,
@@ -203,7 +202,12 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 			entry.StatusCode = int(socks5ReplyGeneralFailure)
 		}
 		if h.accessLogger != nil {
-			_ = h.accessLogger.Log(*entry) //nolint:errcheck // Best effort access logging
+			// The error is intentionally dropped here: this runs in a
+			// deferred block on every request, so there is nothing useful to
+			// do per entry. Write failures are counted and reported by the
+			// logger itself (see accesslog.writeFailures), so a log that has
+			// silently stopped is still visible.
+			_ = h.accessLogger.Log(*entry) //nolint:errcheck // reported by the logger
 		}
 		if h.recordMetrics != nil {
 			method := entry.Method
@@ -454,8 +458,6 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 	} else {
 		target = fmt.Sprintf("%s:%d", host, port)
 	}
-	ctx = util.WithDomain(ctx, util.GetHostFromRequest(host))
-
 	if entry != nil {
 		entry.Host = host
 	}

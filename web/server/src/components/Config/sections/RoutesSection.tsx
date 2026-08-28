@@ -38,18 +38,34 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
     return route?.name || route?.domains.join(', ') || 'this route'
   }
 
-  const moveRoute = (index: number, direction: 'up' | 'down') => {
-    const newIndex = direction === 'up' ? index - 1 : index + 1
-    if (newIndex < 0 || newIndex >= routes.length) return
-
-    const updated = [...routes]
-    const [removed] = updated.splice(index, 1)
-    updated.splice(newIndex, 0, removed)
-    onChange(updated)
-  }
-
   // Sort by priority for display
   const sortedRoutes = [...routes].sort((a, b) => (b.priority || 0) - (a.priority || 0))
+
+  // Reordering must change PRIORITY, not array position: the router evaluates
+  // routes by priority and this list is displayed priority-sorted, so the old
+  // splice-based move changed nothing visible or effective. Swapping the two
+  // routes' priorities (with a tie-break bump) changes both.
+  const moveRoute = (sortedIndex: number, direction: 'up' | 'down') => {
+    const newIndex = direction === 'up' ? sortedIndex - 1 : sortedIndex + 1
+    if (newIndex < 0 || newIndex >= sortedRoutes.length) return
+
+    const a = sortedRoutes[sortedIndex]
+    const b = sortedRoutes[newIndex]
+    let priorityA = b.priority || 0
+    const priorityB = a.priority || 0
+    if (priorityA === priorityB) {
+      // Equal priorities cannot swap into a different order; nudge the moved
+      // route past its neighbor.
+      priorityA += direction === 'up' ? 1 : -1
+    }
+
+    const updated = routes.map((route) => {
+      if (route === a) return { ...route, priority: priorityA }
+      if (route === b) return { ...route, priority: priorityB }
+      return route
+    })
+    onChange(updated)
+  }
 
   return (
     <Section sectionKey="routes" title="Routes">
@@ -104,7 +120,7 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
                   </div>
                   <div className="flex items-center gap-1 ml-4">
                     <button
-                      onClick={() => moveRoute(actualIndex, 'up')}
+                      onClick={() => moveRoute(displayIndex, 'up')}
                       disabled={displayIndex === 0}
                       className="btn btn-ghost text-sm disabled:opacity-30"
                       title="Move up (higher priority)"
@@ -115,7 +131,7 @@ export function RoutesSection({ routes, availableBackends, onChange }: RoutesSec
                       </svg>
                     </button>
                     <button
-                      onClick={() => moveRoute(actualIndex, 'down')}
+                      onClick={() => moveRoute(displayIndex, 'down')}
                       disabled={displayIndex === sortedRoutes.length - 1}
                       className="btn btn-ghost text-sm disabled:opacity-30"
                       title="Move down (lower priority)"

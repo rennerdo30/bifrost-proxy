@@ -5,11 +5,29 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+)
+
+// SOCKS5 wire constants (RFC 1928) used when talking to the server as a
+// SOCKS5 client.
+const (
+	// Address types carried in the ATYP field of a connect reply.
+	socks5AddrIPv4   byte = 0x01
+	socks5AddrDomain byte = 0x03
+	socks5AddrIPv6   byte = 0x04
+
+	// socks5PortLen is the width of the two-byte big-endian BND.PORT field.
+	socks5PortLen = 2
+
+	// Bound-address lengths, address bytes plus BND.PORT. These are the byte
+	// counts that must be consumed in full before the tunneled stream starts.
+	socks5BoundAddrLenIPv4 = net.IPv4len + socks5PortLen // 4 + 2
+	socks5BoundAddrLenIPv6 = net.IPv6len + socks5PortLen // 16 + 2
 )
 
 // ServerConnection manages the connection to the Bifrost server.
@@ -194,9 +212,10 @@ func (s *ServerConnection) connectSOCKS5(ctx context.Context, target string) (ne
 		return nil, fmt.Errorf("write greeting: %w", err)
 	}
 
-	// Read response
+	// Read response. io.ReadFull, not Read: a short read would leave the
+	// unconsumed byte to be mis-parsed as the auth method below.
 	response := make([]byte, 2)
-	if _, err := conn.Read(response); err != nil {
+	if _, err := io.ReadFull(conn, response); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("read greeting response: %w", err)
 	}
@@ -241,7 +260,7 @@ func (s *ServerConnection) socks5Auth(conn net.Conn) error {
 	}
 
 	response := make([]byte, 2)
-	if _, err := conn.Read(response); err != nil {
+	if _, err := io.ReadFull(conn, response); err != nil {
 		return fmt.Errorf("read auth response: %w", err)
 	}
 
@@ -290,7 +309,7 @@ func (s *ServerConnection) socks5Connect(conn net.Conn, target string) error {
 
 	// Read response
 	response := make([]byte, 4)
-	if _, err := conn.Read(response); err != nil {
+	if _, err := io.ReadFull(conn, response); err != nil {
 		return fmt.Errorf("read connect response: %w", err)
 	}
 
@@ -298,19 +317,32 @@ func (s *ServerConnection) socks5Connect(conn net.Conn, target string) error {
 		return fmt.Errorf("connect failed: %d", response[1])
 	}
 
-	// Read and discard bound address
+	// Consume the bound address. Its bytes are discarded, but they MUST be
+	// read in full: whatever is left unread here becomes the first bytes the
+	// caller reads as tunneled payload. A plain Read may return short, which
+	// is how this corrupted the head of a tunneled stream and surfaced as an
+	// intermittent TLS handshake failure after an apparently successful
+	// connect. A failure now means the stream is desynchronized, so it is
+	// reported rather than discarded.
 	switch response[3] {
-	case 0x01: // IPv4
-		buf := make([]byte, 6)
-		_, _ = conn.Read(buf) //nolint:errcheck // Discarding bound address
-	case 0x03: // Domain
+	case socks5AddrIPv4:
+		if _, err := io.ReadFull(conn, make([]byte, socks5BoundAddrLenIPv4)); err != nil {
+			return fmt.Errorf("read bound address: %w", err)
+		}
+	case socks5AddrDomain:
 		lenBuf := make([]byte, 1)
-		_, _ = conn.Read(lenBuf) //nolint:errcheck // Discarding bound address
-		buf := make([]byte, int(lenBuf[0])+2)
-		_, _ = conn.Read(buf) //nolint:errcheck // Discarding bound address
-	case 0x04: // IPv6
-		buf := make([]byte, 18)
-		_, _ = conn.Read(buf) //nolint:errcheck // Discarding bound address
+		if _, err := io.ReadFull(conn, lenBuf); err != nil {
+			return fmt.Errorf("read bound address length: %w", err)
+		}
+		if _, err := io.ReadFull(conn, make([]byte, int(lenBuf[0])+socks5PortLen)); err != nil {
+			return fmt.Errorf("read bound address: %w", err)
+		}
+	case socks5AddrIPv6:
+		if _, err := io.ReadFull(conn, make([]byte, socks5BoundAddrLenIPv6)); err != nil {
+			return fmt.Errorf("read bound address: %w", err)
+		}
+	default:
+		return fmt.Errorf("unknown SOCKS5 address type %#x in connect reply", response[3])
 	}
 
 	return nil

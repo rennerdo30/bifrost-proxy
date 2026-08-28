@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { api, BASE_PATH } from '../../api/client'
 
 type Platform = 'macos' | 'windows' | 'linux' | 'browser'
 
@@ -11,7 +13,20 @@ function CodeBlock({ code }: CodeBlockProps) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(code)
+    try {
+      await navigator.clipboard.writeText(code)
+    } catch {
+      // navigator.clipboard needs a secure context; fall back to a selection
+      // copy so plain-HTTP deployments can still use the button.
+      const textarea = document.createElement('textarea')
+      textarea.value = code
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }
@@ -23,7 +38,7 @@ function CodeBlock({ code }: CodeBlockProps) {
       </pre>
       <button
         onClick={handleCopy}
-        className="absolute top-2 right-2 btn btn-ghost text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute top-2 right-2 btn btn-ghost text-xs opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus:opacity-100 transition-opacity"
       >
         {copied ? 'Copied!' : 'Copy'}
       </button>
@@ -45,13 +60,34 @@ function Section({ title, children }: SectionProps) {
   )
 }
 
+// portFromListen extracts the port from a listen address (":7080",
+// "0.0.0.0:7080"), with a fallback when the config is unavailable.
+function portFromListen(listen: string | undefined, fallback: string): string {
+  if (!listen) return fallback
+  const idx = listen.lastIndexOf(':')
+  if (idx < 0 || idx === listen.length - 1) return fallback
+  return listen.slice(idx + 1)
+}
+
 export function SetupGuideContent() {
   const [platform, setPlatform] = useState<Platform>('macos')
 
+  // The guide used to hardcode 8080/1080 — ports the shipped config never
+  // uses (7080/7180) — so following the copy-paste instructions produced a
+  // proxy that did not answer. Read the real listener addresses.
+  const { data: fullConfig } = useQuery({
+    queryKey: ['fullConfig'],
+    queryFn: api.getFullConfig,
+    retry: false,
+  })
+
   const proxyHost = window.location.hostname
-  const httpPort = '8080'
-  const socks5Port = '1080'
-  const pacUrl = `${window.location.origin}/proxy.pac`
+  const httpPort = portFromListen(fullConfig?.server?.http?.listen, '7080')
+  const socks5Port = portFromListen(fullConfig?.server?.socks5?.listen, '7180')
+  // Respect a sub-path deployment: the PAC file is served relative to the
+  // dashboard's base path, not always at the origin root.
+  const pacPath = `${BASE_PATH}/proxy.pac`
+  const pacUrl = `${window.location.origin}${pacPath}`
 
   const platforms: { id: Platform; label: string; icon: string }[] = [
     { id: 'macos', label: 'macOS', icon: '' },
@@ -74,7 +110,7 @@ export function SetupGuideContent() {
           </div>
           <div className="flex gap-2">
             <a
-              href="/proxy.pac"
+              href={pacPath || '/proxy.pac'}
               target="_blank"
               rel="noopener noreferrer"
               className="btn btn-secondary text-sm"
@@ -82,7 +118,7 @@ export function SetupGuideContent() {
               View
             </a>
             <a
-              href="/proxy.pac"
+              href={pacPath || '/proxy.pac'}
               download="proxy.pac"
               className="btn btn-primary text-sm"
             >

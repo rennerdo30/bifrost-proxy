@@ -3,7 +3,6 @@ package util
 import (
 	"context"
 	"testing"
-	"time"
 )
 
 func TestWithRequestID(t *testing.T) {
@@ -69,48 +68,6 @@ func TestGetClientIP_Empty(t *testing.T) {
 	}
 }
 
-func TestWithStartTime(t *testing.T) {
-	ctx := context.Background()
-	startTime := time.Now()
-
-	ctx = WithStartTime(ctx, startTime)
-	result := GetStartTime(ctx)
-
-	if !result.Equal(startTime) {
-		t.Errorf("GetStartTime() = %v, want %v", result, startTime)
-	}
-}
-
-func TestGetStartTime_Empty(t *testing.T) {
-	ctx := context.Background()
-	result := GetStartTime(ctx)
-
-	if !result.IsZero() {
-		t.Errorf("GetStartTime() from empty context should be zero time, got: %v", result)
-	}
-}
-
-func TestGetDuration(t *testing.T) {
-	ctx := context.Background()
-	startTime := time.Now().Add(-100 * time.Millisecond)
-
-	ctx = WithStartTime(ctx, startTime)
-	duration := GetDuration(ctx)
-
-	if duration < 100*time.Millisecond {
-		t.Errorf("GetDuration() = %v, expected >= 100ms", duration)
-	}
-}
-
-func TestGetDuration_NoStartTime(t *testing.T) {
-	ctx := context.Background()
-	duration := GetDuration(ctx)
-
-	if duration != 0 {
-		t.Errorf("GetDuration() without start time = %v, want 0", duration)
-	}
-}
-
 func TestWithBackend(t *testing.T) {
 	ctx := context.Background()
 	backend := "wireguard-1"
@@ -132,39 +89,17 @@ func TestGetBackend_Empty(t *testing.T) {
 	}
 }
 
-func TestWithDomain(t *testing.T) {
-	ctx := context.Background()
-	domain := "example.com"
-
-	ctx = WithDomain(ctx, domain)
-	result := GetDomain(ctx)
-
-	if result != domain {
-		t.Errorf("GetDomain() = %s, want %s", result, domain)
-	}
-}
-
-func TestGetDomain_Empty(t *testing.T) {
-	ctx := context.Background()
-	result := GetDomain(ctx)
-
-	if result != "" {
-		t.Errorf("GetDomain() from empty context = %s, want empty string", result)
-	}
-}
-
+// The remaining context values must not clobber one another when layered on a
+// single context. The start-time and domain values were dropped because
+// nothing ever read them back.
 func TestMultipleContextValues(t *testing.T) {
 	ctx := context.Background()
 
-	// Add multiple values
 	ctx = WithRequestID(ctx, "req-123")
 	ctx = WithUsername(ctx, "alice")
 	ctx = WithClientIP(ctx, "10.0.0.1")
 	ctx = WithBackend(ctx, "direct")
-	ctx = WithDomain(ctx, "test.com")
-	ctx = WithStartTime(ctx, time.Now())
 
-	// Verify all values are accessible
 	if GetRequestID(ctx) != "req-123" {
 		t.Error("RequestID not preserved")
 	}
@@ -176,11 +111,5 @@ func TestMultipleContextValues(t *testing.T) {
 	}
 	if GetBackend(ctx) != "direct" {
 		t.Error("Backend not preserved")
-	}
-	if GetDomain(ctx) != "test.com" {
-		t.Error("Domain not preserved")
-	}
-	if GetStartTime(ctx).IsZero() {
-		t.Error("StartTime not preserved")
 	}
 }

@@ -272,31 +272,31 @@ func TestRouter_SelectBackend_NoHealthy(t *testing.T) {
 }
 
 func TestNewLoadBalancer_RoundRobin(t *testing.T) {
-	lb := NewLoadBalancer("round_robin")
+	lb := NewLoadBalancerWithWeights("round_robin", nil)
 	_, ok := lb.(*RoundRobinBalancer)
 	assert.True(t, ok)
 }
 
 func TestNewLoadBalancer_Empty(t *testing.T) {
-	lb := NewLoadBalancer("")
+	lb := NewLoadBalancerWithWeights("", nil)
 	_, ok := lb.(*RoundRobinBalancer)
 	assert.True(t, ok)
 }
 
 func TestNewLoadBalancer_LeastConn(t *testing.T) {
-	lb := NewLoadBalancer("least_conn")
+	lb := NewLoadBalancerWithWeights("least_conn", nil)
 	_, ok := lb.(*LeastConnBalancer)
 	assert.True(t, ok)
 }
 
 func TestNewLoadBalancer_IPHash(t *testing.T) {
-	lb := NewLoadBalancer("ip_hash")
+	lb := NewLoadBalancerWithWeights("ip_hash", nil)
 	_, ok := lb.(*IPHashBalancer)
 	assert.True(t, ok)
 }
 
 func TestNewLoadBalancer_Unknown(t *testing.T) {
-	lb := NewLoadBalancer("unknown")
+	lb := NewLoadBalancerWithWeights("unknown", nil)
 	// Defaults to round_robin
 	_, ok := lb.(*RoundRobinBalancer)
 	assert.True(t, ok)

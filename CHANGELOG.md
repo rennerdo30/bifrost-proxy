@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the URL verbatim — so the token was logged on every WebSocket upgrade and every
   log-stream reconnect. The parameter is now lifted out of the URL before any
   logging happens; it still authenticates the request
+- Config values containing a dollar sign are no longer silently truncated. The
+  loader expanded environment variables by running `os.ExpandEnv` over the whole
+  file, so any `$` followed by word characters was read as a variable reference:
+  the password `p@ss$word123` loaded as `p@ss`, and the bcrypt hash
+  `$2a$10$N9qo…` loaded as `a0`. There was no escape syntax, and YAML quoting
+  could not help, because expansion ran on the raw bytes before parsing. Every
+  credential in a config file — proxy passwords, LDAP bind passwords, API keys,
+  `password_hash` values — was at risk of being corrupted into something that
+  then failed authentication with no indication why. Expansion now recognizes
+  only `${NAME}`, `${NAME:-fallback}` and the escape `$$`; every other dollar
+  sign is literal
 
 ### Added
 - Default `read_timeout` (30s), `write_timeout` (30s) and `idle_timeout` (60s) on
@@ -66,8 +77,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The server dashboard's auth provider list gained `mfa_wrapper`, which was
   registered and working but missing from the UI entirely, with a default config
   in the inline `primary`/`secondary` format the server actually accepts
+- Config files support `${NAME:-fallback}`, which uses the environment variable
+  when it is set and non-empty and the literal fallback otherwise. The
+  shell-style form previously looked supported and was not: `os.ExpandEnv` read
+  `NAME:-fallback` as one variable name, so `listen: ":${HTTP_PORT:-8080}"`
+  quietly became `listen: ":"`
+- Config files support `$$` as an escape for a literal dollar sign in front of a
+  `{` or another `$`. It is only needed for a value that must literally contain
+  `${`; a lone `$`, as in a bcrypt hash, needs no escaping
+- `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` downgrades unknown configuration keys
+  from a startup failure to a warning naming each key and its line. It exists so
+  an obsolete key cannot keep a previously running deployment from starting
+  during an upgrade, and it is transitional: fix the config file rather than
+  keeping the variable set
+
+### Removed
+- Vestigial convenience constructors superseded by the `…With…` variants the
+  production code calls: `metrics.NewCollector`, `router.NewLoadBalancer`,
+  `NewMeshAPI`, `NewWebSocketHub`, `health.DefaultConfig`, and
+  `device.CreateTUN`/`CreateTAP`/`ParseDeviceType`. The tests that used them now
+  construct through the same entry points production does, so they exercise the
+  shipped path
+- Dead code the audit identified as unreachable: the `internal/auth` HTTP
+  middleware (a parallel authentication abstraction the live proxy never used,
+  whose `tryClientCert` implied mTLS-via-middleware was the real path when it
+  is not), the duplicate exported range parser in `internal/cache` (the live
+  code has its own private one), the unused `internal/util` error-wrapping and
+  network helpers, and the cache rule/preset/key extract-method leftovers that
+  the live loader had already inlined. Around 1,100 lines.
+
+  Four symbols in the middleware file were **not** dead and were preserved
+  rather than deleted with it: `ExtractProxyBearerToken`, used by the HTTP
+  proxy's authentication path, and the `ContextKey` type with
+  `ClientCertContextKey` / `ClientCertChainContextKey`, which the proxy sets and
+  the mtls auth plugin reads. The audit's "remove the whole file" verdict was
+  wrong on those, and `audit/go-backend.md` now records the correction.
+
+  Package coverage rose where dead code was removed (`internal/auth` 92.7% →
+  97.0%, `internal/util` 92.4% → 97.8% after restoring a lost `IsTimeout` test
+  and making `OpenURL` testable without launching a browser)
 
 ### Changed
+- **Breaking:** a configuration key that no setting corresponds to is now
+  rejected at load time, naming the key, its line and its config block, instead
+  of being ignored. A misspelled key (`listem` for `listen`) or an obsolete one
+  used to load without a word of complaint, leaving the operator to conclude that
+  the *setting* does not work — which is also why a long list of documented keys
+  that nothing reads went unnoticed for so long. This applies to every load path:
+  server and client startup, `config validate`, hot reload, and the dashboard's
+  config API. **Compatibility:** every shipped example config and both `init`
+  templates load cleanly, so a config file that matches the documentation is
+  unaffected; a hand-edited file carrying a typo or a key from an older release
+  will now fail to start. The error names the offending keys and the whole file
+  is checked in one pass, so the fix is one edit. If a deployment must come up
+  immediately, set `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` to turn the failure back
+  into warnings and clean up afterwards
+- **Breaking:** the unknown-key rejection now reaches the dynamic sections the
+  YAML decoder cannot see into: `backends[].config` and
+  `auth.providers[].config` are validated against the exact keys their backend
+  type or provider plugin reads, including nested blocks (a WireGuard `peer`, a
+  native `users` entry, an `mtls` `subject_mapping`, an inline `mfa_wrapper`
+  authenticator). This closes a fail-open: `disabledd: true` on a native user
+  used to load cleanly, validate cleanly, and leave the supposedly disabled
+  user able to authenticate. The same schemas back startup, `validate`, and
+  the dashboard's save and validate endpoints; the escape hatch above applies
+  identically. Two of our own test fixtures carried such dead keys (an apikey
+  `username` that the plugin never read), which is the failure mode in miniature
+- **Breaking:** a config file must contain exactly one YAML document. Content
+  after a `---` separator used to be silently ignored; it is now an error
+- The server dashboard's config save and validate endpoints reject unknown JSON
+  fields instead of dropping them, so validation reports exactly what save and
+  startup would refuse
+- Client config updates through `PUT /api/v1/config` reject unknown keys before
+  anything is applied or persisted. Previously the update reported success,
+  wrote the bogus key to disk, and the next strict reload refused the whole
+  file — a 200 that bricked the config
+- The client API's comment-preserving save path now escapes dollar signs in the
+  values it inserts, matching `config.Save`: a literal `${...}` credential
+  saved from the dashboard survives the reload instead of being expanded, while
+  pre-existing `${VAR}` references in untouched parts of the file keep working
+- **Breaking:** environment-variable expansion in config files no longer expands
+  bare `$NAME` references — only `${NAME}` and `${NAME:-fallback}`. This is what
+  makes a literal `$` in a value safe. A config file that relied on `$NAME` will
+  now keep the text verbatim; the loader logs a warning, with the line number,
+  whenever it leaves a bare `$NAME` that does name a variable set in the
+  environment. All documented examples already use the `${NAME}` form
+- A reference to a variable that is not set still expands to the empty string,
+  but now logs a warning naming the variable and the line instead of failing
+  silently. Use `${NAME:-fallback}` where an empty value is not acceptable
+- `config.Save` escapes dollar signs that would be read back as a reference, so a
+  value containing `${` survives a dashboard save and the reload that follows
 - **Breaking:** the listener timeout triad now does what it says. `read_timeout`,
   `write_timeout` and `idle_timeout` are declared on every listener, defaulted in
   both shipped config templates, present in every example config and documented
@@ -216,6 +315,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unconditionally mounted and purely in-memory
 
 ### Removed
+- More dead code from the audit's removal list: `backend.CopyBidirectional`
+  (a third copy of a function the proxy already provides),
+  `proxy.CopyBidirectionalWithStats` with the `CopyStats` type and its
+  `TotalBytes`/`Throughput` methods (no caller wanted the stats variant), and
+  the write-only `start_time`/`domain` context plumbing in `internal/util` —
+  the proxy set both values on every request and nothing ever read them back,
+  so the setters, getters and their context keys are all gone
 - Dead API helpers `AddWebSocketRoutes`, `setWebSocketHub` and the unrouted
   `handleGetConfigTimestamp` (which returned `time.Now()` instead of the config
   file's modification time — use `GET /api/v1/config/meta`)
@@ -249,6 +355,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-issued certificate whose signature does not verify, an expired
   certificate, or a placeholder `tls-auth` key is now refused instead of being
   written into a profile
+
+### Security
+- The client dashboard's static UI responses now carry the same global
+  security headers as the server dashboard (CSP, X-Frame-Options, nosniff).
+  The production handler had silently drifted from a test-only duplicate route
+  table that had them
+- Brute-force protection actually ships: `auth.brute_force` wraps the whole
+  provider chain with failed-login lockout (exponential backoff, per
+  username+source). The implementation existed, fully tested, with no config
+  key and no caller — a security control the project believed it shipped and
+  did not
 
 ### Fixed
 - The VPN configuration was invisible over the API. `vpn.Config`, `TUNConfig`,
@@ -294,6 +411,152 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error instead of being coerced to zero. The mesh Keepalive field also
   read/wrote `keepalive_interval`, a key the server never emits — it now uses
   the documented `keep_alive_interval` and defaults to the server's real 25s
+- A validation request that fails no longer reports the configuration as
+  valid: the server dashboard's pre-save validation swallowed request errors
+  and returned `{valid: true}`, letting a save proceed on the strength of a
+  network hiccup
+- Editing a backend whose source configuration could not be loaded is refused
+  with an explanation. Edit is implemented as remove-then-add, and the dialog
+  used to silently substitute an empty config — saving destroyed the backend's
+  settings (WireGuard keys, credentials) with a success toast
+- Unmatched paths CONTAINING `/api/v1/` get a JSON 404 instead of the SPA
+  page. A leading-prefix-only check let a corrupted base path (`/config/api/…`)
+  fall through to index.html, where the 200 + text/html made every missing
+  route look healthy
+- The client dashboard's "Reset to defaults" no longer nulls out the routes
+  section: the defaults payload carries `routes: null`, which was persisted
+  verbatim
+- Disabling a cache preset sticks in the dashboard: the enabled computation
+  counted a preset as enabled whenever its rule existed, ignoring the disabled
+  flag the toggle had just set
+- Route reordering in the config editor changes route priority. The buttons
+  reordered array positions while both the router and the display order are
+  driven by priority, so they did nothing visible or effective
+- The Setup Guide shows the server's real listener ports instead of hardcoded
+  8080/1080 — ports the shipped config never uses — and the PAC links respect
+  a sub-path deployment; the copy button works without a secure context and is
+  reachable by keyboard
+- The client dashboard's Edit Route dialog shows the route being edited: the
+  form was seeded with a `useState` call whose initializer runs once, so
+  editing a second route displayed the first one's values
+- The Add Backend dialog stops offering a Priority field (the setting has no
+  effect anywhere) and labels Weight and Health Check with when they actually
+  take effect; the Test Backend dialog defaults to a host:port target instead
+  of a URL the endpoint always rejected
+- The traffic debugger's `duration_ms` field carries milliseconds: the raw
+  `time.Duration` marshaled as nanoseconds under that name, making the traffic
+  table off by a factor of a million
+- The HTTP forward proxy is honest about its HTTP/1.1, one-request-per-
+  connection nature and follows the RFCs it silently violated: hop-by-hop
+  headers (the RFC 7230 §6.1 set plus everything named in `Connection`) are
+  stripped in both directions instead of traveling to the origin; the proxy
+  appends itself to `Via` (§5.7.1); responses carry `Connection: close`
+  instead of implying persistence and then closing (clients retried into
+  unexpected EOFs); a plain-HTTP `Upgrade` (WebSocket) becomes an opaque
+  tunnel after the origin's `101` — it used to forward the 101 and close both
+  connections with zero post-upgrade bytes ever crossing; and an h2c
+  prior-knowledge request is rejected with a clean 505 instead of being
+  mis-parsed into a dial of ":80" and an HTTP/1.1 502 on a would-be HTTP/2 wire
+- A TURN-relayed P2P connection is actually connected before being reported:
+  the manager used to build it, log "relay connection established", fire the
+  connected callback and count the peer — while Send returned ErrNotConnected
+  forever and the connection monitor never reaped the stuck state. On connect
+  failure the peer's endpoints are tried in turn and the failure is surfaced
+- The tiered cache no longer double-counts every disk hit as a memory miss: a
+  workload served entirely from disk reported a hit rate of 0.5 instead of
+  1.0, skewing any alert keyed on it by up to 2×. Per-tier views stay
+  available; the combined stats now reflect the tiered lookup outcome
+- The memory cache reaps expired entries on a timer. CleanupExpired existed
+  with no caller, so expired entries lingered until LRU pressure pushed them
+  out and reported sizes over-counted indefinitely
+- `bifrost-server` and `bifrost-client` release their log file handle on
+  shutdown — the documented `logging.Close()` contract nothing honored; with a
+  file output every restart leaked the previous handle
+- The 11 documented pprof endpoints exist on the client's production handler
+  (behind the API token when one is set). They were registered only on a
+  test-only duplicate handler; the production static catch-all answered 404 to
+  the exact diagnostics the docs give copy-paste commands for
+- `tools/hashpw` exists. Three documentation pages instruct operators to run
+  it to mint a `password_hash`, and the program was never in the repository
+- Windows self-updates no longer leak a stale `.old` binary forever: the
+  cleanup helper existed on every platform with no caller and now runs at
+  updater start
+- The `system` auth provider reports `build_disabled` on Unix platforms
+  without a password backend (the BSDs, Solaris) instead of "available" with
+  every login failing as invalid credentials
+- The Apache access-log format logs the request target (host+path) in the %r
+  position instead of only the host, so requests to the same host no longer
+  log identically
+- `logging.time_format` is applied. The field was documented, defaulted and
+  shown in the monitoring docs — and never read: slog's handlers used their own
+  fixed timestamp format, so the setting was pure decoration
+- Malformed split-tunnel rules are configuration errors instead of silent
+  drops. `IPMatcher.Add` returned nil for an entry that parsed as nothing, the
+  engine discarded every per-rule error at construction, and in include mode
+  the default action is bypass — so a typo'd include rule sent that traffic
+  OUTSIDE the tunnel in cleartext with nothing logged. `split_tunnel.ips`,
+  `.apps`, `.domains` and `.always_bypass` are all validated now, an app rule
+  needs a name or a path, and an unparsable IP entry is an error at the matcher
+  level too
+- An unusable route domain pattern (duplicate within a route, or beyond the
+  matcher's pattern limit) is rejected at config validation instead of being
+  silently dropped by the router — a dropped pattern sent those domains to the
+  default backend. Runtime drops that still occur (a hot-reload race) are
+  logged with the pattern and reason instead of a code-comment shrug. The same
+  pattern on two different routes stays legal
+- An unknown `health_check.type` is a configuration error. The checker factory
+  silently substituted a bare TCP connect — which reports green for a backend
+  whose application layer is dead — and `Checker.Type()` then answered "tcp",
+  hiding the substitution from the API as well
+- `health_check.timeout` is honored by ping checks. The subprocess flags were
+  hardcoded to 5s (and the manager wrapped 10s), so `timeout: 1s` still blocked
+  5–10s per probe and failure detection ran 5–10× slower than configured
+- `network.ipv6` / address-family restrictions are honored by the `http_proxy`
+  and `socks5_proxy` backends, which hardcoded "tcp" for the proxy dial while
+  `direct` and `wireguard` obeyed the setting
+- `mesh.stun.timeout` reaches the STUN client (it was parsed and never passed;
+  the NAT detector used the connect timeout), and **the entire `mesh.turn`
+  block works for the first time**: the TURN credentials were assigned to a
+  manager field nothing read, so with `turn.enabled: true` no TURN client was
+  ever created and relay selection always failed with nothing saying why. A
+  second and later configured TURN server is still unused, and now says so in
+  the log
+- `client.servers` selection support (see the server-selection change) plus:
+  `server.tls`, `proxy.http.tls`, `proxy.socks5.tls` and client-side
+  `max_connections` are refused with actionable errors instead of silently
+  ignored — a client `server.tls.enabled: true` used to yield a PLAINTEXT
+  upstream connection with no warning
+- Mullvad and PIA log a warning when `max_load` is configured: neither
+  provider's API integration populates server load, so the filter can never
+  trip — the setting currently has no effect
+- The server dashboard's OAuth `required_claims` field submits the
+  claim→value map the Go parser expects. It used to submit a string list,
+  which the parser silently discarded — the dashboard looked configured while
+  nothing reached the setting
+- `backends[].priority` is documented as having no effect (backend selection is
+  driven entirely by `routes[].priority`) and removed from the shipped
+  examples; `web_ui.base_path` is documented as optional in every setup (the
+  dashboard derives its prefix from the browser URL; the Go server does not
+  consume the value); the `debug.filter_domains` template comment now says
+  NOT YET IMPLEMENTED instead of describing a working option
+
+- P2P latency is now measured instead of fabricated: keep-alive PONGs record
+  the actual PING round-trip (previously the PONG was discarded and the stored
+  "latency" was however long a socket write took), relayed connections gained
+  the same keep-alive measurement (previously always 0), and the mesh node
+  refreshes routing metrics with the measured values during maintenance — so
+  inbound and relayed peers no longer permanently score as the cheapest route
+  and relay selection can order relays by real latency
+- Relayed peer connections now report the peer address they were established
+  to instead of a blank endpoint in `/api/mesh/peers`
+- NAT detection no longer hard-codes its results: `is_behind_nat` is computed
+  by checking whether the STUN-observed address is held by a local interface
+  (a machine with a public IP now correctly reports no NAT and NAT type
+  `none`), and the never-tested `hairpin` field is gone from the NAT info
+- The Windows TUN device no longer busy-spins when the interface is idle:
+  reads wait on WinTun's read-wait event instead of hammering
+  `ERROR_NO_MORE_ITEMS`, which also ends the error-log flood from the VPN read
+  loop on an idle tunnel
 - **VPN route setup no longer reports success after failing.** On macOS and
   Windows, `RouteManager.Setup` warned on every failed route and returned nil,
   so the desktop VPN toggle showed the VPN as on while traffic kept flowing
@@ -467,10 +730,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   started without a `cache:` section — including the shipped example config. The
   cache API is only mounted when caching is configured, and the page had no error
   state, so it showed permanent loading skeletons, no explanation, and live
-  Purge Domain / Clear All / Add Rule buttons. It now reports "Caching is not
-  configured", disables the destructive actions, stops polling the missing
-  endpoints and surfaces other failures with a retry. The Mesh page gained the
-  same treatment for `mesh.enabled: false`
+  Purge Domain / Clear All / Add Rule buttons. It now reports "Caching is
+  disabled or not configured" — the server omits the cache API both when the
+  `cache:` section is absent and when it is present with `enabled: false`, and
+  the page cannot tell the two apart — disables the destructive actions, stops
+  polling the missing endpoints and surfaces other failures with a retry. The
+  Mesh page gained the same treatment for `mesh.enabled: false`
+- `GET /api/v1/requests/stats` no longer sizes its aggregation maps to the ring
+  buffer length. On a full buffer at the maximum configured size, every poll
+  allocated on the order of 170 MB while holding the lock request logging
+  writes under; the maps now grow with the number of distinct methods, status
+  codes and hosts instead
 - The "Skip to main content" link blanked the whole dashboard in both the server
   and the client UI. Both run under a `HashRouter`, where the URL fragment *is*
   the route, so following the link set the route to `main-content`, matched

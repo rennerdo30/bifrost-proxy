@@ -40,13 +40,6 @@ type MeshNetwork struct {
 	mu          sync.RWMutex
 }
 
-// NewMeshAPI creates an in-memory mesh API handler with no persistence.
-func NewMeshAPI() *MeshAPI {
-	return &MeshAPI{
-		networks: make(map[string]*MeshNetwork),
-	}
-}
-
 // NewMeshAPIWithConfig creates a mesh API handler from the server's mesh config.
 // When cfg.StatePath is set, previously persisted networks and peers are
 // restored and every subsequent mutation is written back. A restore failure is
@@ -329,6 +322,51 @@ func (m *MeshAPI) handleRegisterPeer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// peerWithStats is what the dashboard's MeshPeer type expects: the peer's
+// identity plus its live status and counters.
+//
+// handleListPeers and handleGetPeer used to return a bare mesh.PeerInfo, so
+// every stats field the UI declares - status, connection type, latency, last
+// seen, joined at, byte counters - arrived undefined and rendered blank, even
+// though the Peer being copied from had all of them.
+type peerWithStats struct {
+	mesh.PeerInfo
+	Status         mesh.PeerStatus     `json:"status"`
+	ConnectionType mesh.ConnectionType `json:"connection_type,omitempty"`
+	// LatencyMS is milliseconds, not a time.Duration. A Duration marshals to
+	// integer nanoseconds, and the dashboard renders this value directly as
+	// "<n>ms" - emitting nanoseconds would display 12ms as 12000000ms.
+	LatencyMS     float64   `json:"latency,omitempty"`
+	LastSeen      time.Time `json:"last_seen"`
+	JoinedAt      time.Time `json:"joined_at"`
+	BytesSent     int64     `json:"bytes_sent"`
+	BytesReceived int64     `json:"bytes_received"`
+}
+
+// newPeerWithStats builds the response for one peer, taking its counters as a
+// single consistent snapshot.
+func newPeerWithStats(p *mesh.Peer) peerWithStats {
+	stats := p.Stats()
+
+	return peerWithStats{
+		PeerInfo: mesh.PeerInfo{
+			ID:        p.ID,
+			Name:      p.Name,
+			PublicKey: p.PublicKey,
+			VirtualIP: p.VirtualIP.String(),
+			Endpoints: p.GetEndpoints(),
+			Metadata:  p.Metadata,
+		},
+		Status:         stats.Status,
+		ConnectionType: stats.ConnectionType,
+		LatencyMS:      float64(stats.Latency) / float64(time.Millisecond),
+		LastSeen:       stats.LastSeen,
+		JoinedAt:       stats.JoinedAt,
+		BytesSent:      stats.BytesSent,
+		BytesReceived:  stats.BytesReceived,
+	}
+}
+
 // handleListPeers returns all peers in a network.
 func (m *MeshAPI) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	networkID := chi.URLParam(r, "networkID")
@@ -343,16 +381,9 @@ func (m *MeshAPI) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allPeers := network.peers.All()
-	peers := make([]mesh.PeerInfo, 0, len(allPeers))
+	peers := make([]peerWithStats, 0, len(allPeers))
 	for _, p := range allPeers {
-		peers = append(peers, mesh.PeerInfo{
-			ID:        p.ID,
-			Name:      p.Name,
-			PublicKey: p.PublicKey,
-			VirtualIP: p.VirtualIP.String(),
-			Endpoints: p.GetEndpoints(),
-			Metadata:  p.Metadata,
-		})
+		peers = append(peers, newPeerWithStats(p))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -380,14 +411,7 @@ func (m *MeshAPI) handleGetPeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, mesh.PeerInfo{
-		ID:        peer.ID,
-		Name:      peer.Name,
-		PublicKey: peer.PublicKey,
-		VirtualIP: peer.VirtualIP.String(),
-		Endpoints: peer.GetEndpoints(),
-		Metadata:  peer.Metadata,
-	})
+	writeJSON(w, http.StatusOK, newPeerWithStats(peer))
 }
 
 // handleUpdatePeer updates a peer's information.
@@ -511,8 +535,19 @@ func (m *MeshAPI) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 	peer.UpdateLastSeen()
 
-	// Renew IP lease
-	_ = network.ipAllocator.Renew(peerID) //nolint:errcheck // Best effort IP lease renewal
+	// Renew the IP lease. This is not best-effort: Renew only fails when the
+	// peer has no lease, which means its address was already reaped and may
+	// have been handed to another peer. Reporting 204 there would tell the peer
+	// its address is still valid while the allocator disagrees, so the conflict
+	// would surface later as unexplained mesh traffic going to the wrong node.
+	// 409 tells the peer to re-register and get a fresh lease.
+	if err := network.ipAllocator.Renew(peerID); err != nil {
+		slog.Warn("mesh peer heartbeat could not renew IP lease",
+			"network_id", networkID, "peer_id", peerID, "error", err)
+		http.Error(w, "IP lease expired; re-register to obtain a new address",
+			http.StatusConflict)
+		return
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }

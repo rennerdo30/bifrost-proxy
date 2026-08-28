@@ -160,6 +160,26 @@ func (c *ClientConfig) Validate() error {
 		}
 	}
 
+	// TLS to the upstream server is not implemented on the client: the
+	// connection code never reads this block, so accepting it would yield a
+	// PLAINTEXT upstream connection while the config promises encryption —
+	// a silent downgrade. Refuse until it is implemented (see ISSUES.md).
+	if c.Server.TLS != nil && c.Server.TLS.Enabled {
+		return fmt.Errorf("server.tls is not implemented on the client; the upstream connection would be plaintext despite the setting — remove the block or terminate TLS with a local stunnel/reverse proxy")
+	}
+
+	// The client's listeners are plain net.Listen and enforce no accept
+	// ceiling; both settings are honored only by the server. Refusing them
+	// beats a security setting that silently does nothing.
+	for name, l := range map[string]ListenerConfig{"proxy.http": c.Proxy.HTTP, "proxy.socks5": c.Proxy.SOCKS5} {
+		if l.TLS != nil && l.TLS.Enabled {
+			return fmt.Errorf("%s.tls is not implemented on the client; the listener would accept plaintext despite the setting", name)
+		}
+		if l.MaxConnections > 0 {
+			return fmt.Errorf("%s.max_connections is not enforced by the client's listeners; remove it (server listeners do enforce it)", name)
+		}
+	}
+
 	// Validate named servers
 	serverNames := make(map[string]bool)
 	for _, s := range c.Servers {
