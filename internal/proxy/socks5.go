@@ -176,7 +176,6 @@ func (h *SOCKS5Handler) ServeConn(ctx context.Context, conn net.Conn) {
 	}
 	ctx = util.WithClientIP(ctx, clientIP)
 	startTime := time.Now()
-	ctx = util.WithStartTime(ctx, startTime)
 
 	entry := &accesslog.Entry{
 		Timestamp: startTime,
@@ -454,8 +453,6 @@ func (h *SOCKS5Handler) handleRequest(ctx context.Context, conn net.Conn, client
 	} else {
 		target = fmt.Sprintf("%s:%d", host, port)
 	}
-	ctx = util.WithDomain(ctx, util.GetHostFromRequest(host))
-
 	if entry != nil {
 		entry.Host = host
 	}
