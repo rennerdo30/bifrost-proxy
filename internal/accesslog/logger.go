@@ -5,11 +5,42 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 )
+
+// writeFailures counts access-log write failures and reports them.
+//
+// Callers log access entries from a deferred block on every request, so they
+// cannot usefully act on a per-entry error and had been discarding it. That
+// made the failure mode invisible: a full disk, a revoked permission or a
+// rotated-away file stops the audit trail silently, and an audit log that has
+// quietly stopped is worse than one that was never enabled. Reporting here -
+// once loudly, then by count - lets those call sites ignore the returned error
+// honestly.
+type writeFailures struct {
+	count atomic.Int64
+}
+
+// note records a failure, warning on the first and counting the rest.
+func (f *writeFailures) note(format string, err error) {
+	if count := f.count.Add(1); count == 1 {
+		slog.Warn("access log write failed; further failures are counted, not logged",
+			"format", format, "error", err)
+	} else {
+		slog.Debug("access log write failed", "format", format,
+			"error", err, "failure_count", count)
+	}
+}
+
+// Count returns the number of failed writes.
+func (f *writeFailures) Count() int64 {
+	return f.count.Load()
+}
 
 // Logger is the interface for access loggers.
 type Logger interface {
@@ -107,8 +138,9 @@ func (l *NoopLogger) Close() error {
 
 // JSONLogger logs entries in JSON format.
 type JSONLogger struct {
-	writer io.WriteCloser
-	mu     sync.Mutex
+	writer   io.WriteCloser
+	failures writeFailures
+	mu       sync.Mutex
 	// marshaler is the JSON marshal function used for encoding entries.
 	// Defaults to json.Marshal. Can be overridden in tests to simulate errors.
 	marshaler func(v any) ([]byte, error)
@@ -129,11 +161,20 @@ func (l *JSONLogger) Log(entry Entry) error {
 
 	data, err := l.marshaler(entry)
 	if err != nil {
+		l.failures.note("json", err)
 		return err
 	}
 
-	_, err = l.writer.Write(append(data, '\n'))
-	return err
+	if _, err = l.writer.Write(append(data, '\n')); err != nil {
+		l.failures.note("json", err)
+		return err
+	}
+	return nil
+}
+
+// WriteFailureCount returns the number of entries that could not be written.
+func (l *JSONLogger) WriteFailureCount() int64 {
+	return l.failures.Count()
 }
 
 // Close closes the logger.
@@ -143,8 +184,9 @@ func (l *JSONLogger) Close() error {
 
 // ApacheLogger logs entries in Apache combined format.
 type ApacheLogger struct {
-	writer io.WriteCloser
-	mu     sync.Mutex
+	writer   io.WriteCloser
+	failures writeFailures
+	mu       sync.Mutex
 }
 
 // NewApacheLogger creates a new Apache format access logger.
@@ -177,8 +219,16 @@ func (l *ApacheLogger) Log(entry Entry) error {
 		entry.UserAgent,
 	)
 
-	_, err := l.writer.Write([]byte(line))
-	return err
+	if _, err := l.writer.Write([]byte(line)); err != nil {
+		l.failures.note("apache", err)
+		return err
+	}
+	return nil
+}
+
+// WriteFailureCount returns the number of entries that could not be written.
+func (l *ApacheLogger) WriteFailureCount() int64 {
+	return l.failures.Count()
 }
 
 // Close closes the logger.
