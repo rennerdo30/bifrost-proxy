@@ -23,9 +23,11 @@ const (
 	tunReadWaitMillis = 250
 
 	// waitTimeout is WAIT_TIMEOUT: the wait expired without the event being
-	// signalled. Declared here rather than taken from x/sys/windows so the
-	// read loop's handling of an idle interface does not depend on how that
-	// package types or classifies the value.
+	// signalled. Declared locally because x/sys/windows types its own
+	// WAIT_TIMEOUT as a syscall.Errno rather than a uint32 (unlike
+	// WAIT_OBJECT_0, WAIT_ABANDONED and WAIT_FAILED), so it cannot be compared
+	// against the uint32 status without a conversion that reads as if an error
+	// were being tested.
 	waitTimeout = 0x102
 )
 
@@ -180,13 +182,13 @@ func (t *windowsTUN) Read(buf []byte) (int, error) {
 		// Ring is empty: wait until WinTun signals a packet, or the wait
 		// times out so the closed flag above is re-checked.
 		//
-		// The timeout is checked BEFORE the error, deliberately. A timeout is
-		// the expected outcome on an idle interface, and this must not be
-		// reported as a read failure — doing so would turn an idle tunnel into
-		// a stream of errors, which is the very bug this loop replaced. Testing
-		// the returned status first makes the loop correct whether or not
-		// x/sys/windows classifies WAIT_TIMEOUT as an error, so the behaviour
-		// does not hinge on that detail.
+		// The status is examined rather than only the error. x/sys/windows sets
+		// err solely when the status is WAIT_FAILED (0xffffffff) — its generated
+		// wrapper does nothing else with the return value — so a timeout
+		// arrives as (WAIT_TIMEOUT, nil) and an err-only check cannot tell an
+		// idle interface apart from a signalled one. Testing the status makes
+		// each outcome explicit: loop on a timeout, fail on a real error, and
+		// reject an unexpected status instead of silently re-looping on it.
 		status, err := windows.WaitForSingleObject(session.ReadWaitEvent(), tunReadWaitMillis)
 		if status == waitTimeout {
 			continue
