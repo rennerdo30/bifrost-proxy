@@ -108,13 +108,6 @@ func WithServerConnector(sc ServerConnector) ManagerOption {
 	}
 }
 
-// WithLogger sets a custom logger (not used currently, uses slog).
-func WithLogger(logger *slog.Logger) ManagerOption {
-	return func(m *Manager) {
-		// Reserved for future use
-	}
-}
-
 // New creates a new VPN manager.
 func New(cfg Config) (*Manager, error) {
 	if err := cfg.Validate(); err != nil {
