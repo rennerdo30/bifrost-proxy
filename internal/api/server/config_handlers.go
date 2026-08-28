@@ -402,13 +402,3 @@ func splitChangedSections(sections []string) (hotReloaded, restartRequired []str
 	}
 	return hotReloaded, restartRequired
 }
-
-// hasRestartRequiredChanges checks if any changed section requires restart.
-func hasRestartRequiredChanges(sections []string) bool {
-	for _, section := range sections {
-		if !hotReloadableSections[section] {
-			return true
-		}
-	}
-	return false
-}

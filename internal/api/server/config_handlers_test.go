@@ -359,8 +359,8 @@ func TestHasRestartRequiredChanges(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := hasRestartRequiredChanges(tt.sections)
-			assert.Equal(t, tt.expected, result)
+			_, restartRequired := splitChangedSections(tt.sections)
+			assert.Equal(t, tt.expected, len(restartRequired) > 0)
 		})
 	}
 }
@@ -613,7 +613,8 @@ func TestDetectChangedSections_AccessControlAndCache(t *testing.T) {
 	assert.Contains(t, changed, "cache")
 	// Both are hot-reloadable, so an access_control/cache-only save must not
 	// falsely require a restart.
-	assert.False(t, hasRestartRequiredChanges(changed))
+	_, restartRequired := splitChangedSections(changed)
+	assert.Empty(t, restartRequired)
 }
 
 // TestDetectChangedSections_RestartRequiredSections verifies that sections the
@@ -636,7 +637,8 @@ func TestDetectChangedSections_RestartRequiredSections(t *testing.T) {
 	assert.Contains(t, changed, "network")
 	assert.Contains(t, changed, "session")
 	assert.Contains(t, changed, "mitm")
-	assert.True(t, hasRestartRequiredChanges(changed),
+	_, restartRequired := splitChangedSections(changed)
+	assert.NotEmpty(t, restartRequired,
 		"restart-required sections must report requires_restart=true")
 }
 
