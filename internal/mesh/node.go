@@ -16,6 +16,10 @@ import (
 	"github.com/rennerdo30/bifrost-proxy/internal/p2p"
 )
 
+// defaultTURNTimeout bounds TURN allocation requests. The mesh TURN server
+// config carries no per-server timeout, so this package-level default applies.
+const defaultTURNTimeout = 30 * time.Second
+
 // MeshNode errors.
 var (
 	ErrNodeNotStarted      = errors.New("mesh: node not started")
@@ -379,12 +383,16 @@ func (n *MeshNode) initializeP2PManager() error {
 	// Build TURN config if configured
 	var turnConfig *p2p.TURNConfig
 	if n.config.TURN.Enabled && len(n.config.TURN.Servers) > 0 {
+		if len(n.config.TURN.Servers) > 1 {
+			slog.Warn("only the first configured TURN server is used; the rest are ignored",
+				"configured", len(n.config.TURN.Servers))
+		}
 		server := n.config.TURN.Servers[0]
 		turnConfig = &p2p.TURNConfig{
 			Server:   server.URL,
 			Username: server.Username,
 			Password: server.Password,
-			Timeout:  30 * time.Second,
+			Timeout:  defaultTURNTimeout,
 		}
 	}
 
@@ -392,6 +400,7 @@ func (n *MeshNode) initializeP2PManager() error {
 		LocalPeerID:          n.localPeerID,
 		LocalPrivateKey:      privateKey,
 		STUNServers:          n.config.STUN.Servers,
+		STUNTimeout:          n.config.STUN.Timeout,
 		TURNConfig:           turnConfig,
 		ConnectTimeout:       n.config.Connection.ConnectTimeout,
 		KeepAliveInterval:    n.config.Connection.KeepAliveInterval,

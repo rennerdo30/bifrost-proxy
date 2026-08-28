@@ -81,6 +81,35 @@ func (c *SplitTunnelConfig) Validate() error {
 	if c.Mode != "exclude" && c.Mode != "include" {
 		return &ConfigError{Field: "split_tunnel.mode", Message: "must be 'exclude' or 'include'"}
 	}
+
+	// Every rule the operator wrote must be usable. The engine used to drop
+	// malformed entries silently at construction; in include mode the default
+	// action is bypass, so a dropped include rule sent that traffic OUTSIDE
+	// the tunnel in cleartext with nothing but a discarded error to show.
+	probe := NewIPMatcher()
+	for _, ip := range c.IPs {
+		if err := probe.Add(ip); err != nil {
+			return &ConfigError{Field: "split_tunnel.ips", Message: fmt.Sprintf("invalid entry %q: %v", ip, err)}
+		}
+	}
+	bypassProbe := NewIPMatcher()
+	for _, cidr := range c.AlwaysBypass {
+		if err := bypassProbe.Add(cidr); err != nil {
+			return &ConfigError{Field: "split_tunnel.always_bypass", Message: fmt.Sprintf("invalid entry %q: %v", cidr, err)}
+		}
+	}
+	appProbe := NewAppMatcher()
+	for _, app := range c.Apps {
+		if err := appProbe.AddRule(app); err != nil {
+			return &ConfigError{Field: "split_tunnel.apps", Message: fmt.Sprintf("invalid rule %q: %v", app.Name, err)}
+		}
+	}
+	domainProbe := matcher.NewStrict()
+	for _, d := range c.Domains {
+		if err := domainProbe.AddPattern(d); err != nil {
+			return &ConfigError{Field: "split_tunnel.domains", Message: fmt.Sprintf("invalid pattern %q: %v", d, err)}
+		}
+	}
 	return nil
 }
 
@@ -321,6 +350,12 @@ func (m *AppMatcher) AddRule(rule AppRule) error {
 	// Check limit
 	if len(m.rules) >= MaxAppRules {
 		return ErrAppRulesAtLimit
+	}
+
+	// A rule with no name (and no path) can never match a process; accepting
+	// it silently was part of the dropped-rule problem.
+	if strings.TrimSpace(rule.Name) == "" && strings.TrimSpace(rule.Path) == "" {
+		return fmt.Errorf("app rule needs a name or a path")
 	}
 
 	m.rules = append(m.rules, rule)

@@ -12,6 +12,7 @@ import (
 
 	"github.com/rennerdo30/bifrost-proxy/internal/cache"
 	"github.com/rennerdo30/bifrost-proxy/internal/logging"
+	"github.com/rennerdo30/bifrost-proxy/internal/matcher"
 )
 
 // ServerConfig is the main configuration for the Bifrost server.
@@ -129,10 +130,14 @@ type TLSConfig struct {
 
 // BackendConfig describes a backend configuration.
 type BackendConfig struct {
-	Name     string `yaml:"name" json:"name"`
-	Type     string `yaml:"type" json:"type"` // direct, wireguard, openvpn, http_proxy, socks5_proxy
-	Enabled  bool   `yaml:"enabled" json:"enabled"`
-	Priority int    `yaml:"priority" json:"priority"`
+	Name    string `yaml:"name" json:"name"`
+	Type    string `yaml:"type" json:"type"` // direct, wireguard, openvpn, http_proxy, socks5_proxy
+	Enabled bool   `yaml:"enabled" json:"enabled"`
+	// Priority is accepted for backward compatibility but has NO effect:
+	// backend selection is driven entirely by routes[].priority. It stays in
+	// the schema so existing configs keep loading; it is no longer shown in
+	// the shipped examples or documented as functional.
+	Priority int `yaml:"priority" json:"priority"`
 	// Weight is the default relative weight for this backend in "weighted"
 	// load-balancing routes. It seeds RouteConfig.Weights for any weighted
 	// route that lists this backend without an explicit per-route weight
@@ -441,6 +446,17 @@ const HealthCheckTypeHTTP = "http"
 // and only rejects values the health checker cannot act on, so that an operator
 // gets an error at save/load time rather than a silently ignored setting.
 func (c *HealthCheckConfig) Validate() error {
+	// The checker factory used to substitute a bare TCP connect for any
+	// unrecognized type — silently, and Checker.Type() then answered "tcp",
+	// hiding the substitution from the API too. A typo ("htpp") produced a
+	// health check that reports green for a backend whose application layer
+	// is dead. Unknown types are a config error now.
+	switch c.Type {
+	case "", HealthCheckTypeHTTP, "tcp", "ping":
+	default:
+		return fmt.Errorf("health_check type must be %q, %q or %q, got %q", "tcp", HealthCheckTypeHTTP, "ping", c.Type)
+	}
+
 	switch c.Scheme {
 	case "", HealthCheckSchemeHTTP, HealthCheckSchemeHTTPS:
 	default:
@@ -621,6 +637,18 @@ func (c *ServerConfig) Validate() error {
 	for _, r := range c.Routes {
 		if len(r.Domains) == 0 {
 			return fmt.Errorf("route must have at least one domain pattern")
+		}
+		// A strict matcher per route — mirroring how the router builds one
+		// matcher per route — enforces the same validity, duplicate and
+		// MaxPatterns limits the runtime applies, so a pattern the router
+		// would silently drop (sending those domains to the default backend)
+		// is rejected here instead. The same pattern on two DIFFERENT routes
+		// stays legal: priority disambiguates it at runtime.
+		routePatterns := matcher.NewStrict()
+		for _, d := range r.Domains {
+			if err := routePatterns.AddPattern(d); err != nil {
+				return fmt.Errorf("route domain pattern %q is unusable: %w", d, err)
+			}
 		}
 		if r.Backend == "" && len(r.Backends) == 0 {
 			return fmt.Errorf("route must specify a backend or backends")
