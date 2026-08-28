@@ -148,6 +148,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unconditionally mounted and purely in-memory
 
 ### Removed
+- The client API's duplicate route table. `(*API).Handler` and
+  `addAPIRoutes` maintained a second copy of every route by hand, kept alive
+  only by tests, and it had already drifted from the production
+  `HandlerWithUI` — that drift is what left the static UI without CSP,
+  X-Frame-Options and nosniff. The 172 tests that exercised the duplicate now
+  run against the production handler, so the thing under test is the thing
+  that ships
 - Dead API helpers `AddWebSocketRoutes`, `setWebSocketHub` and the unrouted
   `handleGetConfigTimestamp` (which returned `time.Now()` instead of the config
   file's modification time — use `GET /api/v1/config/meta`)
