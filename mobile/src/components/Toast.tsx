@@ -111,6 +111,9 @@ function ToastItem({ toast, onHide }: ToastItemProps) {
 
   return (
     <Animated.View
+      accessibilityRole="alert"
+      accessibilityLiveRegion="polite"
+      accessible
       style={[
         styles.toast,
         {
