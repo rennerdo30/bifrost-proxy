@@ -143,11 +143,11 @@ func (w *windowsProcessLookup) findTCPv4Process(local, remote netip.AddrPort) (u
 
 	localAddr := local.Addr().As4()
 	localIP := uint32(localAddr[0]) | uint32(localAddr[1])<<8 | uint32(localAddr[2])<<16 | uint32(localAddr[3])<<24
-	localPort := uint32(local.Port())<<8 | uint32(local.Port())>>8 // Network byte order
+	localPort := portToNetworkOrder(local.Port())
 
 	remoteAddr := remote.Addr().As4()
 	remoteIP := uint32(remoteAddr[0]) | uint32(remoteAddr[1])<<8 | uint32(remoteAddr[2])<<16 | uint32(remoteAddr[3])<<24
-	remotePort := uint32(remote.Port())<<8 | uint32(remote.Port())>>8
+	remotePort := portToNetworkOrder(remote.Port())
 
 	for _, entry := range entries {
 		if entry.LocalAddr == localIP && entry.LocalPort == localPort &&
@@ -182,8 +182,8 @@ func (w *windowsProcessLookup) findTCPv6Process(local, remote netip.AddrPort) (u
 
 	localAddr := local.Addr().As16()
 	remoteAddr := remote.Addr().As16()
-	localPort := uint32(local.Port())<<8 | uint32(local.Port())>>8
-	remotePort := uint32(remote.Port())<<8 | uint32(remote.Port())>>8
+	localPort := portToNetworkOrder(local.Port())
+	remotePort := portToNetworkOrder(remote.Port())
 
 	for _, entry := range entries {
 		if entry.LocalAddr == localAddr && entry.LocalPort == localPort &&
@@ -218,7 +218,7 @@ func (w *windowsProcessLookup) findUDPv4Process(local netip.AddrPort) (uint32, e
 
 	localAddr := local.Addr().As4()
 	localIP := uint32(localAddr[0]) | uint32(localAddr[1])<<8 | uint32(localAddr[2])<<16 | uint32(localAddr[3])<<24
-	localPort := uint32(local.Port())<<8 | uint32(local.Port())>>8
+	localPort := portToNetworkOrder(local.Port())
 
 	for _, entry := range entries {
 		if entry.LocalAddr == localIP && entry.LocalPort == localPort {
@@ -251,7 +251,7 @@ func (w *windowsProcessLookup) findUDPv6Process(local netip.AddrPort) (uint32, e
 	entries := unsafe.Slice((*mibUDP6RowOwnerPID)(unsafe.Pointer(&buf[4])), numEntries)
 
 	localAddr := local.Addr().As16()
-	localPort := uint32(local.Port())<<8 | uint32(local.Port())>>8
+	localPort := portToNetworkOrder(local.Port())
 
 	for _, entry := range entries {
 		if entry.LocalAddr == localAddr && entry.LocalPort == localPort {
