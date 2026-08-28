@@ -133,6 +133,8 @@ export interface ListenerConfig {
   read_timeout?: string
   write_timeout?: string
   idle_timeout?: string
+  /** Opt-in reaper for established tunnels that carry no data in either direction. Off (unset) by default. */
+  tunnel_idle_timeout?: string
   max_connections?: number
 }
 
