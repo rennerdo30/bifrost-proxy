@@ -199,6 +199,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   username+source). The implementation existed, fully tested, with no config
   key and no caller — a security control the project believed it shipped and
   did not
+- **A configured but unusable mTLS CRL no longer fails open.** An unreadable
+  or unparsable `crl_file` was a one-line startup warning, after which every
+  certificate the CRL was supposed to revoke kept authenticating. It is now a
+  fatal startup/creation error: if revocation checking is configured it works,
+  or the provider refuses to run. Remove `crl_file` to run without revocation
+  checking — it is never disabled implicitly
+- **`oauth.required_claims` is enforced.** The setting was parsed and surfaced
+  in the dashboard but never read, so a deployment gating access on, say,
+  `hd: example.com` was letting every active token through. Both validation
+  paths (introspection and userinfo) now enforce it with exact semantics:
+  missing claims fail, strings compare exactly, booleans and numbers compare
+  by canonical text, array claims match by string membership (`aud`-style),
+  object-valued claims never match. Deployments with no `required_claims` (or
+  the empty map the default template shipped) are unaffected. Claim values are
+  never logged or echoed in errors
+
 
 ### Fixed
 - The HTTP forward proxy is honest about its HTTP/1.1, one-request-per-
@@ -242,6 +258,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Apache access-log format logs the request target (host+path) in the %r
   position instead of only the host, so requests to the same host no longer
   log identically
+- **VPN route setup no longer reports success after failing.** On macOS and
+  Windows, `RouteManager.Setup` warned on every failed route and returned nil,
+  so the desktop VPN toggle showed the VPN as on while traffic kept flowing
+  over the physical interface. Any failure — a bypass route, either of the two
+  default-override routes that ARE the tunnel, an include route, or (with the
+  built-in DNS enabled) DNS configuration — is now fatal, rolls back whatever
+  was already installed, and surfaces the exact command output. A route that
+  already exists is recognized per platform and treated as the desired state,
+  not a failure. Linux, which already made the TUN route fatal, gets the same
+  treatment for the rest. (Platform caveat: verified by compilation and unit
+  tests of the classification logic; the Linux/Windows runtime paths were not
+  executed on this development machine)
+- VPN route setup deadlocked on the DEFAULT configuration: `Setup` called the
+  exported `AddBypassRoute` while already holding the manager's mutex, and the
+  default config ships three `always_bypass` entries — so on macOS, Windows
+  and Linux alike the first bypass route self-deadlocked the setup before any
+  route was installed
+- **Windows per-app split tunneling can match connections now.** The port
+  byte-order conversion widened to uint32 before shifting, pushing the port's
+  high byte into bits 16–23 instead of wrapping it, so the computed value never
+  matched a Windows MIB-table entry for any port above 255 and per-app rules
+  classified nothing. The conversion is a shared, cross-platform-tested helper
+  now, checked against the definitional big-endian encoding
+- **The OpenVPN crash detector can actually fire.** It polled
+  `cmd.ProcessState`, which stays nil until `Wait` is called — and only `Stop`
+  called `Wait` — so a dead tunnel kept reporting healthy until the next
+  manual stop. One goroutine now owns `Wait` per process; an exit while the
+  backend is supposed to be running marks it unhealthy and surfaces the exit
+  status in the backend stats, while an orderly `Stop` (which closes the stop
+  channel before signaling the process) is never misreported as a crash
+- `bifrost-server service status` (and the client equivalent) no longer
+  launders tool-execution failures into confident states: "systemctl is not on
+  PATH" read exactly like "the service is stopped", and a missing `sc.exe`
+  read as "not installed". A tool that ran and answered non-zero is still a
+  meaningful state (systemd's non-active states are now reported verbatim); a
+  tool that could not be executed at all is an error
+- Windows TUN/TAP MTU configuration failures were discarded with `_ = output`
+  and not even logged, leaving an MTU mismatch to surface later as blackholed
+  large packets with nothing pointing at the cause. They are warnings now,
+  with the requested MTU and the tool output
 - The server dashboard's Request Log page crashed to the error boundary as soon
   as `api.enable_request_log` was turned on — the exact thing its own empty state
   told operators to do. The page reads aggregate counters that
