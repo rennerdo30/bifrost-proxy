@@ -289,6 +289,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unconditionally mounted and purely in-memory
 
 ### Removed
+- More dead code from the audit's removal list: `backend.CopyBidirectional`
+  (a third copy of a function the proxy already provides),
+  `proxy.CopyBidirectionalWithStats` with the `CopyStats` type and its
+  `TotalBytes`/`Throughput` methods (no caller wanted the stats variant), and
+  the write-only `start_time`/`domain` context plumbing in `internal/util` —
+  the proxy set both values on every request and nothing ever read them back,
+  so the setters, getters and their context keys are all gone
 - Dead API helpers `AddWebSocketRoutes`, `setWebSocketHub` and the unrouted
   `handleGetConfigTimestamp` (which returned `time.Now()` instead of the config
   file's modification time — use `GET /api/v1/config/meta`)
