@@ -919,8 +919,8 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 		if timeout, ok := server["timeout"].(string); ok {
 			c.config.Server.Timeout = config.Duration(parseDuration(timeout))
 		}
-		if retryCount, ok := server["retry_count"].(float64); ok {
-			c.config.Server.RetryCount = int(retryCount)
+		if retryCount, ok := intFromJSON(server["retry_count"]); ok {
+			c.config.Server.RetryCount = retryCount
 		}
 		if retryDelay, ok := server["retry_delay"].(string); ok {
 			c.config.Server.RetryDelay = config.Duration(parseDuration(retryDelay))
@@ -950,14 +950,14 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 		if enabled, ok := debug["enabled"].(bool); ok {
 			c.config.Debug.Enabled = enabled
 		}
-		if maxEntries, ok := debug["max_entries"].(float64); ok {
-			c.config.Debug.MaxEntries = int(maxEntries)
+		if maxEntries, ok := intFromJSON(debug["max_entries"]); ok {
+			c.config.Debug.MaxEntries = maxEntries
 		}
 		if captureBody, ok := debug["capture_body"].(bool); ok {
 			c.config.Debug.CaptureBody = captureBody
 		}
-		if maxBodySize, ok := debug["max_body_size"].(float64); ok {
-			c.config.Debug.MaxBodySize = int(maxBodySize)
+		if maxBodySize, ok := intFromJSON(debug["max_body_size"]); ok {
+			c.config.Debug.MaxBodySize = maxBodySize
 		}
 	}
 
@@ -1507,10 +1507,7 @@ func parseRouteUpdate(raw interface{}) (config.ClientRouteConfig, error) {
 	if route.Action == "" {
 		route.Action = "server"
 	}
-	switch p := m["priority"].(type) {
-	case float64:
-		route.Priority = int(p)
-	case int:
+	if p, ok := intFromJSON(m["priority"]); ok {
 		route.Priority = p
 	}
 	if domains, ok := m["domains"].([]interface{}); ok {
@@ -1527,6 +1524,22 @@ func parseRouteUpdate(raw interface{}) (config.ClientRouteConfig, error) {
 }
 
 // parseDuration parses a duration string like "30s" or "5m".
+// intFromJSON extracts an integer regardless of how the JSON layer decoded it:
+// the numeric-fidelity API decoder produces int64, a plain json.Unmarshal
+// produces float64, and tests may pass native ints.
+func intFromJSON(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	default:
+		return 0, false
+	}
+}
+
 // routePseudoKeys are internal update-map keys the routes CRUD handlers send;
 // they are translated in updateConfig and never persisted.
 var routePseudoKeys = []string{"_add_route", "_remove_route"}

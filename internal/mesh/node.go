@@ -400,10 +400,10 @@ func (n *MeshNode) initializeP2PManager() error {
 		LocalPeerID:          n.localPeerID,
 		LocalPrivateKey:      privateKey,
 		STUNServers:          n.config.STUN.Servers,
-		STUNTimeout:          n.config.STUN.Timeout,
+		STUNTimeout:          n.config.STUN.Timeout.Duration(),
 		TURNConfig:           turnConfig,
-		ConnectTimeout:       n.config.Connection.ConnectTimeout,
-		KeepAliveInterval:    n.config.Connection.KeepAliveInterval,
+		ConnectTimeout:       n.config.Connection.ConnectTimeout.Duration(),
+		KeepAliveInterval:    n.config.Connection.KeepAliveInterval.Duration(),
 		DirectConnectEnabled: n.config.Connection.DirectConnect,
 		RelayEnabled:         n.config.Connection.RelayEnabled,
 		PeerRelayEnabled:     n.config.Connection.RelayViaPeers,
@@ -981,7 +981,7 @@ func (n *MeshNode) onPeerDiscovered(info PeerInfo) {
 	peer.SetStatus(PeerStatusConnecting)
 
 	go func() {
-		ctx, cancel := context.WithTimeout(n.ctx, n.config.Connection.ConnectTimeout)
+		ctx, cancel := context.WithTimeout(n.ctx, n.config.Connection.ConnectTimeout.Duration())
 		defer cancel()
 
 		conn, err := n.p2pManager.Connect(ctx, info.ID, pubKey, endpoints)
