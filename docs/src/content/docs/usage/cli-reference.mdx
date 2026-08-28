@@ -962,9 +962,12 @@ logging:
   level: "${BIFROST_LOG_LEVEL}"
 ```
 
-> Expansion uses Go's `os.ExpandEnv`: only `${VAR}` and `$VAR` are recognised.
-> Shell-style defaults like `${BIFROST_LOG_LEVEL:-info}` are **not** supported —
-> they expand to the empty string. Export every variable the config references.
+> Only `${VAR}` and `${VAR:-fallback}` are expanded; `$$` yields a literal `$`.
+> A bare `$VAR` is **not** expanded, and every other `$` is literal, so a
+> password or bcrypt hash containing `$` is kept verbatim. A reference to a
+> variable that is not set expands to the empty string and logs a warning with
+> the line number — use `${VAR:-fallback}` where that is not acceptable. See
+> [Configuration](/configuration/#environment-variables).
 
 ```bash
 # Set variables and start

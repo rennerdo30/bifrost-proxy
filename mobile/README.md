@@ -16,12 +16,58 @@ cd mobile
 npm install
 npm run typecheck   # tsc --noEmit
 npm run lint        # eslint
+npm test            # node --test (service-layer unit tests)
 npm start           # expo start (Expo Go: management UI only, no native VPN)
 ```
 
-`node_modules/` is gitignored and must be installed locally; there is no test
-runner wired up yet (no `jest`/`jest-expo`), so `npm run typecheck` +
-`npm run lint` are the CI gates for this package.
+`node_modules/` is gitignored and must be installed locally.
+
+### Tests
+
+`npm test` runs the service-layer unit tests (`src/services/__tests__/`) on
+Node's built-in test runner, using Node's TypeScript type stripping. There is
+deliberately **no** `jest`/`jest-expo` dependency: the tests cover `api.ts` and
+`storage.ts`, which need no renderer.
+
+Two mechanics make that work:
+
+- `scripts/node-test-resolver.mjs` fills in the file extension that Metro would
+  otherwise resolve, so app sources keep using plain `./storage` imports.
+- `src/services/__tests__/helpers.ts` swaps
+  `@react-native-async-storage/async-storage` for an in-memory stand-in and
+  stubs `fetch`, recording every request so header, route and body expectations
+  can be asserted.
+
+Type stripping is *strip-only*: TypeScript constructs that need code generation
+(parameter properties, `enum`, `namespace`) will not load. Avoid them in any file
+reachable from a test.
+
+Covered today: `api.ts`, `storage.ts`, `splitTunnelSync.ts` (rule reconciliation
+and the replace-semantics policy push), `utils/status.ts`, and `i18n.ts`.
+
+Screen components are not yet covered — that needs React Native Testing Library,
+which Expo SDK 55 does not pin.
+
+## Assets
+
+`assets/` holds three distinct images, not three copies of one:
+
+| File | Role | Constraints |
+|------|------|-------------|
+| `icon.png` | App icon | 1024×1024, opaque, its own rounded-square ground |
+| `adaptive-icon.png` | Android adaptive **foreground** | 1024×1024, transparent; artwork stays inside the 66% safe-zone circle because Android masks the rest. The ground comes from `android.adaptiveIcon.backgroundColor` |
+| `splash.png` | Launch composition | 1024×1024, transparent, vertically centred; the ground comes from `splash.backgroundColor` |
+
+Baking a background into the adaptive foreground produces a squircle inside a
+squircle once Android applies its mask, so keep that file transparent.
+
+## Internationalisation
+
+User-facing strings live in `src/i18n.ts` (English + German) and are read via
+`t('key')`. `formatNumber`/`formatDecimal` and the `duration.*` keys keep counts
+and durations locale-aware. The catalogue is typed: adding a key to the English
+object makes it required in the German one, so a missing translation is a
+compile error rather than an English string leaking into a German build.
 
 ## Project layout
 
@@ -37,6 +83,7 @@ mobile/
 │   │   ├── BifrostVpn.ts   # JS bridge to native modules (safe no-op stub)
 │   │   └── index.ts        # barrel + selectVpnMode/buildNativeVpnConfig
 │   ├── services/api.ts     # REST client for the Bifrost client API
+│   ├── services/storage.ts # AsyncStorage persistence (address, token, rules)
 │   └── screens/ ...        # UI
 ├── ios/BifrostVPN/
 │   └── PacketTunnelProvider.swift   # iOS NEPacketTunnelProvider (NOT linked)
@@ -56,11 +103,15 @@ mobile/
 ### What is wired up in this change
 
 - **`app.json`**
-  - iOS `entitlements`: `com.apple.developer.networking.networkextension`
-    = `["packet-tunnel-provider"]`.
+  - iOS: the Network Extension entitlement is intentionally NOT declared —
+    the packet-tunnel extension does not exist yet, and requesting an
+    entitlement for a missing extension breaks provisioning. Add
+    `com.apple.developer.networking.networkextension =
+    ["packet-tunnel-provider"]` when the extension target is real.
   - Android `permissions`: `FOREGROUND_SERVICE`,
-    `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS` (plus existing
-    `INTERNET` / `ACCESS_NETWORK_STATE`).
+    `FOREGROUND_SERVICE_SPECIAL_USE` (plus existing `INTERNET` /
+    `ACCESS_NETWORK_STATE`). `POST_NOTIFICATIONS` is deliberately absent —
+    nothing in the app posts a notification.
   - Registers the config plugin `./plugins/withBifrostVpn`.
 - **`plugins/withBifrostVpn.js`** — on `expo prebuild` / EAS Build, injects the
   Android `<service android:name="com.bifrost.vpn.BifrostVpnService">` with the
@@ -72,7 +123,9 @@ mobile/
 - **`src/native/BifrostVpn.ts`** — typed JS bridge. `isNativeVpnAvailable()`
   returns `false` whenever the native module is not linked (Expo Go, the current
   scaffold, web), and every method degrades to a safe no-op / clear error so the
-  app keeps building and running against the REST VPN flow.
+  app keeps building and running against the REST VPN flow. Separately,
+  `NATIVE_DATA_PATH_IS_SECURE` gates *use* of the native path on the data path
+  actually being a tunnel — see "Why it's gated off" below.
 
 ### What is still required (DEFERRED — needs platform toolchains)
 
@@ -103,15 +156,34 @@ account for the NE entitlement, and a real Bifrost server to test against):
    eas build --profile development --platform android
    eas build --profile development --platform ios
    ```
-5. **Set a real EAS `projectId`** in `app.json` (`extra.eas.projectId`, currently
-   a placeholder) via `eas init`.
+5. **Link the project to EAS.** `app.json` carries no `extra.eas.projectId`: the
+   project is not linked to an Expo account, and a fabricated placeholder UUID
+   was removed because it looked configured while pointing at nothing. Run
+   `eas init` in this directory with your own Expo account before the first
+   `eas build`; it writes the real `projectId` for you.
 
 ### Why it's gated off
 
-The bridge defaults to the server-side VPN flow (`selectVpnMode()` returns
-`'server'` unless a real native module is linked). This keeps a known-insecure
-raw-UDP forwarder from ever running silently. Wiring the UI to the native path
-should happen only after step 1 above is complete and validated on-device.
+Two independent conditions must both hold before any traffic can take the native
+path, and only one of them is a build-system fact:
+
+1. the native module is linked (`isNativeVpnAvailable()`), and
+2. `NATIVE_DATA_PATH_IS_SECURE` in `src/native/BifrostVpn.ts` is `true`.
+
+Condition 2 is currently `false`, so `selectVpnMode()` returns `'server'` and
+`BifrostVpn.start()` refuses **even in a build where the module is linked**.
+That matters because applying the config plugin — step 2/3 below — is enough to
+satisfy condition 1 on its own; without condition 2, finishing the plumbing
+would silently start routing user traffic over the raw-UDP forwarder while the
+UI said "VPN".
+
+`BifrostVpn.requestPermission()` is gated the same way: the app does not ask the
+OS for tunnel permission for a tunnel it will refuse to start.
+
+`src/native/nativeVpn.test.ts` asserts all of this, including that the flag is
+`false`. Flipping the flag fails that suite by design — updating those
+assertions is how you record that a real data path has landed (step 1) and been
+validated on-device (step 4).
 
 ## Useful commands
 

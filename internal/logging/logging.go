@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Config holds logging configuration.
@@ -77,6 +78,21 @@ func Setup(cfg Config) error {
 
 	opts := &slog.HandlerOptions{
 		Level: level,
+	}
+
+	// Apply the configured timestamp layout. The field was documented,
+	// defaulted, and shown in the monitoring docs — and never read: slog's
+	// handlers used their own fixed format, so the setting was decoration.
+	if cfg.TimeFormat != "" {
+		layout := cfg.TimeFormat
+		opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.TimeKey && len(groups) == 0 {
+				if t, ok := a.Value.Any().(time.Time); ok {
+					a.Value = slog.StringValue(t.Format(layout))
+				}
+			}
+			return a
+		}
 	}
 
 	var handler slog.Handler

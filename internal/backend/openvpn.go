@@ -87,6 +87,10 @@ func NewOpenVPNBackend(cfg OpenVPNConfig) *OpenVPNBackend {
 		cfg.ManagementPort = 7505
 	}
 	if cfg.ConnectTimeout == 0 {
+		// OpenVPN always derives its own timeout: this value also bounds the
+		// wait for the management socket at startup, so it can never be zero.
+		// Per the documented precedence a backend-derived timeout wins over
+		// network.dial_timeout.
 		cfg.ConnectTimeout = 60 * time.Second
 	}
 
@@ -140,11 +144,12 @@ func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net
 
 	// Create a dialer that uses the VPN interface
 	dialer := &net.Dialer{
-		Timeout:   30 * time.Second,
+		Timeout:   b.config.ConnectTimeout,
 		KeepAlive: 30 * time.Second,
 	}
-	// Apply process-wide network tuning (keep-alive/timeout/prefer-IPv6). The
-	// local-address binding below still takes precedence for tunnel egress.
+	// Apply process-wide network tuning (keep-alive/prefer-IPv6). The dialer
+	// timeout is already set from ConnectTimeout, which is never zero here, so
+	// network.dial_timeout does not apply — openvpn always derives its own.
 	b.config.Network.apply(dialer, false)
 
 	// If we have a local address from the VPN, use it
@@ -186,8 +191,10 @@ func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net
 
 // DialTimeout creates a connection with a specific timeout.
 func (b *OpenVPNBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	// The dialer already encodes the full timeout precedence (backend
+	// connect_timeout > network.dial_timeout > default); a context cap from
+	// the handler-supplied fallback must not override a longer explicit one.
+	_ = timeout
 	return b.Dial(ctx, network, address)
 }
 

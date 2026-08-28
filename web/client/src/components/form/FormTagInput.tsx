@@ -1,4 +1,4 @@
-import { useState, KeyboardEvent } from 'react'
+import { useState, KeyboardEvent, useId } from 'react'
 
 interface FormTagInputProps {
   label: string
@@ -61,9 +61,11 @@ export function FormTagInput({
     onChange(value.filter((_, i) => i !== index))
   }
 
+  const inputId = useId()
+
   return (
     <div className="space-y-1">
-      <label className="block text-sm font-medium text-bifrost-muted">{label}</label>
+      <label htmlFor={inputId} className="block text-sm font-medium text-bifrost-muted">{label}</label>
       {description && (
         <p className="text-xs text-bifrost-muted/70">{description}</p>
       )}
@@ -93,6 +95,7 @@ export function FormTagInput({
           </span>
         ))}
         <input
+          id={inputId}
           type="text"
           value={inputValue}
           onChange={(e) => handleInputChange(e.target.value)}
