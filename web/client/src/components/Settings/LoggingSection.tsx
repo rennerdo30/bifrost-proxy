@@ -1,5 +1,6 @@
 import {
   FormInput,
+  FormNumber,
   FormSelect,
   ConfigSection,
 } from '../form'
@@ -52,6 +53,18 @@ export function LoggingSection() {
           placeholder="2006-01-02T15:04:05.000Z07:00"
           value={getValue('logging', 'time_format', '') as string}
           onChange={(v) => updateField('logging', 'time_format', v)}
+        />
+        <FormNumber
+          label="Max File Size (MB)"
+          description="Rotate the log file when it exceeds this size. 0 disables rotation. Only used when Output is a file path"
+          value={getValue('logging', 'max_size_mb', 0) as number}
+          onChange={(v) => updateField('logging', 'max_size_mb', v)}
+        />
+        <FormNumber
+          label="Rotated Files to Keep"
+          description="Number of rotated log files to retain. 0 keeps all"
+          value={getValue('logging', 'max_backups', 0) as number}
+          onChange={(v) => updateField('logging', 'max_backups', v)}
         />
       </div>
     </ConfigSection>

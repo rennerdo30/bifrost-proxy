@@ -65,15 +65,15 @@ type SOCKS5ProxyConfig struct {
 
 // NewSOCKS5ProxyBackend creates a new SOCKS5 proxy backend.
 func NewSOCKS5ProxyBackend(cfg SOCKS5ProxyConfig) *SOCKS5ProxyBackend {
-	if cfg.ConnectTimeout == 0 {
-		cfg.ConnectTimeout = 30 * time.Second
-	}
-
 	dialer := &net.Dialer{
 		Timeout:   cfg.ConnectTimeout,
 		KeepAlive: 30 * time.Second,
 	}
+	// Precedence: explicit connect_timeout > network.dial_timeout > default.
 	cfg.Network.apply(dialer, false)
+	if dialer.Timeout == 0 {
+		dialer.Timeout = defaultConnectTimeout
+	}
 
 	return &SOCKS5ProxyBackend{
 		name:       cfg.Name,
@@ -305,8 +305,10 @@ func (b *SOCKS5ProxyBackend) connect(conn net.Conn, address string) error {
 
 // DialTimeout creates a connection with a specific timeout.
 func (b *SOCKS5ProxyBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	// The dialer already encodes the full timeout precedence (backend
+	// connect_timeout > network.dial_timeout > default); a context cap from
+	// the handler-supplied fallback must not override a longer explicit one.
+	_ = timeout
 	return b.Dial(ctx, network, address)
 }
 

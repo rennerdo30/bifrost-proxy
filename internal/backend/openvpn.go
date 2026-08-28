@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -16,17 +17,23 @@ import (
 
 // OpenVPNBackend provides connections through an OpenVPN tunnel.
 type OpenVPNBackend struct {
-	name           string
-	config         OpenVPNConfig
-	cmd            *exec.Cmd
-	mgmtConn       net.Conn
-	localAddr      string
-	startTime      time.Time
-	healthy        atomic.Bool
-	stats          openvpnStats
-	mu             sync.RWMutex
-	running        bool
-	stopChan       chan struct{}
+	name      string
+	config    OpenVPNConfig
+	cmd       *exec.Cmd
+	mgmtConn  net.Conn
+	localAddr string
+	startTime time.Time
+	healthy   atomic.Bool
+	stats     openvpnStats
+	mu        sync.RWMutex
+	running   bool
+	stopChan  chan struct{}
+	// waitDone is closed by the single goroutine that owns cmd.Wait for the
+	// current run; waitErr (written before the close) carries Wait's result.
+	// Exactly one Wait call per process: Stop and the crash monitor both
+	// consume this channel instead of calling Wait themselves.
+	waitDone       chan struct{}
+	waitErr        error
 	tempConfigFile string // Temporary config file created from ConfigContent
 	tempAuthFile   string // Temporary auth file created from Username/Password
 	leakRouter     leakProofRouter
@@ -80,6 +87,10 @@ func NewOpenVPNBackend(cfg OpenVPNConfig) *OpenVPNBackend {
 		cfg.ManagementPort = 7505
 	}
 	if cfg.ConnectTimeout == 0 {
+		// OpenVPN always derives its own timeout: this value also bounds the
+		// wait for the management socket at startup, so it can never be zero.
+		// Per the documented precedence a backend-derived timeout wins over
+		// network.dial_timeout.
 		cfg.ConnectTimeout = 60 * time.Second
 	}
 
@@ -133,11 +144,12 @@ func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net
 
 	// Create a dialer that uses the VPN interface
 	dialer := &net.Dialer{
-		Timeout:   30 * time.Second,
+		Timeout:   b.config.ConnectTimeout,
 		KeepAlive: 30 * time.Second,
 	}
-	// Apply process-wide network tuning (keep-alive/timeout/prefer-IPv6). The
-	// local-address binding below still takes precedence for tunnel egress.
+	// Apply process-wide network tuning (keep-alive/prefer-IPv6). The dialer
+	// timeout is already set from ConnectTimeout, which is never zero here, so
+	// network.dial_timeout does not apply — openvpn always derives its own.
 	b.config.Network.apply(dialer, false)
 
 	// If we have a local address from the VPN, use it
@@ -179,8 +191,10 @@ func (b *OpenVPNBackend) Dial(ctx context.Context, network, address string) (net
 
 // DialTimeout creates a connection with a specific timeout.
 func (b *OpenVPNBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	// The dialer already encodes the full timeout precedence (backend
+	// connect_timeout > network.dial_timeout > default); a context cap from
+	// the handler-supplied fallback must not override a longer explicit one.
+	_ = timeout
 	return b.Dial(ctx, network, address)
 }
 
@@ -269,9 +283,17 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 		return NewBackendError(b.name, "start openvpn", err)
 	}
 
+	// Exactly one goroutine owns Wait for this process. Everything else —
+	// Stop's drain and the crash monitor — consumes waitDone. The previous
+	// design read cmd.ProcessState from the monitor, which stays nil until
+	// Wait is called, and only Stop called Wait: the crash detector could
+	// never fire.
+	waitDone := b.startWaitOwner(b.cmd)
+
 	// Wait for management interface to be available
 	if err := b.waitForManagement(ctx); err != nil {
 		_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort process cleanup
+		<-waitDone               // reap before removing the files the process may hold open
 		// Clean up temp files on failure to prevent credential leakage
 		b.cleanupTempFiles()
 		return NewBackendError(b.name, "connect management", err)
@@ -289,6 +311,7 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 	// misconfigured deployment never silently leaks via the default interface.
 	if err := b.installLeakProof(ctx); err != nil {
 		_ = b.cmd.Process.Kill() //nolint:errcheck // best-effort cleanup on fail-closed
+		<-waitDone
 		b.cleanupTempFiles()
 		return NewBackendError(b.name, "leak-proof routing", err)
 	}
@@ -297,10 +320,35 @@ func (b *OpenVPNBackend) Start(ctx context.Context) error {
 	b.startTime = time.Now()
 	b.healthy.Store(true)
 
-	// Start health monitoring goroutine
-	go b.monitor()
+	// Start the crash monitor for this run. It captures this run's channels
+	// so a later restart cannot swap them out from under it.
+	go b.monitor(b.stopChan, waitDone)
 
 	return nil
+}
+
+// startWaitOwner spawns the single goroutine that reaps the OpenVPN process.
+// The returned channel is closed once the process has exited; waitExitError
+// then reports how.
+func (b *OpenVPNBackend) startWaitOwner(cmd *exec.Cmd) chan struct{} {
+	waitDone := make(chan struct{})
+	b.waitDone = waitDone
+	go func() {
+		err := cmd.Wait()
+		b.mu.Lock()
+		b.waitErr = err
+		b.mu.Unlock()
+		close(waitDone)
+	}()
+	return waitDone
+}
+
+// waitExitError reports how the process exited. Only meaningful after the
+// wait-owner's channel has been closed.
+func (b *OpenVPNBackend) waitExitError() error {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.waitErr
 }
 
 func (b *OpenVPNBackend) waitForManagement(ctx context.Context) error {
@@ -374,30 +422,33 @@ func (b *OpenVPNBackend) installLeakProof(ctx context.Context) error {
 	return b.leakRouter.Install(ctx, b.localAddr)
 }
 
-func (b *OpenVPNBackend) monitor() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
+// monitor surfaces an UNEXPECTED process exit: waitDone closing while
+// stopChan is still open means the tunnel died underneath us. Stop closes
+// stopChan before signaling the process, so an orderly shutdown always has
+// stopChan closed by the time the exit is observed and is never reported as a
+// crash. The previous implementation polled cmd.ProcessState, which stays nil
+// until Wait is called — and only Stop called Wait, so it could never fire.
+func (b *OpenVPNBackend) monitor(stopChan, waitDone <-chan struct{}) {
+	select {
+	case <-stopChan:
+		return
+	case <-waitDone:
 		select {
-		case <-b.stopChan:
+		case <-stopChan:
+			// Orderly shutdown already in progress.
 			return
-		case <-ticker.C:
-			b.mu.RLock()
-			if !b.running {
-				b.mu.RUnlock()
-				return
-			}
-			// Check if process is still running while holding the lock
-			cmd := b.cmd
-			b.mu.RUnlock()
-
-			// Only check process state if we have a command
-			if cmd != nil && cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-				b.healthy.Store(false)
-				b.recordError(fmt.Errorf("openvpn process exited"))
-			}
+		default:
 		}
+		exitErr := b.waitExitError()
+		if exitErr == nil {
+			exitErr = fmt.Errorf("process exited with status 0")
+		}
+		b.healthy.Store(false)
+		b.recordError(fmt.Errorf("openvpn process exited unexpectedly: %w", exitErr))
+		slog.Error("openvpn process exited unexpectedly; backend marked unhealthy",
+			"backend", b.name,
+			"error", exitErr,
+		)
 	}
 }
 
@@ -427,21 +478,17 @@ func (b *OpenVPNBackend) Stop(ctx context.Context) error {
 		b.mgmtConn = nil
 	}
 
-	// Wait for process to exit
-	if b.cmd != nil && b.cmd.Process != nil {
-		done := make(chan error, 1)
-		go func() {
-			done <- b.cmd.Wait()
-		}()
-
+	// Wait for the process to exit. The wait-owner goroutine (started with
+	// the process) is the only Wait caller; Stop just consumes its signal.
+	if b.cmd != nil && b.cmd.Process != nil && b.waitDone != nil {
 		select {
-		case <-done:
+		case <-b.waitDone:
 		case <-time.After(5 * time.Second):
 			_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort kill
-			<-done                   // Drain Wait goroutine after kill
+			<-b.waitDone
 		case <-ctx.Done():
 			_ = b.cmd.Process.Kill() //nolint:errcheck // Best effort kill
-			<-done                   // Drain Wait goroutine after kill
+			<-b.waitDone
 		}
 	}
 

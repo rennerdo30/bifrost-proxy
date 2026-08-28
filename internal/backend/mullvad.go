@@ -137,7 +137,7 @@ func (b *MullvadBackend) Dial(ctx context.Context, network, address string) (net
 
 // DialTimeout creates a connection with a specific timeout.
 func (b *MullvadBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	ctx, cancel := withDialBound(ctx, timeout)
 	defer cancel()
 	return b.Dial(ctx, network, address)
 }

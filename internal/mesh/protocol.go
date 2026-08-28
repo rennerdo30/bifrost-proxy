@@ -608,6 +608,13 @@ func (p *RoutingProtocol) send(peerID string, data []byte) error {
 	return sendFunc(peerID, data)
 }
 
+// UpdatePeerLatency refreshes the direct route's metric with a newly
+// measured latency. Unlike NotifyPeerConnected it announces nothing; it
+// only keeps the local routing table honest.
+func (p *RoutingProtocol) UpdatePeerLatency(peerID string, peerIP netip.Addr, latency time.Duration) {
+	p.router.AddDirectRoute(peerID, peerIP, latency)
+}
+
 // NotifyPeerConnected notifies the protocol of a new peer connection.
 func (p *RoutingProtocol) NotifyPeerConnected(peerID string, peerIP netip.Addr, latency time.Duration) {
 	// Add direct route
