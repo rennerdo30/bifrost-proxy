@@ -3,11 +3,9 @@ package ratelimit
 import (
 	"context"
 	"fmt"
-	"io"
 	"net"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -64,20 +62,6 @@ func ParseBandwidth(s string) (int64, error) {
 	}
 
 	return int64(value * float64(multiplier)), nil
-}
-
-// FormatBandwidth formats a bandwidth value to a human-readable string.
-func FormatBandwidth(bytesPerSecond int64) string {
-	bps := bytesPerSecond * 8
-
-	if bps >= 1000*1000*1000 {
-		return fmt.Sprintf("%.2f Gbps", float64(bps)/(1000*1000*1000))
-	} else if bps >= 1000*1000 {
-		return fmt.Sprintf("%.2f Mbps", float64(bps)/(1000*1000))
-	} else if bps >= 1000 {
-		return fmt.Sprintf("%.2f Kbps", float64(bps)/1000)
-	}
-	return fmt.Sprintf("%d bps", bps)
 }
 
 // ThrottledConn wraps a net.Conn with bandwidth throttling.
@@ -160,98 +144,6 @@ func (tc *ThrottledConn) Write(b []byte) (int, error) {
 		cancel()
 
 		n, err := tc.Conn.Write(remaining[:chunkSize])
-		written += n
-		remaining = remaining[n:]
-
-		if err != nil {
-			return written, err
-		}
-	}
-
-	return written, nil
-}
-
-// ThrottledReader wraps an io.Reader with bandwidth throttling.
-type ThrottledReader struct {
-	reader  io.Reader
-	limiter *TokenBucket
-	mu      sync.Mutex
-}
-
-// NewThrottledReader creates a new throttled reader.
-func NewThrottledReader(r io.Reader, bytesPerSecond int64) *ThrottledReader {
-	return &ThrottledReader{
-		reader:  r,
-		limiter: NewTokenBucket(float64(bytesPerSecond), int(bytesPerSecond)),
-	}
-}
-
-// Read implements io.Reader with throttling.
-func (tr *ThrottledReader) Read(p []byte) (int, error) {
-	tr.mu.Lock()
-	defer tr.mu.Unlock()
-
-	// Limit read size
-	maxRead := len(p)
-	available := int(tr.limiter.Tokens())
-	if available > 0 && available < maxRead {
-		maxRead = available
-	}
-	if maxRead < 1 {
-		maxRead = 1
-	}
-
-	n, err := tr.reader.Read(p[:maxRead])
-	if n > 0 {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		_ = tr.limiter.WaitN(ctx, n) //nolint:errcheck // Best effort rate limiting after successful read
-	}
-
-	return n, err
-}
-
-// ThrottledWriter wraps an io.Writer with bandwidth throttling.
-type ThrottledWriter struct {
-	writer  io.Writer
-	limiter *TokenBucket
-	mu      sync.Mutex
-}
-
-// NewThrottledWriter creates a new throttled writer.
-func NewThrottledWriter(w io.Writer, bytesPerSecond int64) *ThrottledWriter {
-	return &ThrottledWriter{
-		writer:  w,
-		limiter: NewTokenBucket(float64(bytesPerSecond), int(bytesPerSecond)),
-	}
-}
-
-// Write implements io.Writer with throttling.
-func (tw *ThrottledWriter) Write(p []byte) (int, error) {
-	tw.mu.Lock()
-	defer tw.mu.Unlock()
-
-	written := 0
-	remaining := p
-
-	for len(remaining) > 0 {
-		chunkSize := len(remaining)
-		available := int(tw.limiter.Tokens())
-		if available > 0 && available < chunkSize {
-			chunkSize = available
-		}
-		if chunkSize < 1 {
-			chunkSize = 1
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if err := tw.limiter.WaitN(ctx, chunkSize); err != nil {
-			cancel()
-			return written, err
-		}
-		cancel()
-
-		n, err := tw.writer.Write(remaining[:chunkSize])
 		written += n
 		remaining = remaining[n:]
 

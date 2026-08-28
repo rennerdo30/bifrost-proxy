@@ -170,14 +170,6 @@ type LoadBalancer interface {
 	Select(backends []backend.Backend, clientIP string) backend.Backend
 }
 
-// NewLoadBalancer creates a load balancer of the given type.
-// For the "weighted" strategy with no explicit per-backend weights, all
-// backends are treated equally (effectively round-robin). Use
-// NewLoadBalancerWithWeights to supply per-backend weights.
-func NewLoadBalancer(lbType string) LoadBalancer {
-	return NewLoadBalancerWithWeights(lbType, nil)
-}
-
 // NewLoadBalancerWithWeights creates a load balancer of the given type using
 // the supplied per-backend weights (only consulted by the "weighted" strategy).
 func NewLoadBalancerWithWeights(lbType string, weights map[string]int) LoadBalancer {

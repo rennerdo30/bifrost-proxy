@@ -30,6 +30,12 @@ export function WebUISection({ config, onChange }: WebUISectionProps) {
   return (
     <Section sectionKey="web_ui" title="Web UI">
       <div className="space-y-4">
+        <div className="p-3 bg-bifrost-warning/10 border border-bifrost-warning/30 rounded-lg text-xs text-bifrost-warning" role="note">
+          This dashboard is currently always served on the <strong>API listener</strong> (the{' '}
+          <code className="font-mono">api.listen</code> address). The fields below are stored in the config
+          but are not honored by the server yet: there is no separate Web UI listener, and no base-path
+          rewriting. They exist so a future release can serve the UI separately without a config migration.
+        </div>
         <label className="flex items-center gap-3 cursor-pointer">
           <input
             type="checkbox"
