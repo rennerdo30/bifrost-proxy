@@ -51,7 +51,7 @@ func tryDialWithOrigin(t *testing.T, srv *httptest.Server, origin string) (int, 
 func newOriginTestServer(t *testing.T, allowedOrigins []string) *httptest.Server {
 	t.Helper()
 
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	hub.SetAllowedOrigins(allowedOrigins)
 	go hub.Run()
 	t.Cleanup(hub.Stop)
@@ -238,7 +238,7 @@ func TestWebSocket_AcceptsMissingOriginHeader(t *testing.T) {
 // explicit opt-out that the server warns about at startup rather than the old
 // silent default.
 func TestWebSocket_WildcardDisablesOriginCheck(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	hub.SetAllowedOrigins([]string{config.AllowedOriginsWildcard})
 	go hub.Run()
 	t.Cleanup(hub.Stop)
@@ -256,7 +256,7 @@ func TestWebSocket_WildcardDisablesOriginCheck(t *testing.T) {
 // consumed as a flag rather than being passed through as a host pattern, and
 // that a repeated call replaces rather than accumulates state.
 func TestWebSocketHub_SetAllowedOrigins_SeparatesWildcard(t *testing.T) {
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 
 	hub.SetAllowedOrigins([]string{"a.example.com", config.AllowedOriginsWildcard, "b.example.com"})
 	assert.True(t, hub.SkipsOriginCheck())

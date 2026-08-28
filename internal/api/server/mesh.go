@@ -40,13 +40,6 @@ type MeshNetwork struct {
 	mu          sync.RWMutex
 }
 
-// NewMeshAPI creates an in-memory mesh API handler with no persistence.
-func NewMeshAPI() *MeshAPI {
-	return &MeshAPI{
-		networks: make(map[string]*MeshNetwork),
-	}
-}
-
 // NewMeshAPIWithConfig creates a mesh API handler from the server's mesh config.
 // When cfg.StatePath is set, previously persisted networks and peers are
 // restored and every subsequent mutation is written back. A restore failure is
