@@ -30,12 +30,10 @@ backends:
   - name: direct
     type: direct
     enabled: true
-    priority: 10
 
   - name: wireguard
     type: wireguard
     enabled: true
-    priority: 20
     config:
       private_key: "${WG_PRIVATE_KEY}"
       address: "10.0.0.2/24"
@@ -230,9 +228,11 @@ web_ui:
   base_path: "/bifrost"        # serve the dashboard under a sub-path
 ```
 
-Set `base_path` when a reverse proxy mounts the dashboard somewhere other than
-the root. If that proxy also rewrites `Host`, add the browser-visible origin to
-`api.allowed_origins` as well, or the dashboard's WebSocket will be refused.
+`base_path` is optional in every setup: the dashboard derives its prefix from
+the browser URL at runtime, so serving it under a sub-path behind a reverse
+proxy works with or without this setting (the Go server does not consume the
+value). If the proxy also rewrites `Host`, add the browser-visible origin to
+`api.allowed_origins`, or the dashboard's WebSocket will be refused.
 
 ### Network Settings
 
