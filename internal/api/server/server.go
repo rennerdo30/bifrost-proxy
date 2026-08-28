@@ -223,14 +223,6 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 	r.Use(middleware.Timeout(30 * time.Second))
 	r.Use(a.securityHeadersMiddleware)
 
-	// Session login endpoint (token exchange -> HttpOnly cookie). It is mounted
-	// outside authMiddleware because it authenticates the presented token itself;
-	// csrfMiddleware still applies so the SPA must send X-Requested-With. Only
-	// registered when the session flow is enabled (token set + manager wired).
-	if a.sessionManager != nil {
-		r.With(a.csrfMiddleware).Post("/api/v1/login", a.handleLogin)
-	}
-
 	// Auth middleware if token is set
 	if a.token != "" {
 		r.Group(func(r chi.Router) {
@@ -252,6 +244,23 @@ func (a *API) RouterWithWebSocket(hub *WebSocketHub) http.Handler {
 			r.Handle("/api/v1/ws", hub)
 		}
 	}
+
+	// Session login endpoint (token exchange -> HttpOnly cookie). Registered
+	// after the middleware chain above because chi requires every r.Use on a mux
+	// to precede its first route -- the no-token branch installs csrfMiddleware
+	// on this router.
+	//
+	// Mounted unconditionally so a server without a session store answers the
+	// handler's 503 "not enabled" instead of a bare 404: 404 is
+	// indistinguishable from a wrong URL or an old build, while 503 says the
+	// endpoint exists and the feature is off, which is what the dashboard keys
+	// its bearer-token fallback on. While this route was conditional,
+	// handleLogin's 503 branch was unreachable.
+	//
+	// It sits outside authMiddleware because it authenticates the presented
+	// token itself; csrfMiddleware still applies, so the SPA must send
+	// X-Requested-With.
+	r.With(a.csrfMiddleware).Post("/api/v1/login", a.handleLogin)
 
 	// PAC file routes (no auth required for browser auto-config)
 	if a.pacGenerator != nil {
@@ -299,11 +308,10 @@ func (a *API) addAPIRoutes(r chi.Router) {
 	r.Get("/api/v1/status", a.handleStatus)
 	r.Get("/api/v1/stats", a.handleStats)
 
-	// Session logout (destroys the session behind the presented cookie). No-op
-	// (503) when the session flow is disabled.
-	if a.sessionManager != nil {
-		r.Post("/api/v1/logout", a.handleLogout)
-	}
+	// Session logout (destroys the session behind the presented cookie).
+	// Mounted unconditionally for the same reason as /login: the handler
+	// reports 503 when the flow is disabled, which a client can act on.
+	r.Post("/api/v1/logout", a.handleLogout)
 
 	r.Route("/api/v1/backends", func(r chi.Router) {
 		r.Get("/", a.handleListBackends)

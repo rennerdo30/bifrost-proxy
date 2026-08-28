@@ -91,9 +91,11 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
       return
     }
 
-    // Connect to WebSocket for events. Browsers cannot set the Authorization
-    // header on a WS handshake, so when an API token is configured we pass it
-    // via the ?token= query parameter the server auth middleware accepts.
+    // Browsers cannot set the Authorization header on a WS handshake. With a
+    // session the HttpOnly cookie is sent automatically and authenticates the
+    // upgrade, so no credential goes in the URL. Only the bearer-token
+    // fallback (a server with no session store) needs ?token=, which
+    // getApiToken() returns solely in that mode.
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const token = getApiToken()
     const query = token ? `?token=${encodeURIComponent(token)}` : ''
