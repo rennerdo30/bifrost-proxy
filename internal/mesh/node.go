@@ -27,6 +27,20 @@ var (
 // NodeStatus represents the current status of the mesh node.
 type NodeStatus string
 
+// Backoff applied when the mesh device read fails repeatedly. A broken device
+// fd returns its error immediately, so a bare retry spins a core at 100% while
+// the node still reports healthy. The delay doubles up to a cap and resets on
+// the first successful read.
+const (
+	deviceReadBackoffInitial = 5 * time.Millisecond
+	deviceReadBackoffMax     = time.Second
+
+	// Consecutive failures before the condition is escalated from debug to a
+	// warning, so a genuinely dead device is visible at the default log level
+	// without a transient hiccup becoming noise.
+	deviceReadFailuresBeforeWarn = 20
+)
+
 const (
 	NodeStatusStopped  NodeStatus = "stopped"
 	NodeStatusStarting NodeStatus = "starting"
@@ -652,6 +666,9 @@ func (n *MeshNode) packetLoop() {
 
 	buf := make([]byte, 65536)
 
+	readFailures := 0
+	backoff := deviceReadBackoffInitial
+
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -665,8 +682,40 @@ func (n *MeshNode) packetLoop() {
 			if n.ctx.Err() != nil {
 				return
 			}
-			slog.Debug("device read error", "error", err)
+
+			readFailures++
+			if readFailures == deviceReadFailuresBeforeWarn {
+				slog.Warn("mesh device read is failing repeatedly; backing off",
+					"error", err, "consecutive_failures", readFailures,
+					"backoff", backoff)
+			} else {
+				slog.Debug("device read error", "error", err,
+					"consecutive_failures", readFailures)
+			}
+
+			// Sleep, but stay cancellable: a stopping node must not wait out
+			// the backoff before noticing.
+			select {
+			case <-n.ctx.Done():
+				return
+			case <-time.After(backoff):
+			}
+			if backoff < deviceReadBackoffMax {
+				backoff *= 2
+				if backoff > deviceReadBackoffMax {
+					backoff = deviceReadBackoffMax
+				}
+			}
 			continue
+		}
+
+		if readFailures > 0 {
+			if readFailures >= deviceReadFailuresBeforeWarn {
+				slog.Info("mesh device read recovered",
+					"after_consecutive_failures", readFailures)
+			}
+			readFailures = 0
+			backoff = deviceReadBackoffInitial
 		}
 
 		if nr == 0 {
