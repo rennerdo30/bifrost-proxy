@@ -3,7 +3,6 @@ package tray
 
 import (
 	"context"
-	_ "embed"
 	"sync"
 )
 
@@ -55,6 +54,12 @@ type Tray struct {
 	showQuickGUI bool
 	adapter      SystrayAdapter
 	notifier     Notifier
+
+	// done ends the menu-click worker when systray exits. fyne.io/systray
+	// is process-lifetime/one-shot, so one channel per Tray is sufficient.
+	done     chan struct{}
+	exitOnce sync.Once
+	quitOnce sync.Once
 }
 
 // Config holds tray configuration.
@@ -83,6 +88,7 @@ func New(cfg Config) *Tray {
 		showQuickGUI: cfg.ShowQuickGUI,
 		adapter:      defaultAdapter,
 		notifier:     defaultNotifier,
+		done:         make(chan struct{}),
 	}
 }
 
@@ -98,6 +104,7 @@ func NewWithAdapter(cfg Config, adapter SystrayAdapter) *Tray {
 		showQuickGUI: cfg.ShowQuickGUI,
 		adapter:      adapter,
 		notifier:     defaultNotifier,
+		done:         make(chan struct{}),
 	}
 }
 
@@ -116,8 +123,17 @@ func (t *Tray) Notify(title, message string) error {
 	return t.notifier.Notify(title, message)
 }
 
-// Run starts the system tray (blocks).
+// Run starts the system tray and blocks until it exits. Canceling ctx asks
+// the adapter to quit so callers do not need a second shutdown channel.
 func (t *Tray) Run(ctx context.Context) {
+	go func() {
+		select {
+		case <-ctx.Done():
+			t.Quit()
+		case <-t.done:
+		}
+	}()
+
 	t.adapter.Run(t.onReady, t.onExit)
 }
 
@@ -168,6 +184,9 @@ func (t *Tray) onReady() {
 	go func() {
 		for {
 			select {
+			case <-t.done:
+				return
+
 			case <-mConnect.Clicked():
 				if t.onConnect != nil {
 					t.onConnect()
@@ -200,14 +219,14 @@ func (t *Tray) onReady() {
 				if t.onQuit != nil {
 					t.onQuit()
 				}
-				t.adapter.Quit()
+				t.Quit()
 			}
 		}
 	}()
 }
 
 func (t *Tray) onExit() {
-	// Cleanup
+	t.exitOnce.Do(func() { close(t.done) })
 }
 
 func (t *Tray) updateIcon() {
@@ -229,7 +248,8 @@ func (t *Tray) updateIcon() {
 	t.adapter.SetIcon(platformIcon(icon))
 }
 
-// Quit quits the system tray.
+// Quit quits the system tray. It is safe for the context watcher, menu item,
+// and application shutdown path to converge here concurrently.
 func (t *Tray) Quit() {
-	t.adapter.Quit()
+	t.quitOnce.Do(t.adapter.Quit)
 }

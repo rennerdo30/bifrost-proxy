@@ -168,6 +168,22 @@ func (a *App) shutdown(ctx context.Context) {
 	slog.Info("bifrost quick access shutdown")
 }
 
+// showQuickAccess restores the Wails window from the process tray. Without
+// this override the core client's Quick Access item opened the web dashboard,
+// leaving a StartHidden desktop window with no tray path back to its UI.
+func (a *App) showQuickAccess() {
+	if a.ctx == nil {
+		return
+	}
+	wailsruntime.WindowUnminimise(a.ctx)
+	wailsruntime.WindowShow(a.ctx)
+}
+
+func (a *App) configureDesktopClient(c *client.Client) {
+	c.SetConfigPath(a.configPath)
+	c.SetOpenQuickHandler(a.showQuickAccess)
+}
+
 // initClient initializes and starts the embedded proxy client.
 func (a *App) initClient() error {
 	// Find config file
@@ -212,8 +228,9 @@ func (a *App) initClient() error {
 	}
 	a.client = c
 
-	// Set config path so the embedded client can save config changes
-	c.SetConfigPath(a.configPath)
+	// Configure persistence and make the tray's Quick Access item restore this
+	// Wails window rather than opening the web dashboard.
+	a.configureDesktopClient(c)
 
 	// Start client
 	if err := c.Start(a.ctx); err != nil {
@@ -257,7 +274,7 @@ func (a *App) initClientStopped() error {
 		return fmt.Errorf("create client: %w", err)
 	}
 	a.client = c
-	c.SetConfigPath(a.configPath)
+	a.configureDesktopClient(c)
 	return nil
 }
 

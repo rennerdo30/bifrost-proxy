@@ -259,14 +259,15 @@ web-dev-client:
 # Desktop (Wails)
 .PHONY: desktop-dev desktop-build desktop-build-all desktop-install desktop-check-wails
 
-# Wails binary path (use GOPATH/bin or system wails)
+# Wails binary path and version. Keep the CLI aligned with desktop/go.mod.
 WAILS := $(shell command -v wails 2>/dev/null || echo "$(shell go env GOPATH)/bin/wails")
+WAILS_VERSION := v2.15.0
 
 # Check and install Wails if not present
 desktop-check-wails:
 	@if [ ! -f "$(WAILS)" ]; then \
-		echo "Wails not found, installing..."; \
-		go install github.com/wailsapp/wails/v2/cmd/wails@latest; \
+		echo "Wails not found, installing $(WAILS_VERSION)..."; \
+		go install github.com/wailsapp/wails/v2/cmd/wails@$(WAILS_VERSION); \
 	fi
 
 desktop-dev: desktop-check-wails desktop-install
@@ -279,11 +280,11 @@ desktop-build: desktop-check-wails desktop-install
 
 desktop-build-all: desktop-check-wails desktop-install
 	@echo "Building desktop app for all platforms..."
+	@echo "Note: Wails GUI builds require native platform libraries; release CI builds each OS on its native runner."
 	@mkdir -p $(DIST_DIR)
-	cd desktop && $(WAILS) build -platform darwin/amd64 -o ../$(DIST_DIR)/bifrost-quick-darwin-amd64
-	cd desktop && $(WAILS) build -platform darwin/arm64 -o ../$(DIST_DIR)/bifrost-quick-darwin-arm64
-	cd desktop && $(WAILS) build -platform windows/amd64 -o ../$(DIST_DIR)/bifrost-quick-windows-amd64.exe
-	cd desktop && $(WAILS) build -platform linux/amd64 -o ../$(DIST_DIR)/bifrost-quick-linux-amd64
+	cd desktop && $(WAILS) build -platform darwin/universal -o bifrost-desktop-darwin-universal && mv build/bin/bifrost-quick.app ../$(DIST_DIR)/bifrost-desktop-darwin-universal.app
+	cd desktop && $(WAILS) build -platform windows/amd64 -o bifrost-desktop-windows-amd64.exe && mv build/bin/bifrost-desktop-windows-amd64.exe ../$(DIST_DIR)/
+	cd desktop && $(WAILS) build -platform linux/amd64 -o bifrost-desktop-linux-amd64 && mv build/bin/bifrost-desktop-linux-amd64 ../$(DIST_DIR)/
 
 desktop-install:
 	@echo "Installing Wails frontend dependencies..."

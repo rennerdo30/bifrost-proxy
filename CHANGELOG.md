@@ -127,6 +127,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and making `OpenURL` testable without launching a browser)
 
 ### Changed
+- Desktop completion pass: tagged releases now build the Wails app on native
+  Linux, Windows, and macOS runners and attach consistently named
+  `bifrost-desktop-*` artifacts (including a universal macOS bundle). The
+  process tray now honors application-context cancellation, terminates its
+  click worker on exit, and its Quick Access item restores the Wails window —
+  so a Start-minimized launch always has a route back to the UI. Unused tray
+  SVGs and stale generated `wailsjs` bindings were removed; the frontend uses
+  the live Wails binding surface directly. The desktop docs and specification
+  now describe only the controls and telemetry the compact app actually ships,
+  distinguish local lifecycle/system proxy/VPN actions, and document native
+  build requirements and real release names
 - Mobile app honesty pass: the Expo config plugin no longer injects an
   Android `<service>` entry for a VPN service class that does not exist in the
   project — declaring it made the app eligible for Always-on-VPN in system

@@ -89,3 +89,95 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/bifrost-client:${{ github.ref_name }}
             ghcr.io/${{ github.repository_owner }}/bifrost-client:latest
+
+  desktop:
+    name: Desktop (${{ matrix.name }})
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux amd64
+            os: ubuntu-latest
+            platform: linux/amd64
+            output: bifrost-desktop-linux-amd64
+          - name: Windows amd64
+            os: windows-latest
+            platform: windows/amd64
+            output: bifrost-desktop-windows-amd64.exe
+          - name: macOS universal
+            os: macos-latest
+            platform: darwin/universal
+            output: bifrost-desktop-darwin-universal
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: |
+            go.sum
+            desktop/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: desktop/frontend/package-lock.json
+
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.15.0
+
+      - name: Install desktop frontend dependencies
+        working-directory: desktop/frontend
+        run: npm ci
+
+      - name: Build desktop (Linux)
+        if: runner.os == 'Linux'
+        working-directory: desktop
+        run: wails build -platform ${{ matrix.platform }} -tags webkit2_41 -o ${{ matrix.output }}
+
+      - name: Build desktop (Windows or macOS)
+        if: runner.os != 'Linux'
+        working-directory: desktop
+        run: wails build -platform ${{ matrix.platform }} -o ${{ matrix.output }}
+
+      - name: Package desktop artifact (Linux)
+        if: runner.os == 'Linux'
+        run: tar -C desktop/build/bin -czf bifrost-desktop-linux-amd64.tar.gz ${{ matrix.output }}
+
+      - name: Package desktop artifact (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mv desktop/build/bin/bifrost-quick.app desktop/build/bin/bifrost-desktop-darwin-universal.app
+          ditto -c -k --sequesterRsrc --keepParent desktop/build/bin/bifrost-desktop-darwin-universal.app bifrost-desktop-darwin-universal.zip
+
+      - name: Upload Linux desktop release artifact
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" bifrost-desktop-linux-amd64.tar.gz --clobber
+
+      - name: Upload macOS desktop release artifact
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" bifrost-desktop-darwin-universal.zip --clobber
+
+      - name: Upload Windows desktop release artifact
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" "desktop/build/bin/${{ matrix.output }}" --clobber
