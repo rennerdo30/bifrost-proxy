@@ -8,6 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- The server dashboard no longer keeps the API token in `localStorage` when a
+  session store is configured. Signing in POSTs the token once to
+  `/api/v1/login` and thereafter authenticates with the **HttpOnly** session
+  cookie the server already knew how to issue — script cannot read that cookie,
+  whereas any XSS on the page could read the stored bearer token. The cookie
+  also authenticates the WebSocket handshake, so no credential is placed in a
+  URL. Signing out destroys the session server-side, and an expired session
+  prompts for the token again instead of failing every page. The server half of
+  this flow was built and config-gated but had no client; without a `session:`
+  block the dashboard still falls back to the bearer token and says so
+- `POST /api/v1/login` and `/api/v1/logout` are now mounted unconditionally, so
+  a server with no session store answers the handlers' `503 "not enabled"`
+  instead of a bare `404`. While the routes were conditionally registered those
+  `503` branches were unreachable, and a client could not distinguish "feature
+  disabled" from "wrong URL". Registering `/login` also had to move after the
+  middleware chain: chi requires every `r.Use` on a mux to precede its first
+  route, and the no-token branch installs CSRF middleware on that router — with
+  a session manager and no token configured, the old placement would have
+  panicked at startup
 - Both proxy listeners now bound an idle client, closing a slowloris-style
   resource exhaustion. A client could previously connect to the HTTP or SOCKS5
   listener and either send nothing at all or trickle request headers forever,
