@@ -150,7 +150,7 @@ func (m *Manager) Start(ctx context.Context) error {
 	m.ctx, m.cancel = context.WithCancel(ctx)
 
 	// Initialize DNS cache
-	m.dnsCache = NewDNSCache(m.config.DNS.CacheTTL)
+	m.dnsCache = NewDNSCache(m.config.DNS.CacheTTL.Duration())
 
 	// Initialize split tunnel engine
 	var err error
