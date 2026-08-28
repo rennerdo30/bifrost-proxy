@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useClient } from './hooks/useClient';
 import { ConnectButton } from './components/ConnectButton';
 import { StatusIndicator } from './components/StatusIndicator';
@@ -32,6 +33,8 @@ function App() {
     quit,
     clearError,
   } = useClient();
+
+  const [addServerRequest, setAddServerRequest] = useState(0);
 
   return (
     <div className="h-full flex flex-col bg-bifrost-bg">
@@ -116,7 +119,7 @@ function App() {
           currentServer={settings?.current_server || ''}
           onSelect={selectServer}
           disabled={connectionStatus === 'connecting' || loading || serverSwitching}
-          onAddServer={() => {/* Handled by ServerManager below */}}
+          onAddServer={() => setAddServerRequest((n: number) => n + 1)}
           switching={serverSwitching}
         />
 
@@ -127,6 +130,7 @@ function App() {
         <ServerManager
           servers={servers}
           currentServer={settings?.current_server || ''}
+          addRequest={addServerRequest}
           onSelect={selectServer}
           onAdd={addServer}
           onUpdate={updateServer}

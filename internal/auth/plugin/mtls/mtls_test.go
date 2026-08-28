@@ -599,9 +599,12 @@ func TestMTLSAuthenticator_CreateWithInvalidCRLFile(t *testing.T) {
 	err := os.WriteFile(caFile, ca.certPEM, 0644)
 	require.NoError(t, err)
 
-	// CRL file doesn't exist - should still create (with warning)
+	// A configured but unusable CRL must be FATAL: continuing with an empty
+	// revocation set silently accepts every certificate the CRL was supposed
+	// to reject. The previous behavior — warn and fail open — was the audit's
+	// security finding.
 	factory := auth.NewFactory()
-	authenticator, err := factory.Create(auth.ProviderConfig{
+	_, err = factory.Create(auth.ProviderConfig{
 		Name:    "mtls-test",
 		Type:    "mtls",
 		Enabled: true,
@@ -610,9 +613,30 @@ func TestMTLSAuthenticator_CreateWithInvalidCRLFile(t *testing.T) {
 			"crl_file":     "/nonexistent/crl.pem",
 		},
 	})
-	// CRL loading failure is just a warning, not an error
-	require.NoError(t, err)
-	assert.NotNil(t, authenticator)
+	require.Error(t, err, "an unreadable configured CRL must refuse to start, not fail open")
+	assert.Contains(t, err.Error(), "crl_file")
+}
+
+// A malformed CRL is just as fatal as a missing one.
+func TestMTLSAuthenticator_CreateWithMalformedCRLFails(t *testing.T) {
+	ca := createTestCA(t)
+	tmpDir := t.TempDir()
+	caFile := filepath.Join(tmpDir, "ca.crt")
+	crlFile := filepath.Join(tmpDir, "garbage.crl")
+	require.NoError(t, os.WriteFile(caFile, ca.certPEM, 0644))
+	require.NoError(t, os.WriteFile(crlFile, []byte("this is not a CRL"), 0644))
+
+	factory := auth.NewFactory()
+	_, err := factory.Create(auth.ProviderConfig{
+		Name:    "mtls-test",
+		Type:    "mtls",
+		Enabled: true,
+		Config: map[string]any{
+			"ca_cert_file": caFile,
+			"crl_file":     crlFile,
+		},
+	})
+	require.Error(t, err, "a malformed configured CRL must refuse to start, not fail open")
 }
 
 func TestMTLSAuthenticator_CreateWithCRLDERFormat(t *testing.T) {
@@ -1799,8 +1823,9 @@ func TestMTLSAuthenticator_CRLParseError(t *testing.T) {
 	require.NoError(t, err)
 
 	factory := auth.NewFactory()
-	// Should still create (CRL error is just a warning)
-	authenticator, err := factory.Create(auth.ProviderConfig{
+	// A configured but unparsable CRL is fatal — see
+	// TestMTLSAuthenticator_CreateWithMalformedCRLFails for the rationale.
+	_, err = factory.Create(auth.ProviderConfig{
 		Name:    "mtls-test",
 		Type:    "mtls",
 		Enabled: true,
@@ -1809,8 +1834,8 @@ func TestMTLSAuthenticator_CRLParseError(t *testing.T) {
 			"crl_file":     crlFile,
 		},
 	})
-	require.NoError(t, err)
-	assert.NotNil(t, authenticator)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "crl_file")
 }
 
 func TestMTLSAuthenticator_CaseSensitiveFieldMapping(t *testing.T) {
