@@ -228,6 +228,11 @@ export interface LoggingSettings {
   format: string
   output: string
   time_format?: string
+  // File rotation (only applies when output is a file path):
+  // rotate when the file exceeds max_size_mb (<= 0 disables rotation),
+  // keep max_backups rotated files (<= 0 keeps all).
+  max_size_mb?: number
+  max_backups?: number
 }
 
 export interface WebUISettings {

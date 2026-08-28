@@ -65,29 +65,40 @@ func (r *linuxRouteManager) Setup(ctx context.Context, tunName string, cfg Confi
 		WasAdded: true,
 	})
 
-	// Add bypass routes for always_bypass CIDRs
+	// From here on every failure is FATAL and rolls back what was added: a
+	// route that could not be installed means traffic the operator asked to
+	// tunnel (or bypass) flows somewhere else, while the caller — the desktop
+	// VPN toggle above all — would report the VPN as on. A route that already
+	// exists is fine (see routeAlreadyExists); anything else is not.
+	//
+	// The bypass routes go through addBypassRouteLocked: the exported
+	// AddBypassRoute takes r.mu, which Setup already holds, so calling it here
+	// self-deadlocked on the DEFAULT config (three always_bypass entries).
 	for _, cidr := range cfg.SplitTunnel.AlwaysBypass {
-		if err := r.AddBypassRoute(cidr); err != nil {
-			slog.Warn("failed to add bypass route", "cidr", cidr, "error", err)
+		if err := r.addBypassRouteLocked(cidr); err != nil {
+			r.rollbackLocked()
+			return fmt.Errorf("add bypass route %s: %w", cidr, err)
 		}
 	}
 
 	if cfg.SplitTunnel.Mode == "exclude" {
 		// Exclude mode: route all traffic through TUN.
 		// Add two specific routes to cover all IPv4 (0.0.0.0/1 and 128.0.0.0/1)
-		// This avoids replacing the default route directly.
+		// This avoids replacing the default route directly. These ARE the
+		// tunnel — without either of them traffic leaks over the physical
+		// interface.
 		for _, cidr := range []string{"0.0.0.0/1", "128.0.0.0/1"} {
 			if err := r.addRoute(cidr, "", tunName); err != nil {
-				slog.Warn("failed to add default route", "cidr", cidr, "error", err)
-			} else {
-				r.savedRoutes = append(r.savedRoutes, SavedRoute{
-					Entry: RouteEntry{
-						Destination: cidr,
-						Interface:   tunName,
-					},
-					WasAdded: true,
-				})
+				r.rollbackLocked()
+				return fmt.Errorf("add VPN default route %s: %w", cidr, err)
 			}
+			r.savedRoutes = append(r.savedRoutes, SavedRoute{
+				Entry: RouteEntry{
+					Destination: cidr,
+					Interface:   tunName,
+				},
+				WasAdded: true,
+			})
 		}
 	} else {
 		// Include mode: only the configured IPs/CIDRs are routed into the TUN;
@@ -97,27 +108,30 @@ func (r *linuxRouteManager) Setup(ctx context.Context, tunName string, cfg Confi
 		for _, cidr := range cfg.SplitTunnel.IPs {
 			dest, err := normalizeCIDR(cidr)
 			if err != nil {
-				slog.Warn("invalid include IP/CIDR, skipping", "cidr", cidr, "error", err)
-				continue
+				r.rollbackLocked()
+				return fmt.Errorf("invalid include IP/CIDR %s: %w", cidr, err)
 			}
 			if err := r.addRoute(dest, "", tunName); err != nil {
-				slog.Warn("failed to add include route", "cidr", dest, "error", err)
-			} else {
-				r.savedRoutes = append(r.savedRoutes, SavedRoute{
-					Entry: RouteEntry{
-						Destination: dest,
-						Interface:   tunName,
-					},
-					WasAdded: true,
-				})
+				r.rollbackLocked()
+				return fmt.Errorf("add include route %s: %w", dest, err)
 			}
+			r.savedRoutes = append(r.savedRoutes, SavedRoute{
+				Entry: RouteEntry{
+					Destination: dest,
+					Interface:   tunName,
+				},
+				WasAdded: true,
+			})
 		}
 	}
 
-	// Configure DNS if enabled
+	// Configure DNS if enabled. In exclude (full-tunnel) mode a failure here
+	// would leave system DNS queries going to the old resolver off-tunnel
+	// while the UI claims the VPN is on, so it is fatal like the routes.
 	if cfg.DNS.Enabled {
 		if err := r.configureDNS(cfg.DNS.Listen); err != nil {
-			slog.Warn("failed to configure DNS", "error", err)
+			r.rollbackLocked()
+			return fmt.Errorf("configure DNS: %w", err)
 		}
 	}
 
@@ -127,6 +141,32 @@ func (r *linuxRouteManager) Setup(ctx context.Context, tunName string, cfg Confi
 	)
 
 	return nil
+}
+
+// rollbackLocked undoes everything a partially completed Setup installed, so a
+// failed Setup leaves the system as it found it. Callers must hold r.mu.
+func (r *linuxRouteManager) rollbackLocked() {
+	for i := len(r.savedRoutes) - 1; i >= 0; i-- {
+		route := r.savedRoutes[i]
+		if !route.WasAdded {
+			continue
+		}
+		if err := r.deleteRoute(route.Entry.Destination, route.Entry.Interface); err != nil {
+			slog.Warn("rollback: failed to remove route", "destination", route.Entry.Destination, "error", err)
+		}
+	}
+	r.savedRoutes = r.savedRoutes[:0]
+
+	for _, cidr := range r.bypassRoutes {
+		if err := r.deleteRoute(cidr, ""); err != nil {
+			slog.Warn("rollback: failed to remove bypass route", "cidr", cidr, "error", err)
+		}
+	}
+	r.bypassRoutes = r.bypassRoutes[:0]
+
+	if err := r.restoreDNS(); err != nil {
+		slog.Warn("rollback: failed to restore DNS", "error", err)
+	}
 }
 
 // Cleanup removes VPN routes and restores original configuration.
@@ -170,7 +210,12 @@ func (r *linuxRouteManager) Cleanup(ctx context.Context) error {
 func (r *linuxRouteManager) AddBypassRoute(destination string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.addBypassRouteLocked(destination)
+}
 
+// addBypassRouteLocked is AddBypassRoute without the lock, for Setup, which
+// already holds r.mu.
+func (r *linuxRouteManager) addBypassRouteLocked(destination string) error {
 	// Validate CIDR
 	_, err := netip.ParsePrefix(destination)
 	if err != nil {
@@ -231,6 +276,13 @@ func (r *linuxRouteManager) addRoute(destination, gateway, iface string) error {
 	cmd := exec.Command("ip", args...) //nolint:gosec // G204: VPN route management requires system commands
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		// The desired route already being present is the desired state, not a
+		// failure — distinguish it so Setup does not roll a working
+		// configuration back over it.
+		if routeAlreadyExists(string(output)) {
+			slog.Debug("route already exists", "destination", destination)
+			return nil
+		}
 		return fmt.Errorf("ip route add failed: %w: %s", err, string(output))
 	}
 	return nil
