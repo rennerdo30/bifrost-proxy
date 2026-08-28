@@ -191,12 +191,21 @@ func (i *Installer) extractTarGz(archivePath, destPath string) error {
 			if err != nil {
 				return fmt.Errorf("create dest file: %w", err)
 			}
-			defer out.Close()
+			defer func() { _ = out.Close() }()
 
 			// Limit extraction to 500MB to prevent decompression bombs
 			const maxSize = 500 * 1024 * 1024
 			if _, err := io.Copy(out, io.LimitReader(tr, maxSize)); err != nil {
 				return fmt.Errorf("extract file: %w", err)
+			}
+
+			// Close explicitly and check it. Close is where a short write or
+			// ENOSPC surfaces, so a deferred, unchecked Close would let a
+			// truncated binary pass as a successful extraction - and this file
+			// is about to be installed and executed. The deferred Close above
+			// stays as the early-return safety net; closing twice is harmless.
+			if err := out.Close(); err != nil {
+				return fmt.Errorf("close extracted file: %w", err)
 			}
 
 			return nil
@@ -228,12 +237,18 @@ func (i *Installer) extractZip(archivePath, destPath string) error {
 			if err != nil {
 				return fmt.Errorf("create dest file: %w", err)
 			}
-			defer out.Close()
+			defer func() { _ = out.Close() }()
 
 			// Limit extraction to 500MB to prevent decompression bombs
 			const maxSize = 500 * 1024 * 1024
 			if _, err := io.Copy(out, io.LimitReader(src, maxSize)); err != nil {
 				return fmt.Errorf("extract file: %w", err)
+			}
+
+			// See the tar path above: an unchecked Close hides a truncated
+			// write on a binary that is about to be installed.
+			if err := out.Close(); err != nil {
+				return fmt.Errorf("close extracted file: %w", err)
 			}
 
 			return nil
