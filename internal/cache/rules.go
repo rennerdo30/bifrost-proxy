@@ -274,18 +274,3 @@ func NewRuleFromConfig(cfg RuleConfig) (*Rule, error) {
 		StripHeaders:        cfg.StripHeaders,
 	}, nil
 }
-
-// LoadRulesFromConfig loads rules from a slice of RuleConfig.
-func LoadRulesFromConfig(configs []RuleConfig) (*RuleSet, error) {
-	rs := NewRuleSet()
-
-	for _, cfg := range configs {
-		rule, err := NewRuleFromConfig(cfg)
-		if err != nil {
-			return nil, err
-		}
-		rs.Add(rule)
-	}
-
-	return rs, nil
-}

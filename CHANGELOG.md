@@ -42,6 +42,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   registered and working but missing from the UI entirely, with a default config
   in the inline `primary`/`secondary` format the server actually accepts
 
+### Removed
+- Dead code the audit identified as unreachable: the `internal/auth` HTTP
+  middleware (a parallel authentication abstraction the live proxy never used,
+  whose `tryClientCert` implied mTLS-via-middleware was the real path when it
+  is not), the duplicate exported range parser in `internal/cache` (the live
+  code has its own private one), the unused `internal/util` error-wrapping and
+  network helpers, and the cache rule/preset/key extract-method leftovers that
+  the live loader had already inlined. Around 1,100 lines.
+
+  Four symbols in the middleware file were **not** dead and were preserved
+  rather than deleted with it: `ExtractProxyBearerToken`, used by the HTTP
+  proxy's authentication path, and the `ContextKey` type with
+  `ClientCertContextKey` / `ClientCertChainContextKey`, which the proxy sets and
+  the mtls auth plugin reads. The audit's "remove the whole file" verdict was
+  wrong on those, and `audit/go-backend.md` now records the correction.
+
+  Package coverage rose where dead code was removed (`internal/auth` 92.7% →
+  97.0%, `internal/util` 92.4% → 97.8% after restoring a lost `IsTimeout` test
+  and making `OpenURL` testable without launching a browser)
+
 ### Changed
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
