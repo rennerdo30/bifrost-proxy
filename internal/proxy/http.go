@@ -208,7 +208,6 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 	}
 	ctx = util.WithClientIP(ctx, clientIP)
 	startTime := time.Now()
-	ctx = util.WithStartTime(ctx, startTime)
 
 	// If the client connection is TLS-terminated and presented a client
 	// certificate, expose the leaf (and full chain, when intermediates were
@@ -264,8 +263,6 @@ func (h *HTTPHandler) ServeConn(ctx context.Context, conn net.Conn) {
 	if host == "" {
 		host = req.URL.Host
 	}
-
-	ctx = util.WithDomain(ctx, util.GetHostFromRequest(host))
 
 	// Access log entry (filled throughout request handling)
 	entry := &accesslog.Entry{
