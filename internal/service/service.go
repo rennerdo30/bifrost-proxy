@@ -22,6 +22,10 @@ const (
 	TypeServer ServiceType = "server"
 	// TypeClient is the bifrost client service.
 	TypeClient ServiceType = "client"
+
+	systemctlCommand      = "systemctl"
+	launchctlCommand      = "launchctl"
+	windowsServiceCommand = "sc"
 )
 
 // Config holds service installation configuration.
@@ -40,9 +44,21 @@ type Config struct {
 	WorkingDir string
 }
 
+type controlAction string
+
+const (
+	controlStart controlAction = "start"
+	controlStop  controlAction = "stop"
+)
+
 // Manager handles service installation and management.
 type Manager struct {
 	config Config
+
+	// runControl executes a platform service-control command. Kept injectable
+	// so Start/Stop can be regression-tested without controlling a real host
+	// service manager.
+	runControl func(*exec.Cmd) ([]byte, error)
 }
 
 // New creates a new service manager.
@@ -84,7 +100,12 @@ func New(cfg Config) (*Manager, error) {
 		}
 	}
 
-	return &Manager{config: cfg}, nil
+	return &Manager{
+		config: cfg,
+		runControl: func(cmd *exec.Cmd) ([]byte, error) {
+			return cmd.CombinedOutput()
+		},
+	}, nil
 }
 
 // Install installs the service on the current platform.
@@ -122,6 +143,52 @@ func (m *Manager) Uninstall() error {
 		return m.uninstallWindows()
 	default:
 		return fmt.Errorf("unsupported platform: %s", runtime.GOOS)
+	}
+}
+
+// Start starts the installed service on the current platform.
+func (m *Manager) Start() error {
+	return m.control(controlStart)
+}
+
+// Stop stops the installed service without uninstalling it.
+func (m *Manager) Stop() error {
+	return m.control(controlStop)
+}
+
+func (m *Manager) control(action controlAction) error {
+	cmd, err := m.controlCommand(runtime.GOOS, action)
+	if err != nil {
+		return err
+	}
+
+	out, err := m.runControl(cmd)
+	if err != nil {
+		detail := strings.TrimSpace(string(out))
+		if detail != "" {
+			return fmt.Errorf("%s service: %w: %s", action, err, detail)
+		}
+		return fmt.Errorf("%s service: %w", action, err)
+	}
+
+	slog.Info("service control completed", "action", action, "name", m.config.Name)
+	return nil
+}
+
+func (m *Manager) controlCommand(platform string, action controlAction) (*exec.Cmd, error) {
+	switch platform {
+	case "linux":
+		return exec.Command(systemctlCommand, string(action), m.config.Name), nil //nolint:gosec // G204: service name is from validated config
+	case "darwin":
+		verb := "load"
+		if action == controlStop {
+			verb = "unload"
+		}
+		return exec.Command(launchctlCommand, verb, m.launchdPath()), nil //nolint:gosec // G204: plist path is generated from validated config
+	case "windows":
+		return exec.Command(windowsServiceCommand, string(action), m.config.Name), nil //nolint:gosec // G204: service name is from validated config
+	default:
+		return nil, fmt.Errorf("unsupported platform: %s", platform)
 	}
 }
 
@@ -191,12 +258,12 @@ func (m *Manager) installSystemd() error {
 	}
 
 	// Reload systemd
-	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil { //nolint:gosec // G204: no user input
+	if err := exec.Command(systemctlCommand, "daemon-reload").Run(); err != nil { //nolint:gosec // G204: no user input
 		return fmt.Errorf("reload systemd: %w", err)
 	}
 
 	// Enable service
-	if err := exec.Command("systemctl", "enable", m.config.Name).Run(); err != nil { //nolint:gosec // G204: service name is from validated config
+	if err := exec.Command(systemctlCommand, "enable", m.config.Name).Run(); err != nil { //nolint:gosec // G204: service name is from validated config
 		return fmt.Errorf("enable service: %w", err)
 	}
 
@@ -206,10 +273,10 @@ func (m *Manager) installSystemd() error {
 
 func (m *Manager) uninstallSystemd() error {
 	// Stop service (ignore errors if not running)
-	_ = exec.Command("systemctl", "stop", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name is from validated config; ignoring error as service may not be running
+	_ = exec.Command(systemctlCommand, "stop", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name is from validated config; ignoring error as service may not be running
 
 	// Disable service
-	_ = exec.Command("systemctl", "disable", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name is from validated config; ignoring error as service may not be enabled
+	_ = exec.Command(systemctlCommand, "disable", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name is from validated config; ignoring error as service may not be enabled
 
 	// Remove unit file
 	unitPath := m.systemdPath()
@@ -218,7 +285,7 @@ func (m *Manager) uninstallSystemd() error {
 	}
 
 	// Reload systemd
-	_ = exec.Command("systemctl", "daemon-reload").Run() //nolint:errcheck,gosec // G204: no user input; best effort reload
+	_ = exec.Command(systemctlCommand, "daemon-reload").Run() //nolint:errcheck,gosec // G204: no user input; best effort reload
 
 	slog.Info("service uninstalled", "name", m.config.Name)
 	return nil
@@ -240,7 +307,7 @@ func (m *Manager) statusSystemd() (string, error) {
 		return "not installed", nil
 	}
 
-	out, err := exec.Command("systemctl", "is-active", m.config.Name).Output() //nolint:gosec // G204: service name is from validated config
+	out, err := exec.Command(systemctlCommand, "is-active", m.config.Name).Output() //nolint:gosec // G204: service name is from validated config
 	if err != nil && !commandRan(err) {
 		// systemctl itself could not be executed: that is an unknown state,
 		// not an inactive service.
@@ -332,7 +399,7 @@ func (m *Manager) installLaunchd() error {
 	}
 
 	// Load service
-	if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil { //nolint:gosec // G204: plist path is generated from validated config
+	if err := exec.Command(launchctlCommand, "load", plistPath).Run(); err != nil { //nolint:gosec // G204: plist path is generated from validated config
 		return fmt.Errorf("load service: %w", err)
 	}
 
@@ -344,7 +411,7 @@ func (m *Manager) uninstallLaunchd() error {
 	plistPath := m.launchdPath()
 
 	// Unload service (ignore errors if not loaded)
-	_ = exec.Command("launchctl", "unload", plistPath).Run() //nolint:errcheck,gosec // G204: plist path from config; ignoring error as service may not be loaded
+	_ = exec.Command(launchctlCommand, "unload", plistPath).Run() //nolint:errcheck,gosec // G204: plist path from config; ignoring error as service may not be loaded
 
 	// Remove plist file
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
@@ -361,7 +428,7 @@ func (m *Manager) statusLaunchd() (string, error) {
 		return "not installed", nil
 	}
 
-	out, err := exec.Command("launchctl", "list", m.config.Name).Output() //nolint:gosec // G204: service name is from validated config
+	out, err := exec.Command(launchctlCommand, "list", m.config.Name).Output() //nolint:gosec // G204: service name is from validated config
 	if err != nil {
 		if !commandRan(err) {
 			// launchctl itself could not be executed: unknown state, not a
@@ -385,7 +452,7 @@ func (m *Manager) installWindows() error {
 	// Create service using sc.exe
 	binPath := fmt.Sprintf(`"%s" -c "%s"`, m.config.BinaryPath, m.config.ConfigPath)
 
-	cmd := exec.Command("sc", "create", m.config.Name, //nolint:gosec // G204: service name and paths are from validated config
+	cmd := exec.Command(windowsServiceCommand, "create", m.config.Name, //nolint:gosec // G204: service name and paths are from validated config
 		"binPath=", binPath,
 		"DisplayName=", m.config.Description,
 		"start=", "auto")
@@ -395,7 +462,7 @@ func (m *Manager) installWindows() error {
 	}
 
 	// Set description
-	_ = exec.Command("sc", "description", m.config.Name, m.config.Description).Run() //nolint:errcheck,gosec // G204: service name from config; best effort description set
+	_ = exec.Command(windowsServiceCommand, "description", m.config.Name, m.config.Description).Run() //nolint:errcheck,gosec // G204: service name from config; best effort description set
 
 	slog.Info("service installed", "name", m.config.Name, "start_command", "sc start "+m.config.Name)
 	return nil
@@ -403,10 +470,10 @@ func (m *Manager) installWindows() error {
 
 func (m *Manager) uninstallWindows() error {
 	// Stop service (ignore errors)
-	_ = exec.Command("sc", "stop", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name from config; ignoring error as service may not be running
+	_ = exec.Command(windowsServiceCommand, "stop", m.config.Name).Run() //nolint:errcheck,gosec // G204: service name from config; ignoring error as service may not be running
 
 	// Delete service
-	cmd := exec.Command("sc", "delete", m.config.Name) //nolint:gosec // G204: service name is from validated config
+	cmd := exec.Command(windowsServiceCommand, "delete", m.config.Name) //nolint:gosec // G204: service name is from validated config
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("delete service: %w\n%s", err, string(out))
 	}
@@ -416,7 +483,7 @@ func (m *Manager) uninstallWindows() error {
 }
 
 func (m *Manager) statusWindows() (string, error) {
-	cmd := exec.Command("sc", "query", m.config.Name) //nolint:gosec // G204: service name is from validated config
+	cmd := exec.Command(windowsServiceCommand, "query", m.config.Name) //nolint:gosec // G204: service name is from validated config
 	out, err := cmd.Output()
 	if err != nil {
 		if !commandRan(err) {

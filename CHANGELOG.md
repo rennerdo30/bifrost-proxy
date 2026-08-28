@@ -45,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sign is literal
 
 ### Added
+- `bifrost-server service start|stop` and `bifrost-client service start|stop`
+  now control an installed systemd, launchd, or Windows service directly. The
+  commands preserve the platform tool's exit failure and diagnostic output,
+  instead of forcing operators to copy platform-specific instructions after
+  installation
 - Default `read_timeout` (30s), `write_timeout` (30s) and `idle_timeout` (60s) on
   the SOCKS5 listener, mirroring the HTTP listener, so its handshake is bounded
   out of the box
