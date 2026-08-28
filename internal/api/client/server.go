@@ -874,13 +874,26 @@ func (a *API) handleTestRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	action := "server"
+	matchedRoute := ""
 	if a.router != nil {
-		action = string(a.router.Match(domain))
+		route, resolved := a.router.MatchRoute(domain)
+		action = string(resolved)
+		if route != nil {
+			matchedRoute = route.Name
+		}
 	}
 
 	response := map[string]interface{}{
 		"domain": domain,
 		"action": action,
+	}
+	// matched_route has always been part of the documented response shape
+	// (RouteTestResult in web/client/src/api/types.ts) but was never emitted,
+	// so the UI could show the decision without the rule behind it. Omitted
+	// rather than sent empty when the default action applied and no rule
+	// matched, which is what the optional field means.
+	if matchedRoute != "" {
+		response["matched_route"] = matchedRoute
 	}
 	a.writeJSON(w, http.StatusOK, response)
 }
@@ -1883,8 +1896,8 @@ func (a *API) handleSelectServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.serverSelector == nil {
-		// No selector configured, acknowledge the request but do nothing
-		a.writeJSON(w, http.StatusOK, map[string]string{"status": "selected", "server": req.Server})
+		// A 200 here would be a fake success: nothing can change. Say so.
+		http.Error(w, "server selection is not supported by this client", http.StatusNotImplemented)
 		return
 	}
 

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { useModalA11y } from '../../hooks/useModalA11y'
 import { useQueryClient } from '@tanstack/react-query'
 import { getApiToken, setApiToken, clearApiToken } from '../../api/client'
 import { useToast } from '../Toast'
@@ -30,19 +31,8 @@ export function ApiTokenDialog() {
     return () => window.removeEventListener('bifrost:unauthorized', onUnauthorized)
   }, [])
 
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false)
-    }
-    if (isOpen) {
-      document.addEventListener('keydown', handleEscape)
-      document.body.style.overflow = 'hidden'
-    }
-    return () => {
-      document.removeEventListener('keydown', handleEscape)
-      document.body.style.overflow = ''
-    }
-  }, [isOpen])
+  const close = useCallback(() => setIsOpen(false), [])
+  const modalRef = useModalA11y(isOpen, close)
 
   const open = () => {
     setValue(getApiToken() ?? '')
@@ -82,12 +72,18 @@ export function ApiTokenDialog() {
       </button>
 
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsOpen(false)} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
+          <div className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm" onClick={() => setIsOpen(false)} aria-hidden="true" />
 
-          <div className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up">
+          <div
+            ref={modalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="api-token-dialog-title"
+            className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-xl shadow-2xl animate-slide-up"
+          >
             <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-              <h2 className="text-xl font-semibold text-bifrost-text">API Token</h2>
+              <h2 id="api-token-dialog-title" className="text-xl font-semibold text-bifrost-text">API Token</h2>
               <button
                 onClick={() => setIsOpen(false)}
                 className="p-1 text-bifrost-muted hover:text-bifrost-text transition-colors"

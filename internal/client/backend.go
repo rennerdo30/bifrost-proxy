@@ -36,8 +36,17 @@ func (b *ClientBackend) Dial(ctx context.Context, network, address string) (net.
 	return b.dialServer(ctx, network, address)
 }
 
-// DialTimeout creates a connection with a timeout.
+// clientDialTimeout is the default bound on a client-side outbound dial when
+// the handler supplies no fallback (its DialTimeout is the global
+// network.dial_timeout, which the client does not have).
+const clientDialTimeout = 30 * time.Second
+
+// DialTimeout creates a connection with a timeout. A non-positive fallback
+// never produces an already-expired context: the default applies instead.
 func (b *ClientBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
+	if timeout <= 0 {
+		timeout = clientDialTimeout
+	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return b.Dial(ctx, network, address)

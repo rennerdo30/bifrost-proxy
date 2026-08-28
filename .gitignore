@@ -79,3 +79,5 @@ docs/node_modules
 
 # Built hashpw helper binary
 /hashpw
+# Built desktop binary (audit: a compiled 15 MB artifact does not belong in git)
+desktop/desktop

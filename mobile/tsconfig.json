@@ -2,6 +2,9 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Tests run on Node's built-in runner via type stripping, which requires
+    // explicit `.ts` specifiers. Safe with noEmit (set by expo/tsconfig.base).
+    "allowImportingTsExtensions": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]

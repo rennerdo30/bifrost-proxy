@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useState } from 'react'
 import {
   View,
   Text,
@@ -13,11 +13,27 @@ import {
 import { useNavigation } from '@react-navigation/native'
 import { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { api, ClientConfig, getAPIConfig, setServerUrl, validateServerAddress, extractServerAddress } from '../services/api'
+import {
+  api,
+  APIError,
+  ClientConfig,
+  extractServerAddress,
+  getAPIConfig,
+  hasAPIToken,
+  setAPIToken,
+  setServerUrl,
+  validateServerAddress,
+} from '../services/api'
 import { useToast } from '../components/Toast'
 import { RootStackParamList } from '../navigation/RootNavigator'
 
 type SettingsNavigationProp = NativeStackNavigationProp<RootStackParamList>
+
+const CONFIG_REFETCH_INTERVAL = 30000
+
+/** Placeholder shown instead of a stored token, which is never displayed. */
+const TOKEN_PLACEHOLDER_SAVED = 'Token saved - enter a new one to replace'
+const TOKEN_PLACEHOLDER_EMPTY = 'API token (leave empty if none)'
 
 interface SettingItemProps {
   title: string
@@ -51,6 +67,134 @@ function SettingSection({ title, children }: { title: string; children: React.Re
   )
 }
 
+interface ClientConnectionSectionProps {
+  clientAddress: string
+  onChangeClientAddress: (value: string) => void
+  onSaveClientAddress: () => void
+  isSavingServer: boolean
+  tokenInput: string
+  onChangeToken: (value: string) => void
+  onSaveToken: () => void
+  onClearToken: () => void
+  tokenConfigured: boolean
+  isSavingToken: boolean
+  baseUrl: string
+  disabled?: boolean
+}
+
+/**
+ * Address of, and credential for, the Bifrost client this app remote-controls.
+ * Rendered both in the normal Settings body and in its error state, so a wrong
+ * address or a missing token can always be corrected.
+ */
+function ClientConnectionSection({
+  clientAddress,
+  onChangeClientAddress,
+  onSaveClientAddress,
+  isSavingServer,
+  tokenInput,
+  onChangeToken,
+  onSaveToken,
+  onClearToken,
+  tokenConfigured,
+  isSavingToken,
+  baseUrl,
+  disabled,
+}: ClientConnectionSectionProps) {
+  const addressBusy = disabled || isSavingServer
+  const tokenBusy = disabled || isSavingToken
+
+  return (
+    <SettingSection title="Bifrost Client">
+      <View style={styles.inputRow}>
+        <TextInput
+          style={styles.input}
+          value={clientAddress}
+          onChangeText={onChangeClientAddress}
+          placeholder="host:port or https://host:port"
+          placeholderTextColor="#6b7280"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          editable={!addressBusy}
+          accessibilityLabel="Bifrost client address"
+          accessibilityHint="Enter host and port, optionally prefixed with http:// or https://"
+        />
+        <TouchableOpacity
+          style={[styles.saveButton, addressBusy && styles.saveButtonDisabled]}
+          onPress={onSaveClientAddress}
+          disabled={addressBusy}
+          accessibilityLabel="Save client address"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: addressBusy }}
+        >
+          {isSavingServer ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <Text style={styles.saveButtonText}>Save</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.inputHint}>
+        Plain host:port uses HTTP. Prefix with https:// for a TLS-terminated client.
+      </Text>
+
+      <View style={styles.inputRow}>
+        <TextInput
+          style={styles.input}
+          value={tokenInput}
+          onChangeText={onChangeToken}
+          placeholder={tokenConfigured ? TOKEN_PLACEHOLDER_SAVED : TOKEN_PLACEHOLDER_EMPTY}
+          placeholderTextColor="#6b7280"
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry={true}
+          editable={!tokenBusy}
+          accessibilityLabel="API token"
+          accessibilityHint="Bearer token required when the client has api.token configured"
+        />
+        <TouchableOpacity
+          style={[styles.saveButton, tokenBusy && styles.saveButtonDisabled]}
+          onPress={onSaveToken}
+          disabled={tokenBusy}
+          accessibilityLabel="Save API token"
+          accessibilityRole="button"
+          accessibilityState={{ disabled: tokenBusy }}
+        >
+          {isSavingToken ? (
+            <ActivityIndicator size="small" color="#ffffff" />
+          ) : (
+            <Text style={styles.saveButtonText}>Save</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+      <View style={styles.tokenStatusRow}>
+        <Text style={styles.inputHint}>
+          {tokenConfigured ? 'A token is stored on this device.' : 'No token stored.'}
+        </Text>
+        {tokenConfigured && (
+          <TouchableOpacity
+            onPress={onClearToken}
+            disabled={tokenBusy}
+            accessibilityLabel="Clear stored API token"
+            accessibilityRole="button"
+            accessibilityState={{ disabled: tokenBusy }}
+          >
+            <Text style={styles.clearTokenText}>Clear</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      <View style={styles.aboutItem}>
+        <Text style={styles.aboutLabel}>API Endpoint</Text>
+        <Text style={styles.aboutValue} numberOfLines={1}>
+          {baseUrl}
+        </Text>
+      </View>
+    </SettingSection>
+  )
+}
+
 export function SettingsScreen() {
   const navigation = useNavigation<SettingsNavigationProp>()
   const queryClient = useQueryClient()
@@ -61,10 +205,11 @@ export function SettingsScreen() {
     data: config,
     isLoading,
     error,
+    refetch: refetchConfig,
   } = useQuery({
     queryKey: ['config'],
     queryFn: api.getConfig,
-    refetchInterval: 30000,
+    refetchInterval: CONFIG_REFETCH_INTERVAL,
   })
 
   const { data: status } = useQuery({
@@ -113,9 +258,28 @@ export function SettingsScreen() {
   }
 
   const [isSavingServer, setIsSavingServer] = useState(false)
+  const [isSavingToken, setIsSavingToken] = useState(false)
+
+  // Local state for the client address input. Initialized from the persisted API
+  // base URL and thereafter owned by the operator: the backend `server.address`
+  // is the upstream proxy server, not the client this app talks to, so it must
+  // never overwrite what the user is typing.
+  const [clientAddress, setClientAddress] = useState(() =>
+    extractServerAddress(apiConfig.baseUrl)
+  )
+
+  // Displayed API endpoint. Kept in state so it updates immediately after a
+  // save instead of lagging behind the module-level config until a re-render.
+  const [baseUrl, setBaseUrl] = useState(apiConfig.baseUrl)
+
+  // Token input. The stored token is never rendered back; an empty field means
+  // "leave unchanged" when one is already saved, and the operator clears it
+  // explicitly with the Clear button.
+  const [tokenInput, setTokenInput] = useState('')
+  const [tokenConfigured, setTokenConfigured] = useState(() => hasAPIToken())
 
   const handleSaveServer = async (address: string) => {
-    // Validate server address format
+    // Validate the address format (host:port, optionally http:// or https://)
     const validationError = validateServerAddress(address)
     if (validationError) {
       showToast(validationError, 'error')
@@ -126,37 +290,74 @@ export function SettingsScreen() {
     try {
       // Update and persist the API base URL
       await setServerUrl(address)
+      const resolvedBaseUrl = getAPIConfig().baseUrl
+      setClientAddress(extractServerAddress(resolvedBaseUrl))
+      setBaseUrl(resolvedBaseUrl)
 
-      // Test connection to the new server
+      // Test connection to the new client
       const testResult = await api.testConnection()
       if (!testResult.success) {
-        showToast(`Could not connect to server: ${testResult.error}`, 'error')
-        setIsSavingServer(false)
+        showToast(`Could not connect to client: ${testResult.error}`, 'error')
         return
       }
 
-      // Update the server config on the backend (may fail if server doesn't support this endpoint)
-      try {
-        await api.updateConfig({
-          server: {
-            ...config?.server,
-            address,
-          },
-        } as Partial<ClientConfig>)
-      } catch {
-        // Ignore errors from updating backend config - the server URL is already saved locally
-      }
-
-      // Invalidate queries to refetch with new server
+      // Invalidate queries to refetch against the new client
       queryClient.invalidateQueries()
 
-      showToast('Server address saved and connected', 'success')
+      showToast('Client address saved and connected', 'success')
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to save server address'
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save client address'
       showToast(errorMessage, 'error')
     } finally {
       setIsSavingServer(false)
     }
+  }
+
+  const applyToken = useCallback(
+    async (token: string, successMessage: string) => {
+      setIsSavingToken(true)
+      try {
+        await setAPIToken(token)
+        setTokenConfigured(hasAPIToken())
+        setTokenInput('')
+
+        const testResult = await api.testConnection()
+        if (!testResult.success) {
+          showToast(`Saved, but the client rejected it: ${testResult.error}`, 'error')
+          return
+        }
+
+        queryClient.invalidateQueries()
+        showToast(successMessage, 'success')
+      } catch (err) {
+        // Never include the token itself in an error message.
+        showToast(err instanceof Error ? err.message : 'Failed to save API token', 'error')
+      } finally {
+        setIsSavingToken(false)
+      }
+    },
+    [queryClient, showToast]
+  )
+
+  const handleSaveToken = () => {
+    if (!tokenInput.trim()) {
+      showToast('Enter a token, or use Clear to remove the stored one', 'error')
+      return
+    }
+    void applyToken(tokenInput, 'API token saved')
+  }
+
+  const handleClearToken = () => {
+    Alert.alert('Clear API Token', 'Remove the stored API token from this device?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: () => {
+          void applyToken('', 'API token cleared')
+        },
+      },
+    ])
   }
 
   const handleClearData = () => {
@@ -174,19 +375,6 @@ export function SettingsScreen() {
     )
   }
 
-  // Local state for server address input (initialized from API config or backend config)
-  const [serverAddress, setServerAddress] = useState(() => {
-    // Initialize from current API config
-    return extractServerAddress(apiConfig.baseUrl)
-  })
-
-  useEffect(() => {
-    // Update from backend config if available and local state is still default
-    if (config?.server?.address && serverAddress === extractServerAddress(apiConfig.baseUrl)) {
-      setServerAddress(config.server.address)
-    }
-  }, [config?.server?.address])
-
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -197,14 +385,48 @@ export function SettingsScreen() {
   }
 
   if (error) {
+    const isUnauthorized = error instanceof APIError && error.isUnauthorized
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorIcon}>!</Text>
-        <Text style={styles.errorText}>Failed to load settings</Text>
-        <Text style={styles.errorDetail}>
-          {error instanceof Error ? error.message : 'Unknown error'}
-        </Text>
-      </View>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.errorPanel} accessible={true} accessibilityRole="alert">
+          <Text style={styles.errorIcon}>!</Text>
+          <Text style={styles.errorText}>
+            {isUnauthorized ? 'Authentication required' : 'Failed to load settings'}
+          </Text>
+          <Text style={styles.errorDetail}>
+            {isUnauthorized
+              ? 'The Bifrost client rejected the request. Enter a valid API token below.'
+              : error instanceof Error
+                ? error.message
+                : 'Unknown error'}
+          </Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => {
+              void refetchConfig()
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Retry loading settings"
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Connection settings stay reachable so the operator can fix the address or token */}
+        <ClientConnectionSection
+          clientAddress={clientAddress}
+          onChangeClientAddress={setClientAddress}
+          onSaveClientAddress={() => handleSaveServer(clientAddress)}
+          isSavingServer={isSavingServer}
+          tokenInput={tokenInput}
+          onChangeToken={setTokenInput}
+          onSaveToken={handleSaveToken}
+          onClearToken={handleClearToken}
+          tokenConfigured={tokenConfigured}
+          isSavingToken={isSavingToken}
+          baseUrl={baseUrl}
+        />
+      </ScrollView>
     )
   }
 
@@ -215,8 +437,8 @@ export function SettingsScreen() {
       {/* Connection Settings */}
       <SettingSection title="Connection">
         <SettingItem
-          title="Auto-connect"
-          description="Connect on app launch"
+          title="Client auto-connect"
+          description="Connect when the Bifrost client starts (remote setting)"
           disabled={isMutating}
         >
           <Switch
@@ -225,8 +447,8 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
-            accessibilityLabel="Auto-connect toggle"
-            accessibilityHint="When enabled, the app will connect automatically on launch"
+            accessibilityLabel="Client auto-connect toggle"
+            accessibilityHint="When enabled, the Bifrost client connects automatically on startup"
             accessibilityState={{ checked: config?.tray?.auto_connect ?? false }}
           />
         </SettingItem>
@@ -264,43 +486,27 @@ export function SettingsScreen() {
         </SettingItem>
       </SettingSection>
 
-      {/* Server Settings */}
-      <SettingSection title="Server">
-        <View style={styles.inputRow}>
-          <TextInput
-            style={styles.input}
-            value={serverAddress}
-            onChangeText={setServerAddress}
-            placeholder="server:port"
-            placeholderTextColor="#6b7280"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!isMutating && !isSavingServer}
-            accessibilityLabel="Server address"
-            accessibilityHint="Enter the server address in host:port format"
-          />
-          <TouchableOpacity
-            style={[styles.saveButton, (isMutating || isSavingServer) && styles.saveButtonDisabled]}
-            onPress={() => handleSaveServer(serverAddress)}
-            disabled={isMutating || isSavingServer}
-            accessibilityLabel="Save server address"
-            accessibilityRole="button"
-            accessibilityState={{ disabled: isMutating || isSavingServer }}
-          >
-            {isSavingServer ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <Text style={styles.saveButtonText}>Save</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </SettingSection>
+      {/* Bifrost client connection */}
+      <ClientConnectionSection
+        clientAddress={clientAddress}
+        onChangeClientAddress={setClientAddress}
+        onSaveClientAddress={() => handleSaveServer(clientAddress)}
+        isSavingServer={isSavingServer}
+        tokenInput={tokenInput}
+        onChangeToken={setTokenInput}
+        onSaveToken={handleSaveToken}
+        onClearToken={handleClearToken}
+        tokenConfigured={tokenConfigured}
+        isSavingToken={isSavingToken}
+        baseUrl={baseUrl}
+        disabled={isMutating}
+      />
 
       {/* Notifications */}
       <SettingSection title="Notifications">
         <SettingItem
-          title="Connection Alerts"
-          description="Notify on connect/disconnect"
+          title="Client Notifications"
+          description="Desktop notifications on the Bifrost client (remote setting)"
           disabled={isMutating}
         >
           <Switch
@@ -309,8 +515,8 @@ export function SettingsScreen() {
             trackColor={{ false: '#374151', true: '#3b82f6' }}
             thumbColor="#ffffff"
             disabled={isMutating}
-            accessibilityLabel="Connection alerts toggle"
-            accessibilityHint="When enabled, you will receive notifications on connect and disconnect"
+            accessibilityLabel="Client notifications toggle"
+            accessibilityHint="When enabled, the Bifrost client shows desktop notifications on connect and disconnect"
             accessibilityState={{ checked: config?.tray?.show_notifications ?? true }}
           />
         </SettingItem>
@@ -345,17 +551,15 @@ export function SettingsScreen() {
           <Text
             style={[
               styles.aboutValue,
-              { color: status?.server_status === 'connected' ? '#22c55e' : '#f59e0b' },
+              { color: status?.server_connected ? '#22c55e' : '#f59e0b' },
             ]}
           >
-            {status?.server_status || 'Unknown'}
+            {status ? (status.server_connected ? 'Connected' : 'Disconnected') : 'Unknown'}
           </Text>
         </View>
         <View style={styles.aboutItem}>
-          <Text style={styles.aboutLabel}>API Endpoint</Text>
-          <Text style={styles.aboutValue} numberOfLines={1}>
-            {apiConfig.baseUrl}
-          </Text>
+          <Text style={styles.aboutLabel}>VPN Status</Text>
+          <Text style={styles.aboutValue}>{status?.vpn_status || 'Unknown'}</Text>
         </View>
       </SettingSection>
 
@@ -405,6 +609,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6b7280',
     textAlign: 'center',
+    marginBottom: 16,
+  },
+  errorPanel: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  retryButton: {
+    backgroundColor: '#3b82f6',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  inputHint: {
+    fontSize: 12,
+    color: '#6b7280',
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  tokenStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingRight: 12,
+  },
+  clearTokenText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#ef4444',
+    paddingBottom: 12,
   },
   section: {
     marginBottom: 24,

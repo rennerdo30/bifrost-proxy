@@ -3,17 +3,33 @@
 package device
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os/exec"
 	"sync"
 
+	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
 )
 
 const (
 	// Ring buffer sizes for WinTun
 	tunRingCapacity = 0x400000 // 4 MiB
+
+	// How long Read blocks on the ring's read-wait event before re-checking
+	// whether the device was closed. Bounded so Close is never stuck behind
+	// an idle interface.
+	tunReadWaitMillis = 250
+
+	// waitTimeout is WAIT_TIMEOUT: the wait expired without the event being
+	// signalled. Declared locally because x/sys/windows types its own
+	// WAIT_TIMEOUT as a syscall.Errno rather than a uint32 (unlike
+	// WAIT_OBJECT_0, WAIT_ABANDONED and WAIT_FAILED), so it cannot be compared
+	// against the uint32 status without a conversion that reads as if an error
+	// were being tested.
+	waitTimeout = 0x102
 )
 
 // windowsTUN implements NetworkDevice for Windows using WinTun.
@@ -82,7 +98,11 @@ func (t *windowsTUN) configure(cfg Config) error {
 			fmt.Sprintf("mask=%s", prefixToMask(prefix)),
 		)
 		if output, err := cmd.CombinedOutput(); err != nil {
-			// Try using interface name instead
+			// The LUID form fails on some Windows builds; fall back to the
+			// interface name. The first failure is expected there, so it is
+			// only worth a debug line.
+			slog.Debug("netsh address by LUID failed; retrying by interface name",
+				"interface", t.name, "error", err, "output", string(output))
 			cmd = exec.Command("netsh", "interface", "ip", "set", "address",
 				fmt.Sprintf("name=%s", t.name),
 				"source=static",
@@ -92,7 +112,6 @@ func (t *windowsTUN) configure(cfg Config) error {
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return &DeviceError{Op: "netsh address", Err: fmt.Errorf("%w: %s", err, string(output))}
 			}
-			_ = output
 		}
 	} else {
 		// IPv6
@@ -112,8 +131,16 @@ func (t *windowsTUN) configure(cfg Config) error {
 		"store=persistent",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		// Non-fatal, log and continue
-		_ = output
+		// The interface still works with the default MTU, so this stays
+		// non-fatal — but a silent discard hid real misconfigurations (an MTU
+		// mismatch shows up later as blackholed large packets, nowhere near
+		// this code). At minimum the operator gets to see it.
+		slog.Warn("failed to set TUN interface MTU; the interface keeps the system default",
+			"interface", t.name,
+			"requested_mtu", cfg.MTU,
+			"error", err,
+			"output", string(output),
+		)
 	}
 
 	return nil
@@ -141,26 +168,53 @@ func (t *windowsTUN) Type() DeviceType {
 	return DeviceTUN
 }
 
-// Read reads a packet from the TUN device.
+// Read reads a packet from the TUN device. It blocks on the ring's
+// read-wait event while the interface is idle instead of spinning on
+// ERROR_NO_MORE_ITEMS.
 func (t *windowsTUN) Read(buf []byte) (int, error) {
-	t.mu.Lock()
-	if t.closed {
+	for {
+		t.mu.Lock()
+		if t.closed {
+			t.mu.Unlock()
+			return 0, ErrDeviceClosed
+		}
+		session := t.session
 		t.mu.Unlock()
-		return 0, ErrDeviceClosed
+
+		pkt, err := session.ReceivePacket()
+		if err == nil {
+			n := copy(buf, pkt)
+			session.ReleaseReceivePacket(pkt)
+			return n, nil
+		}
+		if !errors.Is(err, windows.ERROR_NO_MORE_ITEMS) {
+			return 0, &DeviceError{Op: "receive", Err: err}
+		}
+
+		// Ring is empty: wait until WinTun signals a packet, or the wait
+		// times out so the closed flag above is re-checked.
+		//
+		// The status is examined rather than only the error. x/sys/windows sets
+		// err solely when the status is WAIT_FAILED (0xffffffff) — its generated
+		// wrapper does nothing else with the return value — so a timeout
+		// arrives as (WAIT_TIMEOUT, nil) and an err-only check cannot tell an
+		// idle interface apart from a signalled one. Testing the status makes
+		// each outcome explicit: loop on a timeout, fail on a real error, and
+		// reject an unexpected status instead of silently re-looping on it.
+		status, err := windows.WaitForSingleObject(session.ReadWaitEvent(), tunReadWaitMillis)
+		if status == waitTimeout {
+			continue
+		}
+		if err != nil {
+			return 0, &DeviceError{Op: "receive wait", Err: err}
+		}
+		if status != windows.WAIT_OBJECT_0 {
+			return 0, &DeviceError{
+				Op:  "receive wait",
+				Err: fmt.Errorf("unexpected wait status %#x", status),
+			}
+		}
 	}
-	session := t.session
-	t.mu.Unlock()
-
-	// Receive packet from WinTun
-	pkt, err := session.ReceivePacket()
-	if err != nil {
-		return 0, &DeviceError{Op: "receive", Err: err}
-	}
-
-	n := copy(buf, pkt)
-	session.ReleaseReceivePacket(pkt)
-
-	return n, nil
 }
 
 // Write writes a packet to the TUN device.
@@ -211,9 +265,4 @@ func (t *windowsTUN) MTU() int {
 // LUID returns the adapter's LUID (Windows-specific).
 func (t *windowsTUN) LUID() uint64 {
 	return uint64(t.adapter.LUID())
-}
-
-// Index returns the adapter's interface index.
-func (t *windowsTUN) Index() (int, error) {
-	return 0, nil
 }
