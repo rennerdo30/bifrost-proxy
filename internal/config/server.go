@@ -181,12 +181,29 @@ type AuthConfig struct {
 	// Each provider is tried in priority order (lowest first).
 	Providers []AuthProvider `yaml:"providers,omitempty" json:"providers,omitempty"`
 
+	// BruteForce enables failed-login rate limiting with exponential lockout
+	// around the whole provider chain. The implementation existed, fully
+	// tested, with no config key and no caller — a security control the
+	// project believed it shipped and did not (TODO.md had marked it FIXED).
+	BruteForce *BruteForceConfig `yaml:"brute_force,omitempty" json:"brute_force,omitempty"`
+
 	// Negotiate enables HTTP Negotiate (SPNEGO/Kerberos with optional NTLM
 	// fallback) authentication on the HTTP proxy listener. This is middleware,
 	// not a chain provider: it drives the multi-step challenge/response
 	// handshake required by Windows domain clients and delegates credential
 	// validation to the referenced kerberos/ntlm auth providers.
 	Negotiate *NegotiateConfig `yaml:"negotiate,omitempty" json:"negotiate,omitempty"`
+}
+
+// BruteForceConfig configures failed-login lockout for auth.brute_force.
+// Zero values take the protector's defaults (5 attempts, 1m initial lockout
+// with exponential backoff to 1h, 15m counting window).
+type BruteForceConfig struct {
+	Enabled     bool     `yaml:"enabled" json:"enabled"`
+	MaxAttempts int      `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
+	LockoutTime Duration `yaml:"lockout_time,omitempty" json:"lockout_time,omitempty"`
+	MaxLockout  Duration `yaml:"max_lockout,omitempty" json:"max_lockout,omitempty"`
+	WindowSize  Duration `yaml:"window_size,omitempty" json:"window_size,omitempty"`
 }
 
 // NegotiateConfig configures HTTP Negotiate (SPNEGO/Kerberos/NTLM) middleware

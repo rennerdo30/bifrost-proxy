@@ -206,13 +206,18 @@ func (l *ApacheLogger) Log(entry Entry) error {
 		username = "-"
 	}
 
+	// The request target for a proxy log is the host plus the path. The old
+	// line emitted only Host in the %r position and dropped Entry.Path
+	// entirely, so every request to the same host logged identically.
+	target := entry.Host + entry.Path
+
 	line := fmt.Sprintf(
 		"%s - %s [%s] \"%s %s %s\" %d %d \"-\" \"%s\"\n",
 		entry.ClientIP,
 		username,
 		entry.Timestamp.Format("02/Jan/2006:15:04:05 -0700"),
 		entry.Method,
-		entry.Host,
+		target,
 		entry.Protocol,
 		entry.StatusCode,
 		entry.BytesSent,

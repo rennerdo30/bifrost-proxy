@@ -287,6 +287,12 @@ func (a *API) HandlerWithUI() http.Handler {
 	// CORS for local development
 	r.Use(corsMiddleware)
 
+	// Global security headers, matching the server dashboard. This handler is
+	// the PRODUCTION one, and it had silently drifted from the test-only
+	// Handler(): the static UI responses carried no CSP, no X-Frame-Options
+	// and no nosniff, because apiSecurityHeaders is scoped to /api only.
+	r.Use(securityHeadersMiddleware)
+
 	// API routes with security headers
 	r.Route("/api", func(r chi.Router) {
 		r.Use(apiSecurityHeaders)
@@ -367,6 +373,28 @@ func (a *API) HandlerWithUI() http.Handler {
 
 	// Static files for Web UI - serve everything else
 	// Use Mount to properly handle all non-API routes
+	// pprof, behind the same token auth as the API when one is set. The 11
+	// routes were documented with copy-paste curl examples — and reachable
+	// only through the test-only Handler(): the production handler's static
+	// catch-all swallowed /debug/* with a 404, so the first tool anyone
+	// reaches for when chasing a goroutine leak did not exist.
+	r.Route("/debug/pprof", func(r chi.Router) {
+		if a.token != "" {
+			r.Use(a.authMiddleware)
+		}
+		r.HandleFunc("/", pprof.Index)
+		r.HandleFunc("/cmdline", pprof.Cmdline)
+		r.HandleFunc("/profile", pprof.Profile)
+		r.HandleFunc("/symbol", pprof.Symbol)
+		r.HandleFunc("/trace", pprof.Trace)
+		r.Handle("/heap", pprof.Handler("heap"))
+		r.Handle("/goroutine", pprof.Handler("goroutine"))
+		r.Handle("/allocs", pprof.Handler("allocs"))
+		r.Handle("/block", pprof.Handler("block"))
+		r.Handle("/mutex", pprof.Handler("mutex"))
+		r.Handle("/threadcreate", pprof.Handler("threadcreate"))
+	})
+
 	r.Mount("/", StaticHandler())
 
 	return r
