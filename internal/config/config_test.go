@@ -999,9 +999,12 @@ func TestDuration_UnmarshalYAML_DecodeError(t *testing.T) {
 
 func TestDuration_UnmarshalJSON_InvalidJSON(t *testing.T) {
 	var d Duration
-	// Invalid JSON - not a string
-	err := d.UnmarshalJSON([]byte(`123`))
-	assert.Error(t, err)
+	// A bare number is a legacy nanosecond count and is accepted — the one
+	// repository-wide duration contract (see internal/duration).
+	require.NoError(t, d.UnmarshalJSON([]byte(`123`)))
+	assert.Equal(t, Duration(123), d)
+	// A JSON object is not a duration in any convention.
+	assert.Error(t, d.UnmarshalJSON([]byte(`{}`)))
 }
 
 // Test Backup when write fails (use a directory path as the backup destination)

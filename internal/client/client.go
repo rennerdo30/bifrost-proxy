@@ -715,10 +715,17 @@ func (c *Client) serveHTTP(ctx context.Context, listener net.Listener, done <-ch
 	defer c.wg.Done()
 
 	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
-		GetBackend:  c.getBackend,
-		DialTimeout: c.config.Proxy.HTTP.ReadTimeout.Duration(),
-		OnConnect:   c.onConnect,
-		OnError:     c.onError,
+		GetBackend: c.getBackend,
+		// The listener triad, applied exactly as on the server side. The old
+		// wiring passed read_timeout as the OUTBOUND DialTimeout — the very
+		// repurposing the audit called out — and applied no inbound deadline
+		// at all. DialTimeout stays zero: backends own the connect-timeout
+		// precedence (see internal/backend).
+		ReadTimeout:  c.config.Proxy.HTTP.ReadTimeout.Duration(),
+		WriteTimeout: c.config.Proxy.HTTP.WriteTimeout.Duration(),
+		IdleTimeout:  c.config.Proxy.HTTP.IdleTimeout.Duration(),
+		OnConnect:    c.onConnect,
+		OnError:      c.onError,
 		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
 			c.recordProxyTraffic(sent, recv)
 		},
@@ -753,6 +760,11 @@ func (c *Client) serveSOCKS5(ctx context.Context, listener net.Listener, done <-
 		GetBackend:   c.getBackend,
 		AuthRequired: false, // Client doesn't require auth
 		DialTimeout:  clientSOCKS5DialTimeout,
+		// The listener triad, applied exactly as on the server side; zero
+		// values (the client default) leave the deadlines disabled.
+		ReadTimeout:  c.config.Proxy.SOCKS5.ReadTimeout.Duration(),
+		WriteTimeout: c.config.Proxy.SOCKS5.WriteTimeout.Duration(),
+		IdleTimeout:  c.config.Proxy.SOCKS5.IdleTimeout.Duration(),
 		OnConnect:    c.onConnect,
 		OnError:      c.onError,
 		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
@@ -848,6 +860,15 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Reject unknown keys before anything is applied or persisted. Without
+	// this, an API update carrying a typo reported success, wrote the bogus
+	// key to disk, and then the next strict reload refused the whole file —
+	// a 200 that bricked the config. The route pseudo-keys below are internal
+	// and checked after their translation.
+	if err := validateUpdateKeys(updates); err != nil {
+		return err
+	}
+
 	// Handle route add/remove operations specially. These pseudo-keys are sent
 	// by the routes CRUD handlers and must mutate c.config.Routes directly.
 	// They are translated into a full "routes" replacement so they never reach
@@ -919,8 +940,8 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 		if timeout, ok := server["timeout"].(string); ok {
 			c.config.Server.Timeout = config.Duration(parseDuration(timeout))
 		}
-		if retryCount, ok := server["retry_count"].(float64); ok {
-			c.config.Server.RetryCount = int(retryCount)
+		if retryCount, ok := intFromJSON(server["retry_count"]); ok {
+			c.config.Server.RetryCount = retryCount
 		}
 		if retryDelay, ok := server["retry_delay"].(string); ok {
 			c.config.Server.RetryDelay = config.Duration(parseDuration(retryDelay))
@@ -950,14 +971,14 @@ func (c *Client) updateConfig(updates map[string]interface{}) error {
 		if enabled, ok := debug["enabled"].(bool); ok {
 			c.config.Debug.Enabled = enabled
 		}
-		if maxEntries, ok := debug["max_entries"].(float64); ok {
-			c.config.Debug.MaxEntries = int(maxEntries)
+		if maxEntries, ok := intFromJSON(debug["max_entries"]); ok {
+			c.config.Debug.MaxEntries = maxEntries
 		}
 		if captureBody, ok := debug["capture_body"].(bool); ok {
 			c.config.Debug.CaptureBody = captureBody
 		}
-		if maxBodySize, ok := debug["max_body_size"].(float64); ok {
-			c.config.Debug.MaxBodySize = int(maxBodySize)
+		if maxBodySize, ok := intFromJSON(debug["max_body_size"]); ok {
+			c.config.Debug.MaxBodySize = maxBodySize
 		}
 	}
 
@@ -1508,10 +1529,7 @@ func parseRouteUpdate(raw interface{}) (config.ClientRouteConfig, error) {
 	if route.Action == "" {
 		route.Action = "server"
 	}
-	switch p := m["priority"].(type) {
-	case float64:
-		route.Priority = int(p)
-	case int:
+	if p, ok := intFromJSON(m["priority"]); ok {
 		route.Priority = p
 	}
 	if domains, ok := m["domains"].([]interface{}); ok {
@@ -1528,6 +1546,42 @@ func parseRouteUpdate(raw interface{}) (config.ClientRouteConfig, error) {
 }
 
 // parseDuration parses a duration string like "30s" or "5m".
+// intFromJSON extracts an integer regardless of how the JSON layer decoded it:
+// the numeric-fidelity API decoder produces int64, a plain json.Unmarshal
+// produces float64, and tests may pass native ints.
+func intFromJSON(v interface{}) (int, bool) {
+	switch n := v.(type) {
+	case int64:
+		return int(n), true
+	case float64:
+		return int(n), true
+	case int:
+		return n, true
+	default:
+		return 0, false
+	}
+}
+
+// routePseudoKeys are internal update-map keys the routes CRUD handlers send;
+// they are translated in updateConfig and never persisted.
+var routePseudoKeys = []string{"_add_route", "_remove_route"}
+
+// validateUpdateKeys applies the strict loader's unknown-key rejection to a
+// partial config-update map: the map is re-encoded and strict-decoded against
+// the full client schema, so a key the config does not have cannot be applied
+// or written to disk. Partial updates stay partial — absent keys are absent.
+func validateUpdateKeys(updates map[string]interface{}) error {
+	checked := make(map[string]interface{}, len(updates))
+	for k, v := range updates {
+		checked[k] = v
+	}
+	for _, pseudo := range routePseudoKeys {
+		delete(checked, pseudo)
+	}
+	var prototype config.ClientConfig
+	return config.ValidateKnownKeys("config update", checked, &prototype)
+}
+
 func parseDuration(s string) time.Duration {
 	d, err := time.ParseDuration(s)
 	if err != nil {

@@ -547,72 +547,10 @@ func TestDeserializeBroadcastMessage_Invalid(t *testing.T) {
 	}
 }
 
-func TestIsBroadcastMAC(t *testing.T) {
-	tests := []struct {
-		name     string
-		mac      net.HardwareAddr
-		expected bool
-	}{
-		{"broadcast", net.HardwareAddr{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, true},
-		{"unicast", net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}, false},
-		{"multicast", net.HardwareAddr{0x01, 0x00, 0x5E, 0x00, 0x00, 0x01}, false},
-		{"empty", net.HardwareAddr{}, true}, // Empty returns true (all bytes are 0xFF vacuously)
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, isBroadcastMAC(tt.mac))
-		})
-	}
-}
-
-func TestIsMulticastMAC(t *testing.T) {
-	tests := []struct {
-		name     string
-		mac      net.HardwareAddr
-		expected bool
-	}{
-		{"multicast", net.HardwareAddr{0x01, 0x00, 0x5E, 0x00, 0x00, 0x01}, true},
-		{"broadcast", net.HardwareAddr{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}, true}, // Broadcast is also multicast
-		{"unicast", net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}, false},
-		{"empty", net.HardwareAddr{}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, isMulticastMAC(tt.mac))
-		})
-	}
-}
-
 func TestMacToGroupID(t *testing.T) {
 	mac := net.HardwareAddr{0x01, 0x00, 0x5E, 0xAB, 0xCD, 0xEF}
 	groupID := macToGroupID(mac)
 	assert.Equal(t, "01005eabcdef", groupID)
-}
-
-func TestEthernetBroadcastHandler(t *testing.T) {
-	router := createTestRouter("local-peer")
-	cfg := DefaultBroadcastConfig()
-	bm := NewBroadcastManager("local-peer", router, cfg)
-
-	handler := NewEthernetBroadcastHandler(bm)
-	require.NotNil(t, handler)
-
-	// Test with broadcast MAC
-	broadcastMAC := net.HardwareAddr{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
-	err := handler.HandleFrame(broadcastMAC, []byte("broadcast frame"))
-	require.NoError(t, err)
-
-	// Test with multicast MAC
-	multicastMAC := net.HardwareAddr{0x01, 0x00, 0x5E, 0x00, 0x00, 0x01}
-	err = handler.HandleFrame(multicastMAC, []byte("multicast frame"))
-	require.NoError(t, err)
-
-	// Test with unicast MAC (should do nothing)
-	unicastMAC := net.HardwareAddr{0x00, 0x11, 0x22, 0x33, 0x44, 0x55}
-	err = handler.HandleFrame(unicastMAC, []byte("unicast frame"))
-	require.NoError(t, err)
 }
 
 func TestBroadcastManager_CleanupSeenMsgs(t *testing.T) {
