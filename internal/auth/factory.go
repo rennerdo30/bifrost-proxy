@@ -53,6 +53,13 @@ func (f *Factory) Create(cfg ProviderConfig) (Authenticator, error) {
 			&ErrPluginUnimplemented{Type: cfg.Type, Reason: availability.Reason})
 	}
 
+	// Reject unknown keys before the plugin reads the recognized ones: a typo
+	// such as `disabledd` on a native user otherwise loads silently and the
+	// supposedly disabled user keeps authenticating.
+	if err := ValidateProviderKeys(cfg.Type, cfg.Config); err != nil {
+		return nil, fmt.Errorf("provider %q: %w", cfg.Name, err)
+	}
+
 	// Validate the configuration
 	if err := plugin.ValidateConfig(cfg.Config); err != nil {
 		return nil, fmt.Errorf("invalid config for %s provider %q: %w", cfg.Type, cfg.Name, err)
@@ -169,6 +176,13 @@ func (f *Factory) ValidateProviders(providers []ProviderConfig) error {
 		if availability := PluginAvailability(plugin); availability.MustRefuse() {
 			return fmt.Errorf("provider %q: %w", cfg.Name,
 				&ErrPluginUnimplemented{Type: cfg.Type, Reason: availability.Reason})
+		}
+
+		// Reject unknown keys with the same strictness Create applies, so the
+		// dashboard cannot validate-clean a config that startup would refuse —
+		// or worse, one that fails open.
+		if err := ValidateProviderKeys(cfg.Type, cfg.Config); err != nil {
+			return fmt.Errorf("provider %q: %w", cfg.Name, err)
 		}
 
 		// Validate config
