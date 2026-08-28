@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"testing"
 	"time"
 
@@ -360,6 +361,63 @@ func TestRequestLog_Stats_TopHostsCapped(t *testing.T) {
 	assert.Equal(t, fmt.Sprintf("host-%02d", topHostsLimit+extraHosts-1), stats.TopHosts[0].Host)
 	for i := 1; i < len(stats.TopHosts); i++ {
 		assert.GreaterOrEqual(t, stats.TopHosts[i-1].Count, stats.TopHosts[i].Count)
+	}
+}
+
+// Stats used to size its three aggregation maps to the ring buffer length, so
+// a full buffer allocated megabytes per poll (about 171 MB at the 1,000,000
+// entry limit) while holding the read lock. The map capacity must track real
+// cardinality, not buffer length. The ceiling is deliberately generous — the
+// fixed cost is a few kilobytes, the regressed cost is tens of megabytes — so
+// the test cannot flake on allocator noise.
+func TestRequestLog_Stats_AllocationIndependentOfBufferSize(t *testing.T) {
+	// One method, one status, one host: minimum cardinality, maximum buffer.
+	const entryCount = 100_000
+	const allocCeilingBytes = 512 * 1024
+
+	log := NewRequestLog(entryCount, true)
+	for i := 0; i < entryCount; i++ {
+		log.Add(RequestLogEntry{Method: "GET", Host: "example.com", StatusCode: 200})
+	}
+
+	res := testing.Benchmark(func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_ = log.Stats()
+		}
+	})
+	assert.Less(t, res.AllocedBytesPerOp(), int64(allocCeilingBytes),
+		"Stats allocation must not scale with the ring buffer length")
+}
+
+// Hosts with equal counts must come back in the same order on every call —
+// map iteration order would otherwise reshuffle the Top Hosts card between
+// dashboard polls. Only the host-name tie-break in topHosts guarantees this,
+// so the counts here are deliberately all equal.
+func TestRequestLog_Stats_TopHostsTieOrderStable(t *testing.T) {
+	log := NewRequestLog(1000, true)
+
+	// More tied hosts than topHostsLimit, added in non-alphabetical order so
+	// insertion order cannot masquerade as the tie-break.
+	hosts := []string{"m.example", "a.example", "z.example", "c.example",
+		"x.example", "b.example", "t.example", "d.example",
+		"q.example", "e.example", "n.example", "f.example"}
+	for _, h := range hosts {
+		log.Add(RequestLogEntry{Method: "GET", Host: h})
+	}
+
+	first := log.Stats().TopHosts
+	require.Len(t, first, topHostsLimit)
+
+	sorted := make([]string, len(hosts))
+	copy(sorted, hosts)
+	sort.Strings(sorted)
+	for i, hc := range first {
+		assert.Equal(t, 1, hc.Count)
+		assert.Equal(t, sorted[i], hc.Host, "tied hosts must be ordered by name")
+	}
+
+	for run := 0; run < 20; run++ {
+		assert.Equal(t, first, log.Stats().TopHosts, "tied ordering must not change between calls")
 	}
 }
 

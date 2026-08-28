@@ -37,14 +37,27 @@ func SaveNode(path string, node *yaml.Node) error {
 	if err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
-	defer f.Close()
+	// Safety net for the early returns below; the success path closes both
+	// explicitly and checks them.
+	defer func() { _ = f.Close() }()
 
 	encoder := yaml.NewEncoder(f)
 	encoder.SetIndent(2)
-	defer encoder.Close()
+	defer func() { _ = encoder.Close() }()
 
 	if err := encoder.Encode(node); err != nil {
 		return fmt.Errorf("failed to encode config: %w", err)
+	}
+
+	// Both closes must be checked, in this order. encoder.Close flushes the
+	// remaining YAML and f.Close is where a short write or ENOSPC surfaces;
+	// discarding either reports a successful save for a file that was left
+	// truncated - and this is the config the node reloads from.
+	if err := encoder.Close(); err != nil {
+		return fmt.Errorf("failed to flush config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close config file: %w", err)
 	}
 
 	return nil
@@ -82,8 +95,13 @@ func UpdateNode(node *yaml.Node, updates map[string]interface{}) error {
 					if err != nil {
 						return fmt.Errorf("failed to convert value for key %s: %w", k, err)
 					}
-					// Preserve comments/style from original value node
-					if node.Content[i+1].Kind == yaml.ScalarNode && newNode.Kind == yaml.ScalarNode {
+					// Preserve comments/style from original value node. Style
+					// only carries over between scalars of the same resolved
+					// type: inheriting a quoted style across a type change
+					// turned a numeric update replacing "5m" into the string
+					// "300000000000", which the next strict load rejected.
+					if node.Content[i+1].Kind == yaml.ScalarNode && newNode.Kind == yaml.ScalarNode &&
+						node.Content[i+1].Tag == newNode.Tag {
 						newNode.Style = node.Content[i+1].Style
 					}
 					newNode.HeadComment = node.Content[i+1].HeadComment
@@ -125,6 +143,12 @@ func valueToNode(v interface{}) (*yaml.Node, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Values inserted through this path come from the API as literal data, so
+	// a `${` inside one (a password, say) must survive the next load's
+	// environment expansion. Escaping happens here, on the inserted value
+	// only — pre-existing nodes keep their intentional `${VAR}` references.
+	// This mirrors what config.Save does for whole-struct saves.
+	data = EscapeEnvRefs(data)
 	var node yaml.Node
 	if err := yaml.Unmarshal(data, &node); err != nil {
 		return nil, err

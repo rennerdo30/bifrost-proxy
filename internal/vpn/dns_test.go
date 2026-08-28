@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/rennerdo30/bifrost-proxy/internal/duration"
 )
 
 // TestNewDNSServer tests creating a new DNS server
@@ -16,7 +18,7 @@ func TestNewDNSServer(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15353",
 		Upstream: []string{"8.8.8.8", "1.1.1.1"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -34,7 +36,7 @@ func TestDNSServerStats(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15354",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -65,7 +67,7 @@ func TestDNSServerCacheEntries(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15355",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -89,7 +91,7 @@ func TestDNSServerCacheEntriesNil(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15356",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	server := NewDNSServer(config, nil, nil)
@@ -103,7 +105,7 @@ func TestDNSServerClearCache(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15357",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -123,7 +125,7 @@ func TestDNSServerClearCacheNil(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15358",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	server := NewDNSServer(config, nil, nil)
@@ -137,7 +139,7 @@ func TestDNSServerStartStop(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15359",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -162,7 +164,7 @@ func TestDNSServerStartInvalidAddress(t *testing.T) {
 		Enabled:  true,
 		Listen:   "invalid:address:port",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -179,7 +181,7 @@ func TestDNSServerStopWithoutStart(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15360",
 		Upstream: []string{"8.8.8.8"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -196,7 +198,7 @@ func TestDNSServerQueryUpstreamNoServers(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15361",
 		Upstream: []string{}, // No upstream servers
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)
@@ -213,7 +215,7 @@ func TestDNSServerResolve(t *testing.T) {
 		Enabled:  true,
 		Listen:   "127.0.0.1:15362",
 		Upstream: []string{"8.8.8.8", "1.1.1.1"},
-		CacheTTL: 5 * time.Minute,
+		CacheTTL: duration.Duration(5 * time.Minute),
 	}
 
 	cache := NewDNSCache(5 * time.Minute)

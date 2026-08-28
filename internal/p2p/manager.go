@@ -70,6 +70,11 @@ type ManagerConfig struct {
 	// STUNServers is a list of STUN servers.
 	STUNServers []string
 
+	// STUNTimeout bounds each STUN request. Zero falls back to
+	// ConnectTimeout. It exists because mesh.stun.timeout was parsed,
+	// documented and never delivered here.
+	STUNTimeout time.Duration
+
 	// TURNConfig is the TURN server configuration.
 	TURNConfig *TURNConfig
 
@@ -168,10 +173,27 @@ func NewP2PManager(config ManagerConfig) (*P2PManager, error) {
 	}
 
 	// Initialize NAT detector
-	pm.natDetector = NewNATDetector(config.STUNServers, config.ConnectTimeout)
+	stunTimeout := config.STUNTimeout
+	if stunTimeout <= 0 {
+		stunTimeout = config.ConnectTimeout
+	}
+	pm.natDetector = NewNATDetector(config.STUNServers, stunTimeout)
 
 	// Initialize relay manager
-	pm.relayManager = NewRelayManager(config.RelayConfig)
+	// Bridge the manager-level relay fields into the relay manager's config
+	// when the caller did not build a RelayConfig explicitly. The mesh layer
+	// fills TURNConfig/RelayEnabled on ManagerConfig — which nothing read, so
+	// with turn.enabled: true and valid credentials no TURN client was ever
+	// created and GetBestRelay always returned ErrRelayNotAvailable: mesh
+	// relaying was inoperative and nothing said why.
+	relayCfg := config.RelayConfig
+	if !relayCfg.Enabled && relayCfg.TURNConfig == nil {
+		relayCfg = DefaultRelayConfig()
+		relayCfg.Enabled = config.RelayEnabled
+		relayCfg.PeerRelayEnabled = config.PeerRelayEnabled
+		relayCfg.TURNConfig = config.TURNConfig
+	}
+	pm.relayManager = NewRelayManager(relayCfg)
 
 	return pm, nil
 }
@@ -392,6 +414,30 @@ func (pm *P2PManager) tryRelayConnect(ctx context.Context, peerID string, remote
 	// surface inbound data the same way direct connections do.
 	if rc, ok := conn.(*RelayedConnection); ok {
 		rc.SetOnData(pm.deliverPlaintext)
+
+		// Actually CONNECT the relayed connection. Creating it leaves the
+		// state at New; this function used to return here, the caller logged
+		// "relay connection established" and fired OnPeerConnected, and the
+		// operator saw a connected, counted peer whose Send returned
+		// ErrNotConnected forever — a fake success the connection monitor
+		// never reaped, because it only looks at Failed/Disconnected.
+		pm.mu.RLock()
+		endpoints := append([]netip.AddrPort(nil), pm.endpoints[peerID]...)
+		pm.mu.RUnlock()
+		if len(endpoints) == 0 {
+			_ = rc.Close() //nolint:errcheck // best-effort cleanup of the unconnected relay
+			return nil, fmt.Errorf("p2p: no known endpoints for peer %s to authorize on the relay", peerID)
+		}
+		var lastErr error
+		for _, ep := range endpoints {
+			if connectErr := rc.Connect(ctx, ep); connectErr == nil {
+				return conn, nil
+			} else {
+				lastErr = connectErr
+			}
+		}
+		_ = rc.Close() //nolint:errcheck // best-effort cleanup after failed connect
+		return nil, fmt.Errorf("p2p: relay connect to %s failed: %w", peerID, lastErr)
 	}
 
 	return conn, nil

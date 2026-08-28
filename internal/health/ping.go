@@ -5,6 +5,7 @@ import (
 	"net"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -40,15 +41,32 @@ func (c *PingChecker) Check(ctx context.Context) Result {
 
 	var cmd *exec.Cmd
 
-	// Platform-specific ping command
+	// The configured timeout drives both the subprocess flag and a context
+	// bound. The flags used to be hardcoded to 5s while the setting was
+	// accepted and stored, so failure detection ran 5-10x slower than the
+	// operator configured.
+	ctx, cancel := context.WithTimeout(ctx, c.timeout)
+	defer cancel()
+
+	// Platform-specific ping command and per-platform timeout unit:
+	// milliseconds on Windows (-w) and macOS (-W), whole seconds on Linux (-W,
+	// rounded up so a sub-second timeout still waits at least one second).
 	// G204: target is validated hostname/IP from health check config, not user input
+	timeoutMS := c.timeout.Milliseconds()
+	if timeoutMS < 1 {
+		timeoutMS = 1
+	}
+	timeoutSec := int64((c.timeout + time.Second - 1) / time.Second)
+	if timeoutSec < 1 {
+		timeoutSec = 1
+	}
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", "5000", c.target) //nolint:gosec // G204: target is validated hostname from config
+		cmd = exec.CommandContext(ctx, "ping", "-n", "1", "-w", strconv.FormatInt(timeoutMS, 10), c.target) //nolint:gosec // G204: target is validated hostname from config
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "5000", c.target) //nolint:gosec // G204: target is validated hostname from config
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", strconv.FormatInt(timeoutMS, 10), c.target) //nolint:gosec // G204: target is validated hostname from config
 	default: // Linux and others
-		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", "5", c.target) //nolint:gosec // G204: target is validated hostname from config
+		cmd = exec.CommandContext(ctx, "ping", "-c", "1", "-W", strconv.FormatInt(timeoutSec, 10), c.target) //nolint:gosec // G204: target is validated hostname from config
 	}
 
 	output, err := cmd.CombinedOutput()

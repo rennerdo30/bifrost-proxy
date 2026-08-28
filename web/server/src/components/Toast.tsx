@@ -11,9 +11,9 @@ interface ToastContextType {
 const toastOptions = {
   duration: 5000,
   style: {
-    background: 'rgb(30 41 59)', // bifrost-card
-    color: 'rgb(248 250 252)', // bifrost-text
-    border: '1px solid rgb(51 65 85)', // bifrost-border
+    background: 'var(--bifrost-card)',
+    color: 'var(--bifrost-text)',
+    border: '1px solid var(--bifrost-border)',
     borderRadius: '0.5rem',
     padding: '0.75rem 1rem',
     fontSize: '0.875rem',
