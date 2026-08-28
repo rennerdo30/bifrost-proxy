@@ -415,7 +415,15 @@ func (rw *ResponseWriter) Flush(ctx context.Context) error {
 	// Store in cache
 	bodyReader := io.NopCloser(bytes.NewReader(rw.body.Bytes()))
 	if err := rw.interceptor.manager.Put(ctx, rw.req, resp, bodyReader); err != nil {
-		slog.Debug("failed to cache response", "error", err)
+		// Count it and warn on the first one. At debug level this was
+		// invisible: a cache that cannot write at all looks identical to a
+		// cache nothing matches - a permanent 0% hit rate and no error.
+		if count := rw.interceptor.manager.RecordStoreError(); count == 1 {
+			slog.Warn("failed to cache response; further failures are logged at debug level",
+				"error", err, "url", rw.req.URL.Redacted())
+		} else {
+			slog.Debug("failed to cache response", "error", err, "store_error_count", count)
+		}
 	}
 
 	// Add cache miss header

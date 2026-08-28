@@ -69,10 +69,16 @@ func (p *plugin) Create(config map[string]any) (auth.Authenticator, error) {
 		return nil, err
 	}
 
-	// Load CRL if specified
+	// Load CRL if specified. An unreadable or unparsable CRL is FATAL: the
+	// operator configured revocation checking, and continuing with an empty
+	// revocation set silently accepts every certificate the CRL was supposed
+	// to reject — a revoked (possibly stolen) certificate keeps
+	// authenticating with nothing but a startup warning to show for it. If
+	// revocation checking is not wanted, remove crl_file; it is never
+	// disabled implicitly.
 	if cfg.CRLFile != "" {
 		if err := authenticator.loadCRL(); err != nil {
-			slog.Warn("failed to load CRL", "file", cfg.CRLFile, "error", err)
+			return nil, fmt.Errorf("mtls: crl_file is configured but unusable (refusing to run with revocation checking silently disabled): %w", err)
 		}
 	}
 

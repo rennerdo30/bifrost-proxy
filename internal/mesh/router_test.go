@@ -29,14 +29,6 @@ func TestRouteTypeString(t *testing.T) {
 	}
 }
 
-func TestDefaultRouterConfig(t *testing.T) {
-	config := DefaultRouterConfig()
-
-	assert.Equal(t, 8, config.MaxHops)
-	assert.Equal(t, 5*time.Minute, config.RouteTimeout)
-	assert.NotNil(t, config.PathCostFunc)
-}
-
 func TestDefaultPathCostFunc(t *testing.T) {
 	tests := []struct {
 		latency  time.Duration

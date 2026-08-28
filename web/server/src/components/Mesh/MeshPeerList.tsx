@@ -113,8 +113,18 @@ export function MeshPeerList({
         return (
           <div
             key={peer.id}
+            role="button"
+            tabIndex={0}
+            aria-pressed={selectedPeerId === peer.id}
+            aria-label={`Select peer ${peer.name || peer.id}`}
             onClick={() => onSelect(peer)}
-            className={`card cursor-pointer transition-all hover:border-bifrost-accent/50 ${
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelect(peer)
+              }
+            }}
+            className={`card cursor-pointer transition-all hover:border-bifrost-accent/50 focus:outline-none focus:ring-2 focus:ring-bifrost-accent/50 ${
               selectedPeerId === peer.id
                 ? 'border-bifrost-accent bg-bifrost-accent/5'
                 : ''

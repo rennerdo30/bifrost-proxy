@@ -17,7 +17,7 @@ type outer struct {
 	Mode        string `json:"mode"`
 	Nested      inner  `json:"nested"`
 	Skipped     string `json:"-"`
-	untagged    string //nolint:unused // proves unexported fields are ignored
+	untagged    string
 }
 
 func decode(t *testing.T, data string) outer {
@@ -79,6 +79,17 @@ func TestUnmarshal_InvalidJSON(t *testing.T) {
 func TestUnmarshal_SkippedFieldStaysSkipped(t *testing.T) {
 	v := decode(t, `{"Skipped":"x"}`)
 	assert.Empty(t, v.Skipped)
+}
+
+// An unexported field must never be populated, whatever key the input uses.
+// This also gives the field a real assertion: it previously existed only to
+// document the behavior and carried a nolint to keep the linters quiet, which
+// the standalone staticcheck step does not honor anyway.
+func TestUnmarshal_UnexportedFieldIsNeverPopulated(t *testing.T) {
+	for _, input := range []string{`{"untagged":"x"}`, `{"Untagged":"x"}`} {
+		v := decode(t, input)
+		assert.Empty(t, v.untagged, "input: %s", input)
+	}
 }
 
 // Marshaling is untouched: output is always canonical.

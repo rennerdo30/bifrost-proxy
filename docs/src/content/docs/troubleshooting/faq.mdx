@@ -104,6 +104,22 @@ auth:
             password_hash: "${ADMIN_PASSWORD_HASH}"
 ```
 
+`${VAR_NAME:-fallback}` supplies a default when the variable is unset or empty,
+and `$$` writes a literal `$`. A bare `$VAR_NAME` is not expanded, and any other
+`$` is literal — so a password or bcrypt hash containing `$` is loaded exactly as
+written. Details in [Configuration](/configuration/#environment-variables).
+
+### Why does Bifrost refuse to start with "unknown key"?
+
+Because that key does nothing. A misspelled or obsolete key used to be ignored in
+silence, which is indistinguishable from a setting that has no effect. The error
+names every offending key, its line and its config block; correct or remove them.
+
+If a deployment has to come up first, start it with
+`BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1`, which logs the keys as warnings and
+ignores them, then fix the file. See
+[Configuration](/configuration/#unknown-keys-are-rejected).
+
 ### What config changes require a restart?
 
 **Hot-reloadable (no restart):**
@@ -319,15 +335,16 @@ auth:
          max_size: "256MB"
    ```
 
-2. **Optimize connection reuse:**
+2. **Tune outbound connection reuse:**
    ```yaml
-   server:
-     http:
-       idle_timeout: "120s"
-
    network:
      keepalive: "30s"
+     dial_timeout: "10s"
    ```
+   Inbound connections are not reused — the HTTP listener serves one request per
+   connection — so `idle_timeout` is not a connection-reuse knob. It bounds
+   connections with nothing in flight; see
+   [Listener timeouts](/configuration#listener-timeouts).
 
 3. **Reduce logging:**
    ```yaml

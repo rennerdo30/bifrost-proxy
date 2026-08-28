@@ -1049,7 +1049,14 @@ func (m *Manager) AddSplitTunnelApp(app AppRule) error {
 	m.config.SplitTunnel.Apps = append(m.config.SplitTunnel.Apps, app)
 
 	if m.splitEngine != nil {
-		m.splitEngine.AddApp(app)
+		if err := m.splitEngine.AddApp(app); err != nil {
+			// Keep the stored config and the live engine in agreement. A rule
+			// the engine refused must not be left in the config, or the two
+			// disagree about what bypasses the tunnel and the API has reported
+			// a rule it is not enforcing.
+			m.config.SplitTunnel.Apps = m.config.SplitTunnel.Apps[:len(m.config.SplitTunnel.Apps)-1]
+			return fmt.Errorf("split tunnel rejected app %q: %w", app.Name, err)
+		}
 	}
 
 	return nil
@@ -1104,7 +1111,10 @@ func (m *Manager) AddSplitTunnelDomain(pattern string) error {
 	m.config.SplitTunnel.Domains = append(m.config.SplitTunnel.Domains, pattern)
 
 	if m.splitEngine != nil {
-		m.splitEngine.AddDomain(pattern)
+		if err := m.splitEngine.AddDomain(pattern); err != nil {
+			m.config.SplitTunnel.Domains = m.config.SplitTunnel.Domains[:len(m.config.SplitTunnel.Domains)-1]
+			return fmt.Errorf("split tunnel rejected domain %q: %w", pattern, err)
+		}
 	}
 
 	return nil
@@ -1138,7 +1148,10 @@ func (m *Manager) AddSplitTunnelIP(cidr string) error {
 	m.config.SplitTunnel.IPs = append(m.config.SplitTunnel.IPs, cidr)
 
 	if m.splitEngine != nil {
-		m.splitEngine.AddIP(cidr)
+		if err := m.splitEngine.AddIP(cidr); err != nil {
+			m.config.SplitTunnel.IPs = m.config.SplitTunnel.IPs[:len(m.config.SplitTunnel.IPs)-1]
+			return fmt.Errorf("split tunnel rejected IP %q: %w", cidr, err)
+		}
 	}
 
 	return nil

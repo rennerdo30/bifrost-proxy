@@ -374,35 +374,6 @@ func TestDuration_ParseDays(t *testing.T) {
 	}
 }
 
-func TestRangeSpec_Parse(t *testing.T) {
-	tests := []struct {
-		header   string
-		size     int64
-		expected []ByteRange
-		err      bool
-	}{
-		{"bytes=0-499", 1000, []ByteRange{{0, 499}}, false},
-		{"bytes=500-999", 1000, []ByteRange{{500, 999}}, false},
-		{"bytes=500-", 1000, []ByteRange{{500, 999}}, false},
-		{"bytes=-100", 1000, []ByteRange{{900, 999}}, false},
-		{"bytes=0-0", 1000, []ByteRange{{0, 0}}, false},
-		{"invalid", 1000, nil, true},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.header, func(t *testing.T) {
-			spec, err := ParseRangeSpec(tc.header, tc.size)
-			if tc.err {
-				assert.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				require.NotNil(t, spec)
-				assert.Equal(t, tc.expected, spec.Ranges)
-			}
-		})
-	}
-}
-
 func TestValidator_IsFresh(t *testing.T) {
 	v := NewValidator()
 
@@ -519,27 +490,6 @@ func TestConfig_Validate(t *testing.T) {
 	})
 }
 
-func TestInterceptor_ParseRangeHeader(t *testing.T) {
-	tests := []struct {
-		header        string
-		contentLength int64
-		expectRanges  []byteRange
-	}{
-		{"bytes=0-499", 1000, []byteRange{{0, 499}}},
-		{"bytes=500-", 1000, []byteRange{{500, 999}}},
-		{"bytes=-200", 1000, []byteRange{{800, 999}}},
-		{"bytes=0-0", 100, []byteRange{{0, 0}}},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.header, func(t *testing.T) {
-			ranges, err := parseRangeHeader(tc.header, tc.contentLength)
-			require.NoError(t, err)
-			assert.Equal(t, tc.expectRanges, ranges)
-		})
-	}
-}
-
 func TestMetadata_IsCacheable(t *testing.T) {
 	t.Run("200 OK is cacheable", func(t *testing.T) {
 		m := &Metadata{StatusCode: 200}
@@ -580,5 +530,26 @@ func createTestRequest(method, urlStr string) *http.Request {
 		URL:    u,
 		Host:   u.Host,
 		Header: make(http.Header),
+	}
+}
+
+func TestInterceptor_ParseRangeHeader(t *testing.T) {
+	tests := []struct {
+		header        string
+		contentLength int64
+		expectRanges  []byteRange
+	}{
+		{"bytes=0-499", 1000, []byteRange{{0, 499}}},
+		{"bytes=500-", 1000, []byteRange{{500, 999}}},
+		{"bytes=-200", 1000, []byteRange{{800, 999}}},
+		{"bytes=0-0", 100, []byteRange{{0, 0}}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.header, func(t *testing.T) {
+			ranges, err := parseRangeHeader(tc.header, tc.contentLength)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expectRanges, ranges)
+		})
 	}
 }

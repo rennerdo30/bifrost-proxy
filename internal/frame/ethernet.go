@@ -4,7 +4,6 @@ package frame
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"net"
 )
 
@@ -18,22 +17,6 @@ const (
 	EtherTypeIPv6 EtherType = 0x86DD
 	EtherTypeVLAN EtherType = 0x8100
 )
-
-// String returns the string representation of the EtherType.
-func (t EtherType) String() string {
-	switch t {
-	case EtherTypeIPv4:
-		return "IPv4"
-	case EtherTypeARP:
-		return "ARP"
-	case EtherTypeIPv6:
-		return "IPv6"
-	case EtherTypeVLAN:
-		return "VLAN"
-	default:
-		return fmt.Sprintf("0x%04X", uint16(t))
-	}
-}
 
 // EthernetHeader represents an Ethernet frame header.
 type EthernetHeader struct {
@@ -121,134 +104,6 @@ func BuildEthernetFrame(dstMAC, srcMAC net.HardwareAddr, etherType EtherType, pa
 	return frame, nil
 }
 
-// IsBroadcast returns true if the destination MAC is the broadcast address.
-func (f *EthernetFrame) IsBroadcast() bool {
-	return f.Header.DstMAC[0]&0x01 != 0 && // Multicast/broadcast bit
-		f.Header.DstMAC[0] == 0xFF &&
-		f.Header.DstMAC[1] == 0xFF &&
-		f.Header.DstMAC[2] == 0xFF &&
-		f.Header.DstMAC[3] == 0xFF &&
-		f.Header.DstMAC[4] == 0xFF &&
-		f.Header.DstMAC[5] == 0xFF
-}
-
-// IsMulticast returns true if the destination MAC is a multicast address.
-func (f *EthernetFrame) IsMulticast() bool {
-	return f.Header.DstMAC[0]&0x01 != 0
-}
-
-// IsUnicast returns true if the destination MAC is a unicast address.
-func (f *EthernetFrame) IsUnicast() bool {
-	return f.Header.DstMAC[0]&0x01 == 0
-}
-
-// IsIPv4 returns true if this frame contains an IPv4 packet.
-func (f *EthernetFrame) IsIPv4() bool {
-	return f.Header.EtherType == EtherTypeIPv4
-}
-
-// IsIPv6 returns true if this frame contains an IPv6 packet.
-func (f *EthernetFrame) IsIPv6() bool {
-	return f.Header.EtherType == EtherTypeIPv6
-}
-
-// IsARP returns true if this frame contains an ARP packet.
-func (f *EthernetFrame) IsARP() bool {
-	return f.Header.EtherType == EtherTypeARP
-}
-
-// IsIP returns true if this frame contains an IP packet (v4 or v6).
-func (f *EthernetFrame) IsIP() bool {
-	return f.IsIPv4() || f.IsIPv6()
-}
-
-// String returns a string representation of the frame.
-func (f *EthernetFrame) String() string {
-	return fmt.Sprintf("Ethernet %s -> %s [%s] %d bytes",
-		f.Header.SrcMAC, f.Header.DstMAC, f.Header.EtherType, len(f.Payload))
-}
-
-// Clone creates a copy of the frame.
-func (f *EthernetFrame) Clone() *EthernetFrame {
-	clone := &EthernetFrame{
-		Header: EthernetHeader{
-			DstMAC:    make(net.HardwareAddr, 6),
-			SrcMAC:    make(net.HardwareAddr, 6),
-			EtherType: f.Header.EtherType,
-		},
-		Payload: make([]byte, len(f.Payload)),
-		Raw:     make([]byte, len(f.Raw)),
-	}
-	copy(clone.Header.DstMAC, f.Header.DstMAC)
-	copy(clone.Header.SrcMAC, f.Header.SrcMAC)
-	copy(clone.Payload, f.Payload)
-	copy(clone.Raw, f.Raw)
-	return clone
-}
-
-// MarshalBinary returns the binary representation of the frame.
-func (f *EthernetFrame) MarshalBinary() ([]byte, error) {
-	return BuildEthernetFrame(f.Header.DstMAC, f.Header.SrcMAC, f.Header.EtherType, f.Payload)
-}
-
-// ExtractIPAddresses extracts source and destination IP addresses from the payload.
-// Returns nil for non-IP frames.
-func (f *EthernetFrame) ExtractIPAddresses() (src, dst net.IP, err error) {
-	if len(f.Payload) < 1 {
-		return nil, nil, errors.New("empty payload")
-	}
-
-	switch f.Header.EtherType {
-	case EtherTypeIPv4:
-		if len(f.Payload) < 20 {
-			return nil, nil, errors.New("IPv4 header too short")
-		}
-		src = net.IP(f.Payload[12:16])
-		dst = net.IP(f.Payload[16:20])
-		return src, dst, nil
-
-	case EtherTypeIPv6:
-		if len(f.Payload) < 40 {
-			return nil, nil, errors.New("IPv6 header too short")
-		}
-		src = net.IP(f.Payload[8:24])
-		dst = net.IP(f.Payload[24:40])
-		return src, dst, nil
-
-	default:
-		return nil, nil, fmt.Errorf("not an IP frame: %s", f.Header.EtherType)
-	}
-}
-
-// MACEqual compares two MAC addresses for equality.
-func MACEqual(a, b net.HardwareAddr) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-// IsLocallyAdministered returns true if the MAC address is locally administered.
-func IsLocallyAdministered(mac net.HardwareAddr) bool {
-	if len(mac) < 1 {
-		return false
-	}
-	return mac[0]&0x02 != 0
-}
-
-// IsGloballyUnique returns true if the MAC address is globally unique (OUI-based).
-func IsGloballyUnique(mac net.HardwareAddr) bool {
-	if len(mac) < 1 {
-		return false
-	}
-	return mac[0]&0x02 == 0
-}
-
 // IsBroadcast returns true if the MAC address is the broadcast address (ff:ff:ff:ff:ff:ff).
 func IsBroadcast(mac net.HardwareAddr) bool {
 	if len(mac) != 6 {
@@ -269,12 +124,4 @@ func IsMulticast(mac net.HardwareAddr) bool {
 		return false
 	}
 	return mac[0]&0x01 != 0
-}
-
-// IsUnicast returns true if the MAC address is a unicast address.
-func IsUnicast(mac net.HardwareAddr) bool {
-	if len(mac) < 1 {
-		return false
-	}
-	return mac[0]&0x01 == 0
 }

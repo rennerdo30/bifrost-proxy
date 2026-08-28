@@ -18,13 +18,11 @@ backends:
   - name: direct
     type: direct
     enabled: true
-    priority: 10
 
   # WireGuard tunnel example
   # - name: wg-tunnel
   #   type: wireguard
   #   enabled: true
-  #   priority: 20
   #   config:
   #     private_key: "YOUR_PRIVATE_KEY_BASE64"
   #     address: "10.0.0.2/24"
