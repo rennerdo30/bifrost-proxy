@@ -10,7 +10,9 @@ interface TestBackendDialogProps {
 }
 
 export function TestBackendDialog({ isOpen, onClose, backendName }: TestBackendDialogProps) {
-  const [target, setTarget] = useState('https://www.google.com')
+  // The backend test endpoint dials host:port; a URL was never a valid
+  // target, so the shipped default made the first click fail.
+  const [target, setTarget] = useState('www.google.com:443')
   const [timeout, setTimeout] = useState('10s')
   const [isTesting, setIsTesting] = useState(false)
   const [result, setResult] = useState<TestBackendResponse | null>(null)

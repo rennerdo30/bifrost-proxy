@@ -9,13 +9,16 @@ interface ConnectButtonProps {
 
 export function ConnectButton({ status, loading, onConnect, onDisconnect }: ConnectButtonProps) {
   const isConnected = status === 'connected';
+  // A running client whose upstream is unreachable can only be disconnected;
+  // offering "Connect" here was a no-op on the already-running client.
+  const isUnreachable = status === 'unreachable';
   const isConnecting = status === 'connecting' || loading;
   const isError = status === 'error';
   const isOffline = status === 'offline';
 
   const handleClick = () => {
     if (isConnecting || isOffline) return;
-    if (isConnected) {
+    if (isConnected || isUnreachable) {
       onDisconnect();
     } else {
       onConnect();
@@ -33,6 +36,9 @@ export function ConnectButton({ status, loading, onConnect, onDisconnect }: Conn
     }
     if (isConnected) {
       return `${base} connected bg-bifrost-success hover:bg-green-600 cursor-pointer`;
+    }
+    if (isUnreachable) {
+      return `${base} bg-bifrost-warning hover:bg-amber-600 cursor-pointer`;
     }
     if (isError) {
       return `${base} error bg-bifrost-error hover:bg-red-600 cursor-pointer`;
@@ -71,6 +77,7 @@ export function ConnectButton({ status, loading, onConnect, onDisconnect }: Conn
     if (isOffline) return 'Offline';
     if (isConnecting) return 'Connecting...';
     if (isConnected) return 'Connected';
+    if (isUnreachable) return 'Server unreachable — click to disconnect';
     if (isError) return 'Retry';
     return 'Connect';
   };
@@ -87,6 +94,7 @@ export function ConnectButton({ status, loading, onConnect, onDisconnect }: Conn
       </button>
       <span className={`text-lg font-medium ${isConnecting ? 'status-connecting' : ''} ${
         isConnected ? 'text-bifrost-success' :
+        isUnreachable ? 'text-bifrost-warning' :
         isError ? 'text-bifrost-error' :
         isOffline ? 'text-gray-500' :
         'text-bifrost-text-muted'

@@ -2,7 +2,6 @@ package util
 
 import (
 	"context"
-	"time"
 )
 
 type contextKey string
@@ -11,9 +10,7 @@ const (
 	requestIDKey contextKey = "request_id"
 	usernameKey  contextKey = "username"
 	clientIPKey  contextKey = "client_ip"
-	startTimeKey contextKey = "start_time"
 	backendKey   contextKey = "backend"
-	domainKey    contextKey = "domain"
 )
 
 // WithRequestID adds a request ID to the context.
@@ -55,28 +52,6 @@ func GetClientIP(ctx context.Context) string {
 	return ""
 }
 
-// WithStartTime adds a start time to the context.
-func WithStartTime(ctx context.Context, t time.Time) context.Context {
-	return context.WithValue(ctx, startTimeKey, t)
-}
-
-// GetStartTime retrieves the start time from the context.
-func GetStartTime(ctx context.Context) time.Time {
-	if t, ok := ctx.Value(startTimeKey).(time.Time); ok {
-		return t
-	}
-	return time.Time{}
-}
-
-// GetDuration returns the duration since the start time in the context.
-func GetDuration(ctx context.Context) time.Duration {
-	startTime := GetStartTime(ctx)
-	if startTime.IsZero() {
-		return 0
-	}
-	return time.Since(startTime)
-}
-
 // WithBackend adds a backend name to the context.
 func WithBackend(ctx context.Context, backend string) context.Context {
 	return context.WithValue(ctx, backendKey, backend)
@@ -86,19 +61,6 @@ func WithBackend(ctx context.Context, backend string) context.Context {
 func GetBackend(ctx context.Context) string {
 	if backend, ok := ctx.Value(backendKey).(string); ok {
 		return backend
-	}
-	return ""
-}
-
-// WithDomain adds a domain to the context.
-func WithDomain(ctx context.Context, domain string) context.Context {
-	return context.WithValue(ctx, domainKey, domain)
-}
-
-// GetDomain retrieves the domain from the context.
-func GetDomain(ctx context.Context) string {
-	if domain, ok := ctx.Value(domainKey).(string); ok {
-		return domain
 	}
 	return ""
 }

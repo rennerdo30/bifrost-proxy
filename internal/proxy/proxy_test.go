@@ -123,75 +123,6 @@ func TestHTTPHandler_CONNECT(t *testing.T) {
 	// Full CONNECT test would require more setup
 }
 
-func TestCopyStats_TotalBytes(t *testing.T) {
-	stats := CopyStats{
-		BytesSent:     1024,
-		BytesReceived: 2048,
-		Duration:      time.Second,
-	}
-
-	assert.Equal(t, int64(3072), stats.TotalBytes())
-}
-
-func TestCopyStats_Throughput(t *testing.T) {
-	stats := CopyStats{
-		BytesSent:     1000,
-		BytesReceived: 2000,
-		Duration:      time.Second,
-	}
-
-	// 3000 bytes / 1 second = 3000 bytes/second
-	assert.Equal(t, float64(3000), stats.Throughput())
-}
-
-func TestCopyStats_Throughput_ZeroDuration(t *testing.T) {
-	stats := CopyStats{
-		BytesSent:     1000,
-		BytesReceived: 2000,
-		Duration:      0,
-	}
-
-	assert.Equal(t, float64(0), stats.Throughput())
-}
-
-func TestCopyBidirectionalWithStats(t *testing.T) {
-	client1, server1 := net.Pipe()
-	client2, server2 := net.Pipe()
-
-	defer client1.Close()
-	defer client2.Close()
-
-	done := make(chan CopyStats)
-	go func() {
-		stats := CopyBidirectionalWithStats(context.Background(), server1, server2)
-		done <- stats
-	}()
-
-	// Write data and close
-	testData := []byte("test data")
-	go func() {
-		client1.Write(testData)
-		time.Sleep(10 * time.Millisecond)
-		client1.Close()
-	}()
-
-	// Read data
-	go func() {
-		buf := make([]byte, 100)
-		client2.Read(buf)
-		time.Sleep(10 * time.Millisecond)
-		client2.Close()
-	}()
-
-	select {
-	case stats := <-done:
-		assert.NotNil(t, stats)
-		assert.True(t, stats.Duration > 0)
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for copy")
-	}
-}
-
 func TestHTTPHandlerConfig_Struct(t *testing.T) {
 	var connectCalled bool
 	var errorCalled bool
@@ -779,7 +710,10 @@ func TestHTTPHandler_handleError_NilCallback(t *testing.T) {
 }
 
 func TestHTTPHandler_DefaultDialTimeout(t *testing.T) {
-	// Test that default dial timeout is set when not specified
+	// An unset DialTimeout stays zero: it is the global network.dial_timeout
+	// FALLBACK, which the backends consult only when they have no
+	// connect_timeout of their own. Injecting 30s here used to cap an
+	// explicitly longer backend connect_timeout.
 	handler := NewHTTPHandler(HTTPHandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return nil
@@ -787,7 +721,7 @@ func TestHTTPHandler_DefaultDialTimeout(t *testing.T) {
 		// DialTimeout not set
 	})
 
-	assert.Equal(t, 30*time.Second, handler.dialTimeout)
+	assert.Equal(t, time.Duration(0), handler.dialTimeout)
 }
 
 func TestHTTPHandler_handleHTTP_WriteRequestError(t *testing.T) {

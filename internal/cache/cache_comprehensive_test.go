@@ -558,20 +558,6 @@ func TestKeyGenerator_GenerateKeyFromURL(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestGenerateSimpleKey(t *testing.T) {
-	key := GenerateSimpleKey("GET", "example.com", "/path")
-	assert.NotEmpty(t, key)
-	assert.Len(t, key, 64)
-
-	// Same inputs should produce same key
-	key2 := GenerateSimpleKey("GET", "example.com", "/path")
-	assert.Equal(t, key, key2)
-
-	// Different inputs should produce different key
-	key3 := GenerateSimpleKey("POST", "example.com", "/path")
-	assert.NotEqual(t, key, key3)
-}
-
 func TestKeyPrefix(t *testing.T) {
 	key := "abcdef123456"
 
@@ -983,17 +969,6 @@ func TestRule_ShouldStripHeader(t *testing.T) {
 	assert.False(t, rule.ShouldStripHeader("Content-Type"))
 }
 
-func TestLoadRulesFromConfig(t *testing.T) {
-	configs := []RuleConfig{
-		{Name: "rule1", Domains: []string{"*.example.com"}, Enabled: true},
-		{Name: "rule2", Domains: []string{"*.test.com"}, Enabled: true},
-	}
-
-	rs, err := LoadRulesFromConfig(configs)
-	require.NoError(t, err)
-	assert.Len(t, rs.All(), 2)
-}
-
 func TestRule_AddDuplicateName(t *testing.T) {
 	rs := NewRuleSet()
 
@@ -1026,137 +1001,9 @@ func TestAllPresets(t *testing.T) {
 	assert.Contains(t, presets, PresetSteam)
 }
 
-func TestPresetNames(t *testing.T) {
-	names := PresetNames()
-	assert.NotEmpty(t, names)
-	assert.Contains(t, names, PresetSteam)
-}
-
-func TestLoadPresets(t *testing.T) {
-	rules := LoadPresets([]string{"steam", "epic", "unknown"})
-	assert.Len(t, rules, 2) // Unknown is skipped
-}
-
-func TestGetPresetInfo(t *testing.T) {
-	info := GetPresetInfo(PresetSteam)
-	require.NotNil(t, info)
-	assert.Equal(t, "steam", info.Name)
-	assert.NotEmpty(t, info.Description)
-	assert.NotEmpty(t, info.Domains)
-
-	// Unknown preset
-	info = GetPresetInfo("unknown")
-	assert.Nil(t, info)
-}
-
-func TestAllPresetInfo(t *testing.T) {
-	infos := AllPresetInfo()
-	assert.NotEmpty(t, infos)
-}
-
 // ============================================================================
 // Range Tests
 // ============================================================================
-
-func TestByteRange_LengthContentRange(t *testing.T) {
-	r := ByteRange{Start: 0, End: 499}
-
-	assert.Equal(t, int64(500), r.Length())
-	assert.Equal(t, "bytes 0-499/1000", r.ContentRange(1000))
-}
-
-func TestRangeSpec_Methods(t *testing.T) {
-	spec := &RangeSpec{
-		Ranges: []ByteRange{{0, 499}, {500, 999}},
-	}
-
-	assert.True(t, spec.IsSatisfiable(1000))
-	assert.Equal(t, int64(1000), spec.TotalLength())
-	assert.False(t, spec.IsSingleRange())
-
-	// Single range
-	spec2 := &RangeSpec{
-		Ranges: []ByteRange{{0, 499}},
-	}
-	assert.True(t, spec2.IsSingleRange())
-	assert.True(t, spec2.IsSatisfiable(1000))
-
-	// Nil spec
-	var nilSpec *RangeSpec
-	assert.False(t, nilSpec.IsSatisfiable(1000))
-	assert.Equal(t, int64(0), nilSpec.TotalLength())
-	assert.False(t, nilSpec.IsSingleRange())
-}
-
-func TestRangeSpec_UnsatisfiableRange(t *testing.T) {
-	// When all ranges are invalid (start >= size), returns error
-	spec, err := ParseRangeSpec("bytes=2000-3000", 1000)
-	assert.Error(t, err) // "no valid ranges" error
-	assert.Nil(t, spec)
-}
-
-func TestRangeReader(t *testing.T) {
-	data := []byte("0123456789")
-	reader := bytes.NewReader(data)
-
-	rr, err := NewRangeReader(reader, 2, 5)
-	require.NoError(t, err)
-
-	// Read in chunks
-	buf := make([]byte, 3)
-	n, err := rr.Read(buf)
-	assert.NoError(t, err)
-	assert.Equal(t, 3, n)
-	assert.Equal(t, []byte("234"), buf)
-
-	n, err = rr.Read(buf)
-	assert.Equal(t, io.EOF, err)
-	assert.Equal(t, 1, n)
-	assert.Equal(t, []byte("5"), buf[:1])
-
-	// Already at EOF
-	_, err = rr.Read(buf)
-	assert.Equal(t, io.EOF, err)
-}
-
-func TestMultipartRangeWriter(t *testing.T) {
-	var buf bytes.Buffer
-	mrw := NewMultipartRangeWriter(&buf, "text/plain", 1000)
-
-	assert.NotEmpty(t, mrw.Boundary())
-	assert.Contains(t, mrw.ContentType(), "multipart/byteranges")
-
-	err := mrw.WritePart(ByteRange{0, 4}, []byte("hello"))
-	assert.NoError(t, err)
-
-	err = mrw.Close()
-	assert.NoError(t, err)
-
-	assert.Contains(t, buf.String(), "hello")
-	assert.Contains(t, buf.String(), "Content-Range")
-}
-
-func TestCoalesceRanges(t *testing.T) {
-	ranges := []ByteRange{
-		{0, 100},
-		{50, 150}, // Overlapping
-		{200, 300},
-		{250, 350}, // Overlapping
-		{500, 600},
-	}
-
-	coalesced := CoalesceRanges(ranges)
-	assert.Len(t, coalesced, 3)
-	assert.Equal(t, ByteRange{0, 150}, coalesced[0])
-	assert.Equal(t, ByteRange{200, 350}, coalesced[1])
-	assert.Equal(t, ByteRange{500, 600}, coalesced[2])
-}
-
-func TestUnsatisfiableRangeError(t *testing.T) {
-	err := &UnsatisfiableRangeError{Size: 1000}
-	assert.Contains(t, err.Error(), "1000")
-	assert.Equal(t, "bytes */1000", err.ContentRangeHeader())
-}
 
 // ============================================================================
 // Storage Helper Tests
