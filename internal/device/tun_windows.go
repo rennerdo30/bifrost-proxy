@@ -5,6 +5,7 @@ package device
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/netip"
 	"os/exec"
 	"sync"
@@ -89,7 +90,11 @@ func (t *windowsTUN) configure(cfg Config) error {
 			fmt.Sprintf("mask=%s", prefixToMask(prefix)),
 		)
 		if output, err := cmd.CombinedOutput(); err != nil {
-			// Try using interface name instead
+			// The LUID form fails on some Windows builds; fall back to the
+			// interface name. The first failure is expected there, so it is
+			// only worth a debug line.
+			slog.Debug("netsh address by LUID failed; retrying by interface name",
+				"interface", t.name, "error", err, "output", string(output))
 			cmd = exec.Command("netsh", "interface", "ip", "set", "address",
 				fmt.Sprintf("name=%s", t.name),
 				"source=static",
@@ -99,7 +104,6 @@ func (t *windowsTUN) configure(cfg Config) error {
 			if output, err := cmd.CombinedOutput(); err != nil {
 				return &DeviceError{Op: "netsh address", Err: fmt.Errorf("%w: %s", err, string(output))}
 			}
-			_ = output
 		}
 	} else {
 		// IPv6
@@ -119,8 +123,16 @@ func (t *windowsTUN) configure(cfg Config) error {
 		"store=persistent",
 	)
 	if output, err := cmd.CombinedOutput(); err != nil {
-		// Non-fatal, log and continue
-		_ = output
+		// The interface still works with the default MTU, so this stays
+		// non-fatal — but a silent discard hid real misconfigurations (an MTU
+		// mismatch shows up later as blackholed large packets, nowhere near
+		// this code). At minimum the operator gets to see it.
+		slog.Warn("failed to set TUN interface MTU; the interface keeps the system default",
+			"interface", t.name,
+			"requested_mtu", cfg.MTU,
+			"error", err,
+			"output", string(output),
+		)
 	}
 
 	return nil

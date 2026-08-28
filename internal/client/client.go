@@ -32,6 +32,25 @@ import (
 // timeout in the client config, unlike the HTTP listener.
 const clientSOCKS5DialTimeout = 30 * time.Second
 
+const (
+	// apiReadHeaderTimeout bounds how long the local API/Web UI server waits
+	// for a request's headers, mitigating Slowloris-style stalls.
+	apiReadHeaderTimeout = 10 * time.Second
+
+	// shutdownGracePeriod bounds how long Stop waits for in-flight connections
+	// and background goroutines to finish before giving up.
+	shutdownGracePeriod = 30 * time.Second
+
+	// defaultHealthCheckInterval and defaultHealthCheckTimeout are used when
+	// server.health_check omits (or zeroes) the corresponding field.
+	defaultHealthCheckInterval = 30 * time.Second
+	defaultHealthCheckTimeout  = 5 * time.Second
+
+	// defaultUpdateCheckInterval is used when auto_update.check_interval is
+	// unset or non-positive.
+	defaultUpdateCheckInterval = 24 * time.Hour
+)
+
 // Client is the Bifrost client.
 type Client struct {
 	config          *config.ClientConfig
@@ -52,7 +71,22 @@ type Client struct {
 	running bool
 	mu      sync.RWMutex
 	wg      sync.WaitGroup
-	done    chan struct{}
+
+	// lifecycleMu serializes complete Start/Stop transitions. c.mu guards
+	// field access but is released during teardown, so without this a Start
+	// racing a Stop could see running==false the moment the flag flipped,
+	// bring up a fresh run, and then have that run's VPN/mesh/updater/system
+	// proxy/tray dismantled by the tail of the old Stop. Held for the entire
+	// duration of Start and Stop; never taken by their internal helpers.
+	lifecycleMu sync.Mutex
+
+	// done signals the background goroutines of the *current* run to exit. It
+	// has a per-run lifetime: Start allocates a fresh channel and Stop closes
+	// it, so a Start -> Stop -> Start -> Stop cycle no longer closes an already
+	// closed channel. Goroutines must never read this field directly; Start
+	// passes the channel it allocated to each goroutine so a subsequent Start
+	// cannot race with, or silently resurrect, the previous run's loops.
+	done chan struct{}
 
 	// Traffic counters exposed through the local API's /status endpoint. They
 	// are cumulative for bytes and instantaneous for connections, and are
@@ -161,18 +195,35 @@ func New(cfg *config.ClientConfig) (*Client, error) {
 		vpnManager:      vpnManager,
 		meshManager:     meshManager,
 		sysProxyManager: sysproxy.New(),
-		done:            make(chan struct{}),
+		// Placeholder so the field is never nil before the first Start; Start
+		// replaces it with this run's channel.
+		done: make(chan struct{}),
 	}, nil
 }
 
-// Start starts the client.
+// Start starts the client. A client that has been stopped can be started
+// again: each run gets its own done channel, listeners and API server, so the
+// Connect/Disconnect cycle exposed by the desktop app is safe to repeat.
+// Calling Start on an already-running client is a no-op.
 func (c *Client) Start(ctx context.Context) error {
+	// Serialize against a concurrent Stop for its ENTIRE teardown, not just
+	// the flag flip: a Start admitted mid-teardown had its fresh resources
+	// undone by the tail of the previous Stop.
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
 	c.mu.Lock()
 	if c.running {
 		c.mu.Unlock()
 		return nil
 	}
 	c.running = true
+	// Allocate this run's shutdown channel. Without this, a restarted client
+	// reused the channel Stop had already closed: every background loop
+	// selecting on it exited immediately (Start still reported success) and the
+	// next Stop panicked with "close of closed channel".
+	c.done = make(chan struct{})
+	done := c.done
 	c.mu.Unlock()
 
 	logging.Info("Starting Bifrost client")
@@ -186,26 +237,30 @@ func (c *Client) Start(ctx context.Context) error {
 	if c.config.Proxy.HTTP.Listen != "" {
 		listener, err := net.Listen("tcp", c.config.Proxy.HTTP.Listen)
 		if err != nil {
-			return fmt.Errorf("listen HTTP: %w", err)
+			return c.failStart(fmt.Errorf("listen HTTP: %w", err))
 		}
+		c.mu.Lock()
 		c.httpListener = listener
+		c.mu.Unlock()
 		logging.Info("HTTP proxy listening", "address", c.config.Proxy.HTTP.Listen)
 
 		c.wg.Add(1)
-		go c.serveHTTP(ctx)
+		go c.serveHTTP(ctx, listener, done)
 	}
 
 	// Start SOCKS5 listener
 	if c.config.Proxy.SOCKS5.Listen != "" {
 		listener, err := net.Listen("tcp", c.config.Proxy.SOCKS5.Listen)
 		if err != nil {
-			return fmt.Errorf("listen SOCKS5: %w", err)
+			return c.failStart(fmt.Errorf("listen SOCKS5: %w", err))
 		}
+		c.mu.Lock()
 		c.socks5Listener = listener
+		c.mu.Unlock()
 		logging.Info("SOCKS5 proxy listening", "address", c.config.Proxy.SOCKS5.Listen)
 
 		c.wg.Add(1)
-		go c.serveSOCKS5(ctx)
+		go c.serveSOCKS5(ctx, listener, done)
 	}
 
 	// Start API/Web UI server
@@ -214,7 +269,7 @@ func (c *Client) Start(ctx context.Context) error {
 			Router:   c.router,
 			Debugger: c.debugger,
 			ServerConnected: func() bool {
-				return c.serverConn.IsConnected(context.Background())
+				return c.ServerConnected(context.Background())
 			},
 			Token: c.config.API.Token,
 			VPNManager: func() apiclient.VPNManager {
@@ -236,6 +291,12 @@ func (c *Client) Start(ctx context.Context) error {
 				return c.getQuickSettings()
 			},
 			SettingsUpdater: c.updateQuickSettings,
+			// Server list and selection for GET /api/v1/servers and
+			// POST /api/v1/server/select. Without these the list was always
+			// empty and selection acknowledged with 200 while changing
+			// nothing — the mobile app's server screen was wired to a stub.
+			ServersGetter:  c.Servers,
+			ServerSelector: c.SelectServer,
 			// Traffic counters for /status. Without these the endpoint reported a
 			// hardcoded-looking bytes_sent=0 / bytes_received=0 /
 			// active_connections=0 forever.
@@ -244,17 +305,20 @@ func (c *Client) Start(ctx context.Context) error {
 			ActiveConns:   c.ActiveConnections,
 		})
 
-		c.apiServer = &http.Server{
+		apiServer := &http.Server{
 			Addr:              c.config.API.Listen,
 			Handler:           api.HandlerWithUI(),
-			ReadHeaderTimeout: 10 * time.Second, // Prevent Slowloris attacks
+			ReadHeaderTimeout: apiReadHeaderTimeout, // Prevent Slowloris attacks
 		}
+		c.mu.Lock()
+		c.apiServer = apiServer
+		c.mu.Unlock()
 
 		c.wg.Add(1)
 		go func() {
 			defer c.wg.Done()
 			logging.Info("API/Web UI server listening", "address", c.config.API.Listen)
-			if err := c.apiServer.ListenAndServe(); err != http.ErrServerClosed {
+			if err := apiServer.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 				logging.Error("API server error", "error", err)
 			}
 		}()
@@ -322,13 +386,52 @@ func (c *Client) Start(ctx context.Context) error {
 	// Start the server health monitor if a health check is configured. This
 	// gives the previously-inert server.health_check block a runtime effect:
 	// it periodically probes server reachability and logs status transitions.
-	c.startHealthMonitor(ctx)
+	c.startHealthMonitor(ctx, done)
 
 	// Apply tray-driven startup behavior (auto-connect, start minimized).
 	c.applyStartupBehavior()
 
 	logging.Info("Bifrost client started")
 	return nil
+}
+
+// failStart rolls back the partial startup performed before err occurred, so a
+// Start that fails to bind a listener does not leave the client reporting
+// Running() == true with an open done channel and a dead accept loop. It closes
+// this run's done channel, shuts the already-bound listeners and waits for the
+// goroutines they spawned, then returns err unchanged for convenient tail calls.
+func (c *Client) failStart(err error) error {
+	c.mu.Lock()
+	if !c.running {
+		c.mu.Unlock()
+		return err
+	}
+	c.running = false
+	close(c.done)
+	httpLn, socks5Ln := c.httpListener, c.socks5Listener
+	c.httpListener, c.socks5Listener = nil, nil
+	c.mu.Unlock()
+
+	if httpLn != nil {
+		_ = httpLn.Close() //nolint:errcheck // Best effort rollback
+	}
+	if socks5Ln != nil {
+		_ = socks5Ln.Close() //nolint:errcheck // Best effort rollback
+	}
+	c.wg.Wait()
+
+	logging.Error("Bifrost client failed to start; rolled back partial startup", "error", err)
+	return err
+}
+
+// ServerConnected reports whether the configured Bifrost server is currently
+// reachable, by performing a short TCP probe with the server connection's
+// configured dial timeout. Callers should pass a context with their own deadline
+// when they need a tighter bound (a UI status poll, for instance). This is the
+// only honest source of "connected" state: the mere presence of a configured
+// server address says nothing about reachability.
+func (c *Client) ServerConnected(ctx context.Context) bool {
+	return c.serverConn.IsConnected(ctx)
 }
 
 // startUpdater constructs the auto-updater from the client's AutoUpdate config
@@ -338,7 +441,7 @@ func (c *Client) Start(ctx context.Context) error {
 func (c *Client) startUpdater(ctx context.Context) {
 	interval := c.config.AutoUpdate.CheckInterval.Duration()
 	if interval <= 0 {
-		interval = 24 * time.Hour
+		interval = defaultUpdateCheckInterval
 	}
 	channel := c.config.AutoUpdate.Channel
 	if channel == "" {
@@ -369,7 +472,11 @@ func (c *Client) startUpdater(ctx context.Context) {
 // configured Bifrost server for reachability. It consumes the previously-dead
 // server.health_check config block. Transitions between reachable/unreachable
 // are logged and, when a tray is present, reflected in the tray status.
-func (c *Client) startHealthMonitor(ctx context.Context) {
+//
+// done belongs to the Start that launched this monitor; taking it as a parameter
+// keeps a later Start (which allocates a fresh channel) from racing with, or
+// resurrecting, this goroutine.
+func (c *Client) startHealthMonitor(ctx context.Context, done <-chan struct{}) {
 	hc := c.config.Server.HealthCheck
 	if hc == nil {
 		return
@@ -383,11 +490,11 @@ func (c *Client) startHealthMonitor(ctx context.Context) {
 
 	interval := hc.Interval.Duration()
 	if interval <= 0 {
-		interval = 30 * time.Second
+		interval = defaultHealthCheckInterval
 	}
 	timeout := hc.Timeout.Duration()
 	if timeout <= 0 {
-		timeout = 5 * time.Second
+		timeout = defaultHealthCheckTimeout
 	}
 
 	c.wg.Add(1)
@@ -403,13 +510,13 @@ func (c *Client) startHealthMonitor(ctx context.Context) {
 
 		for {
 			select {
-			case <-c.done:
+			case <-done:
 				return
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				checkCtx, cancel := context.WithTimeout(ctx, timeout)
-				healthy := c.serverConn.IsConnected(checkCtx)
+				healthy := c.ServerConnected(checkCtx)
 				cancel()
 
 				if !first && healthy == lastHealthy {
@@ -478,8 +585,15 @@ func (c *Client) applyStartupBehavior() {
 	}
 }
 
-// Stop stops the client.
+// Stop stops the client. It is safe to call on a client that is not running
+// (it is then a no-op) and safe to interleave with Start: lifecycleMu holds
+// any concurrent Start out until the WHOLE teardown — VPN, mesh, updater,
+// system proxy, connection drain — has finished, so a new run can never have
+// its resources dismantled by the tail of an old Stop.
 func (c *Client) Stop(ctx context.Context) error {
+	c.lifecycleMu.Lock()
+	defer c.lifecycleMu.Unlock()
+
 	c.mu.Lock()
 	if !c.running {
 		c.mu.Unlock()
@@ -487,21 +601,25 @@ func (c *Client) Stop(ctx context.Context) error {
 	}
 	c.running = false
 	close(c.done)
+	// Detach this run's listeners and API server so a subsequent Start installs
+	// fresh ones instead of having them torn down here a second time.
+	httpLn, socks5Ln, apiServer := c.httpListener, c.socks5Listener, c.apiServer
+	c.httpListener, c.socks5Listener, c.apiServer = nil, nil, nil
 	c.mu.Unlock()
 
 	logging.Info("Stopping Bifrost client")
 
 	// Close listeners
-	if c.httpListener != nil {
-		c.httpListener.Close()
+	if httpLn != nil {
+		_ = httpLn.Close() //nolint:errcheck // Best effort shutdown
 	}
-	if c.socks5Listener != nil {
-		c.socks5Listener.Close()
+	if socks5Ln != nil {
+		_ = socks5Ln.Close() //nolint:errcheck // Best effort shutdown
 	}
 
 	// Stop API server
-	if c.apiServer != nil {
-		_ = c.apiServer.Shutdown(ctx) //nolint:errcheck // Best effort shutdown
+	if apiServer != nil {
+		_ = apiServer.Shutdown(ctx) //nolint:errcheck // Best effort shutdown
 	}
 
 	// Stop VPN
@@ -540,48 +658,63 @@ func (c *Client) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Stop system tray
-	if c.tray != nil {
-		c.tray.Quit()
-		c.tray = nil
+	// The tray is a process-lifetime resource (see processTray): the systray
+	// library can neither be quit-and-rerun nor run twice, so Stop only
+	// reflects the state change on the icon. The tray's own Quit menu — or
+	// process exit — ends it.
+	c.mu.RLock()
+	t := c.tray
+	c.mu.RUnlock()
+	if t != nil {
+		t.SetStatus(tray.StatusDisconnected)
 	}
 
 	// Wait for connections
-	done := make(chan struct{})
+	waited := make(chan struct{})
 	go func() {
 		c.wg.Wait()
-		close(done)
+		close(waited)
 	}()
 
 	select {
-	case <-done:
-	case <-time.After(30 * time.Second):
-		logging.Warn("Grace period exceeded")
+	case <-waited:
+	case <-time.After(shutdownGracePeriod):
+		logging.Warn("Grace period exceeded", "grace_period", shutdownGracePeriod)
 	}
 
 	logging.Info("Bifrost client stopped")
 	return nil
 }
 
-// serveHTTP handles HTTP proxy connections.
-func (c *Client) serveHTTP(ctx context.Context) {
+// serveHTTP handles HTTP proxy connections on the listener bound by the Start
+// that launched it. The listener and done channel are parameters rather than
+// fields so a restart cannot make this loop accept on a replaced listener or
+// watch a replaced done channel.
+func (c *Client) serveHTTP(ctx context.Context, listener net.Listener, done <-chan struct{}) {
 	defer c.wg.Done()
 
 	handler := proxy.NewHTTPHandler(proxy.HTTPHandlerConfig{
-		GetBackend:  c.getBackend,
-		DialTimeout: c.config.Proxy.HTTP.ReadTimeout.Duration(),
-		OnConnect:   c.onConnect,
-		OnError:     c.onError,
+		GetBackend: c.getBackend,
+		// The listener triad, applied exactly as on the server side. The old
+		// wiring passed read_timeout as the OUTBOUND DialTimeout — the very
+		// repurposing the audit called out — and applied no inbound deadline
+		// at all. DialTimeout stays zero: backends own the connect-timeout
+		// precedence (see internal/backend).
+		ReadTimeout:  c.config.Proxy.HTTP.ReadTimeout.Duration(),
+		WriteTimeout: c.config.Proxy.HTTP.WriteTimeout.Duration(),
+		IdleTimeout:  c.config.Proxy.HTTP.IdleTimeout.Duration(),
+		OnConnect:    c.onConnect,
+		OnError:      c.onError,
 		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
 			c.recordProxyTraffic(sent, recv)
 		},
 	})
 
 	for {
-		conn, err := c.httpListener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			select {
-			case <-c.done:
+			case <-done:
 				return
 			default:
 				logging.Error("HTTP accept error", "error", err)
@@ -597,14 +730,20 @@ func (c *Client) serveHTTP(ctx context.Context) {
 	}
 }
 
-// serveSOCKS5 handles SOCKS5 proxy connections.
-func (c *Client) serveSOCKS5(ctx context.Context) {
+// serveSOCKS5 handles SOCKS5 proxy connections on the listener bound by the
+// Start that launched it. See serveHTTP for why both are parameters.
+func (c *Client) serveSOCKS5(ctx context.Context, listener net.Listener, done <-chan struct{}) {
 	defer c.wg.Done()
 
 	handler := proxy.NewSOCKS5Handler(proxy.SOCKS5HandlerConfig{
 		GetBackend:   c.getBackend,
 		AuthRequired: false, // Client doesn't require auth
 		DialTimeout:  clientSOCKS5DialTimeout,
+		// The listener triad, applied exactly as on the server side; zero
+		// values (the client default) leave the deadlines disabled.
+		ReadTimeout:  c.config.Proxy.SOCKS5.ReadTimeout.Duration(),
+		WriteTimeout: c.config.Proxy.SOCKS5.WriteTimeout.Duration(),
+		IdleTimeout:  c.config.Proxy.SOCKS5.IdleTimeout.Duration(),
 		OnConnect:    c.onConnect,
 		OnError:      c.onError,
 		RecordMetrics: func(_, _, _, _ string, _ time.Duration, sent, recv int64) {
@@ -613,10 +752,10 @@ func (c *Client) serveSOCKS5(ctx context.Context) {
 	})
 
 	for {
-		conn, err := c.socks5Listener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			select {
-			case <-c.done:
+			case <-done:
 				return
 			default:
 				logging.Error("SOCKS5 accept error", "error", err)
@@ -968,6 +1107,139 @@ func (c *Client) applyServerConn() {
 	})
 }
 
+// legacyDefaultServerName is the display name given to the single `server:`
+// block when no named `servers:` list is configured, matching the desktop
+// app's convention so a selection round-trips between the two clients.
+const legacyDefaultServerName = "Default Server"
+
+// serverProbeTimeout bounds the reachability probe Servers performs for the
+// currently selected entry, so a dead upstream cannot stall the API response.
+const serverProbeTimeout = 2 * time.Second
+
+// serverStatus values reported in ServerInfo.Status. Only the currently
+// selected server is probed — dialing every configured server on each list
+// request would turn a UI poll into a port scan.
+const (
+	serverStatusAvailable    = "available"
+	serverStatusConnected    = "connected"
+	serverStatusDisconnected = "disconnected"
+)
+
+// Servers reports the configured upstream servers for GET /api/v1/servers.
+// Credentials never leave the process: ServerInfo has no credential fields.
+func (c *Client) Servers() []apiclient.ServerInfo {
+	c.mu.RLock()
+	named := make([]config.NamedServer, len(c.config.Servers))
+	copy(named, c.config.Servers)
+	current := c.config.Server
+	c.mu.RUnlock()
+
+	// One bounded probe of the active address; every other entry is reported
+	// as available without being dialed.
+	currentStatus := serverStatusDisconnected
+	if current.Address != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), serverProbeTimeout)
+		if c.serverConn.IsConnected(ctx) {
+			currentStatus = serverStatusConnected
+		}
+		cancel()
+	}
+
+	servers := make([]apiclient.ServerInfo, 0, len(named)+1)
+	for _, s := range named {
+		status := serverStatusAvailable
+		if s.Address == current.Address {
+			status = currentStatus
+		}
+		servers = append(servers, apiclient.ServerInfo{
+			Name:      s.Name,
+			Address:   s.Address,
+			Protocol:  s.Protocol,
+			IsDefault: s.IsDefault,
+			Status:    status,
+		})
+	}
+	if len(named) == 0 && current.Address != "" {
+		servers = append(servers, apiclient.ServerInfo{
+			Name:      legacyDefaultServerName,
+			Address:   current.Address,
+			Protocol:  current.Protocol,
+			IsDefault: true,
+			Status:    currentStatus,
+		})
+	}
+	return servers
+}
+
+// SelectServer switches the upstream connection to the named entry from the
+// `servers:` list: it updates the in-memory config, reconfigures the live
+// ServerConnection so the next dial uses the new address and credentials, and
+// persists the choice when a config path is known. An unknown name is an
+// error — selection must never report success without changing anything.
+func (c *Client) SelectServer(name string) error {
+	c.mu.Lock()
+	var sel *config.NamedServer
+	for i := range c.config.Servers {
+		if c.config.Servers[i].Name == name {
+			sel = &c.config.Servers[i]
+			break
+		}
+	}
+	if sel == nil {
+		// The legacy single-server shape exposes exactly one entry; selecting
+		// it is an idempotent no-op by identity, not a swallowed failure.
+		if len(c.config.Servers) == 0 && c.config.Server.Address != "" && name == legacyDefaultServerName {
+			c.mu.Unlock()
+			return nil
+		}
+		c.mu.Unlock()
+		return fmt.Errorf("server not found: %s", name)
+	}
+
+	c.config.Server.Address = sel.Address
+	c.config.Server.Protocol = sel.Protocol
+	c.config.Server.Username = sel.Username
+	c.config.Server.Password = sel.Password
+	c.applyServerConn()
+	path := c.configPath
+	c.mu.Unlock()
+
+	logging.Info("Selected upstream server", "server", name, "address", sel.Address)
+
+	if path == "" {
+		return nil
+	}
+	// Persist through the comment-preserving node path, exactly like
+	// updateConfig; all four keys are always written so switching away from a
+	// credentialed server clears its stale credentials.
+	updates := map[string]interface{}{
+		"server": map[string]interface{}{
+			"address":  sel.Address,
+			"protocol": sel.Protocol,
+			"username": sel.Username,
+			"password": sel.Password,
+		},
+	}
+	node, err := config.LoadNode(path)
+	if err != nil {
+		logging.Warn("Failed to load config for server selection, preserving comments might fail", "error", err)
+		c.mu.RLock()
+		saveErr := config.Save(path, c.config)
+		c.mu.RUnlock()
+		if saveErr != nil {
+			return fmt.Errorf("failed to save config: %w", saveErr)
+		}
+		return nil
+	}
+	if err := config.UpdateNode(node, updates); err != nil {
+		return fmt.Errorf("failed to update config node: %w", err)
+	}
+	if err := config.SaveNode(path, node); err != nil {
+		return fmt.Errorf("failed to save config node: %w", err)
+	}
+	return nil
+}
+
 // reloadConfig reloads the client configuration from disk and hot-applies the
 // settings that are safe to change on a running client. It backs the API's
 // "Reload" action (previously unwired, which made that button always return
@@ -1015,40 +1287,92 @@ func (c *Client) reloadConfig() error {
 	return nil
 }
 
-func (c *Client) startTray(ctx context.Context) {
-	c.mu.Lock()
-	if c.tray != nil {
-		c.mu.Unlock()
-		return
-	}
+// processTray is the process-wide system tray. fyne.io/systray is a one-shot,
+// process-lifetime library: Run may only be called once per process (a second
+// Run exits immediately on Linux, whose quit channel is a never-recreated
+// package global) and Quit is guarded by a package-global sync.Once. Creating
+// a tray per client run therefore cannot work — the previous design leaked one
+// click-loop goroutine per restart and left a dead icon after the first Stop.
+// The tray is created once, its single click-loop goroutine lives for the
+// process, and its callbacks always target the client currently registered,
+// so it survives both Start/Stop cycles and full client rebuilds.
+var processTray = struct {
+	mu      sync.Mutex
+	started bool
+	tray    *tray.Tray
+	client  atomic.Pointer[Client]
+}{}
 
-	t := tray.New(tray.Config{
-		OnConnect: func() {
-			c.setSystemProxyEnabled(true)
-			c.notify("Connected")
-		},
-		OnDisconnect: func() {
-			c.setSystemProxyEnabled(false)
-			c.notify("Disconnected")
-		},
-		OnOpenUI: func() {
-			c.openUI()
-		},
-		OnOpenQuick: func() {
-			c.openUI()
-		},
-		OnQuit: func() {
-			go func() {
-				_ = c.Stop(context.Background()) //nolint:errcheck // Exiting anyway
-				os.Exit(0)
-			}()
-		},
-		ShowQuickGUI: c.config.Tray.ShowQuickGUI,
-	})
+// newTray builds the tray instance; a package variable so tests can substitute
+// a GUI-free adapter.
+var newTray = tray.New
+
+// resetProcessTrayForTesting clears the process-tray singleton. Tests only —
+// the real systray cannot actually be restarted within a process.
+func resetProcessTrayForTesting() {
+	processTray.mu.Lock()
+	defer processTray.mu.Unlock()
+	processTray.started = false
+	processTray.tray = nil
+	processTray.client.Store(nil)
+}
+
+// trayClient returns the client the process tray currently controls.
+func trayClient() *Client {
+	return processTray.client.Load()
+}
+
+func (c *Client) startTray(ctx context.Context) {
+	// This client is now the one the tray's callbacks act on.
+	processTray.client.Store(c)
+
+	processTray.mu.Lock()
+	if !processTray.started {
+		t := newTray(tray.Config{
+			OnConnect: func() {
+				if cl := trayClient(); cl != nil {
+					cl.setSystemProxyEnabled(true)
+					cl.notify("Connected")
+				}
+			},
+			OnDisconnect: func() {
+				if cl := trayClient(); cl != nil {
+					cl.setSystemProxyEnabled(false)
+					cl.notify("Disconnected")
+				}
+			},
+			OnOpenUI: func() {
+				if cl := trayClient(); cl != nil {
+					cl.openUI()
+				}
+			},
+			OnOpenQuick: func() {
+				if cl := trayClient(); cl != nil {
+					cl.openUI()
+				}
+			},
+			OnQuit: func() {
+				go func() {
+					if cl := trayClient(); cl != nil {
+						_ = cl.Stop(context.Background()) //nolint:errcheck // Exiting anyway
+					}
+					os.Exit(0)
+				}()
+			},
+			ShowQuickGUI: c.config.Tray.ShowQuickGUI,
+		})
+		processTray.tray = t
+		processTray.started = true
+		// The context of the first tray-enabled Start is deliberately unused
+		// for cancellation: the tray outlives every run by design.
+		go t.Run(ctx)
+	}
+	t := processTray.tray
+	processTray.mu.Unlock()
+
+	c.mu.Lock()
 	c.tray = t
 	c.mu.Unlock()
-
-	go t.Run(ctx)
 }
 
 // notify shows a desktop notification via the tray, but only when the user has
