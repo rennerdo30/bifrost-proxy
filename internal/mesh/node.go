@@ -400,7 +400,7 @@ func (n *MeshNode) initializeP2PManager() error {
 		LocalPeerID:          n.localPeerID,
 		LocalPrivateKey:      privateKey,
 		STUNServers:          n.config.STUN.Servers,
-		STUNTimeout:          n.config.STUN.Timeout,
+		STUNTimeout:          n.config.STUN.Timeout.Duration(),
 		TURNConfig:           turnConfig,
 		ConnectTimeout:       n.config.Connection.ConnectTimeout.Duration(),
 		KeepAliveInterval:    n.config.Connection.KeepAliveInterval.Duration(),
