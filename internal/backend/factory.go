@@ -29,13 +29,6 @@ func NewFactoryWithNetwork(net config.NetworkConfig) *Factory {
 	return &Factory{network: NetworkTuningFromConfig(net)}
 }
 
-// SetNetwork updates the network tuning applied to subsequently-created
-// backends. It is provided so callers that construct the factory before the
-// network config is known can still thread it through.
-func (f *Factory) SetNetwork(net config.NetworkConfig) {
-	f.network = NetworkTuningFromConfig(net)
-}
-
 // Create creates a backend from configuration.
 func (f *Factory) Create(cfg config.BackendConfig) (Backend, error) {
 	// Reject unknown keys before reading the recognized ones, so a typo like
