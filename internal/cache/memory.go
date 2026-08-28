@@ -15,6 +15,12 @@ import (
 type MemoryStorage struct {
 	mu sync.RWMutex
 
+	// reaperStop ends the TTL reaper Start launches. Without the reaper,
+	// CleanupExpired had no non-test caller: expired entries lingered until
+	// LRU pressure pushed them out, and reported sizes over-counted them
+	// indefinitely.
+	reaperStop chan struct{}
+
 	// entries maps cache keys to list elements for O(1) access
 	entries map[string]*list.Element
 
@@ -372,11 +378,32 @@ func (m *MemoryStorage) Stats() StorageStats {
 }
 
 // Start initializes the storage backend.
+// memoryReaperInterval is how often the TTL reaper sweeps expired entries.
+const memoryReaperInterval = time.Minute
+
 func (m *MemoryStorage) Start(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.closed = false
+	if m.reaperStop == nil {
+		stop := make(chan struct{})
+		m.reaperStop = stop
+		go func() {
+			ticker := time.NewTicker(memoryReaperInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-stop:
+					return
+				case <-ticker.C:
+					if n := m.CleanupExpired(); n > 0 {
+						slog.Debug("memory cache reaped expired entries", "count", n)
+					}
+				}
+			}
+		}()
+	}
 	slog.Info("memory cache storage started",
 		"max_size", ByteSize(m.maxSize).String(),
 		"max_entries", m.maxEntries,
@@ -390,6 +417,10 @@ func (m *MemoryStorage) Stop(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	if m.reaperStop != nil {
+		close(m.reaperStop)
+		m.reaperStop = nil
+	}
 	m.closed = true
 	m.entries = make(map[string]*list.Element)
 	m.lruList.Init()
