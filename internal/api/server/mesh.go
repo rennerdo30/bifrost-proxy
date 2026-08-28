@@ -329,6 +329,51 @@ func (m *MeshAPI) handleRegisterPeer(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// peerWithStats is what the dashboard's MeshPeer type expects: the peer's
+// identity plus its live status and counters.
+//
+// handleListPeers and handleGetPeer used to return a bare mesh.PeerInfo, so
+// every stats field the UI declares - status, connection type, latency, last
+// seen, joined at, byte counters - arrived undefined and rendered blank, even
+// though the Peer being copied from had all of them.
+type peerWithStats struct {
+	mesh.PeerInfo
+	Status         mesh.PeerStatus     `json:"status"`
+	ConnectionType mesh.ConnectionType `json:"connection_type,omitempty"`
+	// LatencyMS is milliseconds, not a time.Duration. A Duration marshals to
+	// integer nanoseconds, and the dashboard renders this value directly as
+	// "<n>ms" - emitting nanoseconds would display 12ms as 12000000ms.
+	LatencyMS     float64   `json:"latency,omitempty"`
+	LastSeen      time.Time `json:"last_seen"`
+	JoinedAt      time.Time `json:"joined_at"`
+	BytesSent     int64     `json:"bytes_sent"`
+	BytesReceived int64     `json:"bytes_received"`
+}
+
+// newPeerWithStats builds the response for one peer, taking its counters as a
+// single consistent snapshot.
+func newPeerWithStats(p *mesh.Peer) peerWithStats {
+	stats := p.Stats()
+
+	return peerWithStats{
+		PeerInfo: mesh.PeerInfo{
+			ID:        p.ID,
+			Name:      p.Name,
+			PublicKey: p.PublicKey,
+			VirtualIP: p.VirtualIP.String(),
+			Endpoints: p.GetEndpoints(),
+			Metadata:  p.Metadata,
+		},
+		Status:         stats.Status,
+		ConnectionType: stats.ConnectionType,
+		LatencyMS:      float64(stats.Latency) / float64(time.Millisecond),
+		LastSeen:       stats.LastSeen,
+		JoinedAt:       stats.JoinedAt,
+		BytesSent:      stats.BytesSent,
+		BytesReceived:  stats.BytesReceived,
+	}
+}
+
 // handleListPeers returns all peers in a network.
 func (m *MeshAPI) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	networkID := chi.URLParam(r, "networkID")
@@ -343,16 +388,9 @@ func (m *MeshAPI) handleListPeers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	allPeers := network.peers.All()
-	peers := make([]mesh.PeerInfo, 0, len(allPeers))
+	peers := make([]peerWithStats, 0, len(allPeers))
 	for _, p := range allPeers {
-		peers = append(peers, mesh.PeerInfo{
-			ID:        p.ID,
-			Name:      p.Name,
-			PublicKey: p.PublicKey,
-			VirtualIP: p.VirtualIP.String(),
-			Endpoints: p.GetEndpoints(),
-			Metadata:  p.Metadata,
-		})
+		peers = append(peers, newPeerWithStats(p))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -380,14 +418,7 @@ func (m *MeshAPI) handleGetPeer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, mesh.PeerInfo{
-		ID:        peer.ID,
-		Name:      peer.Name,
-		PublicKey: peer.PublicKey,
-		VirtualIP: peer.VirtualIP.String(),
-		Endpoints: peer.GetEndpoints(),
-		Metadata:  peer.Metadata,
-	})
+	writeJSON(w, http.StatusOK, newPeerWithStats(peer))
 }
 
 // handleUpdatePeer updates a peer's information.
