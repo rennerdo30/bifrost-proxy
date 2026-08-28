@@ -33,7 +33,7 @@ func newAuthFlowServer(t *testing.T) *httptest.Server {
 		SessionManager: newTestSessionManager(t),
 	})
 
-	hub := NewWebSocketHub()
+	hub := NewWebSocketHubWithMaxClients(MaxWebSocketClients)
 	go hub.Run()
 	t.Cleanup(hub.Stop)
 
