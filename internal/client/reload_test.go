@@ -139,7 +139,7 @@ func TestUpdateConfig_HotAppliesServerConn(t *testing.T) {
 func TestStartHealthMonitor_NilConfigNoGoroutine(t *testing.T) {
 	c := newTestClient(t)
 	// No health check configured -> should be a no-op and not spawn a goroutine.
-	c.startHealthMonitor(context.Background())
+	c.startHealthMonitor(context.Background(), c.done)
 
 	done := make(chan struct{})
 	go func() {
@@ -168,7 +168,7 @@ func TestStartHealthMonitor_NoAddressNoGoroutine(t *testing.T) {
 	c, err := New(cfg)
 	require.NoError(t, err)
 
-	c.startHealthMonitor(context.Background())
+	c.startHealthMonitor(context.Background(), c.done)
 
 	done := make(chan struct{})
 	go func() {
@@ -199,7 +199,7 @@ func TestStartHealthMonitor_RunsAndStops(t *testing.T) {
 	c, err := New(cfg)
 	require.NoError(t, err)
 
-	c.startHealthMonitor(context.Background())
+	c.startHealthMonitor(context.Background(), c.done)
 
 	// Let it tick at least once.
 	time.Sleep(50 * time.Millisecond)

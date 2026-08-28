@@ -282,6 +282,14 @@ jobs:
         working-directory: mobile
         run: npm ci
 
+      - name: Lint mobile app
+        working-directory: mobile
+        run: npm run lint
+
+      - name: Test mobile services and state helpers
+        working-directory: mobile
+        run: npm test
+
       - name: Typecheck mobile app
         working-directory: mobile
         run: npm run typecheck

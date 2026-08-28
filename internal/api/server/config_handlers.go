@@ -402,6 +402,3 @@ func splitChangedSections(sections []string) (hotReloaded, restartRequired []str
 	}
 	return hotReloaded, restartRequired
 }
-
-// EventConfigSaved is broadcast when config is saved.
-const EventConfigSaved = "config.saved"

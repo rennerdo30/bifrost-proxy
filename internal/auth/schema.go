@@ -240,8 +240,8 @@ func validateMFAWrapperInlineKeys(cfg map[string]any) error {
 		if !ok {
 			continue
 		}
-		mode, _ := inline["mode"].(string) //nolint:errcheck // missing mode is rejected by the plugin itself
-		innerCfg, _ := inline["config"].(map[string]any)
+		mode, _ := inline["mode"].(string)               //nolint:errcheck // missing mode is rejected by the plugin itself
+		innerCfg, _ := inline["config"].(map[string]any) //nolint:errcheck // a missing or wrongly-typed config block is rejected by the nil check below
 		if mode == "" || innerCfg == nil {
 			continue
 		}

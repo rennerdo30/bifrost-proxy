@@ -342,7 +342,7 @@ func (c *DiscoveryClient) wsReadLoop() {
 func (c *DiscoveryClient) heartbeatLoop() {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(c.config.HeartbeatInterval)
+	ticker := time.NewTicker(c.config.HeartbeatInterval.Duration())
 	defer ticker.Stop()
 
 	for {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import type { MeshPeerEvent } from '../../api/types'
+import type { MeshEventError, MeshPeerEvent } from '../../api/types'
 import { BASE_PATH, getApiToken } from '../../api/client'
 
 interface MeshEventLogProps {
@@ -82,6 +82,7 @@ function formatTimestamp(ts: string): string {
 export function MeshEventLog({ networkId }: MeshEventLogProps) {
   const [events, setEvents] = useState<MeshPeerEvent[]>([])
   const [isConnected, setIsConnected] = useState(false)
+  const [streamError, setStreamError] = useState<string | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
 
   useEffect(() => {
@@ -104,11 +105,18 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
 
       ws.onopen = () => {
         setIsConnected(true)
+        setStreamError(null)
       }
 
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as MeshPeerEvent
+          const data = JSON.parse(event.data) as MeshPeerEvent | MeshEventError
+          // The server answers an unknown network with {"error": ...} and
+          // closes; surface it instead of logging a blank row.
+          if ('error' in data) {
+            setStreamError(data.error)
+            return
+          }
           setEvents((prev) => [data, ...prev].slice(0, 100)) // Keep last 100 events
         } catch (err) {
           console.error('Failed to parse WebSocket message:', err)
@@ -169,6 +177,12 @@ export function MeshEventLog({ networkId }: MeshEventLogProps) {
           </span>
         </div>
       </div>
+
+      {streamError && (
+        <div className="mb-2 p-2 rounded bg-bifrost-error/10 border border-bifrost-error/30 text-sm text-bifrost-error" role="alert">
+          Event stream error: {streamError}
+        </div>
+      )}
 
       {/* Events */}
       <div className="flex-1 overflow-y-auto space-y-2">

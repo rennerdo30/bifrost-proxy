@@ -90,13 +90,29 @@ const buildDisabledReason = "this binary was built without the PAM backend, so s
 // macOS (dscl), and in a `-tags pam` Linux build the very same configuration is
 // correct, and refusing it would break those deployments.
 func (p *plugin) Availability() auth.Availability {
-	if runtime.GOOS == "linux" && !pamCompiled {
+	switch runtime.GOOS {
+	case "windows", "darwin":
+		// Real password backends exist (LSA / dscl).
+		return auth.Availability{State: auth.AvailabilityAvailable}
+	case "linux":
+		if !pamCompiled {
+			return auth.Availability{
+				State:  auth.AvailabilityBuildDisabled,
+				Reason: buildDisabledReason,
+			}
+		}
+		return auth.Availability{State: auth.AvailabilityAvailable}
+	default:
+		// The !windows build also compiles on the BSDs and Solaris, where
+		// validatePassword falls to the default branch and rejects every
+		// login. Reporting Available there — as the old linux-only guard did —
+		// showed a green provider whose logins all failed as invalid
+		// credentials.
 		return auth.Availability{
 			State:  auth.AvailabilityBuildDisabled,
-			Reason: buildDisabledReason,
+			Reason: "no system password backend exists on " + runtime.GOOS + "; every login would be rejected",
 		}
 	}
-	return auth.Availability{State: auth.AvailabilityAvailable}
 }
 
 // ValidateConfig validates the configuration.

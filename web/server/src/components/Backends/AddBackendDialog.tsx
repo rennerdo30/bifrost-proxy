@@ -233,16 +233,10 @@ export function AddBackendDialog({
             </select>
             {isEdit && <p className="text-xs text-bifrost-muted mt-1">Type cannot be changed</p>}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-bifrost-text mb-1">Priority</label>
-            <input
-              type="number"
-              value={form.priority}
-              onChange={(e) => updateForm('priority', parseInt(e.target.value) || 0)}
-              className="input"
-            />
-            <p className="text-xs text-bifrost-muted mt-1">Higher = more preferred</p>
-          </div>
+          {/* The Priority input was removed: backends[].priority has no
+              effect anywhere — selection is driven entirely by
+              routes[].priority — so the field promised an ordering nothing
+              implements. */}
           <div>
             <label className="block text-sm font-medium text-bifrost-text mb-1">Weight</label>
             <input
@@ -251,7 +245,10 @@ export function AddBackendDialog({
               onChange={(e) => updateForm('weight', parseInt(e.target.value) || 1)}
               className="input"
             />
-            <p className="text-xs text-bifrost-muted mt-1">For load balancing</p>
+            <p className="text-xs text-bifrost-muted mt-1">
+              Default share for weighted routes. Takes effect for routes loaded
+              from the saved configuration, not for this live session.
+            </p>
           </div>
           <div className="md:col-span-2">
             <label className="flex items-center gap-3 cursor-pointer">
@@ -277,6 +274,11 @@ export function AddBackendDialog({
         {/* Health Check */}
         <div className="pt-4 border-t border-bifrost-border">
           <h4 className="text-sm font-semibold text-bifrost-heading mb-3">Health Check</h4>
+          <p className="text-xs text-bifrost-muted mb-3">
+            Stored with the backend and applied when the configuration is
+            saved and reloaded; a live-added backend is not health-checked
+            until then.
+          </p>
           <HealthCheckForm
             config={form.health_check}
             onChange={(health_check) => updateForm('health_check', health_check)}

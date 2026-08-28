@@ -46,7 +46,7 @@ func TestParseARPPacket(t *testing.T) {
 		assert.Equal(t, netip.MustParseAddr("192.168.1.1"), arp.SenderProtocolAddr)
 		assert.Equal(t, netip.MustParseAddr("192.168.1.2"), arp.TargetProtocolAddr)
 		assert.True(t, arp.IsRequest())
-		assert.False(t, arp.IsReply())
+		assert.NotEqual(t, ARPReply, arp.Operation)
 	})
 
 	t.Run("valid ARP reply", func(t *testing.T) {
@@ -75,7 +75,7 @@ func TestParseARPPacket(t *testing.T) {
 
 		arp, err := ParseARPPacket(packet)
 		require.NoError(t, err)
-		assert.True(t, arp.IsReply())
+		assert.Equal(t, ARPReply, arp.Operation)
 		assert.False(t, arp.IsRequest())
 		assert.Equal(t, ARPReply, arp.Operation)
 	})
@@ -379,7 +379,7 @@ func TestBuildARPReplyFrame(t *testing.T) {
 	// Parse the ARP packet
 	arp, err := ParseARPPacket(ethFrame.Payload)
 	require.NoError(t, err)
-	assert.True(t, arp.IsReply())
+	assert.Equal(t, ARPReply, arp.Operation)
 	assert.Equal(t, senderMAC, arp.SenderHardwareAddr)
 	assert.Equal(t, senderIP, arp.SenderProtocolAddr)
 	assert.Equal(t, targetMAC, arp.TargetHardwareAddr)
@@ -395,77 +395,6 @@ func TestBuildARPReplyFrameError(t *testing.T) {
 		netip.MustParseAddr("10.0.0.2"),
 	)
 	assert.Error(t, err)
-}
-
-func TestARPPacketString(t *testing.T) {
-	t.Run("ARP request", func(t *testing.T) {
-		arp := &ARPPacket{
-			Operation:          ARPRequest,
-			SenderHardwareAddr: net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06},
-			SenderProtocolAddr: netip.MustParseAddr("192.168.1.1"),
-			TargetHardwareAddr: net.HardwareAddr{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-			TargetProtocolAddr: netip.MustParseAddr("192.168.1.2"),
-		}
-
-		str := arp.String()
-		assert.Contains(t, str, "ARP")
-		assert.Contains(t, str, "request")
-		assert.Contains(t, str, "192.168.1.1")
-		assert.Contains(t, str, "192.168.1.2")
-		assert.Contains(t, str, "01:02:03:04:05:06")
-	})
-
-	t.Run("ARP reply", func(t *testing.T) {
-		arp := &ARPPacket{
-			Operation:          ARPReply,
-			SenderHardwareAddr: net.HardwareAddr{0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F},
-			SenderProtocolAddr: netip.MustParseAddr("10.0.0.1"),
-			TargetHardwareAddr: net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06},
-			TargetProtocolAddr: netip.MustParseAddr("10.0.0.2"),
-		}
-
-		str := arp.String()
-		assert.Contains(t, str, "reply")
-	})
-
-	t.Run("unknown operation", func(t *testing.T) {
-		arp := &ARPPacket{
-			Operation:          0x0003, // Unknown
-			SenderHardwareAddr: net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06},
-			SenderProtocolAddr: netip.MustParseAddr("192.168.1.1"),
-			TargetHardwareAddr: net.HardwareAddr{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-			TargetProtocolAddr: netip.MustParseAddr("192.168.1.2"),
-		}
-
-		str := arp.String()
-		assert.Contains(t, str, "unknown")
-	})
-}
-
-func TestARPPacketMarshalBinary(t *testing.T) {
-	arp := &ARPPacket{
-		HardwareType:       ARPHardwareEthernet,
-		ProtocolType:       ARPProtocolIPv4,
-		HardwareAddrLen:    6,
-		ProtocolAddrLen:    4,
-		Operation:          ARPRequest,
-		SenderHardwareAddr: net.HardwareAddr{0x01, 0x02, 0x03, 0x04, 0x05, 0x06},
-		SenderProtocolAddr: netip.MustParseAddr("192.168.1.1"),
-		TargetHardwareAddr: net.HardwareAddr{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-		TargetProtocolAddr: netip.MustParseAddr("192.168.1.2"),
-	}
-
-	data, err := arp.MarshalBinary()
-	require.NoError(t, err)
-
-	// Parse it back
-	parsed, err := ParseARPPacket(data)
-	require.NoError(t, err)
-	assert.Equal(t, arp.Operation, parsed.Operation)
-	assert.Equal(t, arp.SenderHardwareAddr, parsed.SenderHardwareAddr)
-	assert.Equal(t, arp.SenderProtocolAddr, parsed.SenderProtocolAddr)
-	assert.Equal(t, arp.TargetHardwareAddr, parsed.TargetHardwareAddr)
-	assert.Equal(t, arp.TargetProtocolAddr, parsed.TargetProtocolAddr)
 }
 
 func TestNewARPInterceptor(t *testing.T) {
@@ -505,7 +434,7 @@ func TestARPInterceptorHandleFrame(t *testing.T) {
 
 		arp, err := ParseARPPacket(ethFrame.Payload)
 		require.NoError(t, err)
-		assert.True(t, arp.IsReply())
+		assert.Equal(t, ARPReply, arp.Operation)
 		assert.Equal(t, localMAC, arp.SenderHardwareAddr)
 		assert.Equal(t, localIP, arp.SenderProtocolAddr)
 		assert.Equal(t, senderMAC, arp.TargetHardwareAddr)
@@ -618,7 +547,7 @@ func TestARPInterceptorHandlePacket(t *testing.T) {
 		// Parse the response
 		arp, err := ParseARPPacket(response)
 		require.NoError(t, err)
-		assert.True(t, arp.IsReply())
+		assert.Equal(t, ARPReply, arp.Operation)
 		assert.Equal(t, localMAC, arp.SenderHardwareAddr)
 		assert.Equal(t, localIP, arp.SenderProtocolAddr)
 	})

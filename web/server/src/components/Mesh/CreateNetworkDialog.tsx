@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { useModalA11y } from '../../hooks/useModalA11y'
 import type { CreateMeshNetworkRequest } from '../../api/types'
 
 interface CreateNetworkDialogProps {
@@ -69,22 +70,31 @@ export function CreateNetworkDialog({
     }
   }, [id, name, cidr, existingIds, onSave, handleClose])
 
+  const modalRef = useModalA11y(isOpen, handleClose)
+
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="presentation">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-bifrost-overlay backdrop-blur-sm"
         onClick={handleClose}
+        aria-hidden="true"
       />
 
       {/* Dialog */}
-      <div className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-lg shadow-xl">
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-network-title"
+        className="relative w-full max-w-md bg-bifrost-card border border-bifrost-border rounded-lg shadow-xl"
+      >
         <form onSubmit={handleSubmit}>
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-bifrost-border">
-            <h3 className="text-lg font-semibold text-bifrost-heading">Create Mesh Network</h3>
+            <h3 id="create-network-title" className="text-lg font-semibold text-bifrost-heading">Create Mesh Network</h3>
             <button
               type="button"
               onClick={handleClose}
