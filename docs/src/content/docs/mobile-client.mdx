@@ -185,31 +185,38 @@ Detailed connection statistics:
 │  ─────────────────────────────────  │
 │  Duration         2h 34m            │
 │  Total Data       4.6 GB            │
-│  Status           Connected         │
+│  VPN Status       connected         │
 │                                     │
-│  Connection Details                 │
+│  Traffic                            │
 │  ─────────────────────────────────  │
-│  Protocol         WireGuard         │
-│  Encryption       ChaCha20-Poly1305 │
-│  Port             51820             │
-│  MTU              1420              │
+│  Packets Sent     1,204,551         │
+│  Packets Received 3,410,882         │
+│  Active Conns     42                │
 │                                     │
-│  Network                            │
+│  Split Tunneling                    │
 │  ─────────────────────────────────  │
-│  Local IP         10.0.0.2          │
-│  Gateway          10.0.0.1          │
-│  DNS              1.1.1.1, 8.8.8.8  │
-│  Interface        bifrost0          │
+│  Tunneled         1,204             │
+│  Bypassed         318               │
+│                                     │
+│  DNS                                │
+│  ─────────────────────────────────  │
+│  Queries          8,120             │
+│  Cache Hits       6,904             │
 │                                     │
 ├─────────────────────────────────────┤
 │  🏠 Home │ 📡 Servers │ 📊 Stats │ ⚙️ │
 └─────────────────────────────────────┘
 ```
 
-> **Note:** Protocol/encryption/IP fields above describe the connection of the
-> **remote Bifrost client** the app controls (reported over the REST API). They
-> do **not** indicate an encrypted tunnel running on the phone itself — see the
-> warning at the top of this page.
+> **Note:** Every row above describes the **remote Bifrost client** the app
+> controls, and each one maps to a field of `vpn.VPNStats` as returned by
+> `GET /api/v1/vpn/status`. None of it indicates an encrypted tunnel running on
+> the phone itself — see the warning at the top of this page.
+>
+> The API exposes no tunnel protocol, encryption suite, MTU, local IP, gateway,
+> DNS server list or interface name, so the Stats screen does not claim to show
+> them. Session duration comes from `uptime` (a Go `time.Duration`, i.e.
+> nanoseconds), not from a connection timestamp.
 
 ### Settings Screen
 
@@ -222,26 +229,34 @@ Configuration and preferences:
 │                                     │
 │  Connection                         │
 │  ─────────────────────────────────  │
-│  Auto-connect              [  🔘  ] │
-│  Connect on app launch              │
+│  Client auto-connect       [  🔘  ] │
+│  Connect when the client starts     │
 │                                     │
-│  Kill Switch               [🔘   ]  │
-│  Block traffic if VPN disconnects   │
+│  VPN Mode                  [🔘   ]  │
+│  Route all traffic through tunnel   │
 │                                     │
-│  Split Tunneling           [  🔘  ] │
+│  Split Tunneling                    │
 │  Exclude certain apps               │
 │                     [Configure →]   │
 │                                     │
-│  Server                             │
+│  Bifrost Client                     │
 │  ─────────────────────────────────  │
 │  ┌─────────────────────────────────┐│
-│  │ proxy.example.com:7080  [Save] ││
+│  │ 192.168.1.20:7383       [Save] ││
 │  └─────────────────────────────────┘│
+│  Plain host:port uses HTTP.         │
+│  Prefix https:// for TLS.           │
+│  ┌─────────────────────────────────┐│
+│  │ ••••••••••••••••••••••  [Save] ││
+│  └─────────────────────────────────┘│
+│  A token is stored on this device.  │
+│                            [Clear]  │
+│  API Endpoint  http://…:7383/api/v1 │
 │                                     │
 │  Notifications                      │
 │  ─────────────────────────────────  │
-│  Connection Alerts         [🔘   ]  │
-│  Notify on connect/disconnect       │
+│  Client Notifications      [🔘   ]  │
+│  Desktop alerts on the client       │
 │                                     │
 │  Data & Privacy                     │
 │  ─────────────────────────────────  │
@@ -251,21 +266,53 @@ Configuration and preferences:
 │  ─────────────────────────────────  │
 │  Version              1.0.0         │
 │  Server Status        Connected     │
+│  VPN Status           connected     │
 │                                     │
 ├─────────────────────────────────────┤
 │  🏠 Home │ 📡 Servers │ 📊 Stats │ ⚙️ │
 └─────────────────────────────────────┘
 ```
 
+The **Client auto-connect** and **Client Notifications** switches write the
+remote client's tray configuration (`tray.auto_connect`,
+`tray.show_notifications`). They are labeled as remote settings because they
+have no effect on the phone: the app has no launch-time auto-connect and no push
+notifications. There is no Kill Switch — that would require a tunnel on the
+device, which this app deliberately does not implement.
+
 ## Configuration
 
-The mobile client connects to a Bifrost client running on your network. Configure the server address in Settings.
+The mobile client connects to a Bifrost client running on your network.
+Configure its address, and an API token if the client requires one, in Settings.
 
 ### Connecting to Client
 
 1. Start the Bifrost client on your computer/server
-2. Note the API address (default: `http://192.168.x.x:7383`)
+2. Note the API address (default: `192.168.x.x:7383`)
 3. Enter this address in the mobile app Settings
+
+A bare `host:port` is reached over plain HTTP. Prefix the address with
+`https://` when the client sits behind TLS; the implicit port `443` may then be
+omitted. IPv6 literals must be bracketed, e.g. `[fd00::1]:7383`.
+
+### Authentication
+
+When the client config sets `api.token`, every request must carry it as a bearer
+credential or the client answers `401 Unauthorized`. Enter the token in the
+**Bifrost Client** section of Settings; it is stored on the device with
+AsyncStorage, sent as `Authorization: Bearer <token>`, never displayed again
+after saving, and never written to a log. Use **Clear** to remove it.
+
+:::caution
+Over plain HTTP the token travels in cleartext. Only use an HTTP endpoint on a
+network you trust, and prefer `https://` when the client offers TLS.
+:::
+
+### CSRF protection
+
+The client API rejects every `POST`, `PUT`, `DELETE` and `PATCH` that does not
+carry `X-Requested-With: XMLHttpRequest` with `403`. The app sends this header on
+every request, matching both web dashboards.
 
 ### API Configuration
 
@@ -273,14 +320,23 @@ The mobile app uses these API endpoints:
 
 | Endpoint | Description |
 |----------|-------------|
+| `GET /api/v1/health` | Reachability probe used by the Save buttons |
 | `GET /api/v1/status` | Client status |
-| `GET /api/v1/vpn/status` | VPN connection status |
+| `GET /api/v1/vpn/status` | VPN connection status (`vpn.VPNStats`) |
 | `POST /api/v1/vpn/enable` | Enable VPN |
 | `POST /api/v1/vpn/disable` | Disable VPN |
-| `GET /api/v1/servers` | Available servers |
-| `POST /api/v1/servers/{id}/select` | Select server |
+| `GET /api/v1/servers` | The client's `servers:` list (credentials excluded) |
+| `POST /api/v1/server/select` | Select server, body `{"server": "<name>"}`; switches the client's live upstream connection and persists the choice |
 | `GET /api/v1/config` | Get configuration |
 | `PUT /api/v1/config` | Update configuration |
+| `GET /api/v1/vpn/split/rules` | Split tunnel rules |
+| `PUT /api/v1/vpn/split/mode` | Set split tunnel mode |
+| `POST`/`DELETE /api/v1/vpn/split/{apps,domains,ips}` | Split tunnel rule edits |
+| `DELETE /api/v1/debug/entries` | Clear cached debug entries |
+
+Servers are identified by **name**: `ServerInfo` carries
+`name`, `address`, `protocol`, `is_default`, `latency_ms` and `status`, and has
+no `id` field.
 
 ## Development
 
@@ -424,8 +480,8 @@ The following accessibility props are used throughout the app:
 
 // Switch example
 <Switch
-  accessibilityLabel="Auto-connect toggle"
-  accessibilityHint="When enabled, the app will connect automatically on launch"
+  accessibilityLabel="Client auto-connect toggle"
+  accessibilityHint="When enabled, the Bifrost client connects automatically on startup"
   accessibilityState={{ checked: isEnabled }}
 />
 

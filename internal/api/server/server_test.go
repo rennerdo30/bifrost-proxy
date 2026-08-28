@@ -1017,12 +1017,26 @@ func TestAPI_HandleValidateConfig(t *testing.T) {
 
 	api := New(cfg)
 
-	body := strings.NewReader(`{"server": {"listen": "0.0.0.0:7080"}}`)
+	// The old body used "server.listen", a key that does not exist — the
+	// lenient decoder dropped it silently. It is now a 400, so this test uses
+	// the real key and a companion covers the rejection.
+	body := strings.NewReader(`{"server": {"http": {"listen": "0.0.0.0:7080"}}}`)
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest("POST", "/api/v1/config/validate", body)
 	api.handleValidateConfig(w, r)
 
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestAPI_HandleValidateConfig_UnknownKeyRejected(t *testing.T) {
+	api := New(Config{Backends: backend.NewManager()})
+
+	body := strings.NewReader(`{"server": {"listem": ":7080"}}`)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("POST", "/api/v1/config/validate", body)
+	api.handleValidateConfig(w, r)
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
 
 func TestAPI_HandleValidateConfig_InvalidJSON(t *testing.T) {

@@ -13,11 +13,18 @@ import (
 	"sync"
 	"time"
 
+	wailsruntime "github.com/wailsapp/wails/v2/pkg/runtime"
+
 	"github.com/rennerdo30/bifrost-proxy/internal/client"
 	"github.com/rennerdo30/bifrost-proxy/internal/config"
 	"github.com/rennerdo30/bifrost-proxy/internal/version"
 	"github.com/rennerdo30/bifrost-proxy/internal/vpn"
 )
+
+// serverProbeTimeout bounds the reachability probe GetStatus performs against
+// the configured Bifrost server. The frontend polls GetStatus, so the probe has
+// to fail fast rather than inherit the client's much longer dial timeout.
+const serverProbeTimeout = 2 * time.Second
 
 // App struct holds the application state and provides methods
 // that are exposed to the frontend via Wails bindings.
@@ -106,7 +113,10 @@ type ProxySettings struct {
 func NewApp() *App {
 	return &App{
 		preferences: &Preferences{
-			AutoConnect:       false,
+			// AutoConnect defaults to true: the app always started the client
+			// at launch before the preference was honored, so the default
+			// preserves that behavior for existing users.
+			AutoConnect:       true,
 			StartMinimized:    false,
 			ShowNotifications: true,
 		},
@@ -121,10 +131,20 @@ func (a *App) startup(ctx context.Context) {
 
 	slog.Info("bifrost quick access starting")
 
-	// Load and start the embedded client
-	if err := a.initClient(); err != nil {
-		slog.Error("failed to initialize client", "error", err)
-		// Continue anyway - user can configure via settings
+	// Load and start the embedded client. AutoConnect was persisted by the
+	// settings toggle and never read; it now controls whether the client is
+	// started at launch (the default preference is true, matching the app's
+	// previous unconditional behavior).
+	if a.preferences.AutoConnect {
+		if err := a.initClient(); err != nil {
+			slog.Error("failed to initialize client", "error", err)
+			// Continue anyway - user can configure via settings
+		}
+	} else {
+		if err := a.initClientStopped(); err != nil {
+			slog.Error("failed to initialize client", "error", err)
+		}
+		slog.Info("auto-connect disabled; client loaded but not started")
 	}
 
 	slog.Info("bifrost quick access started")
@@ -206,6 +226,38 @@ func (a *App) initClient() error {
 		"api", a.clientCfg.API.Listen,
 	)
 
+	return nil
+}
+
+// initClientStopped builds the client without starting it, for launches with
+// auto-connect disabled: the Connect button then performs the first Start.
+func (a *App) initClientStopped() error {
+	configPath := a.findConfigFile()
+	if configPath == "" {
+		configPath = a.createDefaultConfig()
+	}
+	a.configPath = configPath
+	if configPath == "" {
+		return fmt.Errorf("no config file found and could not create default")
+	}
+
+	cfg := config.DefaultClientConfig()
+	if err := config.LoadAndValidate(configPath, &cfg); err != nil {
+		slog.Warn("failed to load config file, using defaults", "error", err)
+		cfg = config.DefaultClientConfig()
+	}
+	cfg.API.Enabled = true
+	if cfg.API.Listen == "" {
+		cfg.API.Listen = "127.0.0.1:7383"
+	}
+	a.clientCfg = &cfg
+
+	c, err := client.New(a.clientCfg)
+	if err != nil {
+		return fmt.Errorf("create client: %w", err)
+	}
+	a.client = c
+	c.SetConfigPath(a.configPath)
 	return nil
 }
 
@@ -309,38 +361,64 @@ func (a *App) Disconnect() error {
 }
 
 // GetStatus returns the current connection status.
+//
+// The connected flag comes from a real reachability probe against the configured
+// server, not from the presence of a configured address: the frontend turns this
+// field straight into the big green "Connected" shield, so reporting it from
+// configuration alone claimed a working tunnel that might not exist. The traffic
+// figures come from the client's live counters for the same reason.
 func (a *App) GetStatus() (*StatusResponse, error) {
+	// Snapshot the shared state under the lock, then release it: the
+	// reachability probe below performs a network dial and must not block
+	// Connect/Disconnect or any other writer while it runs.
 	a.mu.RLock()
-	defer a.mu.RUnlock()
+	c := a.client
+	ctx := a.ctx
+	startTime := a.startTime
+	var httpProxy, socks5Proxy, serverAddress string
+	if a.clientCfg != nil {
+		httpProxy = a.clientCfg.Proxy.HTTP.Listen
+		socks5Proxy = a.clientCfg.Proxy.SOCKS5.Listen
+		serverAddress = a.clientCfg.Server.Address
+	}
+	a.mu.RUnlock()
 
 	status := &StatusResponse{
 		Status:    "running",
 		Version:   version.Short(),
 		Timestamp: time.Now(),
-		Uptime:    time.Since(a.startTime).Round(time.Second).String(),
+		Uptime:    time.Since(startTime).Round(time.Second).String(),
 	}
 
-	if a.client == nil {
+	if c == nil {
 		status.Status = "not_initialized"
 		status.LastError = "client not initialized"
 		return status, nil
 	}
 
-	if !a.client.Running() {
+	if !c.Running() {
 		status.Status = "stopped"
 		return status, nil
 	}
 
 	// Get config info
-	if a.clientCfg != nil {
-		status.HTTPProxy = a.clientCfg.Proxy.HTTP.Listen
-		status.SOCKS5Proxy = a.clientCfg.Proxy.SOCKS5.Listen
-		status.ServerAddress = a.clientCfg.Server.Address
-		status.ServerConnected = a.clientCfg.Server.Address != ""
+	status.HTTPProxy = httpProxy
+	status.SOCKS5Proxy = socks5Proxy
+	status.ServerAddress = serverAddress
+
+	// Probe the server for real reachability. An empty address cannot be
+	// reachable, so skip the dial entirely in that case.
+	if serverAddress != "" {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, serverProbeTimeout)
+		status.ServerConnected = c.ServerConnected(probeCtx)
+		cancel()
 	}
 
 	// Get VPN status
-	if vpnMgr := a.client.VPNManager(); vpnMgr != nil {
+	if vpnMgr := c.VPNManager(); vpnMgr != nil {
 		vpnStatus := vpnMgr.Status()
 		status.VPNEnabled = vpnStatus.Status == vpn.StatusConnected
 		status.VPNStatus = string(vpnStatus.Status)
@@ -349,33 +427,68 @@ func (a *App) GetStatus() (*StatusResponse, error) {
 	}
 
 	// Get debug entries count
-	entries := a.client.GetDebugEntries()
+	entries := c.GetDebugEntries()
 	status.DebugEntries = len(entries)
+
+	// Traffic telemetry. These counters already existed on the client; the
+	// dashboard rendered hardcoded zeros as live data until they were wired up.
+	status.BytesSent = c.BytesSent()
+	status.BytesReceived = c.BytesReceived()
+	status.ActiveConns = c.ActiveConnections()
 
 	return status, nil
 }
 
 // GetServers returns the list of configured servers.
 func (a *App) GetServers() ([]ServerInfo, error) {
+	// Snapshot under the lock, probe outside it: the reachability dial below
+	// must not block Connect/Disconnect or any other writer while it runs.
 	a.mu.RLock()
-	defer a.mu.RUnlock()
+	if a.clientCfg == nil {
+		a.mu.RUnlock()
+		return []ServerInfo{}, nil
+	}
+	activeAddress := a.clientCfg.Server.Address
+	named := make([]config.NamedServer, len(a.clientCfg.Servers))
+	copy(named, a.clientCfg.Servers)
+	legacy := config.NamedServer{
+		Name:      "Default Server",
+		Address:   a.clientCfg.Server.Address,
+		Protocol:  a.clientCfg.Server.Protocol,
+		Username:  a.clientCfg.Server.Username,
+		Password:  a.clientCfg.Server.Password,
+		IsDefault: true,
+	}
+	c := a.client
+	ctx := a.ctx
+	a.mu.RUnlock()
+
+	// The selected server's status is a real reachability probe, never "the
+	// local client happens to be running" — that fabricated a Connected label
+	// for an unreachable upstream. Only the selected entry is probed (one
+	// bounded dial per call); the rest are reported as available.
+	activeStatus := "available"
+	if c != nil && c.Running() && activeAddress != "" {
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, serverProbeTimeout)
+		if c.ServerConnected(probeCtx) {
+			activeStatus = "connected"
+		} else {
+			activeStatus = "disconnected"
+		}
+		cancel()
+	}
 
 	servers := []ServerInfo{}
 
-	if a.clientCfg == nil {
-		return servers, nil
-	}
-
-	// Get the currently active server address
-	activeAddress := a.clientCfg.Server.Address
-
 	// Return servers from the Servers slice
-	if len(a.clientCfg.Servers) > 0 {
-		for _, s := range a.clientCfg.Servers {
+	if len(named) > 0 {
+		for _, s := range named {
 			status := "available"
-			// Check if this is the active server
-			if s.Address == activeAddress && a.client != nil && a.client.Running() {
-				status = "connected"
+			if s.Address == activeAddress {
+				status = activeStatus
 			}
 
 			servers = append(servers, ServerInfo{
@@ -388,37 +501,53 @@ func (a *App) GetServers() ([]ServerInfo, error) {
 				Status:    status,
 			})
 		}
-	} else if a.clientCfg.Server.Address != "" {
+	} else if legacy.Address != "" {
 		// Backwards compatibility: if no named servers but Server is configured
-		status := "available"
-		if a.client != nil && a.client.Running() {
-			status = "connected"
-		}
-
 		servers = append(servers, ServerInfo{
-			Name:      "Default Server",
-			Address:   a.clientCfg.Server.Address,
-			Protocol:  a.clientCfg.Server.Protocol,
-			Username:  a.clientCfg.Server.Username,
-			Password:  a.clientCfg.Server.Password,
+			Name:      legacy.Name,
+			Address:   legacy.Address,
+			Protocol:  legacy.Protocol,
+			Username:  legacy.Username,
+			Password:  legacy.Password,
 			IsDefault: true,
-			Status:    status,
+			Status:    activeStatus,
 		})
 	}
 
 	return servers, nil
 }
 
-// SelectServer selects a server to connect to.
+// SelectServer selects a server to connect to. When the embedded client
+// exists, selection goes through Client.SelectServer, which reconfigures the
+// live upstream connection (the next dial really uses the new server) and
+// persists the choice — mutating only the config used to leave every future
+// dial on the old upstream while the UI displayed the new one.
 func (a *App) SelectServer(serverName string) error {
+	a.mu.Lock()
+	if a.clientCfg == nil {
+		a.mu.Unlock()
+		return fmt.Errorf("config not loaded")
+	}
+	c := a.client
+	a.mu.Unlock()
+
+	if c != nil {
+		// The client shares a.clientCfg and a.configPath (see initClient), so
+		// this updates the app's view, the live connection, and the file.
+		if err := c.SelectServer(serverName); err != nil {
+			return err
+		}
+		a.mu.Lock()
+		a.preferences.DefaultServer = serverName
+		a.mu.Unlock()
+		slog.Info("selected server", "server", serverName)
+		return nil
+	}
+
+	// No client yet: config-only selection, applied when the client starts.
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if a.clientCfg == nil {
-		return fmt.Errorf("config not loaded")
-	}
-
-	// Find the server by name
 	var selectedServer *config.NamedServer
 	for i := range a.clientCfg.Servers {
 		if a.clientCfg.Servers[i].Name == serverName {
@@ -437,16 +566,12 @@ func (a *App) SelectServer(serverName string) error {
 		return fmt.Errorf("server not found: %s", serverName)
 	}
 
-	// Update the active Server connection with the selected server's settings
 	a.clientCfg.Server.Address = selectedServer.Address
 	a.clientCfg.Server.Protocol = selectedServer.Protocol
 	a.clientCfg.Server.Username = selectedServer.Username
 	a.clientCfg.Server.Password = selectedServer.Password
-
-	// Update preferences
 	a.preferences.DefaultServer = serverName
 
-	// Save config
 	if a.configPath != "" {
 		if err := config.Save(a.configPath, a.clientCfg); err != nil {
 			slog.Error("failed to save config after server selection", "error", err)
@@ -742,7 +867,21 @@ func (a *App) UpdateQuickSettings(settings *QuickSettings) error {
 
 	a.savePreferences()
 
-	// Update VPN state if changed
+	// Only touch the VPN when the setting actually changed: every settings
+	// save used to enable or disable the VPN as a side effect, so saving an
+	// unrelated toggle bounced the tunnel.
+	currentlyEnabled := false
+	a.mu.RLock()
+	c := a.client
+	a.mu.RUnlock()
+	if c != nil {
+		if vpnMgr := c.VPNManager(); vpnMgr != nil {
+			currentlyEnabled = vpnMgr.Status().Status == vpn.StatusConnected
+		}
+	}
+	if settings.VPNEnabled == currentlyEnabled {
+		return nil
+	}
 	if settings.VPNEnabled {
 		return a.EnableVPN()
 	}
@@ -751,8 +890,10 @@ func (a *App) UpdateQuickSettings(settings *QuickSettings) error {
 
 // EnableVPN enables the VPN mode.
 func (a *App) EnableVPN() error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	// Full lock: enabling the VPN mutates shared state (the VPN manager and
+	// preferences); an RLock here allowed concurrent mutation.
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	if a.client == nil {
 		return fmt.Errorf("client not initialized")
@@ -773,8 +914,8 @@ func (a *App) EnableVPN() error {
 
 // DisableVPN disables the VPN mode.
 func (a *App) DisableVPN() error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+	a.mu.Lock()
+	defer a.mu.Unlock()
 
 	if a.client == nil {
 		return nil
@@ -824,7 +965,11 @@ func (a *App) OpenWebDashboard() error {
 // Quit exits the application.
 func (a *App) Quit() error {
 	a.savePreferences()
-	// The Wails runtime will handle the actual quit
+	// Actually quit. The old body saved preferences and returned — the
+	// dashboard's Quit control was a no-op.
+	if a.ctx != nil {
+		wailsruntime.Quit(a.ctx)
+	}
 	return nil
 }
 
