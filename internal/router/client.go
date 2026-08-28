@@ -75,20 +75,31 @@ func (r *ClientRouter) LoadRoutes(routes []config.ClientRouteConfig) error {
 
 // Match finds the action for a given domain.
 func (r *ClientRouter) Match(domain string) ClientAction {
+	_, action := r.MatchRoute(domain)
+	return action
+}
+
+// MatchRoute returns the route that matched the domain along with the action to
+// take. The route is nil when no rule matched and the default action applies.
+//
+// Match discards which rule was responsible, which left callers unable to
+// explain a routing decision - the route-test endpoint could say "direct" but
+// not why.
+func (r *ClientRouter) MatchRoute(domain string) (*ClientRoute, ClientAction) {
 	if r == nil {
-		return ActionServer
+		return nil, ActionServer
 	}
 	for _, route := range r.routes {
 		if route == nil || route.Matcher == nil {
 			continue
 		}
 		if route.Matcher.Match(domain) {
-			return route.Action
+			return route, route.Action
 		}
 	}
 
 	// Default to server if no match
-	return ActionServer
+	return nil, ActionServer
 }
 
 // Routes returns all routes.

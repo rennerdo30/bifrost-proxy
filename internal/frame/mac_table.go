@@ -32,6 +32,11 @@ type MACTableConfig struct {
 }
 
 // DefaultMACTableConfig returns sensible defaults.
+//
+// Kept despite having no production caller: it is the fixture the MACTable
+// tests build on, and the MACTable API they cover is entirely live. Inlining
+// the default into each of them would trade a named default for seventeen
+// copies of the same literal.
 func DefaultMACTableConfig() MACTableConfig {
 	return MACTableConfig{
 		MaxAge: 5 * time.Minute,

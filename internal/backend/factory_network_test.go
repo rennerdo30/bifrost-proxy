@@ -25,11 +25,36 @@ func TestFactory_DirectAppliesNetwork(t *testing.T) {
 	db, ok := b.(*DirectBackend)
 	require.True(t, ok)
 	assert.Equal(t, 42*time.Second, db.dialer.KeepAlive)
-	// Direct sets its own ConnectTimeout default (30s) so the network dial
-	// timeout does not override it.
-	assert.Equal(t, 30*time.Second, db.dialer.Timeout)
+	// Precedence: explicit connect_timeout > network.dial_timeout > default.
+	// With no explicit connect_timeout, the network dial timeout fills the
+	// unset value — the constructor's own default used to be applied first,
+	// which made network.dial_timeout permanently inert for this backend.
+	assert.Equal(t, 11*time.Second, db.dialer.Timeout)
 	assert.True(t, db.preferIPv6)
 	assert.NotNil(t, db.dialer.Resolver)
+}
+
+func TestFactory_DirectExplicitConnectTimeoutWinsOverNetwork(t *testing.T) {
+	f := NewFactoryWithNetwork(networkCfg())
+	b, err := f.Create(config.BackendConfig{
+		Name: "d", Type: "direct",
+		Config: map[string]any{"connect_timeout": "60s"},
+	})
+	require.NoError(t, err)
+	db, ok := b.(*DirectBackend)
+	require.True(t, ok)
+	assert.Equal(t, 60*time.Second, db.dialer.Timeout,
+		"an explicit connect_timeout must win over network.dial_timeout")
+}
+
+func TestFactory_DirectDefaultsWhenNothingConfigured(t *testing.T) {
+	f := NewFactory()
+	b, err := f.Create(config.BackendConfig{Name: "d", Type: "direct"})
+	require.NoError(t, err)
+	db, ok := b.(*DirectBackend)
+	require.True(t, ok)
+	assert.Equal(t, 30*time.Second, db.dialer.Timeout,
+		"with neither connect_timeout nor network.dial_timeout set, the 30s default applies")
 }
 
 func TestFactory_HTTPProxyAppliesNetwork(t *testing.T) {

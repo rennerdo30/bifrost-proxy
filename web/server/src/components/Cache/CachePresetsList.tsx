@@ -65,6 +65,8 @@ export function CachePresetsList({
               )}
             </div>
             <button
+              role="switch"
+              aria-checked={preset.enabled}
               onClick={() => onToggle(preset.name, !preset.enabled)}
               className={`w-10 h-5 rounded-full relative transition-colors ${
                 preset.enabled ? 'bg-bifrost-success' : 'bg-bifrost-border'
