@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- Both proxy listeners now bound an idle client, closing a slowloris-style
+  resource exhaustion. A client could previously connect to the HTTP or SOCKS5
+  listener and either send nothing at all or trickle request headers forever,
+  pinning one goroutine and one file descriptor per connection with no timeout
+  of any kind to reclaim them — the configured `read_timeout` and `idle_timeout`
+  were never applied. Reaching the `max_connections` ceiling this way denied
+  service to legitimate clients. See the listener-timeout entry under *Changed*
 - `/api/v1/ws` now verifies the WebSocket `Origin`. WebSockets are exempt from
   both the same-origin policy and CORS, so any web page loaded in a browser that
   could reach a Bifrost instance was previously able to open a socket and read
@@ -27,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logging happens; it still authenticates the request
 
 ### Added
+- Default `read_timeout` (30s), `write_timeout` (30s) and `idle_timeout` (60s) on
+  the SOCKS5 listener, mirroring the HTTP listener, so its handshake is bounded
+  out of the box
+- `GET /api/v1/config` now reports `idle_timeout` for the HTTP listener and all
+  three timeouts for the SOCKS5 listener, which it previously omitted
 - `api.allowed_origins`: browser origins permitted to open `/api/v1/ws`, for
   reverse proxies that rewrite `Host` (Home Assistant Ingress, Traefik, nginx,
   Cloudflare Tunnel). Entries are host or `scheme://host` patterns with
@@ -38,11 +50,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason. The server dashboard uses it to label providers honestly instead of
   hard-coding a list that had drifted from the code and could not express
   build-dependent truths
+- Mobile app: API token entry in Settings. The app could previously only manage
+  an *unauthenticated* client — the bearer-token plumbing existed but nothing
+  ever set a token. The token is persisted with AsyncStorage, sent as
+  `Authorization: Bearer`, never displayed after saving and never logged, and can
+  be cleared from the same screen. A `401` is now reported as an authentication
+  failure rather than a generic error
+- Mobile app: `https://` client addresses. The base URL hardcoded the `http://`
+  scheme, making a TLS-terminated client unreachable. Addresses may now be a bare
+  `host:port` (HTTP), an explicit `http://`/`https://` URL, or a bracketed IPv6
+  literal; the implicit port is omitted for `https`
+- Mobile app: `npm test` runs service-layer unit tests on Node's built-in test
+  runner with no new dependencies, covering the CSRF header on every mutation,
+  the server-select route and body, token persistence and scheme handling
 - The server dashboard's auth provider list gained `mfa_wrapper`, which was
   registered and working but missing from the UI entirely, with a default config
   in the inline `primary`/`secondary` format the server actually accepts
 
 ### Changed
+- **Breaking:** the listener timeout triad now does what it says. `read_timeout`,
+  `write_timeout` and `idle_timeout` are declared on every listener, defaulted in
+  both shipped config templates, present in every example config and documented
+  across six pages — and none of them was applied. `idle_timeout` was read
+  nowhere in the codebase; `write_timeout` was read once, only so the config API
+  could echo it back; `read_timeout` was quietly passed through as the
+  **outbound** dial timeout, which the troubleshooting docs explicitly said it
+  was not. The SOCKS5 listener read no timeout at all, so a client could open a
+  connection, never send a handshake byte, and hold a goroutine and a file
+  descriptor for as long as it liked. All three are now real socket deadlines on
+  both listeners:
+  - `read_timeout` — an absolute bound on a complete inbound request arriving
+    (HTTP request line and headers, or the whole SOCKS5 handshake) measured from
+    the client's first byte, then a per-read bound for the request body. It
+    covers the TLS handshake on TLS-terminated listeners and every decrypted
+    request on a MITM-intercepted tunnel, so neither a stalled handshake nor a
+    trickled decrypted header can pin a connection
+  - `write_timeout` — a **no-progress** bound: each window of `write_timeout`
+    must deliver at least one byte to the client, so a streaming response
+    (server-sent events, a chunked feed, a large download) is never truncated
+    while it keeps moving — even to a very slow receiver — while a client that
+    has stopped reading entirely is timed out within one window. (On a
+    TLS-terminated listener a stalled window is fatal, a Go TLS constraint; a
+    progressing response is still never cut off)
+  - `idle_timeout` — a bound on a connection with nothing in flight: accepted
+    but silent, or between exchanges on a kept-alive (including intercepted)
+    loop. It deliberately does NOT reap an established opaque `CONNECT` tunnel
+    or SOCKS5 relay — a quiet-but-open tunnel (SSH, IMAP IDLE, a WebSocket
+    without pings) is valid traffic
+  - `tunnel_idle_timeout` (new, off by default) — the explicit opt-in that
+    reaps an established tunnel in which *neither* direction has carried data
+    for the period; an actively transferring tunnel is never interrupted
+
+  The same triad now also applies to the client's `proxy.http` and
+  `proxy.socks5` listeners (default `0` = disabled there), and the client no
+  longer repurposes `proxy.http.read_timeout` as its outbound dial timeout.
+
+  One consequence to check before upgrading. **Outbound dials no longer follow
+  `read_timeout`**: a backend's own `connect_timeout` wins, then
+  `network.dial_timeout`, then a 30s default — and a backend-specific value is
+  no longer silently capped at 30s by the handler. If you raised `read_timeout`
+  to work around slow backend connects, move that value to
+  `network.dial_timeout` or the backend's `connect_timeout`
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
   rejecting every login. This affects `ntlm` (no credential source exists to
@@ -200,6 +268,166 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reads wait on WinTun's read-wait event instead of hammering
   `ERROR_NO_MORE_ITEMS`, which also ends the error-log flood from the VPN read
   loop on an idle tunnel
+- **VPN route setup no longer reports success after failing.** On macOS and
+  Windows, `RouteManager.Setup` warned on every failed route and returned nil,
+  so the desktop VPN toggle showed the VPN as on while traffic kept flowing
+  over the physical interface. Any failure — a bypass route, either of the two
+  default-override routes that ARE the tunnel, an include route, or (with the
+  built-in DNS enabled) DNS configuration — is now fatal, rolls back whatever
+  was already installed, and surfaces the exact command output. A route that
+  already exists is recognized per platform and treated as the desired state,
+  not a failure. Linux, which already made the TUN route fatal, gets the same
+  treatment for the rest. (Platform caveat: verified by compilation and unit
+  tests of the classification logic; the Linux/Windows runtime paths were not
+  executed on this development machine)
+- VPN route setup deadlocked on the DEFAULT configuration: `Setup` called the
+  exported `AddBypassRoute` while already holding the manager's mutex, and the
+  default config ships three `always_bypass` entries — so on macOS, Windows
+  and Linux alike the first bypass route self-deadlocked the setup before any
+  route was installed
+- **Windows per-app split tunneling can match connections now.** The port
+  byte-order conversion widened to uint32 before shifting, pushing the port's
+  high byte into bits 16–23 instead of wrapping it, so the computed value never
+  matched a Windows MIB-table entry for any port above 255 and per-app rules
+  classified nothing. The conversion is a shared, cross-platform-tested helper
+  now, checked against the definitional big-endian encoding
+- **The OpenVPN crash detector can actually fire.** It polled
+  `cmd.ProcessState`, which stays nil until `Wait` is called — and only `Stop`
+  called `Wait` — so a dead tunnel kept reporting healthy until the next
+  manual stop. One goroutine now owns `Wait` per process; an exit while the
+  backend is supposed to be running marks it unhealthy and surfaces the exit
+  status in the backend stats, while an orderly `Stop` (which closes the stop
+  channel before signaling the process) is never misreported as a crash
+- `bifrost-server service status` (and the client equivalent) no longer
+  launders tool-execution failures into confident states: "systemctl is not on
+  PATH" read exactly like "the service is stopped", and a missing `sc.exe`
+  read as "not installed". A tool that ran and answered non-zero is still a
+  meaningful state (systemd's non-active states are now reported verbatim); a
+  tool that could not be executed at all is an error
+- Windows TUN/TAP MTU configuration failures were discarded with `_ = output`
+  and not even logged, leaving an MTU mismatch to surface later as blackholed
+  large packets with nothing pointing at the cause. They are warnings now,
+  with the requested MTU and the tool output
+
+### Security
+- **A configured but unusable mTLS CRL no longer fails open.** An unreadable
+  or unparsable `crl_file` was a one-line startup warning, after which every
+  certificate the CRL was supposed to revoke kept authenticating. It is now a
+  fatal startup/creation error: if revocation checking is configured it works,
+  or the provider refuses to run. Remove `crl_file` to run without revocation
+  checking — it is never disabled implicitly
+- **`oauth.required_claims` is enforced.** The setting was parsed and surfaced
+  in the dashboard but never read, so a deployment gating access on, say,
+  `hd: example.com` was letting every active token through. Both validation
+  paths (introspection and userinfo) now enforce it with exact semantics:
+  missing claims fail, strings compare exactly, booleans and numbers compare
+  by canonical text, array claims match by string membership (`aud`-style),
+  object-valued claims never match. Deployments with no `required_claims` (or
+  the empty map the default template shipped) are unaffected. Claim values are
+  never logged or echoed in errors
+
+- **Disconnecting and reconnecting the client crashed the process.** The client's
+  internal shutdown channel was allocated once, when the client was created, and
+  closed by every `Stop`, so a stop/start/stop sequence closed it twice and
+  panicked with "close of closed channel". Three clicks of the desktop app's
+  Connect/Disconnect button were enough. Before the crash the restart was also a
+  silent no-op: the second start reported success while every background loop
+  watching the already-closed channel exited immediately, so the server health
+  monitor never probed again. Each run now gets its own shutdown channel,
+  listeners and API server, and a stopped client can be started again cleanly
+- Start and Stop are serialized for their complete duration: a Start racing a
+  Stop used to be admitted the moment the running flag flipped, bring up a
+  fresh run, and then have that run's VPN, mesh, updater, system proxy and
+  connection drain dismantled by the tail of the old Stop. A dedicated
+  lifecycle lock now holds the new Start out until the previous teardown has
+  entirely finished
+- **The system tray is now an honest process-lifetime resource.** The tray
+  library (fyne.io/systray) can only ever run once per process — a second run
+  exits immediately on Linux and its quit is guarded by a package-global
+  once — but the client created a new tray on every Start and quit it on every
+  Stop, leaking one click-loop goroutine per restart cycle and leaving a dead
+  icon after the first stop. The tray is now created once, survives every
+  Stop/Start cycle (Stop just flips the icon to disconnected), and its
+  callbacks always target the currently registered client, so it also survives
+  a full client rebuild. A data race on the tray's status field, between the
+  client's stop path and the tray's own click loop, was fixed along the way
+- A client start that could not bind its HTTP or SOCKS5 listener left the client
+  reporting itself as running, so the desktop app's Connect button (which only
+  starts a client that is not already running) reported success from then on
+  while nothing was listening. A failed start now rolls back: listeners are
+  closed, background goroutines are joined, and the client reports not running
+- **The desktop app's connection indicator was fabricated.** It reported
+  "Connected", with the green shield, whenever a server address was configured —
+  reachable or not. It now performs a real, short reachability probe against the
+  configured server, the same check the client's own API already used
+- **Desktop server selection now switches the live connection.** SelectServer
+  used to mutate only the configuration, so every future dial (and the status
+  probe) kept using the previous upstream while the UI displayed the new one;
+  it now goes through the client's own selection, which reconfigures the live
+  connection and persists the choice. GetServers stopped labeling the selected
+  server "connected" merely because the local client process was running — the
+  selected entry now carries a real probed status and the rest are "available"
+- The desktop Quit control actually quits (it saved preferences and returned);
+  Auto-connect and Start minimized are honored (both were persisted by their
+  toggles and never read — the client always started at launch and the window
+  always opened visible; Auto-connect defaults to on, preserving the previous
+  behavior); the Notifications toggle was removed, because the desktop app has
+  no notifier and a switch that saves a preference nothing reads is worse than
+  no switch
+- Saving the desktop quick settings no longer bounces the VPN as a side
+  effect: the VPN is touched only when its toggle actually changed, and the
+  enable/disable paths take the write lock they mutate state under
+- Desktop server statuses render correctly: the frontend styled
+  online/offline/busy — a vocabulary the backend never emits — so every server
+  showed the fallback style; it now understands connected/disconnected/
+  available. The Edit Server dialog opens with the server's values (it kept
+  its initial state forever, so Edit opened blank and Add retained stale
+  values), and the empty-state "Add Server" button opens the Add dialog
+  instead of being wired to a comment
+- The desktop Connect button follows the local client lifecycle instead of
+  upstream reachability. When the upstream went down, the button flipped to
+  "Connect" — but clicking it was a no-op on the already-running client, and
+  the server list simultaneously said "Connected". A running client with an
+  unreachable upstream now shows a distinct amber state whose action is
+  Disconnect
+- The desktop app's traffic panel rendered permanent zeros as live telemetry.
+  Bytes sent, bytes received and active connections are now read from the
+  client's existing counters
+- Mobile app: every write failed with `403 CSRF validation failed`. The client
+  API requires `X-Requested-With: XMLHttpRequest` on `POST`/`PUT`/`DELETE`/
+  `PATCH`, which both web dashboards send and the app did not — so VPN
+  enable/disable, server selection, config updates, cache clearing and all eight
+  split-tunnel writes were silently inert. The header is now sent on every
+  request
+- Mobile app: server selection called `POST /servers/{id}/select`, which does not
+  exist, with an `id` that was always `undefined` because `ServerInfo` has no
+  such field. It now calls `POST /api/v1/server/select` with
+  `{"server": "<name>"}`, and the server list is keyed on `name`
+- `GET /api/v1/servers` and `POST /api/v1/server/select` now work against the
+  real client, not just the desktop app: the client never supplied the server
+  list or selector, so the list was always `[]` and a select was acknowledged
+  with 200 while changing nothing. The client now reports its `servers:` config
+  (credentials excluded; only the selected entry is probed for reachability),
+  and selection reconfigures the live upstream connection and persists through
+  the comment-preserving save path. An API built without a selector answers
+  501 instead of the previous fake success
+- Mobile app: adding a split-tunnel domain sent `{"domain": ...}` where the
+  handler decodes `{"pattern": ...}`, so every domain rule — from the Split
+  Tunneling screen and the pre-connect sync alike — was rejected with
+  HTTP 400. The request body now matches the handler
+- Mobile app: the `StatusResponse` and `VPNStatus` types matched neither the Go
+  handlers nor the API docs, so the Stats screen showed a permanent `N/A` for
+  nine rows and the session duration, and "Server Status" was permanently
+  "Unknown". Both types now mirror what the handlers emit: `server_connected`
+  and `vpn_status` instead of the non-existent `server_status`, and `vpn.VPNStats`
+  (`uptime`, packet counters, tunneled/bypassed connections, DNS counters)
+  instead of ten fields the API never returned
+- Mobile app: an unreachable client was indistinguishable from an idle one. Home
+  and Stats rendered "Not Connected" with `0 B` on a failed fetch; both now
+  report the failure, name the address they could not reach, and offer a retry
+- Mobile app: the Settings server-address field could overwrite text as the user
+  typed it, because an effect copied the remote client's *upstream* server
+  address into the input on every config refetch
 - The server dashboard's Request Log page crashed to the error boundary as soon
   as `api.enable_request_log` was turned on — the exact thing its own empty state
   told operators to do. The page reads aggregate counters that

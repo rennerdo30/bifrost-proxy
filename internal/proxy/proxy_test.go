@@ -779,7 +779,10 @@ func TestHTTPHandler_handleError_NilCallback(t *testing.T) {
 }
 
 func TestHTTPHandler_DefaultDialTimeout(t *testing.T) {
-	// Test that default dial timeout is set when not specified
+	// An unset DialTimeout stays zero: it is the global network.dial_timeout
+	// FALLBACK, which the backends consult only when they have no
+	// connect_timeout of their own. Injecting 30s here used to cap an
+	// explicitly longer backend connect_timeout.
 	handler := NewHTTPHandler(HTTPHandlerConfig{
 		GetBackend: func(domain, clientIP string) backend.Backend {
 			return nil
@@ -787,7 +790,7 @@ func TestHTTPHandler_DefaultDialTimeout(t *testing.T) {
 		// DialTimeout not set
 	})
 
-	assert.Equal(t, 30*time.Second, handler.dialTimeout)
+	assert.Equal(t, time.Duration(0), handler.dialTimeout)
 }
 
 func TestHTTPHandler_handleHTTP_WriteRequestError(t *testing.T) {

@@ -11,6 +11,23 @@ import (
 )
 
 // Backend represents a connection backend (direct, wireguard, openvpn, etc.)
+// defaultConnectTimeout is the last-resort bound on an outbound backend dial,
+// used only when neither the backend's own connect_timeout nor the global
+// network.dial_timeout is configured.
+const defaultConnectTimeout = 30 * time.Second
+
+// withDialBound bounds ctx for an outbound dial by a backend that carries no
+// dialer of its own. The documented precedence is backend connect_timeout >
+// network.dial_timeout > default; these backends have no connect_timeout, so
+// the supplied fallback (network.dial_timeout, possibly zero) applies, with
+// the package default as the last resort — a zero bound never escapes.
+func withDialBound(ctx context.Context, fallback time.Duration) (context.Context, context.CancelFunc) {
+	if fallback <= 0 {
+		fallback = defaultConnectTimeout
+	}
+	return context.WithTimeout(ctx, fallback)
+}
+
 type Backend interface {
 	// Name returns the backend's unique name.
 	Name() string
