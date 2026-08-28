@@ -1267,18 +1267,6 @@ func TestKeyGenerator_SortedQuery_Empty(t *testing.T) {
 // ============================================================================
 
 // ============================================================================
-// Range - NewRangeReader error
-// ============================================================================
-
-type errorSeeker struct {
-	io.Reader
-}
-
-func (e *errorSeeker) Seek(offset int64, whence int) (int64, error) {
-	return 0, io.ErrUnexpectedEOF
-}
-
-// ============================================================================
 // Validator - ShouldCache edge cases
 // ============================================================================
 
