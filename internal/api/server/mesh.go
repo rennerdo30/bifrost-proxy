@@ -511,8 +511,19 @@ func (m *MeshAPI) handleHeartbeat(w http.ResponseWriter, r *http.Request) {
 
 	peer.UpdateLastSeen()
 
-	// Renew IP lease
-	_ = network.ipAllocator.Renew(peerID) //nolint:errcheck // Best effort IP lease renewal
+	// Renew the IP lease. This is not best-effort: Renew only fails when the
+	// peer has no lease, which means its address was already reaped and may
+	// have been handed to another peer. Reporting 204 there would tell the peer
+	// its address is still valid while the allocator disagrees, so the conflict
+	// would surface later as unexplained mesh traffic going to the wrong node.
+	// 409 tells the peer to re-register and get a fresh lease.
+	if err := network.ipAllocator.Renew(peerID); err != nil {
+		slog.Warn("mesh peer heartbeat could not renew IP lease",
+			"network_id", networkID, "peer_id", peerID, "error", err)
+		http.Error(w, "IP lease expired; re-register to obtain a new address",
+			http.StatusConflict)
+		return
+	}
 
 	w.WriteHeader(http.StatusNoContent)
 }
