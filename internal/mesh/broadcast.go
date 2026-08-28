@@ -654,49 +654,6 @@ func deserializeBroadcastMessage(data []byte) (*BroadcastMessage, error) {
 	}, nil
 }
 
-// EthernetBroadcastHandler handles Ethernet broadcast frames for TAP devices.
-type EthernetBroadcastHandler struct {
-	manager *BroadcastManager
-}
-
-// NewEthernetBroadcastHandler creates a new Ethernet broadcast handler.
-func NewEthernetBroadcastHandler(manager *BroadcastManager) *EthernetBroadcastHandler {
-	return &EthernetBroadcastHandler{
-		manager: manager,
-	}
-}
-
-// HandleFrame handles an Ethernet broadcast/multicast frame.
-func (h *EthernetBroadcastHandler) HandleFrame(dstMAC net.HardwareAddr, frame []byte) error {
-	if isBroadcastMAC(dstMAC) {
-		// Ethernet broadcast - flood to all peers
-		return h.manager.Broadcast(frame, 8)
-	}
-
-	if isMulticastMAC(dstMAC) {
-		// Ethernet multicast - send to multicast group based on MAC
-		groupID := macToGroupID(dstMAC)
-		return h.manager.Multicast(groupID, frame, 8)
-	}
-
-	return nil
-}
-
-// isBroadcastMAC checks if a MAC address is broadcast.
-func isBroadcastMAC(mac net.HardwareAddr) bool {
-	for _, b := range mac {
-		if b != 0xFF {
-			return false
-		}
-	}
-	return true
-}
-
-// isMulticastMAC checks if a MAC address is multicast.
-func isMulticastMAC(mac net.HardwareAddr) bool {
-	return len(mac) > 0 && (mac[0]&0x01) != 0
-}
-
 // macToGroupID converts a multicast MAC to a group ID.
 func macToGroupID(mac net.HardwareAddr) string {
 	return hex.EncodeToString(mac)

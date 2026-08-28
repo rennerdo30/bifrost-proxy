@@ -445,6 +445,17 @@ export LDAP_BIND_PASSWORD="ldap-password"
 bifrost-server -c config.yaml
 ```
 
+> Only `${VAR}` and `${VAR:-fallback}` are expanded; `$$` yields a literal `$`.
+> A bare `$VAR` is not expanded, and every other `$` is literal, so a secret
+> containing `$` survives unchanged. See
+> [Configuration](/configuration/#environment-variables).
+
+### Loader Behavior
+
+| Variable | Description |
+|----------|-------------|
+| `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS` | Set to `1` to downgrade unknown config keys from a startup failure to a warning. Transitional migration aid; see [Configuration](/configuration/#unknown-keys-are-rejected). |
+
 ---
 
 ## Exit Codes

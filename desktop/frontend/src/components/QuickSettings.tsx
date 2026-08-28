@@ -203,15 +203,12 @@ export function QuickSettings({
         enabled={settings.start_minimized}
         onChange={(enabled) => onUpdate({ start_minimized: enabled })}
         label="Start minimized"
-        description="Start in system tray"
+        description="Open the window hidden on launch"
       />
 
-      <ToggleSwitch
-        enabled={settings.show_notifications}
-        onChange={(enabled) => onUpdate({ show_notifications: enabled })}
-        label="Notifications"
-        description="Show connection alerts"
-      />
+      {/* The Notifications toggle was removed: the desktop app has no
+          notifier, so the switch saved a preference nothing read — a control
+          that does nothing is worse than no control. */}
 
       {/* Bifrost Server Configuration */}
       <CollapsibleSection title="Bifrost Server" defaultOpen={true} restartRequired>

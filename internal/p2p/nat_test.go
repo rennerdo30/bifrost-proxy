@@ -220,8 +220,30 @@ func TestNATDetectorDetect(t *testing.T) {
 		info, err := detector.Detect(ctx)
 		require.NoError(t, err)
 		assert.NotNil(t, info)
+		// The mock reports 198.51.100.1, which no local interface holds.
 		assert.True(t, info.IsBehindNAT)
 		assert.NotZero(t, info.DetectedAt)
+	})
+
+	t.Run("mapped address on a local interface means no NAT", func(t *testing.T) {
+		serverConn, err := net.ListenPacket("udp", "127.0.0.1:0")
+		require.NoError(t, err)
+		defer serverConn.Close()
+
+		go handleMockSTUNRequestsEchoingSource(serverConn)
+
+		detector := NewNATDetector([]string{serverConn.LocalAddr().String()}, 5*time.Second)
+		defer detector.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		info, err := detector.Detect(ctx)
+		require.NoError(t, err)
+		// The server saw our real loopback source address, so there is no
+		// NAT between us and it.
+		assert.False(t, info.IsBehindNAT)
+		assert.Equal(t, NATTypeNone, info.Type)
 	})
 
 	t.Run("with two mock servers for NAT type detection", func(t *testing.T) {
@@ -238,8 +260,8 @@ func TestNATDetectorDetect(t *testing.T) {
 		server2Addr := server2Conn.LocalAddr().(*net.UDPAddr)
 
 		// Start mock servers - same mapped address means not symmetric
-		go handleMockSTUNRequestsWithAddress(server1Conn, "198.51.100.1", 12345)
-		go handleMockSTUNRequestsWithAddress(server2Conn, "198.51.100.1", 12345)
+		go handleMockSTUNRequestsWithAddress(server1Conn, 12345)
+		go handleMockSTUNRequestsWithAddress(server2Conn, 12345)
 
 		detector := NewNATDetector([]string{
 			server1Addr.String(),
@@ -271,8 +293,8 @@ func TestNATDetectorDetect(t *testing.T) {
 		server2Addr := server2Conn.LocalAddr().(*net.UDPAddr)
 
 		// Start mock servers - different mapped addresses means symmetric
-		go handleMockSTUNRequestsWithAddress(server1Conn, "198.51.100.1", 12345)
-		go handleMockSTUNRequestsWithAddress(server2Conn, "198.51.100.1", 54321) // Different port
+		go handleMockSTUNRequestsWithAddress(server1Conn, 12345)
+		go handleMockSTUNRequestsWithAddress(server2Conn, 54321) // Different port
 
 		detector := NewNATDetector([]string{
 			server1Addr.String(),
@@ -308,7 +330,6 @@ func TestNATInfo(t *testing.T) {
 		MappedAddress: netip.MustParseAddrPort("203.0.113.50:12345"),
 		LocalAddress:  netip.MustParseAddrPort("192.168.1.100:54321"),
 		IsBehindNAT:   true,
-		Hairpin:       false,
 		DetectedAt:    time.Now(),
 	}
 
@@ -316,16 +337,40 @@ func TestNATInfo(t *testing.T) {
 	assert.Equal(t, netip.MustParseAddrPort("203.0.113.50:12345"), info.MappedAddress)
 	assert.Equal(t, netip.MustParseAddrPort("192.168.1.100:54321"), info.LocalAddress)
 	assert.True(t, info.IsBehindNAT)
-	assert.False(t, info.Hairpin)
 }
 
 // Helper function to handle STUN requests
 func handleMockSTUNRequests(conn net.PacketConn) {
-	handleMockSTUNRequestsWithAddress(conn, "198.51.100.1", 12345)
+	handleMockSTUNRequestsWithAddress(conn, 12345)
 }
 
+// handleMockSTUNRequestsEchoingSource answers with the client's actual
+// source address, the way a STUN server sees an un-NATed client.
+//
 //nolint:unparam // ip is always "198.51.100.1" in tests but kept for test readability
-func handleMockSTUNRequestsWithAddress(conn net.PacketConn, ip string, port int) {
+func handleMockSTUNRequestsEchoingSource(conn net.PacketConn) {
+	buf := make([]byte, 1024)
+	for {
+		n, clientAddr, err := conn.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+		if n < stunHeaderSize {
+			continue
+		}
+		src := clientAddr.(*net.UDPAddr)
+		transactionID := buf[8:20]
+		response := buildMockSTUNResponseWithIP(transactionID, src.IP.String(), src.Port)
+		conn.WriteTo(response, clientAddr)
+	}
+}
+
+// mockSTUNMappedIP is the mapped address every mock STUN server reports. The
+// tests vary only the port, so this is a constant rather than a parameter -
+// passing the same literal at every call site is what unparam flagged.
+const mockSTUNMappedIP = "198.51.100.1"
+
+func handleMockSTUNRequestsWithAddress(conn net.PacketConn, port int) {
 	buf := make([]byte, 1024)
 	for {
 		n, clientAddr, err := conn.ReadFrom(buf)
@@ -338,7 +383,7 @@ func handleMockSTUNRequestsWithAddress(conn net.PacketConn, ip string, port int)
 		}
 
 		transactionID := buf[8:20]
-		response := buildMockSTUNResponseWithIP(transactionID, ip, port)
+		response := buildMockSTUNResponseWithIP(transactionID, mockSTUNMappedIP, port)
 		conn.WriteTo(response, clientAddr)
 	}
 }
