@@ -10,6 +10,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { api, formatBytes, formatUptime } from '../services/api'
 import { StatusCard } from '../components/StatusCard'
+import { formatNumber, t, vpnStatusLabel } from '../i18n'
 
 const COLOR_TEXT = '#f9fafb'
 const COLOR_SUCCESS = '#22c55e'
@@ -49,7 +50,7 @@ function StatRow({ label, value, color = COLOR_TEXT }: StatRowProps) {
 
 /** Format an integer counter, distinguishing "no reading" from a real zero. */
 function formatCount(value: number | undefined): string {
-  return value == null ? NO_VALUE : value.toLocaleString()
+  return value == null ? NO_VALUE : formatNumber(value)
 }
 
 export function StatsScreen() {
@@ -90,7 +91,7 @@ export function StatsScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLOR_INFO} />
-        <Text style={styles.loadingText}>Loading statistics...</Text>
+        <Text style={styles.loadingText}>{t('stats.loading')}</Text>
       </View>
     )
   }
@@ -101,9 +102,9 @@ export function StatsScreen() {
     return (
       <View style={styles.loadingContainer} accessible={true} accessibilityRole="alert">
         <Text style={styles.errorIcon}>!</Text>
-        <Text style={styles.errorTitle}>Statistics unavailable</Text>
+        <Text style={styles.errorTitle}>{t('stats.unavailable')}</Text>
         <Text style={styles.errorDetail}>
-          {error instanceof Error ? error.message : 'Could not reach the Bifrost client'}
+          {error instanceof Error ? error.message : t('stats.unreachable')}
         </Text>
         <TouchableOpacity
           style={styles.retryButton}
@@ -112,9 +113,9 @@ export function StatsScreen() {
             void refetchStatus()
           }}
           accessibilityRole="button"
-          accessibilityLabel="Retry loading statistics"
+          accessibilityLabel={t('stats.retryLabel')}
         >
-          <Text style={styles.retryButtonText}>Retry</Text>
+          <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
         </TouchableOpacity>
       </View>
     )
@@ -127,13 +128,13 @@ export function StatsScreen() {
       {/* Overview Cards */}
       <View style={styles.cardsGrid}>
         <StatusCard
-          title="Total Sent"
+          title={t('stats.totalSent')}
           value={formatBytes(vpnStatus?.bytes_sent || 0)}
           icon="↑"
           color={COLOR_SUCCESS}
         />
         <StatusCard
-          title="Total Received"
+          title={t('stats.totalReceived')}
           value={formatBytes(vpnStatus?.bytes_received || 0)}
           icon="↓"
           color={COLOR_INFO}
@@ -142,13 +143,13 @@ export function StatsScreen() {
 
       {/* Session Stats */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Current Session</Text>
+        <Text style={styles.sectionTitle}>{t('stats.currentSession')}</Text>
         <View style={styles.statsCard}>
-          <StatRow label="Duration" value={sessionDuration ?? NO_VALUE} />
-          <StatRow label="Total Data" value={formatBytes(totalBytes)} />
+          <StatRow label={t('stats.duration')} value={sessionDuration ?? NO_VALUE} />
+          <StatRow label={t('stats.totalData')} value={formatBytes(totalBytes)} />
           <StatRow
-            label="VPN Status"
-            value={vpnStatus?.status ?? NO_VALUE}
+            label={t('stats.vpnStatus')}
+            value={vpnStatus?.status ? vpnStatusLabel(vpnStatus.status) : NO_VALUE}
             color={vpnStatus?.status === 'connected' ? COLOR_SUCCESS : COLOR_MUTED}
           />
         </View>
@@ -156,12 +157,12 @@ export function StatsScreen() {
 
       {/* Traffic - every field below exists on vpn.VPNStats */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Traffic</Text>
+        <Text style={styles.sectionTitle}>{t('stats.traffic')}</Text>
         <View style={styles.statsCard}>
-          <StatRow label="Packets Sent" value={formatCount(vpnStatus?.packets_sent)} />
-          <StatRow label="Packets Received" value={formatCount(vpnStatus?.packets_received)} />
+          <StatRow label={t('stats.packetsSent')} value={formatCount(vpnStatus?.packets_sent)} />
+          <StatRow label={t('stats.packetsReceived')} value={formatCount(vpnStatus?.packets_received)} />
           <StatRow
-            label="Active Connections"
+            label={t('stats.activeConnections')}
             value={formatCount(vpnStatus?.active_connections)}
           />
         </View>
@@ -169,41 +170,41 @@ export function StatsScreen() {
 
       {/* Split Tunneling */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Split Tunneling</Text>
+        <Text style={styles.sectionTitle}>{t('stats.splitTunneling')}</Text>
         <View style={styles.statsCard}>
-          <StatRow label="Tunneled" value={formatCount(vpnStatus?.tunneled_connections)} />
-          <StatRow label="Bypassed" value={formatCount(vpnStatus?.bypassed_connections)} />
+          <StatRow label={t('stats.tunneled')} value={formatCount(vpnStatus?.tunneled_connections)} />
+          <StatRow label={t('stats.bypassed')} value={formatCount(vpnStatus?.bypassed_connections)} />
         </View>
       </View>
 
       {/* DNS */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>DNS</Text>
+        <Text style={styles.sectionTitle}>{t('stats.dns')}</Text>
         <View style={styles.statsCard}>
-          <StatRow label="Queries" value={formatCount(vpnStatus?.dns_queries)} />
-          <StatRow label="Cache Hits" value={formatCount(vpnStatus?.dns_cache_hits)} />
+          <StatRow label={t('stats.queries')} value={formatCount(vpnStatus?.dns_queries)} />
+          <StatRow label={t('stats.cacheHits')} value={formatCount(vpnStatus?.dns_cache_hits)} />
         </View>
       </View>
 
       {/* Client Info */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Client Information</Text>
+        <Text style={styles.sectionTitle}>{t('stats.clientInfo')}</Text>
         <View style={styles.statsCard}>
-          <StatRow label="Version" value={status?.version || NO_VALUE} />
-          <StatRow label="Uptime" value={status?.uptime || NO_VALUE} />
-          <StatRow label="Debug Entries" value={formatCount(status?.debug_entries)} />
+          <StatRow label={t('stats.version')} value={status?.version || NO_VALUE} />
+          <StatRow label={t('stats.uptime')} value={status?.uptime || NO_VALUE} />
+          <StatRow label={t('stats.debugEntries')} value={formatCount(status?.debug_entries)} />
           <StatRow
-            label="Server Status"
-            value={serverConnected ? 'Connected' : 'Disconnected'}
+            label={t('stats.serverStatus')}
+            value={serverConnected ? t('common.connected') : t('common.disconnected')}
             color={serverConnected ? COLOR_SUCCESS : COLOR_WARNING}
           />
-          <StatRow label="Server Address" value={status?.server_address || NO_VALUE} />
+          <StatRow label={t('stats.serverAddress')} value={status?.server_address || NO_VALUE} />
         </View>
       </View>
 
       {/* Proxy Listeners */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Proxy Listeners</Text>
+        <Text style={styles.sectionTitle}>{t('stats.proxyListeners')}</Text>
         <View style={styles.statsCard}>
           <StatRow label="HTTP" value={status?.http_proxy || NO_VALUE} />
           <StatRow label="SOCKS5" value={status?.socks5_proxy || NO_VALUE} />
@@ -213,7 +214,7 @@ export function StatsScreen() {
       {/* Error Display */}
       {vpnStatus?.last_error && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Last Error</Text>
+          <Text style={styles.sectionTitle}>{t('stats.lastError')}</Text>
           <View style={styles.errorCard}>
             <Text style={styles.errorText}>{vpnStatus.last_error}</Text>
           </View>

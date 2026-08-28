@@ -94,7 +94,14 @@ export function Settings() {
   const resetToDefaults = async () => {
     try {
       const defaults = await api.getConfigDefaults()
-      updateMutation.mutate(defaults)
+      // The defaults payload carries routes: null, which the update endpoint
+      // persisted verbatim — nulling out the routes section instead of
+      // resetting it. Strip null/undefined sections so only real defaults are
+      // applied.
+      const sanitized = Object.fromEntries(
+        Object.entries(defaults as unknown as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined)
+      )
+      updateMutation.mutate(sanitized)
     } catch (err) {
       if (import.meta.env.DEV) console.error('Failed to reset to defaults:', err)
       showToast(`Failed to reset to defaults: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error')

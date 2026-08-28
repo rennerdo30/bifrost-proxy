@@ -469,11 +469,15 @@ func (c *CacheAPI) handleListPresets(w http.ResponseWriter, r *http.Request) {
 	presets := cache.AllPresets()
 	response := make([]map[string]interface{}, 0, len(presets))
 
-	// Get currently enabled presets
+	// Get currently enabled presets. Disabling a preset sets its rule's
+	// Enabled to false rather than removing it, so the mere presence of the
+	// rule is not enough — the old check reported a preset as enabled forever
+	// once it had been enabled a single time, and the dashboard toggle never
+	// appeared to stick when switched off.
 	enabledPresets := make(map[string]bool)
 	if c.manager != nil {
 		for _, rule := range c.manager.Rules().All() {
-			if rule.Preset != "" {
+			if rule.Preset != "" && rule.Enabled {
 				enabledPresets[rule.Preset] = true
 			}
 		}

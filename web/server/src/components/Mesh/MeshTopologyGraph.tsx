@@ -20,6 +20,19 @@ interface NodePosition {
   peer: MeshPeerInfo
 }
 
+// Node coordinates, drawing (through a dpr-scaled context) and mouse events
+// all share CSS pixel space. canvas.width/height are device pixels (CSS size
+// × devicePixelRatio) and must never be used for layout math, or clicks stop
+// registering on high-DPI screens.
+function cssSize(canvas: HTMLCanvasElement) {
+  const rect = canvas.getBoundingClientRect()
+  const dpr = window.devicePixelRatio || 1
+  return {
+    width: rect.width || canvas.width / dpr,
+    height: rect.height || canvas.height / dpr,
+  }
+}
+
 function getStatusColor(status: MeshPeerStatus | undefined): string {
   switch (status) {
     case 'connected':
@@ -56,8 +69,7 @@ export function MeshTopologyGraph({
     const canvas = canvasRef.current
     if (!canvas) return
 
-    const width = canvas.width
-    const height = canvas.height
+    const { width, height } = cssSize(canvas)
     const centerX = width / 2
     const centerY = height / 2
     const radius = Math.min(width, height) * 0.35
@@ -90,8 +102,7 @@ export function MeshTopologyGraph({
     if (!canvas) return
 
     const nodes = nodesRef.current
-    const width = canvas.width
-    const height = canvas.height
+    const { width, height } = cssSize(canvas)
     const centerX = width / 2
     const centerY = height / 2
 
@@ -151,7 +162,6 @@ export function MeshTopologyGraph({
     if (!canvas || !ctx) return
 
     const nodes = nodesRef.current
-    const dpr = window.devicePixelRatio || 1
 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -224,7 +234,7 @@ export function MeshTopologyGraph({
 
       // Node label
       ctx.fillStyle = '#ffffff'
-      ctx.font = `bold ${12 * dpr}px system-ui`
+      ctx.font = 'bold 12px system-ui'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(
@@ -235,7 +245,7 @@ export function MeshTopologyGraph({
 
       // Name label below
       ctx.fillStyle = 'rgba(255, 255, 255, 0.7)'
-      ctx.font = `${10 * dpr}px system-ui`
+      ctx.font = '10px system-ui'
       ctx.fillText(
         node.peer.name || node.peer.id.slice(0, 8),
         node.x,

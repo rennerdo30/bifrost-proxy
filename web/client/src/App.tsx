@@ -3,7 +3,6 @@ import { Layout } from './components/Layout/Layout'
 import { ErrorBoundary, SectionErrorBoundary } from './components/ErrorBoundary'
 import { Traffic } from './pages/Traffic'
 import { RoutesPage } from './pages/Routes'
-import { Cache } from './pages/Cache'
 import { VPN } from './pages/VPN'
 import { Mesh } from './pages/Mesh'
 import { Settings } from './pages/Settings'
@@ -24,11 +23,6 @@ export default function App() {
             <Route path="routes" element={
               <SectionErrorBoundary section="Routes">
                 <RoutesPage />
-              </SectionErrorBoundary>
-            } />
-            <Route path="cache" element={
-              <SectionErrorBoundary section="Cache">
-                <Cache />
               </SectionErrorBoundary>
             } />
             <Route path="vpn" element={

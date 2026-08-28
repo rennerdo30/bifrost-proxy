@@ -11,6 +11,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ServerInfo } from '../services/api'
 import { getStatusColor } from '../utils/status'
+import { formatNumber, t } from '../i18n'
 
 export function ServersScreen() {
   const queryClient = useQueryClient()
@@ -62,12 +63,15 @@ export function ServersScreen() {
     const isConnecting = selectMutation.isPending && selectMutation.variables === item.name
 
     // Build accessibility label with all relevant server info
-    const statusText = isDisabled ? 'offline' : item.status
-    const selectedText = isSelected ? ', currently selected' : ''
-    const defaultText = item.is_default ? ', default server' : ''
-    const latencyText = item.latency_ms != null && item.latency_ms > 0 ? `, latency ${item.latency_ms} milliseconds` : ''
-    const connectingText = isConnecting ? ', connecting' : ''
-    const accessibilityLabel = `${item.name}, ${item.address}, ${item.protocol}, ${statusText}${defaultText}${selectedText}${latencyText}${connectingText}`
+    const statusText = t(`servers.${isDisabled ? 'offline' : item.status}`)
+    const details = [item.name, item.address, item.protocol, statusText]
+    if (item.is_default) details.push(t('servers.default'))
+    if (isSelected) details.push(t('servers.selected'))
+    if (item.latency_ms != null && item.latency_ms > 0) {
+      details.push(t('servers.latency', { value: formatNumber(item.latency_ms) }))
+    }
+    if (isConnecting) details.push(t('servers.connecting'))
+    const accessibilityLabel = details.join(', ')
 
     return (
       <TouchableOpacity
@@ -86,7 +90,7 @@ export function ServersScreen() {
           selected: isSelected,
           busy: isConnecting,
         }}
-        accessibilityHint={isDisabled ? 'Server is offline and cannot be selected' : 'Double tap to connect to this server'}
+        accessibilityHint={isDisabled ? t('servers.offlineHint') : t('servers.selectHint')}
       >
         <View style={styles.serverHeader}>
           <View style={styles.serverInfo}>
@@ -96,7 +100,7 @@ export function ServersScreen() {
               </Text>
               {item.is_default && (
                 <View style={styles.defaultBadge}>
-                  <Text style={styles.defaultText}>Default</Text>
+                  <Text style={styles.defaultText}>{t('common.default')}</Text>
                 </View>
               )}
             </View>
@@ -120,7 +124,7 @@ export function ServersScreen() {
           </Text>
           {item.latency_ms != null && item.latency_ms > 0 && (
             <Text style={[styles.latencyText, isDisabled && styles.textDisabled]}>
-              {item.latency_ms}ms
+              {formatNumber(item.latency_ms)}ms
             </Text>
           )}
         </View>
@@ -132,7 +136,7 @@ export function ServersScreen() {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Loading servers...</Text>
+        <Text style={styles.loadingText}>{t('servers.loading')}</Text>
       </View>
     )
   }
@@ -141,18 +145,18 @@ export function ServersScreen() {
     return (
       <View style={styles.centerContainer}>
         <Text style={styles.errorIcon}>!</Text>
-        <Text style={styles.errorText}>Failed to load servers</Text>
+        <Text style={styles.errorText}>{t('servers.loadFailed')}</Text>
         <Text style={styles.errorDetail}>
-          {error instanceof Error ? error.message : 'Unknown error'}
+          {error instanceof Error ? error.message : t('common.unknownError')}
         </Text>
         <TouchableOpacity
           style={styles.retryButton}
           onPress={() => refetch()}
           accessibilityRole="button"
-          accessibilityLabel="Retry loading servers"
-          accessibilityHint="Double tap to retry loading the server list"
+          accessibilityLabel={t('servers.retryLabel')}
+          accessibilityHint={t('servers.retryHint')}
         >
-          <Text style={styles.retryButtonText}>Retry</Text>
+          <Text style={styles.retryButtonText}>{t('common.retry')}</Text>
         </TouchableOpacity>
       </View>
     )
@@ -160,11 +164,11 @@ export function ServersScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>Available Servers</Text>
+      <Text style={styles.sectionTitle}>{t('servers.available')}</Text>
       {selectMutation.isError && (
         <View style={styles.errorBanner}>
           <Text style={styles.errorBannerText}>
-            Failed to connect: {selectMutation.error instanceof Error ? selectMutation.error.message : 'Unknown error'}
+            {t('servers.connectFailed', { error: selectMutation.error instanceof Error ? selectMutation.error.message : t('common.unknownError') })}
           </Text>
         </View>
       )}
@@ -182,13 +186,13 @@ export function ServersScreen() {
             }}
             tintColor="#3b82f6"
             colors={['#3b82f6']}
-            accessibilityLabel="Pull to refresh server list"
+            accessibilityLabel={t('servers.pullRefresh')}
           />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No servers configured</Text>
-            <Text style={styles.emptySubtext}>Add servers in your client configuration</Text>
+            <Text style={styles.emptyText}>{t('servers.empty')}</Text>
+            <Text style={styles.emptySubtext}>{t('servers.emptyHint')}</Text>
           </View>
         }
       />

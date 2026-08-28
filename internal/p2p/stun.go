@@ -167,6 +167,21 @@ func (c *STUNClient) GetLocalPort() int {
 	return localAddr.Port
 }
 
+// GetLocalAddr returns the local address of the STUN socket, or the zero
+// AddrPort when no socket is open.
+func (c *STUNClient) GetLocalAddr() netip.AddrPort {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.conn == nil {
+		return netip.AddrPort{}
+	}
+	if ua, ok := c.conn.LocalAddr().(*net.UDPAddr); ok {
+		return ua.AddrPort()
+	}
+	return netip.AddrPort{}
+}
+
 // Close closes the STUN client.
 func (c *STUNClient) Close() error {
 	c.mu.Lock()

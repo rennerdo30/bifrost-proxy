@@ -11,9 +11,11 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { APIError, api, formatBytes, getCurrentServerAddress } from '../services/api'
 import { getStoredSplitTunnelConfig } from '../services/storage'
+import { replaceRemoteSplitTunnelConfig } from '../services/splitTunnelSync'
 import { StatusCard } from '../components/StatusCard'
 import { ConnectionStatus, getConnectionStatusColor } from '../utils/status'
 import { useToast } from '../components/Toast'
+import { t } from '../i18n'
 
 // Constants for exponential backoff
 const BASE_RETRY_DELAY = 1000 // 1 second
@@ -58,71 +60,21 @@ export function HomeScreen() {
     refetchInterval: SERVER_REFETCH_INTERVAL,
   })
 
-  /**
-   * Push the locally stored split tunnel rules to the client before enabling the
-   * VPN, and report how many pushes failed.
-   *
-   * Known limitation: this only *adds* rules. Rules the operator disabled or
-   * deleted on the phone are not removed from the client, because reconciling
-   * against the client's own rule set needs `GET /vpn/split/rules` to return
-   * a stable JSON shape, which it does not yet (`internal/vpn.SplitTunnelConfig`
-   * carries `yaml:` tags only). Sync failures are surfaced rather than swallowed
-   * so the operator is not misled about which rules are in force.
-   */
-  const syncSplitTunnelRules = async (): Promise<number> => {
-    let failures = 0
-    const push = async (operation: () => Promise<unknown>) => {
-      try {
-        await operation()
-      } catch (error) {
-        failures += 1
-        console.warn('Split tunnel rule sync failed:', error)
-      }
-    }
-
-    try {
-      const config = await getStoredSplitTunnelConfig()
-
-      await push(() => api.setSplitTunnelMode(config.mode))
-
-      for (const app of config.apps.filter((a) => a.enabled)) {
-        await push(() => api.addSplitTunnelApp({ name: app.name, path: app.packageId }))
-      }
-      for (const domain of config.domains.filter((d) => d.enabled)) {
-        await push(() => api.addSplitTunnelDomain(domain.domain))
-      }
-      for (const ip of config.ips.filter((i) => i.enabled)) {
-        await push(() => api.addSplitTunnelIP(ip.cidr))
-      }
-    } catch (error) {
-      // Continue with VPN connection even if the local config cannot be read
-      console.warn('Failed to read stored split tunnel rules:', error)
-      failures += 1
-    }
-
-    return failures
-  }
-
   const connectMutation = useMutation({
     mutationFn: async () => {
-      // Sync split tunnel rules before enabling VPN
-      const syncFailures = await syncSplitTunnelRules()
-      await api.enableVPN()
-      return { syncFailures }
+      // Replace remote active rules with the locally enabled policy before the
+      // tunnel comes up. A partial sync is fail-closed: VPN enable is never
+      // attempted, and the exact failed operation reaches onError.
+      const splitConfig = await getStoredSplitTunnelConfig()
+      await replaceRemoteSplitTunnelConfig(api, splitConfig)
+      return api.enableVPN()
     },
-    onSuccess: ({ syncFailures }) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
-      if (syncFailures > 0) {
-        showToast(
-          `VPN connected, but ${syncFailures} split tunnel rule(s) could not be applied`,
-          'error'
-        )
-        return
-      }
-      showToast('VPN connected successfully', 'success')
+      showToast(t('home.vpnConnected'), 'success')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to connect VPN', 'error')
+      showToast(error.message || t('home.connectFailed'), 'error')
     },
   })
 
@@ -130,10 +82,10 @@ export function HomeScreen() {
     mutationFn: api.disableVPN,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['vpn-status'] })
-      showToast('VPN disconnected', 'info')
+      showToast(t('home.vpnDisconnected'), 'info')
     },
     onError: (error: Error) => {
-      showToast(error.message || 'Failed to disconnect VPN', 'error')
+      showToast(error.message || t('home.disconnectFailed'), 'error')
     },
   })
 
@@ -178,11 +130,11 @@ export function HomeScreen() {
 
       // Show error toast with backoff information
       if (retryCountRef.current >= MAX_RETRY_COUNT) {
-        showToast('Refresh failed. Please check your connection.', 'error')
+        showToast(t('home.refreshFailed'), 'error')
       } else {
         const nextRetrySeconds = Math.round(backoffDelay / 1000)
         showToast(
-          `Refresh failed. Retry in ${nextRetrySeconds}s (attempt ${retryCountRef.current}/${MAX_RETRY_COUNT})`,
+          t('home.refreshRetry', { seconds: nextRetrySeconds, attempt: retryCountRef.current, max: MAX_RETRY_COUNT }),
           'error'
         )
       }
@@ -201,10 +153,10 @@ export function HomeScreen() {
   const unreachableError = vpnError ?? statusError
   const unreachableReason =
     unreachableError instanceof APIError && unreachableError.isUnauthorized
-      ? 'Authentication failed. Check the API token in Settings.'
+      ? t('home.authFailed')
       : unreachableError instanceof Error
         ? unreachableError.message
-        : 'Could not reach the Bifrost client'
+        : t('home.unreachable')
 
   const getConnectionStatus = (): ConnectionStatus => {
     if (isToggling) return 'connecting'
@@ -229,30 +181,30 @@ export function HomeScreen() {
   const getStatusText = () => {
     switch (connectionStatus) {
       case 'connected':
-        return 'Protected'
+        return t('home.protected')
       case 'connecting':
-        return 'Connecting...'
+        return t('home.connecting')
       case 'error':
-        return 'Error'
+        return t('common.error')
       case 'unreachable':
-        return 'Client Unreachable'
+        return t('home.clientUnreachable')
       default:
-        return 'Not Connected'
+        return t('home.notConnected')
     }
   }
 
   const getStatusDescription = () => {
     switch (connectionStatus) {
       case 'connected':
-        return 'Your connection is secure'
+        return t('home.secure')
       case 'connecting':
-        return 'Establishing secure connection...'
+        return t('home.establishing')
       case 'error':
-        return 'Connection failed - tap to retry'
+        return t('home.failedRetry')
       case 'unreachable':
-        return `Cannot reach ${getCurrentServerAddress()} - pull down to retry`
+        return t('home.cannotReach', { address: getCurrentServerAddress() })
       default:
-        return 'Tap the button to connect'
+        return t('home.tapConnect')
     }
   }
 
@@ -260,7 +212,7 @@ export function HomeScreen() {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={styles.loadingText}>Contacting Bifrost client...</Text>
+        <Text style={styles.loadingText}>{t('home.contacting')}</Text>
       </View>
     )
   }
@@ -274,7 +226,7 @@ export function HomeScreen() {
           refreshing={isRefreshing}
           onRefresh={onRefresh}
           tintColor="#3b82f6"
-          accessibilityLabel="Pull to refresh connection status"
+          accessibilityLabel={t('home.pullRefresh')}
         />
       }
     >
@@ -286,14 +238,14 @@ export function HomeScreen() {
             onPress={handleToggle}
             disabled={isToggling || isUnreachable}
             activeOpacity={0.8}
-            accessibilityLabel={isConnected ? 'Disconnect from VPN' : 'Connect to VPN'}
+            accessibilityLabel={isConnected ? t('home.disconnectVPN') : t('home.connectVPN')}
             accessibilityRole="button"
             accessibilityState={{ disabled: isToggling || isUnreachable }}
             accessibilityHint={
               isUnreachable
-                ? 'The Bifrost client cannot be reached'
+                ? t('home.unreachableHint')
                 : isToggling
-                  ? 'Connection in progress'
+                  ? t('home.connectionInProgress')
                   : undefined
             }
           >
@@ -307,7 +259,7 @@ export function HomeScreen() {
         <Text
           style={[styles.statusText, { color: statusColor }]}
           accessibilityRole="text"
-          accessibilityLabel={`Connection status: ${getStatusText()}`}
+          accessibilityLabel={t('home.connectionStatus', { status: getStatusText() })}
         >
           {getStatusText()}
         </Text>
@@ -323,7 +275,7 @@ export function HomeScreen() {
           style={styles.errorCard}
           accessible={true}
           accessibilityRole="alert"
-          accessibilityLabel={`Client unreachable: ${unreachableReason}`}
+          accessibilityLabel={t('home.unreachableLabel', { reason: unreachableReason })}
         >
           <Text style={styles.errorText} importantForAccessibility="no">
             {unreachableReason}
@@ -337,7 +289,7 @@ export function HomeScreen() {
           style={styles.errorCard}
           accessible={true}
           accessibilityRole="alert"
-          accessibilityLabel={`Connection error: ${vpnStatus.last_error}`}
+          accessibilityLabel={t('home.connectionError', { error: vpnStatus.last_error })}
         >
           <Text style={styles.errorText} importantForAccessibility="no">
             {vpnStatus.last_error}
@@ -349,13 +301,13 @@ export function HomeScreen() {
       {!isUnreachable && (
         <View style={styles.statsGrid}>
           <StatusCard
-            title="Upload"
+            title={t('home.upload')}
             value={formatBytes(vpnStatus?.bytes_sent || 0)}
             icon="↑"
             color="#22c55e"
           />
           <StatusCard
-            title="Download"
+            title={t('home.download')}
             value={formatBytes(vpnStatus?.bytes_received || 0)}
             icon="↓"
             color="#3b82f6"
@@ -369,13 +321,13 @@ export function HomeScreen() {
           style={styles.serverCard}
           accessible={true}
           accessibilityRole="text"
-          accessibilityLabel={`Connected to ${activeServer?.name || 'Bifrost Server'} at ${activeServer?.address || getCurrentServerAddress()}`}
+          accessibilityLabel={t('home.connectedToA11y', { name: activeServer?.name || t('home.defaultServer'), address: activeServer?.address || getCurrentServerAddress() })}
         >
           <Text style={styles.serverLabel} importantForAccessibility="no">
-            Connected to
+            {t('home.connectedTo')}
           </Text>
           <Text style={styles.serverName} importantForAccessibility="no">
-            {activeServer?.name || 'Bifrost Server'}
+            {activeServer?.name || t('home.defaultServer')}
           </Text>
           <Text style={styles.serverAddress} importantForAccessibility="no">
             {activeServer?.address || getCurrentServerAddress()}
