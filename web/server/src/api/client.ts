@@ -49,6 +49,9 @@ const DEFAULT_TIMEOUT = 30000 // 30 seconds
 
 /** HTTP status chi returns for a path that has no handler registered. */
 const HTTP_NOT_FOUND = 404
+const HTTP_STATUS_UNAUTHORIZED = 401
+/** The login endpoint answers this when no session store is configured. */
+const HTTP_STATUS_SERVICE_UNAVAILABLE = 503
 
 class APIError extends Error {
   constructor(
@@ -87,8 +90,20 @@ export function retryUnlessUnavailable(failureCount: number, error: unknown): bo
   return !isFeatureUnavailable(error) && failureCount < MAX_QUERY_RETRIES
 }
 
+/** Fired when the server rejects our credential, so the shell can prompt. */
+export const UNAUTHORIZED_EVENT = 'bifrost:unauthorized'
+
+function onUnauthorized() {
+  if (localStorage.getItem(SESSION_STORAGE_KEY) === '1') {
+    localStorage.removeItem(SESSION_STORAGE_KEY)
+  }
+  window.dispatchEvent(new Event(UNAUTHORIZED_EVENT))
+}
+
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('bifrost_api_token')
+  // Once the token has been exchanged for an HttpOnly session cookie the token
+  // is no longer stored, and the cookie the browser sends is the credential.
+  const token = getApiToken()
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     'X-Requested-With': 'XMLHttpRequest', // CSRF protection
@@ -103,11 +118,20 @@ async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
     const res = await fetch(`${API_BASE}${path}`, {
       ...options,
       headers,
+      // Send the session cookie. Same-origin by default, but explicit so the
+      // credential is not dropped if the dashboard is ever served cross-origin.
+      credentials: 'same-origin',
       signal: controller.signal,
     })
     clearTimeout(timeoutId)
 
     if (!res.ok) {
+      if (res.status === HTTP_STATUS_UNAUTHORIZED) {
+        // A session cookie expires. Drop the stale "signed in" marker and let
+        // the shell prompt for the token again, rather than leaving every page
+        // showing a bare error the operator cannot act on.
+        onUnauthorized()
+      }
       const text = await res.text().catch(() => '')
       throw new APIError(res.status, text || `Request failed with status ${res.status}`)
     }
@@ -288,17 +312,106 @@ export const api = {
     ),
 }
 
-// Token management
+// ---------------------------------------------------------------------------
+// Credentials
+//
+// Two mechanisms, in order of preference:
+//
+//   1. A session cookie, obtained by POSTing the API token to /login. The
+//      cookie is HttpOnly, so script cannot read it and an XSS cannot exfiltrate
+//      it. The token itself is then NOT persisted.
+//   2. The raw API token in localStorage, sent as `Authorization: Bearer`. This
+//      is the fallback for servers with no `session:` block configured, where
+//      /login answers 503.
+//
+// Mechanism 1 is what the server's login endpoint was built for; the dashboard
+// previously only ever did 2, keeping a long-lived credential where any injected
+// script could read it.
+// ---------------------------------------------------------------------------
+
+const TOKEN_STORAGE_KEY = 'bifrost_api_token'
+const SESSION_STORAGE_KEY = 'bifrost_session_active'
+
+/** True when a session cookie was successfully established. */
+export function hasSession(): boolean {
+  return localStorage.getItem(SESSION_STORAGE_KEY) === '1'
+}
+
 export function setApiToken(token: string) {
-  localStorage.setItem('bifrost_api_token', token)
+  localStorage.setItem(TOKEN_STORAGE_KEY, token)
 }
 
 export function getApiToken(): string | null {
-  return localStorage.getItem('bifrost_api_token')
+  return localStorage.getItem(TOKEN_STORAGE_KEY)
 }
 
 export function clearApiToken() {
-  localStorage.removeItem('bifrost_api_token')
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
+  localStorage.removeItem(SESSION_STORAGE_KEY)
+}
+
+export interface LoginOutcome {
+  /** 'session': cookie established, token discarded. 'token': falling back to bearer. */
+  mode: 'session' | 'token'
+  expiresAt?: string
+}
+
+/**
+ * Exchange an API token for a session cookie.
+ *
+ * On success the token is deliberately *not* written to localStorage — the
+ * cookie is the credential from then on. When the server has no session store
+ * configured it answers 503, and we fall back to persisting the bearer token so
+ * the dashboard keeps working; that is a weaker posture, and `mode` reports it
+ * so the UI can say so.
+ *
+ * A wrong token throws, and nothing is persisted.
+ */
+export async function login(token: string): Promise<LoginOutcome> {
+  const res = await fetch(`${API_BASE}/login`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Requested-With': 'XMLHttpRequest',
+    },
+    credentials: 'same-origin',
+    body: JSON.stringify({ token }),
+  })
+
+  // 503 means "endpoint exists, feature disabled". 404 is tolerated too, for a
+  // server built before /login was mounted unconditionally — there the route
+  // simply did not exist when no session store was configured.
+  if (res.status === HTTP_STATUS_SERVICE_UNAVAILABLE || res.status === HTTP_NOT_FOUND) {
+    // No session store on this server: fall back to the bearer token.
+    setApiToken(token)
+    localStorage.removeItem(SESSION_STORAGE_KEY)
+    return { mode: 'token' }
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new APIError(res.status, text || `Login failed with status ${res.status}`)
+  }
+
+  const body = (await res.json().catch(() => ({}))) as { expires_at?: string }
+
+  // The cookie is now the credential; do not keep the token around.
+  localStorage.removeItem(TOKEN_STORAGE_KEY)
+  localStorage.setItem(SESSION_STORAGE_KEY, '1')
+  return { mode: 'session', expiresAt: body.expires_at }
+}
+
+/** Destroy the server-side session and forget every local credential. */
+export async function logout(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/logout`, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      credentials: 'same-origin',
+    })
+  } finally {
+    clearApiToken()
+  }
 }
 
 export { APIError }

@@ -1,40 +1,88 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Modal } from '../Config/Modal'
-import { getApiToken, setApiToken, clearApiToken } from '../../api/client'
+import {
+  APIError,
+  UNAUTHORIZED_EVENT,
+  clearApiToken,
+  getApiToken,
+  hasSession,
+  login,
+  logout,
+} from '../../api/client'
 
-// ApiTokenButton lets an operator supply the API token the dashboard sends as
-// `Authorization: Bearer <token>` (and as `?token=` on WebSocket handshakes).
-// This is required whenever the server has `api.token` configured; without it
-// every /api/v1/* call returns 401 and the dashboard cannot load data.
+// ApiTokenButton takes the API token the server configures as `api.token` and,
+// where the server has a `session:` store, exchanges it for an HttpOnly session
+// cookie so the token itself is never persisted where script can read it. On a
+// server without sessions it falls back to storing the token and sending
+// `Authorization: Bearer`.
 export function ApiTokenButton() {
   const [isOpen, setIsOpen] = useState(false)
   const [value, setValue] = useState('')
   const [show, setShow] = useState(false)
-  const hasToken = !!getApiToken()
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const sessionActive = hasSession()
+  const tokenStored = !!getApiToken()
+  const authenticated = sessionActive || tokenStored
 
   const open = () => {
-    setValue(getApiToken() || '')
+    // Never pre-fill: with a session there is no token to show, and echoing a
+    // stored one back into the DOM serves no purpose.
+    setValue('')
+    setError(null)
     setIsOpen(true)
   }
 
-  const save = () => {
-    const trimmed = value.trim()
-    if (trimmed) {
-      setApiToken(trimmed)
-    } else {
-      clearApiToken()
+  // A rejected credential (expired session, rotated token) opens this dialog
+  // instead of leaving every page showing an unactionable error.
+  useEffect(() => {
+    const handler = () => {
+      setValue('')
+      setError('Your session is no longer valid. Sign in again with the API token.')
+      setIsOpen(true)
     }
-    setIsOpen(false)
-    // Reload so React Query refetches and WebSockets reconnect with the new
-    // credentials (the token is read at request time from localStorage).
-    window.location.reload()
+    window.addEventListener(UNAUTHORIZED_EVENT, handler)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, handler)
+  }, [])
+
+  const save = async () => {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      setError('Enter a token, or use Sign out to clear the current credential.')
+      return
+    }
+
+    setBusy(true)
+    setError(null)
+    try {
+      await login(trimmed)
+      setIsOpen(false)
+      // Reload so React Query refetches and the WebSocket reconnects with the
+      // new credential.
+      window.location.reload()
+    } catch (err) {
+      const message =
+        err instanceof APIError && err.status === 401
+          ? 'The server rejected that token.'
+          : err instanceof Error
+            ? err.message
+            : 'Login failed'
+      setError(message)
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const clear = () => {
-    clearApiToken()
-    setValue('')
-    setIsOpen(false)
-    window.location.reload()
+  const signOut = async () => {
+    setBusy(true)
+    try {
+      await logout()
+    } finally {
+      clearApiToken()
+      setValue('')
+      setIsOpen(false)
+      window.location.reload()
+    }
   }
 
   return (
@@ -42,8 +90,14 @@ export function ApiTokenButton() {
       <button
         onClick={open}
         className="btn btn-ghost"
-        title={hasToken ? 'API token set — click to change' : 'Set API token'}
-        aria-label={hasToken ? 'Change API token' : 'Set API token'}
+        title={
+          sessionActive
+            ? 'Signed in with a session cookie — click to manage'
+            : tokenStored
+              ? 'API token stored in this browser — click to manage'
+              : 'Sign in with the API token'
+        }
+        aria-label={authenticated ? 'Manage API credential' : 'Sign in with the API token'}
       >
         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
           <path
@@ -53,23 +107,51 @@ export function ApiTokenButton() {
             d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
           />
         </svg>
-        {hasToken && <span className="w-2 h-2 rounded-full bg-bifrost-success ml-1" aria-hidden="true" />}
+        {authenticated && (
+          <span
+            className={`w-2 h-2 rounded-full ml-1 ${sessionActive ? 'bg-bifrost-success' : 'bg-bifrost-warning'}`}
+            aria-hidden="true"
+          />
+        )}
       </button>
 
       <Modal
         isOpen={isOpen}
         onClose={() => setIsOpen(false)}
-        title="API Token"
+        title="API Credential"
         onSave={save}
-        saveLabel="Save & Reload"
+        saveLabel={busy ? 'Signing in…' : 'Sign in'}
+        isSaving={busy}
         size="md"
       >
         <div className="space-y-4">
           <p className="text-sm text-bifrost-text">
             When the server is configured with an API token (<code className="font-mono">api.token</code>),
-            the dashboard must send it with every request. Paste the token below;
-            it is stored in this browser&apos;s local storage only.
+            the dashboard must authenticate before it can load data. Paste the
+            token below; it is exchanged for a session and{' '}
+            <strong>not kept in this browser</strong>.
           </p>
+
+          {sessionActive && (
+            <div className="p-3 rounded-lg bg-bifrost-success/10 border border-bifrost-success/30 text-xs text-bifrost-success">
+              Signed in with an HttpOnly session cookie. The API token is not stored in this browser.
+            </div>
+          )}
+
+          {!sessionActive && tokenStored && (
+            <div className="p-3 rounded-lg bg-bifrost-warning/10 border border-bifrost-warning/30 text-xs text-bifrost-warning" role="note">
+              This server has no <code className="font-mono">session:</code> store configured, so the
+              dashboard is falling back to keeping the API token in this browser&apos;s local storage
+              and sending it as a bearer credential. Configure a session store to have the token
+              exchanged for an HttpOnly cookie instead.
+            </div>
+          )}
+
+          {error && (
+            <div className="p-3 rounded-lg bg-bifrost-error/10 border border-bifrost-error/30 text-xs text-bifrost-error" role="alert">
+              {error}
+            </div>
+          )}
           <div>
             <label htmlFor="api-token-input" className="block text-sm font-medium text-bifrost-text mb-1">
               Token
@@ -103,12 +185,12 @@ export function ApiTokenButton() {
               </button>
             </div>
             <p className="text-xs text-bifrost-muted mt-1">
-              Leave empty and save to remove the stored token.
+              The token is sent once to <code className="font-mono">/api/v1/login</code>.
             </p>
           </div>
-          {hasToken && (
-            <button onClick={clear} className="btn btn-secondary text-sm">
-              Clear stored token
+          {authenticated && (
+            <button onClick={signOut} disabled={busy} className="btn btn-secondary text-sm">
+              Sign out
             </button>
           )}
         </div>
