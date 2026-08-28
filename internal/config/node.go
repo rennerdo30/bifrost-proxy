@@ -37,14 +37,27 @@ func SaveNode(path string, node *yaml.Node) error {
 	if err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
-	defer f.Close()
+	// Safety net for the early returns below; the success path closes both
+	// explicitly and checks them.
+	defer func() { _ = f.Close() }()
 
 	encoder := yaml.NewEncoder(f)
 	encoder.SetIndent(2)
-	defer encoder.Close()
+	defer func() { _ = encoder.Close() }()
 
 	if err := encoder.Encode(node); err != nil {
 		return fmt.Errorf("failed to encode config: %w", err)
+	}
+
+	// Both closes must be checked, in this order. encoder.Close flushes the
+	// remaining YAML and f.Close is where a short write or ENOSPC surfaces;
+	// discarding either reports a successful save for a file that was left
+	// truncated - and this is the config the node reloads from.
+	if err := encoder.Close(); err != nil {
+		return fmt.Errorf("failed to flush config: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("failed to close config file: %w", err)
 	}
 
 	return nil
