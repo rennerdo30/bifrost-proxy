@@ -1374,9 +1374,11 @@ func TestMiddleware_MultiProxyAuthHandler_APIKey(t *testing.T) {
 		Config: map[string]any{
 			"keys": []map[string]any{
 				{
+					// The apikey plugin derives the identity from "name" — a
+					// "username" entry here was always silently ignored, which
+					// the strict key check now surfaces.
 					"key_plain": "my-api-key-12345",
 					"name":      "api-client-1",
-					"username":  "apiuser",
 					"groups":    []string{"api-clients"},
 				},
 			},
@@ -1957,12 +1959,13 @@ func TestMiddleware_SetAPIKeyAuth(t *testing.T) {
 	})
 	middleware := auth.NewMiddleware(authenticator, "Test")
 
-	hash, _ := auth.HashPassword("apikey123")
 	apiKeyAuth := createAuthenticator(t, auth.ProviderConfig{
 		Name: "apikey", Type: "apikey", Enabled: true,
 		Config: map[string]any{
 			"keys": []map[string]any{
-				{"key_plain": "apikey123", "name": "test-key", "username": "apiuser", "password_hash": hash},
+				// "username"/"password_hash" were never read by the apikey
+				// plugin; the strict key check now rejects such dead keys.
+				{"key_plain": "apikey123", "name": "test-key"},
 			},
 		},
 	})

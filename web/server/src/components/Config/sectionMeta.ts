@@ -40,6 +40,7 @@ export const CONFIG_SECTION_KEYS = [
   'network',
   'session',
   'mitm',
+  'mesh',
 ] as const
 
 export type ConfigSectionKey = (typeof CONFIG_SECTION_KEYS)[number]
@@ -156,6 +157,9 @@ export const CONFIG_SECTIONS: ConfigSectionMeta[] = [
   ]),
   meta('session', 'Session Storage', 'Session', 'Platform', false, [
     'session', 'redis', 'store', 'duration', 'cookie',
+  ]),
+  meta('mesh', 'Mesh Networking', 'Mesh', 'Platform', false, [
+    'mesh', 'p2p', 'peer', 'stun', 'turn', 'coordinator', 'discovery', 'nat',
   ]),
   meta('auto_update', 'Auto Update', 'Auto Update', 'Platform', false, [
     'update', 'auto', 'channel', 'release', 'version',

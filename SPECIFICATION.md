@@ -111,6 +111,26 @@ graph TD
 
 ## 3. Configuration
 
+### 3.0 Loading Rules
+
+Every config file — server, client and node — is read by `internal/config.Load`,
+which applies two rules before any schema-specific validation:
+
+1. **Environment expansion.** Exactly three forms are recognized in the raw file:
+   `${NAME}` (empty string plus a warning when `NAME` is unset),
+   `${NAME:-fallback}` (the fallback when `NAME` is unset or empty; the fallback
+   is literal and is not itself expanded), and `$$` (a literal `$`). A bare
+   `$NAME` is **not** expanded and every other `$` is literal, so credentials
+   containing a dollar sign are preserved. Expansion is a single pass, so a
+   substituted value is never re-expanded. `config.Save` escapes `$` that would
+   otherwise be read back as a reference, keeping save/load round trips faithful.
+2. **Strict keys.** Decoding uses `yaml.Decoder` with `KnownFields(true)`. A key
+   with no corresponding setting fails the load, naming every offending key, its
+   line and the enclosing config type. Setting
+   `BIFROST_CONFIG_ALLOW_UNKNOWN_KEYS=1` downgrades this to a per-key warning as
+   a documented, transitional migration aid; type errors always fail. This
+   applies to startup, `config validate`, hot reload and the config API.
+
 ### 3.1 Server Configuration (`server-config.yaml`)
 
 > [!NOTE]
@@ -124,9 +144,9 @@ graph TD
 server:
   http:
     listen: ":7080"           # HTTP/HTTPS (CONNECT) proxy listen address
-    read_timeout: "60s"
-    write_timeout: "60s"
-    idle_timeout: "120s"
+    read_timeout: "60s"       # Inbound request must fully arrive within this
+    write_timeout: "60s"      # Deadline for a single write to the client
+    idle_timeout: "120s"      # Bound on a connection with nothing in flight
     max_connections: 0        # 0 = unlimited
     # tls:                    # Optional TLS for the HTTP listener
     #   enabled: true
@@ -134,8 +154,20 @@ server:
     #   key_file: "/path/to/key.pem"
   socks5:
     listen: ":7180"           # SOCKS5 proxy listen address
+    read_timeout: "30s"       # Bounds the SOCKS5 handshake
+    write_timeout: "30s"
+    idle_timeout: "60s"
     max_connections: 0
   graceful_period: "30s"      # Drain time on shutdown
+
+> [!IMPORTANT]
+> The three listener timeouts describe the **inbound** client connection only.
+> `read_timeout` is an absolute bound on a request arriving (from the client's
+> first byte), `write_timeout` bounds a *single* write to the client so
+> streaming responses are not truncated, and `idle_timeout` bounds a connection
+> with nothing in flight — including an established `CONNECT` tunnel or SOCKS5
+> relay in which neither direction has carried data. Outbound dial timeouts come
+> from `network.dial_timeout` or a backend's own `connect_timeout`.
 
 > [!TIP]
 > Use environment variables (e.g., `${OAUTH_CLIENT_SECRET}`) for sensitive credentials to avoid committing them to version control.
@@ -282,9 +314,9 @@ api:
 proxy:
   http:
     listen: "127.0.0.1:7380"    # Local HTTP/HTTPS proxy
-    read_timeout: "30s"
-    write_timeout: "30s"
-    idle_timeout: "60s"
+    read_timeout: "30s"         # inbound request deadline (0 = disabled; the client default)
+    write_timeout: "30s"        # no-progress bound on writes to the local client
+    idle_timeout: "60s"         # bound on a connection with nothing in flight
   socks5:
     listen: "127.0.0.1:7381"    # Local SOCKS5 proxy
 

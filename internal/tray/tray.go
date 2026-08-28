@@ -4,6 +4,7 @@ package tray
 import (
 	"context"
 	_ "embed"
+	"sync"
 )
 
 // Status represents the tray icon status.
@@ -41,6 +42,10 @@ type SystrayAdapter interface {
 
 // Tray provides system tray functionality.
 type Tray struct {
+	// statusMu guards status: SetStatus is called from the client's Stop path
+	// and from the tray's own click loop, while updateIcon reads it from the
+	// systray ready callback.
+	statusMu     sync.Mutex
 	status       Status
 	onConnect    func()
 	onDisconnect func()
@@ -118,7 +123,9 @@ func (t *Tray) Run(ctx context.Context) {
 
 // SetStatus updates the tray icon status.
 func (t *Tray) SetStatus(status Status) {
+	t.statusMu.Lock()
 	t.status = status
+	t.statusMu.Unlock()
 	t.updateIcon()
 }
 
@@ -204,8 +211,12 @@ func (t *Tray) onExit() {
 }
 
 func (t *Tray) updateIcon() {
+	t.statusMu.Lock()
+	status := t.status
+	t.statusMu.Unlock()
+
 	var icon []byte
-	switch t.status {
+	switch status {
 	case StatusConnected:
 		icon = iconConnected
 	case StatusWarning:

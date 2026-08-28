@@ -54,15 +54,15 @@ type HTTPProxyConfig struct {
 
 // NewHTTPProxyBackend creates a new HTTP proxy backend.
 func NewHTTPProxyBackend(cfg HTTPProxyConfig) *HTTPProxyBackend {
-	if cfg.ConnectTimeout == 0 {
-		cfg.ConnectTimeout = 30 * time.Second
-	}
-
 	dialer := &net.Dialer{
 		Timeout:   cfg.ConnectTimeout,
 		KeepAlive: 30 * time.Second,
 	}
+	// Precedence: explicit connect_timeout > network.dial_timeout > default.
 	cfg.Network.apply(dialer, false)
+	if dialer.Timeout == 0 {
+		dialer.Timeout = defaultConnectTimeout
+	}
 
 	return &HTTPProxyBackend{
 		name:       cfg.Name,
@@ -169,8 +169,10 @@ func (b *HTTPProxyBackend) Dial(ctx context.Context, network, address string) (n
 
 // DialTimeout creates a connection with a specific timeout.
 func (b *HTTPProxyBackend) DialTimeout(ctx context.Context, network, address string, timeout time.Duration) (net.Conn, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
+	// The dialer already encodes the full timeout precedence (backend
+	// connect_timeout > network.dial_timeout > default); a context cap from
+	// the handler-supplied fallback must not override a longer explicit one.
+	_ = timeout
 	return b.Dial(ctx, network, address)
 }
 

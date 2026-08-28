@@ -38,6 +38,12 @@ func (f *Factory) SetNetwork(net config.NetworkConfig) {
 
 // Create creates a backend from configuration.
 func (f *Factory) Create(cfg config.BackendConfig) (Backend, error) {
+	// Reject unknown keys before reading the recognized ones, so a typo like
+	// connect_timeot fails loudly instead of silently keeping the default —
+	// KnownFields cannot see into this map, so the check must happen here.
+	if err := ValidateConfigKeys(cfg); err != nil {
+		return nil, err
+	}
 	switch cfg.Type {
 	case "direct":
 		return f.createDirect(cfg)
@@ -647,6 +653,15 @@ func (f *Factory) CreateAll(configs []config.BackendConfig) (*Manager, error) {
 			continue
 		}
 		enabledCount++
+
+		// A configuration error is fatal: the skip-and-continue treatment below
+		// exists for runtime initialization failures (an unreachable VPN, a
+		// missing binary), not for a config the operator can only have written
+		// by mistake — a typoed key must fail startup like any other unknown
+		// key, not demote the backend silently.
+		if err := ValidateConfigKeys(cfg); err != nil {
+			return nil, err
+		}
 
 		backend, err := f.Create(cfg)
 		if err != nil {
