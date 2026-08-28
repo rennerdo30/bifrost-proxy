@@ -50,7 +50,7 @@ func (d *Downloader) Download(ctx context.Context, url, destPath string, progres
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
-	defer out.Close()
+	defer func() { _ = out.Close() }()
 
 	// Wrap reader with progress reporting if callback provided
 	var reader io.Reader = resp.Body
@@ -67,6 +67,15 @@ func (d *Downloader) Download(ctx context.Context, url, destPath string, progres
 	if err != nil {
 		os.Remove(destPath) // Clean up partial file
 		return fmt.Errorf("%w: %v", ErrDownloadFailed, err)
+	}
+
+	// Close explicitly and check it: Close is where a short write or ENOSPC
+	// surfaces. Ignoring it would report a successful download for a truncated
+	// file, which then fails checksum verification with a misleading error - or
+	// worse, gets installed. The partial file is removed as on any copy error.
+	if err := out.Close(); err != nil {
+		os.Remove(destPath)
+		return fmt.Errorf("%w: close file: %v", ErrDownloadFailed, err)
 	}
 
 	return nil

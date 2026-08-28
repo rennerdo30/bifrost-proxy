@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -36,8 +37,27 @@ type Manager struct {
 	// metrics records Prometheus metrics; may be nil if unset.
 	metrics *Metrics
 
+	// storeErrorCount counts responses that could not be written to the cache.
+	// A cache that cannot write at all - wrong permissions, a full disk, a
+	// read-only mount - otherwise presents as a permanent 0% hit rate with no
+	// error at the default log level, which is indistinguishable from a cache
+	// nothing happens to match. Surfaced via Stats so operators can see it.
+	storeErrorCount atomic.Int64
+
 	// running indicates if the manager is started.
 	running bool
+}
+
+// RecordStoreError counts a failed cache write and returns the running total.
+// The first failure is worth a warning; after that the count is what matters,
+// so callers log subsequent ones at debug level.
+func (m *Manager) RecordStoreError() int64 {
+	return m.storeErrorCount.Add(1)
+}
+
+// StoreErrorCount returns the number of responses that could not be cached.
+func (m *Manager) StoreErrorCount() int64 {
+	return m.storeErrorCount.Load()
 }
 
 // NewManager creates a new cache manager.
@@ -475,6 +495,7 @@ func (m *Manager) Stats() CacheStats {
 		MissCount:        storageStats.MissCount,
 		HitRate:          storageStats.HitRate(),
 		EvictionCount:    storageStats.EvictionCount,
+		StoreErrorCount:  m.storeErrorCount.Load(),
 		RulesCount:       len(rules.All()),
 		PresetsCount:     len(cfg.Presets),
 		CustomRulesCount: len(cfg.Rules),
@@ -549,6 +570,7 @@ type CacheStats struct {
 	MissCount        int64   `json:"miss_count"`
 	HitRate          float64 `json:"hit_rate"`
 	EvictionCount    int64   `json:"eviction_count"`
+	StoreErrorCount  int64   `json:"store_error_count"`
 	RulesCount       int     `json:"rules_count"`
 	PresetsCount     int     `json:"presets_count"`
 	CustomRulesCount int     `json:"custom_rules_count"`

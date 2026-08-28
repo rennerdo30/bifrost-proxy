@@ -7,7 +7,7 @@ interface AuthProviderConfigFormProps {
   onChange: (config: AuthProviderConfig) => void
 }
 
-type FieldKind = 'text' | 'password' | 'number' | 'bool' | 'textarea' | 'stringlist'
+type FieldKind = 'text' | 'password' | 'number' | 'bool' | 'textarea' | 'stringlist' | 'stringmap'
 
 interface FieldSchema {
   key: string
@@ -46,7 +46,7 @@ const FIELD_SCHEMAS: Record<string, FieldSchema[]> = {
     { key: 'introspect_url', label: 'Introspection URL', kind: 'text', help: 'OAuth2 token introspection endpoint (optional)' },
     { key: 'userinfo_url', label: 'UserInfo URL', kind: 'text', help: 'OIDC userinfo endpoint (optional)' },
     { key: 'scopes', label: 'Scopes', kind: 'stringlist', placeholder: 'openid, profile, email' },
-    { key: 'required_claims', label: 'Required Claims', kind: 'stringlist', help: 'Comma-separated claim names (optional)' },
+    { key: 'required_claims', label: 'Required Claims', kind: 'stringmap', placeholder: 'hd=example.com, aud=my-api', help: 'Comma-separated claim=value pairs a token must carry (optional). Enforced on every validated token.' },
   ],
   jwt: [
     { key: 'jwks_url', label: 'JWKS URL', kind: 'text', placeholder: 'https://issuer/.well-known/jwks.json' },
@@ -108,6 +108,31 @@ function toStringList(value: unknown): string {
   return ''
 }
 
+// required_claims is a claim->value MAP on the Go side. The form used to
+// submit it as a string list, which the parser silently discarded — the
+// dashboard looked configured while nothing reached the (now enforced)
+// setting. Entries are rendered/edited as "claim=value" pairs.
+function toStringMap(value: unknown): string {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([k, v]) => `${k}=${String(v)}`)
+      .join(', ')
+  }
+  return ''
+}
+
+function parseStringMap(text: string): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const part of text.split(',')) {
+    const trimmed = part.trim()
+    if (!trimmed) continue
+    const eq = trimmed.indexOf('=')
+    if (eq <= 0) continue
+    out[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim()
+  }
+  return out
+}
+
 function parseStringList(text: string): string[] {
   return text
     .split(',')
@@ -155,11 +180,66 @@ function PasswordField({
   )
 }
 
+// RawJSONConfigEditor edits a provider config as JSON. It is the fallback for
+// provider types whose config is nested (mfa_wrapper's inline primary/secondary
+// blocks) and cannot be expressed as a flat field schema. Without it those
+// providers rendered no editor at all.
+function RawJSONConfigEditor({
+  type,
+  config,
+  onChange,
+}: AuthProviderConfigFormProps) {
+  const [text, setText] = useState(() => JSON.stringify(config, null, 2))
+  const [parseError, setParseError] = useState<string | null>(null)
+
+  const handleChange = (value: string) => {
+    setText(value)
+    try {
+      const parsed = JSON.parse(value)
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        setParseError(null)
+        onChange(parsed as Record<string, unknown>)
+      } else {
+        setParseError('Config must be a JSON object')
+      }
+    } catch (e) {
+      setParseError(e instanceof Error ? e.message : 'Invalid JSON')
+    }
+  }
+
+  const id = `auth-${type}-raw-json`
+  return (
+    <div className="space-y-2">
+      <label htmlFor={id} className="block text-sm font-medium text-bifrost-text">
+        Provider Config (JSON)
+      </label>
+      <textarea
+        id={id}
+        value={text}
+        onChange={(e) => handleChange(e.target.value)}
+        rows={12}
+        spellCheck={false}
+        aria-invalid={!!parseError}
+        className="input font-mono text-xs"
+      />
+      {parseError ? (
+        <p className="text-xs text-bifrost-error" role="alert">
+          {parseError} — changes are not applied until the JSON parses
+        </p>
+      ) : (
+        <p className="text-xs text-bifrost-muted">
+          This provider&apos;s config is nested and edited as JSON. It is validated by the server on save
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function AuthProviderConfigForm({ type, config, onChange }: AuthProviderConfigFormProps) {
   const schema = FIELD_SCHEMAS[type]
 
   if (!schema) {
-    return null
+    return <RawJSONConfigEditor type={type} config={config} onChange={onChange} />
   }
 
   const update = (key: string, value: unknown) => {
@@ -222,6 +302,15 @@ export function AuthProviderConfigForm({ type, config, onChange }: AuthProviderC
                   type="number"
                   value={typeof raw === 'number' ? raw : ''}
                   onChange={(e) => update(field.key, e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder={field.placeholder}
+                  className="input"
+                />
+              ) : field.kind === 'stringmap' ? (
+                <input
+                  id={id}
+                  type="text"
+                  value={toStringMap(raw)}
+                  onChange={(e) => update(field.key, parseStringMap(e.target.value))}
                   placeholder={field.placeholder}
                   className="input"
                 />

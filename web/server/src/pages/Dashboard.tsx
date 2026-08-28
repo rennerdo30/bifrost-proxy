@@ -1,11 +1,17 @@
 import { useStats, useBackends } from '../hooks/useStats'
+import { QueryError } from '../components/ui/QueryError'
 import { StatsCards } from '../components/Dashboard/StatsCards'
 import { BackendHealth } from '../components/Dashboard/BackendHealth'
 import { formatBytes } from '../utils'
 
 export function Dashboard() {
-  const { stats, isLoading: statsLoading, isConnected } = useStats()
-  const { data: backends, isLoading: backendsLoading } = useBackends()
+  const { stats, isLoading: statsLoading, isConnected, error: statsError, refetch: refetchStats } = useStats()
+  const {
+    data: backends,
+    isLoading: backendsLoading,
+    error: backendsError,
+    refetch: refetchBackends,
+  } = useBackends()
 
   return (
     <div className="space-y-6">
@@ -30,12 +36,24 @@ export function Dashboard() {
       </div>
 
       {/* Stats Cards */}
-      <StatsCards stats={stats} isLoading={statsLoading} />
+      {statsError ? (
+        <div className="card">
+          <QueryError what="server statistics" error={statsError} onRetry={refetchStats} />
+        </div>
+      ) : (
+        <StatsCards stats={stats} isLoading={statsLoading} />
+      )}
 
       {/* Two Column Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Backend Health */}
-        <BackendHealth backends={backends} isLoading={backendsLoading} />
+        {backendsError ? (
+          <div className="card">
+            <QueryError what="backends" error={backendsError} onRetry={() => refetchBackends()} />
+          </div>
+        ) : (
+          <BackendHealth backends={backends} isLoading={backendsLoading} />
+        )}
 
         {/* Quick Stats */}
         <div className="card">

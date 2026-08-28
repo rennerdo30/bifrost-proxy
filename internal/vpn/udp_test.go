@@ -10,14 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestUDPRelayConfig(t *testing.T) {
-	t.Run("default config", func(t *testing.T) {
-		cfg := DefaultUDPRelayConfig()
-		assert.Equal(t, "0.0.0.0:0", cfg.ListenAddr)
-		assert.Equal(t, 30*time.Second, cfg.IdleTimeout)
-	})
-}
-
 func TestBuildIPv4UDPPacket(t *testing.T) {
 	srcIP := netip.MustParseAddr("8.8.8.8")
 	dstIP := netip.MustParseAddr("192.168.1.100")

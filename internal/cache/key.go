@@ -145,18 +145,6 @@ func (kg *KeyGenerator) GenerateKeyFromURL(method, urlStr string) (string, error
 	return kg.GenerateKey(req), nil
 }
 
-// GenerateSimpleKey creates a simple cache key from method, host, and path.
-// This is a convenience function for quick lookups.
-func GenerateSimpleKey(method, host, path string) string {
-	h := sha256.New()
-	h.Write([]byte(method))
-	h.Write([]byte{0})
-	h.Write([]byte(strings.ToLower(host)))
-	h.Write([]byte{0})
-	h.Write([]byte(path))
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 // IsPathSafeKey reports whether a cache key is safe to use as a single path
 // component when constructing filesystem paths for on-disk storage.
 //
