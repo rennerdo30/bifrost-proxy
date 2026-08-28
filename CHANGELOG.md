@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Security
+- Both proxy listeners now bound an idle client, closing a slowloris-style
+  resource exhaustion. A client could previously connect to the HTTP or SOCKS5
+  listener and either send nothing at all or trickle request headers forever,
+  pinning one goroutine and one file descriptor per connection with no timeout
+  of any kind to reclaim them — the configured `read_timeout` and `idle_timeout`
+  were never applied. Reaching the `max_connections` ceiling this way denied
+  service to legitimate clients. See the listener-timeout entry under *Changed*
 - `/api/v1/ws` now verifies the WebSocket `Origin`. WebSockets are exempt from
   both the same-origin policy and CORS, so any web page loaded in a browser that
   could reach a Bifrost instance was previously able to open a socket and read
@@ -27,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   logging happens; it still authenticates the request
 
 ### Added
+- Default `read_timeout` (30s), `write_timeout` (30s) and `idle_timeout` (60s) on
+  the SOCKS5 listener, mirroring the HTTP listener, so its handshake is bounded
+  out of the box
+- `GET /api/v1/config` now reports `idle_timeout` for the HTTP listener and all
+  three timeouts for the SOCKS5 listener, which it previously omitted
 - `api.allowed_origins`: browser origins permitted to open `/api/v1/ws`, for
   reverse proxies that rewrite `Host` (Home Assistant Ingress, Traefik, nginx,
   Cloudflare Tunnel). Entries are host or `scheme://host` patterns with
@@ -56,6 +68,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   in the inline `primary`/`secondary` format the server actually accepts
 
 ### Changed
+- **Breaking:** the listener timeout triad now does what it says. `read_timeout`,
+  `write_timeout` and `idle_timeout` are declared on every listener, defaulted in
+  both shipped config templates, present in every example config and documented
+  across six pages — and none of them was applied. `idle_timeout` was read
+  nowhere in the codebase; `write_timeout` was read once, only so the config API
+  could echo it back; `read_timeout` was quietly passed through as the
+  **outbound** dial timeout, which the troubleshooting docs explicitly said it
+  was not. The SOCKS5 listener read no timeout at all, so a client could open a
+  connection, never send a handshake byte, and hold a goroutine and a file
+  descriptor for as long as it liked. All three are now real socket deadlines on
+  both listeners:
+  - `read_timeout` — an absolute bound on a complete inbound request arriving
+    (HTTP request line and headers, or the whole SOCKS5 handshake) measured from
+    the client's first byte, then a per-read bound for the request body. It
+    covers the TLS handshake on TLS-terminated listeners and every decrypted
+    request on a MITM-intercepted tunnel, so neither a stalled handshake nor a
+    trickled decrypted header can pin a connection
+  - `write_timeout` — a **no-progress** bound: each window of `write_timeout`
+    must deliver at least one byte to the client, so a streaming response
+    (server-sent events, a chunked feed, a large download) is never truncated
+    while it keeps moving — even to a very slow receiver — while a client that
+    has stopped reading entirely is timed out within one window. (On a
+    TLS-terminated listener a stalled window is fatal, a Go TLS constraint; a
+    progressing response is still never cut off)
+  - `idle_timeout` — a bound on a connection with nothing in flight: accepted
+    but silent, or between exchanges on a kept-alive (including intercepted)
+    loop. It deliberately does NOT reap an established opaque `CONNECT` tunnel
+    or SOCKS5 relay — a quiet-but-open tunnel (SSH, IMAP IDLE, a WebSocket
+    without pings) is valid traffic
+  - `tunnel_idle_timeout` (new, off by default) — the explicit opt-in that
+    reaps an established tunnel in which *neither* direction has carried data
+    for the period; an actively transferring tunnel is never interrupted
+
+  The same triad now also applies to the client's `proxy.http` and
+  `proxy.socks5` listeners (default `0` = disabled there), and the client no
+  longer repurposes `proxy.http.read_timeout` as its outbound dial timeout.
+
+  One consequence to check before upgrading. **Outbound dials no longer follow
+  `read_timeout`**: a backend's own `connect_timeout` wins, then
+  `network.dial_timeout`, then a 30s default — and a backend-specific value is
+  no longer silently capped at 30s by the handler. If you raised `read_timeout`
+  to work around slow backend connects, move that value to
+  `network.dial_timeout` or the backend's `connect_timeout`
 - **Breaking:** an **enabled** auth provider whose plugin can never authenticate
   is now refused at config validation instead of being accepted and then
   rejecting every login. This affects `ntlm` (no credential source exists to
