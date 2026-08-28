@@ -21,6 +21,12 @@ const (
 	// whether the device was closed. Bounded so Close is never stuck behind
 	// an idle interface.
 	tunReadWaitMillis = 250
+
+	// waitTimeout is WAIT_TIMEOUT: the wait expired without the event being
+	// signalled. Declared here rather than taken from x/sys/windows so the
+	// read loop's handling of an idle interface does not depend on how that
+	// package types or classifies the value.
+	waitTimeout = 0x102
 )
 
 // windowsTUN implements NetworkDevice for Windows using WinTun.
@@ -173,8 +179,26 @@ func (t *windowsTUN) Read(buf []byte) (int, error) {
 
 		// Ring is empty: wait until WinTun signals a packet, or the wait
 		// times out so the closed flag above is re-checked.
-		if _, err := windows.WaitForSingleObject(session.ReadWaitEvent(), tunReadWaitMillis); err != nil {
+		//
+		// The timeout is checked BEFORE the error, deliberately. A timeout is
+		// the expected outcome on an idle interface, and this must not be
+		// reported as a read failure — doing so would turn an idle tunnel into
+		// a stream of errors, which is the very bug this loop replaced. Testing
+		// the returned status first makes the loop correct whether or not
+		// x/sys/windows classifies WAIT_TIMEOUT as an error, so the behaviour
+		// does not hinge on that detail.
+		status, err := windows.WaitForSingleObject(session.ReadWaitEvent(), tunReadWaitMillis)
+		if status == waitTimeout {
+			continue
+		}
+		if err != nil {
 			return 0, &DeviceError{Op: "receive wait", Err: err}
+		}
+		if status != windows.WAIT_OBJECT_0 {
+			return 0, &DeviceError{
+				Op:  "receive wait",
+				Err: fmt.Errorf("unexpected wait status %#x", status),
+			}
 		}
 	}
 }
