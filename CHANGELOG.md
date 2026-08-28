@@ -38,6 +38,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reason. The server dashboard uses it to label providers honestly instead of
   hard-coding a list that had drifted from the code and could not express
   build-dependent truths
+- Mobile app: API token entry in Settings. The app could previously only manage
+  an *unauthenticated* client — the bearer-token plumbing existed but nothing
+  ever set a token. The token is persisted with AsyncStorage, sent as
+  `Authorization: Bearer`, never displayed after saving and never logged, and can
+  be cleared from the same screen. A `401` is now reported as an authentication
+  failure rather than a generic error
+- Mobile app: `https://` client addresses. The base URL hardcoded the `http://`
+  scheme, making a TLS-terminated client unreachable. Addresses may now be a bare
+  `host:port` (HTTP), an explicit `http://`/`https://` URL, or a bracketed IPv6
+  literal; the implicit port is omitted for `https`
+- Mobile app: `npm test` runs service-layer unit tests on Node's built-in test
+  runner with no new dependencies, covering the CSRF header on every mutation,
+  the server-select route and body, token persistence and scheme handling
 - The server dashboard's auth provider list gained `mfa_wrapper`, which was
   registered and working but missing from the UI entirely, with a default config
   in the inline `primary`/`secondary` format the server actually accepts
@@ -183,6 +196,108 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   written into a profile
 
 ### Fixed
+- **Disconnecting and reconnecting the client crashed the process.** The client's
+  internal shutdown channel was allocated once, when the client was created, and
+  closed by every `Stop`, so a stop/start/stop sequence closed it twice and
+  panicked with "close of closed channel". Three clicks of the desktop app's
+  Connect/Disconnect button were enough. Before the crash the restart was also a
+  silent no-op: the second start reported success while every background loop
+  watching the already-closed channel exited immediately, so the server health
+  monitor never probed again. Each run now gets its own shutdown channel,
+  listeners and API server, and a stopped client can be started again cleanly
+- Start and Stop are serialized for their complete duration: a Start racing a
+  Stop used to be admitted the moment the running flag flipped, bring up a
+  fresh run, and then have that run's VPN, mesh, updater, system proxy and
+  connection drain dismantled by the tail of the old Stop. A dedicated
+  lifecycle lock now holds the new Start out until the previous teardown has
+  entirely finished
+- **The system tray is now an honest process-lifetime resource.** The tray
+  library (fyne.io/systray) can only ever run once per process — a second run
+  exits immediately on Linux and its quit is guarded by a package-global
+  once — but the client created a new tray on every Start and quit it on every
+  Stop, leaking one click-loop goroutine per restart cycle and leaving a dead
+  icon after the first stop. The tray is now created once, survives every
+  Stop/Start cycle (Stop just flips the icon to disconnected), and its
+  callbacks always target the currently registered client, so it also survives
+  a full client rebuild. A data race on the tray's status field, between the
+  client's stop path and the tray's own click loop, was fixed along the way
+- A client start that could not bind its HTTP or SOCKS5 listener left the client
+  reporting itself as running, so the desktop app's Connect button (which only
+  starts a client that is not already running) reported success from then on
+  while nothing was listening. A failed start now rolls back: listeners are
+  closed, background goroutines are joined, and the client reports not running
+- **The desktop app's connection indicator was fabricated.** It reported
+  "Connected", with the green shield, whenever a server address was configured —
+  reachable or not. It now performs a real, short reachability probe against the
+  configured server, the same check the client's own API already used
+- **Desktop server selection now switches the live connection.** SelectServer
+  used to mutate only the configuration, so every future dial (and the status
+  probe) kept using the previous upstream while the UI displayed the new one;
+  it now goes through the client's own selection, which reconfigures the live
+  connection and persists the choice. GetServers stopped labeling the selected
+  server "connected" merely because the local client process was running — the
+  selected entry now carries a real probed status and the rest are "available"
+- The desktop Quit control actually quits (it saved preferences and returned);
+  Auto-connect and Start minimized are honored (both were persisted by their
+  toggles and never read — the client always started at launch and the window
+  always opened visible; Auto-connect defaults to on, preserving the previous
+  behavior); the Notifications toggle was removed, because the desktop app has
+  no notifier and a switch that saves a preference nothing reads is worse than
+  no switch
+- Saving the desktop quick settings no longer bounces the VPN as a side
+  effect: the VPN is touched only when its toggle actually changed, and the
+  enable/disable paths take the write lock they mutate state under
+- Desktop server statuses render correctly: the frontend styled
+  online/offline/busy — a vocabulary the backend never emits — so every server
+  showed the fallback style; it now understands connected/disconnected/
+  available. The Edit Server dialog opens with the server's values (it kept
+  its initial state forever, so Edit opened blank and Add retained stale
+  values), and the empty-state "Add Server" button opens the Add dialog
+  instead of being wired to a comment
+- The desktop Connect button follows the local client lifecycle instead of
+  upstream reachability. When the upstream went down, the button flipped to
+  "Connect" — but clicking it was a no-op on the already-running client, and
+  the server list simultaneously said "Connected". A running client with an
+  unreachable upstream now shows a distinct amber state whose action is
+  Disconnect
+- The desktop app's traffic panel rendered permanent zeros as live telemetry.
+  Bytes sent, bytes received and active connections are now read from the
+  client's existing counters
+- Mobile app: every write failed with `403 CSRF validation failed`. The client
+  API requires `X-Requested-With: XMLHttpRequest` on `POST`/`PUT`/`DELETE`/
+  `PATCH`, which both web dashboards send and the app did not — so VPN
+  enable/disable, server selection, config updates, cache clearing and all eight
+  split-tunnel writes were silently inert. The header is now sent on every
+  request
+- Mobile app: server selection called `POST /servers/{id}/select`, which does not
+  exist, with an `id` that was always `undefined` because `ServerInfo` has no
+  such field. It now calls `POST /api/v1/server/select` with
+  `{"server": "<name>"}`, and the server list is keyed on `name`
+- `GET /api/v1/servers` and `POST /api/v1/server/select` now work against the
+  real client, not just the desktop app: the client never supplied the server
+  list or selector, so the list was always `[]` and a select was acknowledged
+  with 200 while changing nothing. The client now reports its `servers:` config
+  (credentials excluded; only the selected entry is probed for reachability),
+  and selection reconfigures the live upstream connection and persists through
+  the comment-preserving save path. An API built without a selector answers
+  501 instead of the previous fake success
+- Mobile app: adding a split-tunnel domain sent `{"domain": ...}` where the
+  handler decodes `{"pattern": ...}`, so every domain rule — from the Split
+  Tunneling screen and the pre-connect sync alike — was rejected with
+  HTTP 400. The request body now matches the handler
+- Mobile app: the `StatusResponse` and `VPNStatus` types matched neither the Go
+  handlers nor the API docs, so the Stats screen showed a permanent `N/A` for
+  nine rows and the session duration, and "Server Status" was permanently
+  "Unknown". Both types now mirror what the handlers emit: `server_connected`
+  and `vpn_status` instead of the non-existent `server_status`, and `vpn.VPNStats`
+  (`uptime`, packet counters, tunneled/bypassed connections, DNS counters)
+  instead of ten fields the API never returned
+- Mobile app: an unreachable client was indistinguishable from an idle one. Home
+  and Stats rendered "Not Connected" with `0 B` on a failed fetch; both now
+  report the failure, name the address they could not reach, and offer a retry
+- Mobile app: the Settings server-address field could overwrite text as the user
+  typed it, because an effect copied the remote client's *upstream* server
+  address into the input on every config refetch
 - The server dashboard's Request Log page crashed to the error boundary as soon
   as `api.enable_request_log` was turned on — the exact thing its own empty state
   told operators to do. The page reads aggregate counters that

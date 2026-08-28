@@ -1855,8 +1855,8 @@ func (a *API) handleSelectServer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.serverSelector == nil {
-		// No selector configured, acknowledge the request but do nothing
-		a.writeJSON(w, http.StatusOK, map[string]string{"status": "selected", "server": req.Server})
+		// A 200 here would be a fake success: nothing can change. Say so.
+		http.Error(w, "server selection is not supported by this client", http.StatusNotImplemented)
 		return
 	}
 

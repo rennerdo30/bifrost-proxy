@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { ServerInfo, ServerConfig } from '../hooks/useClient';
 import { getStatusColor, getStatusLabel, validateServerAddress } from '../utils/status';
 
@@ -11,6 +11,8 @@ interface ServerManagerProps {
   onDelete: (name: string) => Promise<void>;
   onSetDefault: (name: string) => Promise<void>;
   disabled?: boolean;
+  /** Incrementing counter: each increment opens the Add Server dialog. */
+  addRequest?: number;
 }
 
 interface ServerDialogProps {
@@ -367,8 +369,18 @@ export function ServerManager({
   onDelete,
   onSetDefault,
   disabled,
+  addRequest,
 }: ServerManagerProps) {
   const [showAddDialog, setShowAddDialog] = useState(false);
+
+  // Open the Add dialog when an external component (the empty-state Add
+  // Server button in ServerSelector) requests it. The button used to be wired
+  // to a no-op comment in App.tsx.
+  useEffect(() => {
+    if (addRequest && addRequest > 0) {
+      setShowAddDialog(true);
+    }
+  }, [addRequest]);
   const [editingServer, setEditingServer] = useState<ServerInfo | null>(null);
   const [deletingServer, setDeletingServer] = useState<string | null>(null);
 
@@ -501,16 +513,21 @@ export function ServerManager({
         </div>
       )}
 
-      {/* Add Server Dialog */}
+      {/* Add Server Dialog. The key remounts it per open so a previous
+          add's values never linger in the form. */}
       <ServerDialog
+        key={showAddDialog ? 'add-open' : 'add-closed'}
         isOpen={showAddDialog}
         onClose={() => setShowAddDialog(false)}
         onSave={handleAdd}
         title="Add Server"
       />
 
-      {/* Edit Server Dialog */}
+      {/* Edit Server Dialog. Keyed by the server being edited: the dialog
+          used to keep its initial state forever, so Edit always opened blank
+          (or with a previous server's values). */}
       <ServerDialog
+        key={editingServer?.name ?? 'edit-none'}
         isOpen={editingServer !== null}
         onClose={() => setEditingServer(null)}
         onSave={handleEdit}
