@@ -29,9 +29,8 @@ const (
 )
 
 var (
-	advapi32                = windows.NewLazySystemDLL("advapi32.dll")
-	procLogonUserW          = advapi32.NewProc("LogonUserW")
-	procGetTokenInformation = advapi32.NewProc("GetTokenInformation")
+	advapi32       = windows.NewLazySystemDLL("advapi32.dll")
+	procLogonUserW = advapi32.NewProc("LogonUserW")
 )
 
 func init() {
@@ -217,7 +216,9 @@ func (a *Authenticator) Authenticate(ctx context.Context, username, password str
 		slog.Debug("Windows logon failed", "username", username, "error", err)
 		return nil, auth.ErrInvalidCredentials
 	}
-	defer windows.CloseHandle(token)
+	// Close on the way out. A failed close on a logon token is not actionable -
+	// the handle is released when the process exits either way.
+	defer func() { _ = windows.CloseHandle(token) }() //nolint:errcheck // cleanup, nothing to recover
 
 	// Get user groups from token
 	groups, err := a.getTokenGroups(token)
@@ -298,8 +299,10 @@ func (a *Authenticator) getTokenGroups(token windows.Handle) ([]string, error) {
 	tokenHandle := windows.Token(token)
 
 	// First call to get required buffer size
+	// The first call is EXPECTED to fail with ERROR_INSUFFICIENT_BUFFER; its
+	// purpose is to populate `needed`, which is checked immediately below.
 	var needed uint32
-	windows.GetTokenInformation(tokenHandle, windows.TokenGroups, nil, 0, &needed)
+	_ = windows.GetTokenInformation(tokenHandle, windows.TokenGroups, nil, 0, &needed) //nolint:errcheck // sizing call
 
 	if needed == 0 {
 		return nil, fmt.Errorf("GetTokenInformation returned zero size")

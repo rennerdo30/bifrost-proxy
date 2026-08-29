@@ -182,7 +182,7 @@ type AuthConfig struct {
 	// BruteForce enables failed-login rate limiting with exponential lockout
 	// around the whole provider chain. The implementation existed, fully
 	// tested, with no config key and no caller — a security control the
-	// project believed it shipped and did not (TODO.md had marked it FIXED).
+	// project believed it shipped and did not.
 	BruteForce *BruteForceConfig `yaml:"brute_force,omitempty" json:"brute_force,omitempty"`
 
 	// Negotiate enables HTTP Negotiate (SPNEGO/Kerberos with optional NTLM

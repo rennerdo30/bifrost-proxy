@@ -22,17 +22,19 @@ func run(name string, runner Runner) error {
 	isService, err := svc.IsWindowsService()
 	if err != nil {
 		logging.Warn("Failed to detect if running as Windows Service, assuming interactive", "error", err)
-		return runInteractive(name, runner)
+		return runInteractive(runner)
 	}
 
 	if isService {
 		return runService(name, runner)
 	}
 
-	return runInteractive(name, runner)
+	return runInteractive(runner)
 }
 
-func runInteractive(name string, runner Runner) error {
+// runInteractive takes no service name: on Windows the interactive path is
+// plain foreground execution and nothing here is per-service.
+func runInteractive(runner Runner) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

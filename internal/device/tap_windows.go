@@ -3,7 +3,6 @@
 package device
 
 import (
-	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"net"
@@ -79,14 +78,14 @@ func createPlatformTAP(cfg Config) (NetworkDevice, error) {
 	// Create events for overlapped I/O
 	tap.readOverlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
-		windows.CloseHandle(handle)
+		_ = windows.CloseHandle(handle) //nolint:errcheck // cleanup path; the handle is released at process exit either way
 		return nil, &DeviceError{Op: "create read event", Err: err}
 	}
 
 	tap.writeOverlapped.HEvent, err = windows.CreateEvent(nil, 0, 0, nil)
 	if err != nil {
-		windows.CloseHandle(tap.readOverlapped.HEvent)
-		windows.CloseHandle(handle)
+		_ = windows.CloseHandle(tap.readOverlapped.HEvent) //nolint:errcheck // cleanup path; the handle is released at process exit either way
+		_ = windows.CloseHandle(handle)                    //nolint:errcheck // cleanup path; the handle is released at process exit either way
 		return nil, &DeviceError{Op: "create write event", Err: err}
 	}
 
@@ -344,9 +343,12 @@ func (t *windowsTAP) Close() error {
 	t.closed = true
 
 	// Set media status to disconnected
+	// Best effort: Close still has to release the handles below even if the
+	// adapter refuses the status change, and the caller gets the CloseHandle
+	// error instead, which is the one that matters.
 	status := uint32(0)
 	var bytesReturned uint32
-	windows.DeviceIoControl(
+	_ = windows.DeviceIoControl( //nolint:errcheck // best effort; handle release below is what matters
 		t.handle,
 		tapWindowsIoctlSetMediaStatus,
 		(*byte)(unsafe.Pointer(&status)),
@@ -358,8 +360,8 @@ func (t *windowsTAP) Close() error {
 	)
 
 	// Close events and handle
-	windows.CloseHandle(t.readOverlapped.HEvent)
-	windows.CloseHandle(t.writeOverlapped.HEvent)
+	_ = windows.CloseHandle(t.readOverlapped.HEvent)  //nolint:errcheck // cleanup path; the handle is released at process exit either way
+	_ = windows.CloseHandle(t.writeOverlapped.HEvent) //nolint:errcheck // cleanup path; the handle is released at process exit either way
 	return windows.CloseHandle(t.handle)
 }
 
@@ -395,42 +397,6 @@ func (t *windowsTAP) GetMACFromInterface() (net.HardwareAddr, error) {
 		return nil, &DeviceError{Op: "get interface", Err: err}
 	}
 	return iface.HardwareAddr, nil
-}
-
-// buildTAPConfigPacket builds a TAP_WIN_IOCTL_CONFIG_TUN packet for TUN emulation.
-// This is used when TAP is operated in TUN mode.
-func buildTAPConfigPacket(localIP, remoteIP netip.Addr, netmask net.IPMask) []byte {
-	packet := make([]byte, 12)
-	copy(packet[0:4], localIP.AsSlice())
-	copy(packet[4:8], remoteIP.AsSlice())
-	copy(packet[8:12], netmask)
-	return packet
-}
-
-// getTAPVersion returns the TAP driver version.
-func (t *windowsTAP) getTAPVersion() (int, int, int, error) {
-	version := make([]byte, 12)
-	var bytesReturned uint32
-
-	err := windows.DeviceIoControl(
-		t.handle,
-		tapWindowsIoctlGetVersion,
-		nil,
-		0,
-		&version[0],
-		12,
-		&bytesReturned,
-		nil,
-	)
-	if err != nil {
-		return 0, 0, 0, &DeviceError{Op: "get version", Err: err}
-	}
-
-	major := int(binary.LittleEndian.Uint32(version[0:4]))
-	minor := int(binary.LittleEndian.Uint32(version[4:8]))
-	debug := int(binary.LittleEndian.Uint32(version[8:12]))
-
-	return major, minor, debug, nil
 }
 
 // Verify windowsTAP implements TAPDevice at compile time.
