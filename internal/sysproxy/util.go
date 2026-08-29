@@ -4,12 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"time"
 )
-
-// darwinCommandTimeout bounds external command execution on platforms that shell
-// out to OS utilities (macOS networksetup, Linux gsettings).
-const darwinCommandTimeout = 10 * time.Second
 
 // splitHostPort parses a "host:port" proxy address into its host and port
 // components, validating that both are present and the port is numeric. It

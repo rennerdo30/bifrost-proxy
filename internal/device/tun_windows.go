@@ -24,7 +24,7 @@ const (
 	tunReadWaitMillis = 250
 
 	// waitTimeout is WAIT_TIMEOUT: the wait expired without the event being
-	// signalled. Declared locally because x/sys/windows types its own
+	// signaled. Declared locally because x/sys/windows types its own
 	// WAIT_TIMEOUT as a syscall.Errno rather than a uint32 (unlike
 	// WAIT_OBJECT_0, WAIT_ABANDONED and WAIT_FAILED), so it cannot be compared
 	// against the uint32 status without a conversion that reads as if an error
@@ -91,7 +91,7 @@ func (t *windowsTUN) configure(cfg Config) error {
 	addr := prefix.Addr()
 	if addr.Is4() {
 		// Use netsh to set IPv4 address
-		cmd := exec.Command("netsh", "interface", "ip", "set", "address",
+		cmd := exec.Command("netsh", "interface", "ip", "set", "address", //nolint:gosec // G204: tunName and the address come from validated config, not user input
 			fmt.Sprintf("name=%d", luid),
 			"source=static",
 			fmt.Sprintf("addr=%s", addr),
@@ -103,7 +103,7 @@ func (t *windowsTUN) configure(cfg Config) error {
 			// only worth a debug line.
 			slog.Debug("netsh address by LUID failed; retrying by interface name",
 				"interface", t.name, "error", err, "output", string(output))
-			cmd = exec.Command("netsh", "interface", "ip", "set", "address",
+			cmd = exec.Command("netsh", "interface", "ip", "set", "address", //nolint:gosec // G204: tunName and the address come from validated config, not user input
 				fmt.Sprintf("name=%s", t.name),
 				"source=static",
 				fmt.Sprintf("addr=%s", addr),
@@ -115,7 +115,7 @@ func (t *windowsTUN) configure(cfg Config) error {
 		}
 	} else {
 		// IPv6
-		cmd := exec.Command("netsh", "interface", "ipv6", "set", "address",
+		cmd := exec.Command("netsh", "interface", "ipv6", "set", "address", //nolint:gosec // G204: tunName and the address come from validated config, not user input
 			fmt.Sprintf("interface=%s", t.name),
 			fmt.Sprintf("address=%s/%d", addr, prefix.Bits()),
 		)
@@ -125,7 +125,7 @@ func (t *windowsTUN) configure(cfg Config) error {
 	}
 
 	// Set MTU
-	cmd := exec.Command("netsh", "interface", "ipv4", "set", "subinterface",
+	cmd := exec.Command("netsh", "interface", "ipv4", "set", "subinterface", //nolint:gosec // G204: tunName and the address come from validated config, not user input
 		t.name,
 		fmt.Sprintf("mtu=%d", cfg.MTU),
 		"store=persistent",
@@ -198,7 +198,7 @@ func (t *windowsTUN) Read(buf []byte) (int, error) {
 		// err solely when the status is WAIT_FAILED (0xffffffff) — its generated
 		// wrapper does nothing else with the return value — so a timeout
 		// arrives as (WAIT_TIMEOUT, nil) and an err-only check cannot tell an
-		// idle interface apart from a signalled one. Testing the status makes
+		// idle interface apart from a signaled one. Testing the status makes
 		// each outcome explicit: loop on a timeout, fail on a real error, and
 		// reject an unexpected status instead of silently re-looping on it.
 		status, err := windows.WaitForSingleObject(session.ReadWaitEvent(), tunReadWaitMillis)
@@ -264,5 +264,5 @@ func (t *windowsTUN) MTU() int {
 
 // LUID returns the adapter's LUID (Windows-specific).
 func (t *windowsTUN) LUID() uint64 {
-	return uint64(t.adapter.LUID())
+	return t.adapter.LUID()
 }

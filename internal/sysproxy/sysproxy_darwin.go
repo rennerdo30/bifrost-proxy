@@ -101,7 +101,7 @@ func (m *darwinManager) ClearProxy() error {
 }
 
 func (m *darwinManager) exec(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), darwinCommandTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 
 	out, err := m.run.run(ctx, "networksetup", args...)
@@ -139,7 +139,7 @@ func (m *darwinManager) activeNetworkService() (string, error) {
 // listNetworkServices returns the enabled network services in the order
 // networksetup reports them (which is the service ordering / priority).
 func (m *darwinManager) listNetworkServices() ([]string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), darwinCommandTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 
 	out, err := m.run.run(ctx, "networksetup", "-listallnetworkservices")
@@ -150,7 +150,7 @@ func (m *darwinManager) listNetworkServices() ([]string, error) {
 }
 
 func (m *darwinManager) serviceHasIP(service string) (bool, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), darwinCommandTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 
 	out, err := m.run.run(ctx, "networksetup", "-getinfo", service)

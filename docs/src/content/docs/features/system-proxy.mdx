@@ -479,8 +479,12 @@ proxy:
 
 The following features are planned for future releases:
 
-- **macOS support**: Using `networksetup` for automatic configuration
-- **Linux support**: GNOME, KDE, and environment variable configuration
-- **PAC file support**: Automatic proxy configuration via PAC/WPAD
-- **Proxy bypass list**: Configure exceptions for local addresses
 - **Per-application proxy**: Set proxy only for specific applications
+- **Bypass list on macOS and Linux**: Windows already gets a `<local>` bypass
+  written automatically when the profile has none; the `networksetup` and
+  GNOME equivalents are not wired up yet, so loopback and intranet traffic on
+  those platforms follows whatever the desktop was already configured with
+
+Already shipped, and previously listed here in error: macOS support (via
+`networksetup`), Linux support (GNOME/KDE and environment variables), and PAC
+file generation — see the sections above and `GET /api/v1/pac`.
