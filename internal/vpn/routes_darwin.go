@@ -378,7 +378,7 @@ func (r *darwinRouteManager) configureDNS(dnsAddr string) error {
 	}
 
 	// Extract IP from address
-	host, _, _ := splitHostPort(dnsAddr) //nolint:errcheck // Fallback to raw address if split fails
+	host, _ := splitHostPort(dnsAddr)
 	if host == "" {
 		host = dnsAddr
 	}
@@ -444,11 +444,14 @@ func ipv4MaskString(bits int) string {
 	return fmt.Sprintf("%d.%d.%d.%d", mask[0], mask[1], mask[2], mask[3])
 }
 
-// splitHostPort splits a host:port string.
-func splitHostPort(addr string) (host, port string, err error) {
+// splitHostPort splits "host:port", returning the whole string as the host when
+// there is no colon. It cannot fail, so it returns no error - the error return
+// it used to have was never non-nil, which made every call site look like it
+// was handling a failure that could not happen.
+func splitHostPort(addr string) (host, port string) {
 	lastColon := strings.LastIndex(addr, ":")
 	if lastColon == -1 {
-		return addr, "", nil
+		return addr, ""
 	}
-	return addr[:lastColon], addr[lastColon+1:], nil
+	return addr[:lastColon], addr[lastColon+1:]
 }

@@ -1171,6 +1171,38 @@ Get all peers in a mesh network.
 GET /api/v1/mesh/networks/{networkID}/peers
 ```
 
+**Response:**
+```json
+{
+  "peers": [
+    {
+      "id": "peer-abc123",
+      "name": "desktop-home",
+      "public_key": "cHVibGljLWtleQ==",
+      "virtual_ip": "10.100.0.2",
+      "endpoints": [
+        { "address": "192.168.1.50", "port": 51820, "type": "lan", "priority": 100 }
+      ],
+      "metadata": {},
+      "status": "connected",
+      "connection_type": "direct",
+      "latency": 12.5,
+      "last_seen": "2026-08-29T10:14:02Z",
+      "joined_at": "2026-08-29T09:58:11Z",
+      "bytes_sent": 481920,
+      "bytes_received": 1048576
+    }
+  ]
+}
+```
+
+`latency` is in **milliseconds** as a number, not a Go duration — a value of
+`12.5` means 12.5 ms. `connection_type` is omitted while a peer is still being
+discovered, and `latency` is omitted until a measurement exists.
+
+`GET /api/v1/mesh/networks/{networkID}/peers/{peerID}` returns a single object
+of the same shape.
+
 ---
 
 ### Get Peer Details
@@ -1213,11 +1245,21 @@ DELETE /api/v1/mesh/networks/{networkID}/peers/{peerID}
 
 ### Peer Heartbeat
 
-Update peer heartbeat (keep-alive).
+Update peer heartbeat (keep-alive). This also renews the peer's IP lease.
 
 ```http
 POST /api/v1/mesh/networks/{networkID}/peers/{peerID}/heartbeat
 ```
+
+| Status | Meaning |
+|---|---|
+| `204 No Content` | Last-seen updated and the IP lease renewed |
+| `404 Not Found` | Unknown network or peer |
+| `409 Conflict` | The peer has no IP lease left to renew — it expired and the address may already have been reallocated. **Re-register to obtain a new address**; continuing to heartbeat will not recover it |
+
+A `409` is not a transient error. Answering `204` in that situation would tell
+the peer its address is still valid while the allocator disagreed, which
+surfaced later as mesh traffic reaching the wrong node.
 
 ---
 
