@@ -1,8 +1,7 @@
 # Known Issues
 
 Deliberate limitations and open work. Fixed items are not recorded here — see
-`CHANGELOG.md`. The detailed, evidence-backed backlog lives in [`audit/`](audit/),
-which supersedes the retired `AUDIT.md` and `AUDIT-FINDINGS.md`.
+`CHANGELOG.md`.
 
 ## Unimplemented, disclosed, fails closed
 
@@ -14,10 +13,18 @@ and each is documented where a user would look.
 | Mesh multi-hop relay (`relay_via_peers`) | Rejected by config validation | `internal/mesh/config.go` |
 | NTLM response verification | No credential source exists, so every login is rejected and the provider is refused at startup. Use `kerberos` for Windows-domain SSO | `internal/auth/plugin/ntlm/` |
 | ICE connectivity establishment | Present and tested, not wired into the connection path | `internal/p2p/ice.go` |
-| On-device mobile VPN tunnel | The app is a remote control for a client running elsewhere. The iOS and Android native files are unbuildable skeletons and `expo prebuild` deletes them | `audit/mobile.md` |
+| On-device mobile VPN tunnel | The app is a remote control for a client running elsewhere. The native forwarders are raw-UDP placeholders, and `NATIVE_DATA_PATH_IS_SECURE` keeps them unreachable even in a build that links them | `mobile/README.md`, `mobile/src/native/BifrostVpn.ts` |
 | `system` (PAM) auth on Linux | Fails closed unless built with the `pam` tag; reported as `build_disabled` at startup rather than silently rejecting logins | `internal/auth/plugin/system/` |
+| `max_load` / `auto_select` on Mullvad and PIA | Read but inert: neither provider's API integration populates `Server.Load`, so the filter can never trip and the sort is a no-op. A startup warning names the backend rather than letting the setting look effective. `Server.Latency` is likewise never written | `internal/backend/factory.go`, `internal/vpnprovider/cache.go` |
 
 ## Open
+
+**On-device mobile VPN.** The native path needs a real WireGuard/OpenVPN data
+path (`gomobile bind` of the existing Go backend, or WireGuardKit +
+wireguard-android), an iOS Network Extension target, and the `BifrostVpn` native
+module. It needs a paid Apple Developer account and on-device testing, so none of
+it can be built or validated in CI as it stands. Until then the path is gated off
+in code, not merely in documentation.
 
 **OpenWrt LuCI application.** IPK packaging exists (`make build-openwrt-ipk`, wired
 into `release.yml`) along with a procd init script and UCI config, but there is no
@@ -38,11 +45,9 @@ carries no version field, so a mixed-version mesh cannot complete a handshake. N
 downgrade path was added, deliberately: negotiating down is how a security fix
 becomes optional.
 
-## Verified stale, kept for reference
-
-Two long-standing entries here were no longer true and have been removed:
-*System Proxy Support Limited to Windows* (`sysproxy_darwin.go` and
-`sysproxy_linux.go` both exist with tests, and unsupported desktops return
-`ErrNotSupported` rather than reporting a false success), and *Service Management
-Platform Coverage*, which described a conditional enhancement for SysVinit rather
-than a defect.
+**Windows and macOS code paths are never executed by CI.** Every job runs on
+`ubuntu-latest`, so platform-tagged Go code is cross-compiled but never run, and
+`golangci-lint`/`staticcheck` analyse only the host platform unless `GOOS` is set
+explicitly. `ci.yml` now runs a cross-platform lint job to close the static half
+of that gap; actually *executing* those paths still needs runners on those
+platforms.

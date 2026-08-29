@@ -397,7 +397,7 @@ func (f *Factory) createMullvad(cfg config.BackendConfig) (Backend, error) {
 		mullvadCfg.MaxLoad = v
 		// Honest disclosure: this provider's API integration never populates
 		// Server.Load, so the max_load filter can never trip — the setting
-		// currently has no effect (see audit/go-backend.md).
+		// currently has no effect (see ISSUES.md).
 		slog.Warn("max_load is configured but this provider does not report server load; the filter has no effect",
 			"backend", cfg.Name, "type", cfg.Type)
 	}
@@ -487,7 +487,7 @@ func (f *Factory) createPIA(cfg config.BackendConfig) (Backend, error) {
 		piaCfg.MaxLoad = v
 		// Honest disclosure: this provider's API integration never populates
 		// Server.Load, so the max_load filter can never trip — the setting
-		// currently has no effect (see audit/go-backend.md).
+		// currently has no effect (see ISSUES.md).
 		slog.Warn("max_load is configured but this provider does not report server load; the filter has no effect",
 			"backend", cfg.Name, "type", cfg.Type)
 	}

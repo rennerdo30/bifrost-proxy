@@ -42,6 +42,54 @@ jobs:
         with:
           args: --timeout=5m
 
+  # Every other job runs on ubuntu-latest, so Windows- and macOS-tagged Go code
+  # was only ever cross-compiled: never executed, and never linted, because
+  # golangci-lint and staticcheck analyse the host platform unless GOOS says
+  # otherwise. That blind spot hid 36 real issues plus two test packages that did
+  # not compile for Windows at all. Running the analysers per GOOS closes the
+  # static half of the gap; executing those paths still needs real runners.
+  lint-cross-platform:
+    name: Lint (${{ matrix.goos }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [windows, darwin]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # The Go build embeds the dashboards, so they must exist before analysis.
+      - name: Build web UIs for embed
+        run: make web-sync
+
+      # Install for the HOST first. `GOOS=windows go run ...@version` would
+      # cross-compile the analyser itself and then fail to exec it; GOOS must
+      # apply to the analysis, not to the tool.
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.7.0
+
+      - name: staticcheck (GOOS=${{ matrix.goos }})
+        env:
+          GOOS: ${{ matrix.goos }}
+        run: staticcheck ./...
+
+      - name: golangci-lint (GOOS=${{ matrix.goos }})
+        uses: golangci/golangci-lint-action@v9
+        env:
+          GOOS: ${{ matrix.goos }}
+        with:
+          args: --timeout=5m
+
   test:
     name: Test
     runs-on: ubuntu-latest

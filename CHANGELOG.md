@@ -7,62 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
-- The server dashboard no longer keeps the API token in `localStorage` when a
-  session store is configured. Signing in POSTs the token once to
-  `/api/v1/login` and thereafter authenticates with the **HttpOnly** session
-  cookie the server already knew how to issue — script cannot read that cookie,
-  whereas any XSS on the page could read the stored bearer token. The cookie
-  also authenticates the WebSocket handshake, so no credential is placed in a
-  URL. Signing out destroys the session server-side, and an expired session
-  prompts for the token again instead of failing every page. The server half of
-  this flow was built and config-gated but had no client; without a `session:`
-  block the dashboard still falls back to the bearer token and says so
-- `POST /api/v1/login` and `/api/v1/logout` are now mounted unconditionally, so
-  a server with no session store answers the handlers' `503 "not enabled"`
-  instead of a bare `404`. While the routes were conditionally registered those
-  `503` branches were unreachable, and a client could not distinguish "feature
-  disabled" from "wrong URL". Registering `/login` also had to move after the
-  middleware chain: chi requires every `r.Use` on a mux to precede its first
-  route, and the no-token branch installs CSRF middleware on that router — with
-  a session manager and no token configured, the old placement would have
-  panicked at startup
-- Both proxy listeners now bound an idle client, closing a slowloris-style
-  resource exhaustion. A client could previously connect to the HTTP or SOCKS5
-  listener and either send nothing at all or trickle request headers forever,
-  pinning one goroutine and one file descriptor per connection with no timeout
-  of any kind to reclaim them — the configured `read_timeout` and `idle_timeout`
-  were never applied. Reaching the `max_connections` ceiling this way denied
-  service to legitimate clients. See the listener-timeout entry under *Changed*
-- `/api/v1/ws` now verifies the WebSocket `Origin`. WebSockets are exempt from
-  both the same-origin policy and CORS, so any web page loaded in a browser that
-  could reach a Bifrost instance was previously able to open a socket and read
-  the live traffic stream — and when no `api.token` is configured that route has
-  no authentication either. An `Origin` whose host matches the request `Host` is
-  always accepted (the dashboard Bifrost itself serves, needing no
-  configuration); anything else must be named in the new `api.allowed_origins`;
-  a request with no `Origin` header at all is still accepted, since non-browser
-  clients do not send one and a web page cannot suppress its own. This was a
-  long-standing gap rather than a regression: the previous implementation only
-  checked that `Origin` parsed as a URL and never compared it to the host
-- The `api.token` is no longer written to the request log. Both dashboards
-  authenticate their WebSocket and SSE connections with `?token=`, because
-  browsers cannot set headers on those transports, and the request logger printed
-  the URL verbatim — so the token was logged on every WebSocket upgrade and every
-  log-stream reconnect. The parameter is now lifted out of the URL before any
-  logging happens; it still authenticates the request
-- Config values containing a dollar sign are no longer silently truncated. The
-  loader expanded environment variables by running `os.ExpandEnv` over the whole
-  file, so any `$` followed by word characters was read as a variable reference:
-  the password `p@ss$word123` loaded as `p@ss`, and the bcrypt hash
-  `$2a$10$N9qo…` loaded as `a0`. There was no escape syntax, and YAML quoting
-  could not help, because expansion ran on the raw bytes before parsing. Every
-  credential in a config file — proxy passwords, LDAP bind passwords, API keys,
-  `password_hash` values — was at risk of being corrupted into something that
-  then failed authentication with no indication why. Expansion now recognizes
-  only `${NAME}`, `${NAME:-fallback}` and the escape `$$`; every other dollar
-  sign is literal
-
 ### Added
 - `bifrost-server service start|stop` and `bifrost-client service start|stop`
   now control an installed systemd, launchd, or Windows service directly. The
@@ -124,33 +68,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   during an upgrade, and it is transitional: fix the config file rather than
   keeping the variable set
 
-### Removed
-- Vestigial convenience constructors superseded by the `…With…` variants the
-  production code calls: `metrics.NewCollector`, `router.NewLoadBalancer`,
-  `NewMeshAPI`, `NewWebSocketHub`, `health.DefaultConfig`, and
-  `device.CreateTUN`/`CreateTAP`/`ParseDeviceType`. The tests that used them now
-  construct through the same entry points production does, so they exercise the
-  shipped path
-- Dead code the audit identified as unreachable: the `internal/auth` HTTP
-  middleware (a parallel authentication abstraction the live proxy never used,
-  whose `tryClientCert` implied mTLS-via-middleware was the real path when it
-  is not), the duplicate exported range parser in `internal/cache` (the live
-  code has its own private one), the unused `internal/util` error-wrapping and
-  network helpers, and the cache rule/preset/key extract-method leftovers that
-  the live loader had already inlined. Around 1,100 lines.
-
-  Four symbols in the middleware file were **not** dead and were preserved
-  rather than deleted with it: `ExtractProxyBearerToken`, used by the HTTP
-  proxy's authentication path, and the `ContextKey` type with
-  `ClientCertContextKey` / `ClientCertChainContextKey`, which the proxy sets and
-  the mtls auth plugin reads. The audit's "remove the whole file" verdict was
-  wrong on those, and `audit/go-backend.md` now records the correction.
-
-  Package coverage rose where dead code was removed (`internal/auth` 92.7% →
-  97.0%, `internal/util` 92.4% → 97.8% after restoring a lost `IsTimeout` test
-  and making `OpenURL` testable without launching a browser)
-
 ### Changed
+- Windows- and macOS-tagged Go code is now analysed by CI. Every job runs on
+  `ubuntu-latest`, so those files were cross-compiled but never linted, because
+  `golangci-lint` and `staticcheck` analyse only the host platform unless `GOOS`
+  says otherwise. A `lint-cross-platform` matrix job closes that gap. It
+  immediately surfaced two test packages that did not compile for Windows at all
+  (`internal/tray` referenced CGo-only symbols from an untagged file;
+  `internal/auth/plugin/system` tested the `!windows` authenticator from an
+  untagged file), plus 36 real findings in never-linted code — among them an
+  unchecked rollback in the Windows updater that could leave no executable in
+  place, and a `splitHostPort` whose error return was never non-nil, making
+  every call site look like it handled a failure that could not happen
+- The four `audit/` reports have been retired. Every actionable finding they
+  raised is fixed and verified on `master`; the remaining deferred items (the
+  on-device mobile VPN, the inert `max_load`/`auto_select` provider knobs, and
+  the platforms CI cannot execute) moved to `ISSUES.md`, which no longer depends
+  on the audit directory. Git history preserves the reports
 - Desktop completion pass: tagged releases now build the Wails app on native
   Linux, Windows, and macOS runners and attach consistently named
   `bifrost-desktop-*` artifacts (including a universal macOS bundle). The
@@ -310,7 +244,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   plugin registry instead of only checking that a `mode` was named. A block
   naming an unknown mode, or a mode without the config that mode requires, used
   to validate cleanly and then fail at startup
-
 - HTTPS health checks are now configurable: `health_check.scheme` (`http`/`https`)
   and `health_check.insecure_skip_verify`, on both the global block and
   per-backend overrides, editable from the server dashboard (the per-backend
@@ -380,15 +313,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Configuration Preservation**
   - AST-based YAML updates to maintain comments and formatting
   - Preserves user-added documentation in configuration files
-
 - Server `mesh` config block for the mesh coordinator API: `mesh.enabled`
   (default `true`) mounts or removes the `/api/v1/mesh/*` routes, and
   `mesh.state_path` persists coordinator networks and peers across restarts
   (atomic `0600` write; peer virtual IPs are re-pinned on startup so a restart
   does not renumber a running mesh). Previously the coordinator was
   unconditionally mounted and purely in-memory
+- `API.Router()` now registers the same routes as `RouterWithWebSocket` instead
+  of a hand-maintained subset that silently omitted the cache and mesh routes
+- Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
+  reporting success while changing nothing but an in-memory field
+- Authentication system refactored to plugin architecture
+- Auth providers now registered via `auth.RegisterPlugin()`
+- Enhanced VPNStatus API response with connection details
+- System proxy support extended beyond Windows to macOS (`networksetup`) and
+  Linux/GNOME (`gsettings`); unsupported desktops now return `ErrNotSupported`
+  instead of reporting a successful no-op
+- Repaired the original logo rather than replacing it. The rainbow span and the
+  plated circle are unchanged, as are all five gradient colours; six defects
+  were fixed. The packet dots straddled the arch's lower edge - they sat 4.7
+  units inside a band spanning 93.7-105.7 - and now sit on its centreline. The
+  dashed flow lines started below the arch and ended above it, cutting through
+  the span, and are now one curve concentric to it. The gradient ran red,
+  yellow, teal, blue, green, so hue reversed at the final stop and the
+  right-hand node disagreed with the arch end it attached to. The hub was a disc
+  whose centre was filled with the plate colour, showing as a dark blob on any
+  other surface, and is now a ring seated on the crown rather than floating over
+  it. The mark also had no accessible name. A separate simplified cut
+  (`assets/icon.svg`) backs favicons, app icons and the tray, because at 16px
+  the full mark's arch stroke is 0.96px and its packets and flow dashes vanish
+  entirely. `assets/logo-light.svg` and `assets/logo-dark.svg` are gone: the
+  mark carries its own plate, so surface variants served no purpose, and only
+  the README's `<picture>` referenced them
 
 ### Removed
+- Vestigial convenience constructors superseded by the `…With…` variants the
+  production code calls: `metrics.NewCollector`, `router.NewLoadBalancer`,
+  `NewMeshAPI`, `NewWebSocketHub`, `health.DefaultConfig`, and
+  `device.CreateTUN`/`CreateTAP`/`ParseDeviceType`. The tests that used them now
+  construct through the same entry points production does, so they exercise the
+  shipped path
+- Dead code the audit identified as unreachable: the `internal/auth` HTTP
+  middleware (a parallel authentication abstraction the live proxy never used,
+  whose `tryClientCert` implied mTLS-via-middleware was the real path when it
+  is not), the duplicate exported range parser in `internal/cache` (the live
+  code has its own private one), the unused `internal/util` error-wrapping and
+  network helpers, and the cache rule/preset/key extract-method leftovers that
+  the live loader had already inlined. Around 1,100 lines.
+
+  Four symbols in the middleware file were **not** dead and were preserved
+  rather than deleted with it: `ExtractProxyBearerToken`, used by the HTTP
+  proxy's authentication path, and the `ContextKey` type with
+  `ClientCertContextKey` / `ClientCertChainContextKey`, which the proxy sets and
+  the mtls auth plugin reads. The audit's "remove the whole file" verdict was
+  wrong on those, and the correction is recorded in the commit that made it.
+
+  Package coverage rose where dead code was removed (`internal/auth` 92.7% →
+  97.0%, `internal/util` 92.4% → 97.8% after restoring a lost `IsTimeout` test
+  and making `OpenURL` testable without launching a browser)
 - The client API's duplicate route table. `(*API).Handler` and
   `addAPIRoutes` maintained a second copy of every route by hand, kept alive
   only by tests, and it had already drifted from the production
@@ -409,60 +391,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `device.GenerateMAC`, whose doc comment promised a random address while the
   body returned the hardcoded `02:BF:00:00:00:01`. Use
   `device.GenerateRandomMAC`, which the production paths already used
-
-### Changed
-- `API.Router()` now registers the same routes as `RouterWithWebSocket` instead
-  of a hand-maintained subset that silently omitted the cache and mesh routes
-- Windows TAP `SetMACAddress` now returns `ErrSetMACUnsupported` instead of
-  reporting success while changing nothing but an in-memory field
-
-### Security
-- The PIA provider's embedded OpenVPN CA certificate was not PIA's. It parsed as
-  X.509 with the right structure and subject, but 711 of its 1967 DER bytes had
-  been replaced — 300 bytes at the tail of the RSA modulus and 414 of the 512
-  signature bytes — so its self-signature did not verify and its public key was
-  not the one PIA signs with. That constant is both the `<ca>`
-  block of generated PIA OpenVPN profiles and the TLS trust root for PIA's
-  `/addKey` and port-forwarding endpoints, so PIA OpenVPN, WireGuard key
-  registration and port forwarding could not have worked. Replaced with PIA's
-  published `ca.rsa.4096.crt`, now fingerprint-pinned and signature-checked by
-  tests
-- ProtonVPN API-mode login now verifies the PGP signature of the SRP modulus
-  returned by `/auth/info` against Proton's modulus-signing key. Previously the
-  modulus was taken on trust (and mis-parsed), so a tampered response could have
-  substituted an attacker-chosen SRP group
-- Provider OpenVPN CA certificates and `tls-auth` keys are validated fail-closed
-  wherever they are used: a PEM block that is not a parseable X.509 CA, a
-  self-issued certificate whose signature does not verify, an expired
-  certificate, or a placeholder `tls-auth` key is now refused instead of being
-  written into a profile
-
-### Security
-- The client dashboard's static UI responses now carry the same global
-  security headers as the server dashboard (CSP, X-Frame-Options, nosniff).
-  The production handler had silently drifted from a test-only duplicate route
-  table that had them
-- Brute-force protection actually ships: `auth.brute_force` wraps the whole
-  provider chain with failed-login lockout (exponential backoff, per
-  username+source). The implementation existed, fully tested, with no config
-  key and no caller — a security control the project believed it shipped and
-  did not
-- **A configured but unusable mTLS CRL no longer fails open.** An unreadable
-  or unparsable `crl_file` was a one-line startup warning, after which every
-  certificate the CRL was supposed to revoke kept authenticating. It is now a
-  fatal startup/creation error: if revocation checking is configured it works,
-  or the provider refuses to run. Remove `crl_file` to run without revocation
-  checking — it is never disabled implicitly
-- **`oauth.required_claims` is enforced.** The setting was parsed and surfaced
-  in the dashboard but never read, so a deployment gating access on, say,
-  `hd: example.com` was letting every active token through. Both validation
-  paths (introspection and userinfo) now enforce it with exact semantics:
-  missing claims fail, strings compare exactly, booleans and numbers compare
-  by canonical text, array claims match by string membership (`aud`-style),
-  object-valued claims never match. Deployments with no `required_claims` (or
-  the empty map the default template shipped) are unaffected. Claim values are
-  never logged or echoed in errors
-
 
 ### Fixed
 - The VPN configuration was invisible over the API. `vpn.Config`, `TUNConfig`,
@@ -636,7 +564,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dashboard derives its prefix from the browser URL; the Go server does not
   consume the value); the `debug.filter_domains` template comment now says
   NOT YET IMPLEMENTED instead of describing a working option
-
 - P2P latency is now measured instead of fabricated: keep-alive PONGs record
   the actual PING round-trip (previously the PONG was discarded and the stored
   "latency" was however long a socket write took), relayed connections gained
@@ -694,8 +621,167 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and not even logged, leaving an MTU mismatch to surface later as blackholed
   large packets with nothing pointing at the cause. They are warnings now,
   with the requested MTU and the tool output
+- **One peer leaving the mesh disabled networking for the whole node.**
+  `DirectConnection.Close` closed the P2P manager's shared UDP socket, which it
+  does not own, so the first disconnect left the node unable to send or receive
+  any datagram or accept any new peer — while the receive worker busy-spun on the
+  closed socket, logging in a hot loop. The socket is now closed only by the
+  manager, the receive worker stops instead of retrying a permanently closed
+  socket, and a connection that loses the inbound race is closed rather than
+  leaking its worker goroutines
+- Documentation: every YAML example in the docs is now one the server/client
+  actually accepts. Removed config keys that do not exist and were therefore
+  silently dropped by the loader (`access_log.fields`,
+  `server.http.forward_auth_headers`, `cache.memory`/`cache.disk` outside
+  `cache.storage`, `rate_limit.burst`, listener `enabled`/`address`/
+  `connect_timeout`/`max_idle_conns*`, top-level `websocket:`/`connection_limits:`,
+  `vpn.mode`/`vpn.interface_name`/`vpn.mtu`/`vpn.split`, `vpn.dns.servers`,
+  `vpn.dns.intercept_port`, `debug.log_level`), corrected auth-provider options to
+  the schema each plugin parses (mTLS `ca_cert_file`/`allowed_subjects`, JWT
+  `algorithms` plus a real key source, apikey `header_name`, list-shaped TOTP/HOTP
+  `secrets`, `mfa_wrapper` requiring both `primary` and `secondary`), and split
+  the blocks that contained duplicate YAML keys — those made the loader hard-fail,
+  so pasting them prevented startup
+- Documentation: `monitoring.mdx` now matches the Prometheus registry, including
+  the `bifrost_cache_*` series (exported whenever `cache.enabled` is set) and the
+  note that `bifrost_connections_active` always carries an empty `backend` label.
+  Two Mermaid diagrams in the architecture guide that failed to parse in the
+  browser now render
+- Documentation: `${VAR:-default}` was shown as supported env-var interpolation,
+  but expansion is `os.ExpandEnv`, so it silently yields an empty string
+- A config save that changed both a hot-reloadable and a restart-required section
+  skipped the hot-reload entirely, so e.g. a new `access_control` blocklist saved
+  alongside a listener change stayed unenforced until a restart. The
+  hot-reloadable part is now always applied
+- The server dashboard wrongly reported hot-reloaded `access_control`,
+  `rate_limit` and `cache` saves as "restart required" (`routes` was the only
+  section it classified correctly). Section hot-reloadability now comes from
+  `GET /api/v1/config/meta` and the save response instead of a client-side list
+  that both had the wrong membership and mangled its lookup keys
+- Importing a configuration file left the dashboard editor holding the
+  pre-import config, so every section showed as modified and saving would have
+  reverted the import
+- The "Health Check" link in the configuration sidebar scrolled nowhere: its
+  anchor was derived from an older section heading. Section anchors are now
+  derived from the config section name and can no longer drift from the heading
+- Collapsed configuration sections kept their form fields in the tab order and
+  in the accessibility tree, so keyboard and screen-reader users walked through
+  the fields of all 17 collapsed panels
+- The unsaved-changes navigation warning never fired, because the dashboard only
+  tracked edits while a save was already in flight
+- If auto-reload failed after a config save, the API still reported the sections
+  as applied; it now reports them as needing a restart
+- `GET /api/v1/config/meta` duplicated its hot-reloadable flags in a second hand-
+  maintained list that could disagree with the save path; both now derive from
+  one table
+- Client `/api/v1/status` now reports real traffic counters. `bytes_sent`,
+  `bytes_received` and `active_connections` were hardwired to zero because the
+  client never supplied the API's counter callbacks; they are now fed from the
+  HTTP and SOCKS5 proxy handlers
+- `auto_update` is no longer a dead toggle on the server. `Server.Start` now
+  constructs the updater and starts the background checker when
+  `auto_update.enabled` is set (honouring `channel` and `check_interval`, with
+  the interval clamped to a 1 hour minimum), logs available updates at `INFO`
+  level, and stops the checker on graceful shutdown
+- `cache_bytes_served_total{source="origin"}` is now recorded. It had no
+  production writer, so it stayed at zero and the bandwidth-saved ratio against
+  `{source="cache"}` could not be computed. Bytes are counted for every response
+  fetched from the origin while the cache is enabled, cacheable or not
+- Cache hits are no longer reported as HTTP 500. The cache-served branch never
+  set a status code, so the access log and `bifrost_requests_total` recorded
+  `status="500"` for every hit while the client correctly received 200. Hits now
+  record the status actually written (200, or 206 for range requests) and carry
+  the synthetic backend label `cache`
+- VPN manager nil pointer panics when disabled or uninitialized
+- Auto-updater reliability issues with non-SemVer releases
+- Improved error handling in API server
+- Cross-compilation support for VPN mode on all platforms
+- Removed CGo dependency from darwin process lookup
+- Restored .gitkeep files for static directories
 
 ### Security
+- The server dashboard no longer keeps the API token in `localStorage` when a
+  session store is configured. Signing in POSTs the token once to
+  `/api/v1/login` and thereafter authenticates with the **HttpOnly** session
+  cookie the server already knew how to issue — script cannot read that cookie,
+  whereas any XSS on the page could read the stored bearer token. The cookie
+  also authenticates the WebSocket handshake, so no credential is placed in a
+  URL. Signing out destroys the session server-side, and an expired session
+  prompts for the token again instead of failing every page. The server half of
+  this flow was built and config-gated but had no client; without a `session:`
+  block the dashboard still falls back to the bearer token and says so
+- `POST /api/v1/login` and `/api/v1/logout` are now mounted unconditionally, so
+  a server with no session store answers the handlers' `503 "not enabled"`
+  instead of a bare `404`. While the routes were conditionally registered those
+  `503` branches were unreachable, and a client could not distinguish "feature
+  disabled" from "wrong URL". Registering `/login` also had to move after the
+  middleware chain: chi requires every `r.Use` on a mux to precede its first
+  route, and the no-token branch installs CSRF middleware on that router — with
+  a session manager and no token configured, the old placement would have
+  panicked at startup
+- Both proxy listeners now bound an idle client, closing a slowloris-style
+  resource exhaustion. A client could previously connect to the HTTP or SOCKS5
+  listener and either send nothing at all or trickle request headers forever,
+  pinning one goroutine and one file descriptor per connection with no timeout
+  of any kind to reclaim them — the configured `read_timeout` and `idle_timeout`
+  were never applied. Reaching the `max_connections` ceiling this way denied
+  service to legitimate clients. See the listener-timeout entry under *Changed*
+- `/api/v1/ws` now verifies the WebSocket `Origin`. WebSockets are exempt from
+  both the same-origin policy and CORS, so any web page loaded in a browser that
+  could reach a Bifrost instance was previously able to open a socket and read
+  the live traffic stream — and when no `api.token` is configured that route has
+  no authentication either. An `Origin` whose host matches the request `Host` is
+  always accepted (the dashboard Bifrost itself serves, needing no
+  configuration); anything else must be named in the new `api.allowed_origins`;
+  a request with no `Origin` header at all is still accepted, since non-browser
+  clients do not send one and a web page cannot suppress its own. This was a
+  long-standing gap rather than a regression: the previous implementation only
+  checked that `Origin` parsed as a URL and never compared it to the host
+- The `api.token` is no longer written to the request log. Both dashboards
+  authenticate their WebSocket and SSE connections with `?token=`, because
+  browsers cannot set headers on those transports, and the request logger printed
+  the URL verbatim — so the token was logged on every WebSocket upgrade and every
+  log-stream reconnect. The parameter is now lifted out of the URL before any
+  logging happens; it still authenticates the request
+- Config values containing a dollar sign are no longer silently truncated. The
+  loader expanded environment variables by running `os.ExpandEnv` over the whole
+  file, so any `$` followed by word characters was read as a variable reference:
+  the password `p@ss$word123` loaded as `p@ss`, and the bcrypt hash
+  `$2a$10$N9qo…` loaded as `a0`. There was no escape syntax, and YAML quoting
+  could not help, because expansion ran on the raw bytes before parsing. Every
+  credential in a config file — proxy passwords, LDAP bind passwords, API keys,
+  `password_hash` values — was at risk of being corrupted into something that
+  then failed authentication with no indication why. Expansion now recognizes
+  only `${NAME}`, `${NAME:-fallback}` and the escape `$$`; every other dollar
+  sign is literal
+- The PIA provider's embedded OpenVPN CA certificate was not PIA's. It parsed as
+  X.509 with the right structure and subject, but 711 of its 1967 DER bytes had
+  been replaced — 300 bytes at the tail of the RSA modulus and 414 of the 512
+  signature bytes — so its self-signature did not verify and its public key was
+  not the one PIA signs with. That constant is both the `<ca>`
+  block of generated PIA OpenVPN profiles and the TLS trust root for PIA's
+  `/addKey` and port-forwarding endpoints, so PIA OpenVPN, WireGuard key
+  registration and port forwarding could not have worked. Replaced with PIA's
+  published `ca.rsa.4096.crt`, now fingerprint-pinned and signature-checked by
+  tests
+- ProtonVPN API-mode login now verifies the PGP signature of the SRP modulus
+  returned by `/auth/info` against Proton's modulus-signing key. Previously the
+  modulus was taken on trust (and mis-parsed), so a tampered response could have
+  substituted an attacker-chosen SRP group
+- Provider OpenVPN CA certificates and `tls-auth` keys are validated fail-closed
+  wherever they are used: a PEM block that is not a parseable X.509 CA, a
+  self-issued certificate whose signature does not verify, an expired
+  certificate, or a placeholder `tls-auth` key is now refused instead of being
+  written into a profile
+- The client dashboard's static UI responses now carry the same global
+  security headers as the server dashboard (CSP, X-Frame-Options, nosniff).
+  The production handler had silently drifted from a test-only duplicate route
+  table that had them
+- Brute-force protection actually ships: `auth.brute_force` wraps the whole
+  provider chain with failed-login lockout (exponential backoff, per
+  username+source). The implementation existed, fully tested, with no config
+  key and no caller — a security control the project believed it shipped and
+  did not
 - **A configured but unusable mTLS CRL no longer fails open.** An unreadable
   or unparsable `crl_file` was a one-line startup warning, after which every
   certificate the CRL was supposed to revoke kept authenticating. It is now a
@@ -711,7 +797,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   object-valued claims never match. Deployments with no `required_claims` (or
   the empty map the default template shipped) are unaffected. Claim values are
   never logged or echoed in errors
-
 - **Disconnecting and reconnecting the client crashed the process.** The client's
   internal shutdown channel was allocated once, when the client was created, and
   closed by every `Stop`, so a stop/start/stop sequence closed it twice and
@@ -921,111 +1006,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > `invalid handshake init: unexpected length (incompatible peer version?)`. The
 > handshake has no version-negotiation field, so there is no mixed-version
 > fallback. Nothing outside the mesh data plane is affected.
-
-### Fixed
-- **One peer leaving the mesh disabled networking for the whole node.**
-  `DirectConnection.Close` closed the P2P manager's shared UDP socket, which it
-  does not own, so the first disconnect left the node unable to send or receive
-  any datagram or accept any new peer — while the receive worker busy-spun on the
-  closed socket, logging in a hot loop. The socket is now closed only by the
-  manager, the receive worker stops instead of retrying a permanently closed
-  socket, and a connection that loses the inbound race is closed rather than
-  leaking its worker goroutines
-- Documentation: every YAML example in the docs is now one the server/client
-  actually accepts. Removed config keys that do not exist and were therefore
-  silently dropped by the loader (`access_log.fields`,
-  `server.http.forward_auth_headers`, `cache.memory`/`cache.disk` outside
-  `cache.storage`, `rate_limit.burst`, listener `enabled`/`address`/
-  `connect_timeout`/`max_idle_conns*`, top-level `websocket:`/`connection_limits:`,
-  `vpn.mode`/`vpn.interface_name`/`vpn.mtu`/`vpn.split`, `vpn.dns.servers`,
-  `vpn.dns.intercept_port`, `debug.log_level`), corrected auth-provider options to
-  the schema each plugin parses (mTLS `ca_cert_file`/`allowed_subjects`, JWT
-  `algorithms` plus a real key source, apikey `header_name`, list-shaped TOTP/HOTP
-  `secrets`, `mfa_wrapper` requiring both `primary` and `secondary`), and split
-  the blocks that contained duplicate YAML keys — those made the loader hard-fail,
-  so pasting them prevented startup
-- Documentation: `monitoring.mdx` now matches the Prometheus registry, including
-  the `bifrost_cache_*` series (exported whenever `cache.enabled` is set) and the
-  note that `bifrost_connections_active` always carries an empty `backend` label.
-  Two Mermaid diagrams in the architecture guide that failed to parse in the
-  browser now render
-- Documentation: `${VAR:-default}` was shown as supported env-var interpolation,
-  but expansion is `os.ExpandEnv`, so it silently yields an empty string
-- A config save that changed both a hot-reloadable and a restart-required section
-  skipped the hot-reload entirely, so e.g. a new `access_control` blocklist saved
-  alongside a listener change stayed unenforced until a restart. The
-  hot-reloadable part is now always applied
-- The server dashboard wrongly reported hot-reloaded `access_control`,
-  `rate_limit` and `cache` saves as "restart required" (`routes` was the only
-  section it classified correctly). Section hot-reloadability now comes from
-  `GET /api/v1/config/meta` and the save response instead of a client-side list
-  that both had the wrong membership and mangled its lookup keys
-- Importing a configuration file left the dashboard editor holding the
-  pre-import config, so every section showed as modified and saving would have
-  reverted the import
-- The "Health Check" link in the configuration sidebar scrolled nowhere: its
-  anchor was derived from an older section heading. Section anchors are now
-  derived from the config section name and can no longer drift from the heading
-- Collapsed configuration sections kept their form fields in the tab order and
-  in the accessibility tree, so keyboard and screen-reader users walked through
-  the fields of all 17 collapsed panels
-- The unsaved-changes navigation warning never fired, because the dashboard only
-  tracked edits while a save was already in flight
-- If auto-reload failed after a config save, the API still reported the sections
-  as applied; it now reports them as needing a restart
-- `GET /api/v1/config/meta` duplicated its hot-reloadable flags in a second hand-
-  maintained list that could disagree with the save path; both now derive from
-  one table
-- Client `/api/v1/status` now reports real traffic counters. `bytes_sent`,
-  `bytes_received` and `active_connections` were hardwired to zero because the
-  client never supplied the API's counter callbacks; they are now fed from the
-  HTTP and SOCKS5 proxy handlers
-- `auto_update` is no longer a dead toggle on the server. `Server.Start` now
-  constructs the updater and starts the background checker when
-  `auto_update.enabled` is set (honouring `channel` and `check_interval`, with
-  the interval clamped to a 1 hour minimum), logs available updates at `INFO`
-  level, and stops the checker on graceful shutdown
-- `cache_bytes_served_total{source="origin"}` is now recorded. It had no
-  production writer, so it stayed at zero and the bandwidth-saved ratio against
-  `{source="cache"}` could not be computed. Bytes are counted for every response
-  fetched from the origin while the cache is enabled, cacheable or not
-- Cache hits are no longer reported as HTTP 500. The cache-served branch never
-  set a status code, so the access log and `bifrost_requests_total` recorded
-  `status="500"` for every hit while the client correctly received 200. Hits now
-  record the status actually written (200, or 206 for range requests) and carry
-  the synthetic backend label `cache`
-- VPN manager nil pointer panics when disabled or uninitialized
-- Auto-updater reliability issues with non-SemVer releases
-- Improved error handling in API server
-
-### Fixed
-- Cross-compilation support for VPN mode on all platforms
-- Removed CGo dependency from darwin process lookup
-- Restored .gitkeep files for static directories
-
-### Changed
-- Authentication system refactored to plugin architecture
-- Auth providers now registered via `auth.RegisterPlugin()`
-- Enhanced VPNStatus API response with connection details
-- System proxy support extended beyond Windows to macOS (`networksetup`) and
-  Linux/GNOME (`gsettings`); unsupported desktops now return `ErrNotSupported`
-  instead of reporting a successful no-op
-- Repaired the original logo rather than replacing it. The rainbow span and the
-  plated circle are unchanged, as are all five gradient colours; six defects
-  were fixed. The packet dots straddled the arch's lower edge - they sat 4.7
-  units inside a band spanning 93.7-105.7 - and now sit on its centreline. The
-  dashed flow lines started below the arch and ended above it, cutting through
-  the span, and are now one curve concentric to it. The gradient ran red,
-  yellow, teal, blue, green, so hue reversed at the final stop and the
-  right-hand node disagreed with the arch end it attached to. The hub was a disc
-  whose centre was filled with the plate colour, showing as a dark blob on any
-  other surface, and is now a ring seated on the crown rather than floating over
-  it. The mark also had no accessible name. A separate simplified cut
-  (`assets/icon.svg`) backs favicons, app icons and the tray, because at 16px
-  the full mark's arch stroke is 0.96px and its packets and flow dashes vanish
-  entirely. `assets/logo-light.svg` and `assets/logo-dark.svg` are gone: the
-  mark carries its own plate, so surface variants served no purpose, and only
-  the README's `<picture>` referenced them
 
 ## [1.0.0] - 2026-01-16
 

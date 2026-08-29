@@ -3,6 +3,7 @@
 package updater
 
 import (
+	"fmt"
 	"os"
 )
 
@@ -15,8 +16,9 @@ func atomicReplace(src, dst string) error {
 	// 3. The .old file will be cleaned up on next run
 	oldPath := dst + ".old"
 
-	// Remove any existing .old file
-	os.Remove(oldPath)
+	// Remove any existing .old file. A failure here is not fatal: the rename
+	// below overwrites it, and cleanupOldBinary retries on the next start.
+	_ = os.Remove(oldPath) //nolint:errcheck // superseded by the rename below
 
 	// Rename current to .old
 	if err := os.Rename(dst, oldPath); err != nil {
@@ -25,8 +27,14 @@ func atomicReplace(src, dst string) error {
 
 	// Move new binary to target
 	if err := os.Rename(src, dst); err != nil {
-		// Try to restore
-		os.Rename(oldPath, dst)
+		// Try to restore. If the restore ALSO fails there is no executable at
+		// dst any more, which is the worst outcome this function can produce -
+		// so it must not be swallowed. Report both errors: the second explains
+		// why the install is broken, the first why it was attempted.
+		if restoreErr := os.Rename(oldPath, dst); restoreErr != nil {
+			return fmt.Errorf("install failed (%w) and rollback failed: %v; the previous binary is at %s",
+				err, restoreErr, oldPath)
+		}
 		return err
 	}
 

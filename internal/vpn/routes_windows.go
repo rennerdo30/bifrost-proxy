@@ -380,7 +380,7 @@ func (r *windowsRouteManager) findInterfaceByAddr(addr netip.Addr) (*net.Interfa
 // configureDNS configures the system to use our DNS server.
 func (r *windowsRouteManager) configureDNS(dnsAddr string) error {
 	// Extract IP from address
-	host, _, _ := splitHostPort(dnsAddr)
+	host, _ := splitHostPort(dnsAddr)
 	if host == "" {
 		host = dnsAddr
 	}
@@ -436,10 +436,14 @@ func (r *windowsRouteManager) restoreDNS() error {
 }
 
 // splitHostPort splits a host:port string.
-func splitHostPort(addr string) (host, port string, err error) {
+// splitHostPort splits "host:port", returning the whole string as the host when
+// there is no colon. It cannot fail, so it returns no error - the discarded
+// error return it used to have made every call site look like it was ignoring
+// a failure.
+func splitHostPort(addr string) (host, port string) {
 	lastColon := strings.LastIndex(addr, ":")
 	if lastColon == -1 {
-		return addr, "", nil
+		return addr, ""
 	}
-	return addr[:lastColon], addr[lastColon+1:], nil
+	return addr[:lastColon], addr[lastColon+1:]
 }

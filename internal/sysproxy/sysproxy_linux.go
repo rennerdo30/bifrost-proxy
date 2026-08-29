@@ -80,7 +80,7 @@ func (m *linuxManager) ClearProxy() error {
 }
 
 func (m *linuxManager) exec(args ...string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), darwinCommandTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 
 	out, err := m.run.run(ctx, "gsettings", args...)
@@ -98,7 +98,7 @@ func (m *linuxManager) gsettingsAvailable() bool {
 		return false
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), darwinCommandTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 
 	// `gsettings get` against the proxy schema succeeds only when the schema is

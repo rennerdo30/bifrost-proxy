@@ -328,10 +328,7 @@ func (r *linuxRouteManager) getDefaultGateway() (string, error) {
 // configureDNS configures the system to use our DNS server.
 func (r *linuxRouteManager) configureDNS(dnsAddr string) error {
 	// Extract IP from address
-	host, _, err := splitHostPort(dnsAddr)
-	if err != nil {
-		host = dnsAddr
-	}
+	host, _ := splitHostPort(dnsAddr)
 
 	// Save current resolv.conf
 	data, err := os.ReadFile("/etc/resolv.conf")
@@ -400,11 +397,14 @@ func (r *linuxRouteManager) restoreDNS() error {
 	return os.WriteFile("/etc/resolv.conf", []byte(content), 0644) //nolint:gosec // G306: resolv.conf must be world-readable
 }
 
-// splitHostPort splits a host:port string.
-func splitHostPort(addr string) (host, port string, err error) {
+// splitHostPort splits "host:port", returning the whole string as the host when
+// there is no colon. It cannot fail, so it returns no error - the error return
+// it used to have was never non-nil, which made every call site look like it
+// was handling a failure that could not happen.
+func splitHostPort(addr string) (host, port string) {
 	lastColon := strings.LastIndex(addr, ":")
 	if lastColon == -1 {
-		return addr, "", nil
+		return addr, ""
 	}
-	return addr[:lastColon], addr[lastColon+1:], nil
+	return addr[:lastColon], addr[lastColon+1:]
 }

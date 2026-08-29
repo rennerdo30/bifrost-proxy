@@ -1,3 +1,12 @@
+//go:build !windows
+
+// These tests exercise the Unix Authenticator defined in system.go, which is
+// itself //go:build !windows. Without a matching tag the test package failed to
+// compile for any Windows target - invisible to CI, which runs only on Linux and
+// never builds test binaries for other platforms. The build tag also makes the
+// former runtime.GOOS branches dead, so they are gone; the Windows side of each
+// is already covered by system_windows_test.go.
+
 // Package system provides system (PAM) authentication for Bifrost.
 package system
 
@@ -37,12 +46,7 @@ func TestPluginDescription(t *testing.T) {
 	assert.NotEmpty(t, desc)
 
 	// Platform-specific description check
-	if runtime.GOOS == "windows" {
-		assert.Contains(t, desc, "Windows")
-		assert.Contains(t, desc, "LogonUser")
-	} else {
-		assert.Contains(t, desc, "PAM")
-	}
+	assert.Contains(t, desc, "PAM")
 }
 
 // TestPluginDefaultConfig verifies the DefaultConfig method.
@@ -231,36 +235,8 @@ func TestParseStringSlice(t *testing.T) {
 	}
 }
 
-// TestPluginCreateOnWindows tests that Create returns an error on Windows.
-func TestPluginCreateOnWindows(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("test only runs on Windows")
-	}
-
-	p := &plugin{}
-	_, err := p.Create(nil)
-	require.Error(t, err)
-	assert.ErrorIs(t, err, auth.ErrAuthMethodUnsupported)
-	assert.Contains(t, err.Error(), "Windows")
-}
-
-// TestPluginValidateConfigOnWindows tests that ValidateConfig returns an error on Windows.
-func TestPluginValidateConfigOnWindows(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("test only runs on Windows")
-	}
-
-	p := &plugin{}
-	err := p.ValidateConfig(nil)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "Windows")
-}
-
 // TestPluginCreateOnUnix tests that Create succeeds on Unix systems.
 func TestPluginCreateOnUnix(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	p := &plugin{}
 	authenticator, err := p.Create(nil)
@@ -277,9 +253,6 @@ func TestPluginCreateOnUnix(t *testing.T) {
 
 // TestPluginCreateWithConfig tests Create with various configurations.
 func TestPluginCreateWithConfig(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	tests := []struct {
 		name                string
@@ -328,9 +301,6 @@ func TestPluginCreateWithConfig(t *testing.T) {
 
 // TestPluginValidateConfigOnUnix tests ValidateConfig on Unix systems.
 func TestPluginValidateConfigOnUnix(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	p := &plugin{}
 
@@ -420,9 +390,6 @@ func TestAuthenticateNonexistentUser(t *testing.T) {
 
 // TestAuthenticateCurrentUser tests behavior with current user (user lookup succeeds).
 func TestAuthenticateCurrentUser(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	// Get current user to ensure user lookup succeeds
 	currentUser, err := user.Current()
@@ -440,9 +407,6 @@ func TestAuthenticateCurrentUser(t *testing.T) {
 
 // TestAuthenticateWithAllowedGroups tests group-based access control.
 func TestAuthenticateWithAllowedGroups(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	// Get current user
 	currentUser, err := user.Current()
@@ -465,9 +429,6 @@ func TestAuthenticateWithAllowedGroups(t *testing.T) {
 
 // TestGetUserGroups tests the getUserGroups method.
 func TestGetUserGroups(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	currentUser, err := user.Current()
 	if err != nil {
@@ -486,9 +447,6 @@ func TestGetUserGroups(t *testing.T) {
 
 // TestValidatePassword tests the validatePassword method.
 func TestValidatePassword(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	a := &Authenticator{}
 	ctx := context.Background()
@@ -528,9 +486,6 @@ func TestValidateLinux(t *testing.T) {
 
 // TestValidateWithCancelledContext tests password validation with canceled context.
 func TestValidateWithCancelledContext(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	a := &Authenticator{}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -543,9 +498,6 @@ func TestValidateWithCancelledContext(t *testing.T) {
 
 // TestAuthenticatorIntegration tests the full authenticator integration via factory.
 func TestAuthenticatorIntegration(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	factory := auth.NewFactory()
 	authenticator, err := factory.Create(auth.ProviderConfig{
@@ -565,27 +517,8 @@ func TestAuthenticatorIntegration(t *testing.T) {
 	assert.Contains(t, authenticator.Name(), "system-")
 }
 
-// TestAuthenticatorIntegrationWindows tests that factory returns error on Windows.
-func TestAuthenticatorIntegrationWindows(t *testing.T) {
-	if runtime.GOOS != "windows" {
-		t.Skip("test only runs on Windows")
-	}
-
-	factory := auth.NewFactory()
-	_, err := factory.Create(auth.ProviderConfig{
-		Name:    "system-test",
-		Type:    "system",
-		Enabled: true,
-		Config:  nil,
-	})
-	require.Error(t, err)
-}
-
 // TestAllowedUserMap tests that allowed users map is populated correctly.
 func TestAllowedUserMap(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	p := &plugin{}
 	authenticator, err := p.Create(map[string]any{
@@ -602,9 +535,6 @@ func TestAllowedUserMap(t *testing.T) {
 
 // TestAllowedGroupMap tests that allowed groups map is populated correctly.
 func TestAllowedGroupMap(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	p := &plugin{}
 	authenticator, err := p.Create(map[string]any{
@@ -621,9 +551,6 @@ func TestAllowedGroupMap(t *testing.T) {
 
 // TestAuthenticateUserInfoMetadata tests that metadata is populated correctly on successful auth.
 func TestAuthenticateUserInfoMetadata(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	// This test documents expected behavior for successful authentication
 	// We can't easily test actual authentication without valid system credentials
@@ -686,9 +613,6 @@ func TestParseStringSliceWithEmptyStrings(t *testing.T) {
 
 // TestAuthenticateWithAllowedUserInList tests that allowed users pass the user check.
 func TestAuthenticateWithAllowedUserInList(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	currentUser, err := user.Current()
 	if err != nil {
@@ -724,9 +648,6 @@ func TestValidatePasswordOnDarwinFallback(t *testing.T) {
 
 // TestGetUserGroupsWithCurrentUser tests getUserGroups with the current user.
 func TestGetUserGroupsWithCurrentUser(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	currentUser, err := user.Current()
 	if err != nil {
@@ -753,9 +674,6 @@ func TestAuthenticatorNameFormat(t *testing.T) {
 
 // TestValidatePasswordWithTimeout tests password validation with a timeout context.
 func TestValidatePasswordWithTimeout(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	a := &Authenticator{}
 
@@ -819,9 +737,6 @@ func TestParseConfigAllowedGroupsWrongType(t *testing.T) {
 
 // TestMultiplePlatformValidation tests validatePassword on the current platform.
 func TestMultiplePlatformValidation(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	a := &Authenticator{}
 	ctx := context.Background()
@@ -844,9 +759,6 @@ func TestMultiplePlatformValidation(t *testing.T) {
 // TestAuthenticateWithGroupCheckPath tests the group check path in Authenticate.
 // This tests when user exists and allowed groups are configured.
 func TestAuthenticateWithGroupCheckPath(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	currentUser, err := user.Current()
 	if err != nil {
@@ -876,9 +788,6 @@ func TestAuthenticateWithGroupCheckPath(t *testing.T) {
 
 // TestPluginCreateVerifyAllFields tests that Create populates all authenticator fields.
 func TestPluginCreateVerifyAllFields(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	p := &plugin{}
 	config := map[string]any{
@@ -918,9 +827,6 @@ func TestValidateDarwinWithContext(t *testing.T) {
 
 // TestAuthenticateContextCancellation tests Authenticate with canceled context.
 func TestAuthenticateContextCancellation(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	currentUser, err := user.Current()
 	if err != nil {
@@ -944,9 +850,6 @@ func TestAuthenticateContextCancellation(t *testing.T) {
 // TestGetUserGroupsGroupLookupFails tests getUserGroups when group lookup fails.
 // This is hard to test without mocking, but we exercise the code path.
 func TestGetUserGroupsGroupLookupFails(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	// Create a fake user struct with invalid group IDs
 	// Note: This won't actually test the error path since we can't easily
@@ -971,9 +874,6 @@ func TestGetUserGroupsGroupLookupFails(t *testing.T) {
 
 // TestValidatePasswordPlatformSwitch tests validatePassword routing to correct platform handler.
 func TestValidatePasswordPlatformSwitch(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	a := &Authenticator{}
 	ctx := context.Background()
@@ -1000,9 +900,6 @@ func TestParseStringSliceEmptyArrayOfString(t *testing.T) {
 // TestAuthenticatePassesUserLookupThenFailsValidation tests the flow where
 // user lookup succeeds but password validation fails.
 func TestAuthenticatePassesUserLookupThenFailsValidation(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test only runs on Unix")
-	}
 
 	currentUser, err := user.Current()
 	if err != nil {

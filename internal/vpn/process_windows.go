@@ -11,12 +11,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// TCP connection states
-const (
-	tcpStateListen = 2
-	tcpStateEstab  = 5
-)
-
 // MIB_TCPROW_OWNER_PID represents a TCP connection with owner PID.
 type mibTCPRowOwnerPID struct {
 	State      uint32
@@ -122,10 +116,10 @@ func (w *windowsProcessLookup) LookupBySocket(local, remote netip.AddrPort, prot
 func (w *windowsProcessLookup) findTCPv4Process(local, remote netip.AddrPort) (uint32, error) {
 	// Get table size
 	var size uint32
-	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInetWindows, tcpTableOwnerPIDAll, 0)
+	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInetWindows, tcpTableOwnerPIDAll, 0) //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 
 	buf := make([]byte, size)
-	ret, _, _ := procGetExtendedTcpTable.Call(
+	ret, _, _ := procGetExtendedTcpTable.Call( //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 		uintptr(unsafe.Pointer(&buf[0])),
 		uintptr(unsafe.Pointer(&size)),
 		0,
@@ -162,10 +156,10 @@ func (w *windowsProcessLookup) findTCPv4Process(local, remote netip.AddrPort) (u
 // findTCPv6Process finds the PID for a TCPv6 connection.
 func (w *windowsProcessLookup) findTCPv6Process(local, remote netip.AddrPort) (uint32, error) {
 	var size uint32
-	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInet6Windows, tcpTableOwnerPIDAll, 0)
+	procGetExtendedTcpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInet6Windows, tcpTableOwnerPIDAll, 0) //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 
 	buf := make([]byte, size)
-	ret, _, _ := procGetExtendedTcpTable.Call(
+	ret, _, _ := procGetExtendedTcpTable.Call( //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 		uintptr(unsafe.Pointer(&buf[0])),
 		uintptr(unsafe.Pointer(&size)),
 		0,
@@ -198,10 +192,10 @@ func (w *windowsProcessLookup) findTCPv6Process(local, remote netip.AddrPort) (u
 // findUDPv4Process finds the PID for a UDPv4 endpoint.
 func (w *windowsProcessLookup) findUDPv4Process(local netip.AddrPort) (uint32, error) {
 	var size uint32
-	procGetExtendedUdpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInetWindows, udpTableOwnerPID, 0)
+	procGetExtendedUdpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInetWindows, udpTableOwnerPID, 0) //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 
 	buf := make([]byte, size)
-	ret, _, _ := procGetExtendedUdpTable.Call(
+	ret, _, _ := procGetExtendedUdpTable.Call( //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 		uintptr(unsafe.Pointer(&buf[0])),
 		uintptr(unsafe.Pointer(&size)),
 		0,
@@ -232,10 +226,10 @@ func (w *windowsProcessLookup) findUDPv4Process(local netip.AddrPort) (uint32, e
 // findUDPv6Process finds the PID for a UDPv6 endpoint.
 func (w *windowsProcessLookup) findUDPv6Process(local netip.AddrPort) (uint32, error) {
 	var size uint32
-	procGetExtendedUdpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInet6Windows, udpTableOwnerPID, 0)
+	procGetExtendedUdpTable.Call(0, uintptr(unsafe.Pointer(&size)), 0, afInet6Windows, udpTableOwnerPID, 0) //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 
 	buf := make([]byte, size)
-	ret, _, _ := procGetExtendedUdpTable.Call(
+	ret, _, _ := procGetExtendedUdpTable.Call( //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 		uintptr(unsafe.Pointer(&buf[0])),
 		uintptr(unsafe.Pointer(&size)),
 		0,
@@ -273,12 +267,12 @@ func (w *windowsProcessLookup) getProcessInfo(pid uint32) (*ProcessInfo, error) 
 	if err != nil {
 		return info, nil // Return what we have
 	}
-	defer windows.CloseHandle(handle)
+	defer func() { _ = windows.CloseHandle(handle) }() //nolint:errcheck // cleanup, nothing to recover
 
 	// Get the process name/path
 	var size uint32 = 4096
 	buf := make([]uint16, size)
-	ret, _, _ := procQueryFullProcessImageName.Call(
+	ret, _, _ := procQueryFullProcessImageName.Call( //nolint:errcheck // LazyProc.Call always returns a non-nil Errno; r1 carries the real status
 		uintptr(handle),
 		0,
 		uintptr(unsafe.Pointer(&buf[0])),

@@ -660,25 +660,6 @@ func TestSystrayAdapter_Interface(t *testing.T) {
 	var _ SystrayAdapter = (*mockSystrayAdapter)(nil)
 }
 
-func TestRealMenuItem_Interface(t *testing.T) {
-	// Verify that realMenuItem implements MenuItem interface
-	var _ MenuItem = (*realMenuItem)(nil)
-}
-
-func TestRealSystrayAdapter_Interface(t *testing.T) {
-	// Verify that realSystrayAdapter implements SystrayAdapter interface
-	var _ SystrayAdapter = (*realSystrayAdapter)(nil)
-}
-
-func TestDefaultAdapter_IsSet(t *testing.T) {
-	// Verify that defaultAdapter is set
-	assert.NotNil(t, defaultAdapter)
-
-	// Verify it's a realSystrayAdapter
-	_, ok := defaultAdapter.(*realSystrayAdapter)
-	assert.True(t, ok, "defaultAdapter should be a *realSystrayAdapter")
-}
-
 func TestTray_IconsAreValid(t *testing.T) {
 	// Verify that all icon variables are non-empty
 	assert.NotEmpty(t, iconConnected, "iconConnected should not be empty")

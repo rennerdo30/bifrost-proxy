@@ -212,20 +212,19 @@ Response:
 ```json
 {
   "enabled": true,
+  "storage_type": "memory",
+  "entries": 4521,
+  "total_size_bytes": 1073741824,
+  "max_size_bytes": 2147483648,
+  "used_percent": 50.0,
+  "hit_count": 10582,
+  "miss_count": 1868,
   "hit_rate": 0.85,
-  "total_requests": 12450,
-  "cache_hits": 10582,
-  "cache_misses": 1868,
-  "memory": {
-    "entries": 4521,
-    "size_bytes": 1073741824,
-    "max_size_bytes": 2147483648
-  },
-  "disk": {
-    "entries": 892,
-    "size_bytes": 107374182400,
-    "max_size_bytes": 536870912000
-  }
+  "eviction_count": 12,
+  "store_error_count": 0,
+  "rules_count": 6,
+  "presets_count": 2,
+  "custom_rules_count": 4
 }
 ```
 

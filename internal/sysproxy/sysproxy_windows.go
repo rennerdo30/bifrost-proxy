@@ -93,6 +93,9 @@ func (m *windowsManager) ClearProxy() error {
 func notifySettingsChange() {
 	// Start checks for 1 (true) but return value is BOOL (int32 usually)
 	// We ignore errors here as it's a notification attempt
-	procInternetSetOption.Call(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0)
-	procInternetSetOption.Call(0, INTERNET_OPTION_REFRESH, 0, 0)
+	// Best effort notification: WinINET picks the new settings up on its own
+	// schedule regardless, and LazyProc.Call's error is a non-nil Errno even on
+	// success, so there is nothing meaningful to branch on.
+	procInternetSetOption.Call(0, INTERNET_OPTION_SETTINGS_CHANGED, 0, 0) //nolint:errcheck // best-effort refresh
+	procInternetSetOption.Call(0, INTERNET_OPTION_REFRESH, 0, 0)          //nolint:errcheck // best-effort refresh
 }
