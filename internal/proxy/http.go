@@ -593,7 +593,18 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 			return fmt.Errorf("write 101 response: %w", err)
 		}
 		entry.StatusCode = resp.StatusCode
-		CopyBidirectional(ctx, conn, targetConn)
+		// From here the connection is an opaque tunnel, exactly like CONNECT,
+		// so it must leave request/response deadline accounting behind. Without
+		// this the per-read read_timeout and the per-write write_timeout stay
+		// armed, and a WebSocket idle for longer than either is torn down -
+		// which for the default 30s triad means a dashboard socket dies roughly
+		// every 30 seconds and the browser reconnects forever.
+		connDeadlines(conn).enterTunnel()
+		// tunnel_idle_timeout covers this tunnel too. An operator enables it to
+		// stop clients parking idle connections, and a parked Upgrade is no
+		// less parkable than a parked CONNECT. It is off by default, so this
+		// changes nothing unless it was deliberately switched on.
+		CopyBidirectionalWithIdle(ctx, conn, targetConn, h.tunnelIdleTimeout)
 		return nil
 	}
 

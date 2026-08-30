@@ -144,8 +144,15 @@ its peer.
   **not** apply to an established opaque `CONNECT` tunnel or SOCKS5 relay.
 - **`tunnel_idle_timeout`** — off by default. When set, an **established**
   tunnel or relay in which *neither* direction has carried data for the period
-  is closed. An actively transferring tunnel is never interrupted, even to a
-  very slow receiver — each window only requires progress, not completion.
+  is closed. This covers a `CONNECT` tunnel, a SOCKS5 relay, and a plain-HTTP
+  protocol `Upgrade` such as a WebSocket — all three are equally parkable. An
+  actively transferring tunnel is never interrupted, even to a very slow
+  receiver — each window only requires progress, not completion.
+
+  Note that the *other* listener timeouts deliberately stop applying once a
+  connection becomes an opaque tunnel. `read_timeout` bounds reading a request,
+  not a tunnel that is idle by design; leaving it armed across an Upgrade is
+  what used to tear down a proxied WebSocket every `read_timeout` seconds.
 
 :::caution[quiet tunnels are valid traffic]
 A protocol that holds a `CONNECT` tunnel open in silence — SSH, IMAP IDLE, a
