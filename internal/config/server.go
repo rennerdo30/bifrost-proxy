@@ -89,8 +89,9 @@ type ListenerConfig struct {
 	// working traffic. Use TunnelIdleTimeout to opt into reaping those.
 	IdleTimeout Duration `yaml:"idle_timeout" json:"idle_timeout"`
 
-	// TunnelIdleTimeout, when set, reaps an ESTABLISHED opaque tunnel (CONNECT
-	// or SOCKS5 relay) in which NEITHER direction has carried data for the
+	// TunnelIdleTimeout, when set, reaps an ESTABLISHED opaque tunnel (CONNECT,
+	// SOCKS5 relay, or a protocol Upgrade such as WebSocket) in which NEITHER
+	// direction has carried data for the
 	// given period. An actively transferring tunnel is never interrupted, even
 	// to a very slow receiver: each window only requires progress, not
 	// completion. Off (0) by default, because a quiet-but-open tunnel is valid

@@ -393,6 +393,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `device.GenerateRandomMAC`, which the production paths already used
 
 ### Fixed
+- **A proxied WebSocket is no longer torn down every `read_timeout` seconds.**
+  After a `101 Switching Protocols` the connection becomes an opaque tunnel, so
+  it must leave request/response deadline accounting behind — the `CONNECT` path
+  called `enterTunnel()` but the plain-HTTP `Upgrade` path did not. The per-read
+  `read_timeout` and per-write `write_timeout` stayed armed, so any socket quiet
+  for longer than either was closed. With the shipped 30s defaults that meant a
+  dashboard WebSocket proxied through Bifrost died roughly every 30 seconds and
+  the browser reconnected forever: a live access log showed 262 upgrade requests
+  to `/api/v1/ws` over 18 hours, a median of 34 seconds apart.
+  `tunnel_idle_timeout` now covers the Upgrade tunnel as well, since a parked
+  Upgrade is no less parkable than a parked `CONNECT`; it remains off by default
 - The VPN configuration was invisible over the API. `vpn.Config`, `TUNConfig`,
   `SplitTunnelConfig`, `AppRule` and `DNSConfig` carried only YAML tags, so JSON
   responses used Go field names (`{"Enabled":…,"TUN":…,"SplitTunnel":…}`) while
