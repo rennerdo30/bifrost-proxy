@@ -195,3 +195,90 @@ func TestServeConn_H2CPriorKnowledgeRejectedCleanly(t *testing.T) {
 	assert.Contains(t, resp, "505", "HTTP Version Not Supported is the honest answer, got: %s", resp)
 	assert.NotContains(t, resp, "502")
 }
+
+// A WebSocket tunnel must survive an idle period longer than read_timeout.
+//
+// After the 101 the connection is opaque, exactly like CONNECT, so it has to
+// leave request/response deadline accounting behind. It did not: the CONNECT
+// path called enterTunnel() but the Upgrade path did not, so the per-read
+// read_timeout stayed armed and any socket quiet for longer than it was torn
+// down. With the shipped 30s default that meant a proxied dashboard WebSocket
+// died roughly every 30 seconds and the browser reconnected forever - 262
+// reconnects over 18 hours in the log that surfaced this.
+func TestHandleHTTP_UpgradeTunnelSurvivesIdleBeyondReadTimeout(t *testing.T) {
+	const readTimeout = 150 * time.Millisecond
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	go func() {
+		conn, aerr := ln.Accept()
+		if aerr != nil {
+			return
+		}
+		defer conn.Close()
+		reader := bufio.NewReader(conn)
+		for {
+			line, rerr := reader.ReadString('\n')
+			if rerr != nil {
+				return
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		_, _ = conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"))
+		buf := make([]byte, 32)
+		n, rerr := conn.Read(buf)
+		if rerr != nil {
+			return
+		}
+		_, _ = conn.Write([]byte("late:"))
+		_, _ = conn.Write(buf[:n])
+	}()
+	originAddr := ln.Addr().String()
+
+	be := backend.NewDirectBackend(backend.DirectConfig{Name: "test"})
+	require.NoError(t, be.Start(context.Background()))
+	t.Cleanup(func() { _ = be.Stop(context.Background()) })
+	h := NewHTTPHandler(HTTPHandlerConfig{
+		GetBackend:   func(domain, clientIP string) backend.Backend { return be },
+		DialTimeout:  5 * time.Second,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: readTimeout,
+	})
+
+	clientConn, serverConn := net.Pipe()
+	defer clientConn.Close()
+	go h.ServeConn(context.Background(), serverConn)
+
+	require.NoError(t, clientConn.SetDeadline(time.Now().Add(10*time.Second)))
+	raw := "GET http://" + originAddr + "/ws HTTP/1.1\r\n" +
+		"Host: " + originAddr + "\r\n" +
+		"Connection: Upgrade\r\nUpgrade: websocket\r\n\r\n"
+	_, err = clientConn.Write([]byte(raw))
+	require.NoError(t, err)
+
+	reader := bufio.NewReader(clientConn)
+	statusLine, err := reader.ReadString('\n')
+	require.NoError(t, err)
+	require.Contains(t, statusLine, "101")
+	for {
+		line, rerr := reader.ReadString('\n')
+		require.NoError(t, rerr)
+		if line == "\r\n" {
+			break
+		}
+	}
+
+	// Go quiet for comfortably longer than read_timeout. A tunnel that still
+	// has the per-read deadline armed is torn down during this sleep.
+	time.Sleep(4 * readTimeout)
+
+	_, err = clientConn.Write([]byte("ping"))
+	require.NoError(t, err, "tunnel was torn down while idle")
+	got := make([]byte, 9)
+	_, err = io.ReadFull(reader, got)
+	require.NoError(t, err, "an idle WebSocket tunnel must not be closed by read_timeout")
+	assert.Equal(t, "late:ping", string(got))
+}
