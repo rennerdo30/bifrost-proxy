@@ -13,7 +13,7 @@
     "@mermaid-js/layout-elk": "^0.2.0",
     "astro": "^7.2.9",
     "astro-mermaid": "^2.1.0",
-    "mermaid": "^11.17.0",
+    "mermaid": "^11.17.2",
     "starlight-theme-galaxy": "^1.0.0"
   }
 }
