@@ -2222,6 +2222,18 @@ func TestAuthenticator_ECDSA_InvalidSignature(t *testing.T) {
 	assert.Contains(t, err.Error(), "signature verification failed")
 }
 
+// ecPublicKeyCoords returns the fixed-width X and Y coordinates of pub. It
+// reads them from the SEC1 uncompressed encoding rather than from the
+// ecdsa.PublicKey big.Int fields, which are deprecated as of Go 1.26.
+func ecPublicKeyCoords(t *testing.T, pub *ecdsa.PublicKey) ([]byte, []byte) {
+	t.Helper()
+	encoded, err := pub.Bytes()
+	require.NoError(t, err)
+	require.Equal(t, byte(0x04), encoded[0])
+	coordSize := (len(encoded) - 1) / 2
+	return encoded[1 : 1+coordSize], encoded[1+coordSize:]
+}
+
 func TestParseECKey_Valid(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -2237,24 +2249,17 @@ func TestParseECKey_Valid(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			privateKey := generateTestECKey(t, tt.curve)
 
-			// Get X and Y coordinates as base64url
-			xBytes := privateKey.PublicKey.X.Bytes()
-			yBytes := privateKey.PublicKey.Y.Bytes()
-
-			// Pad to curve byte size
-			byteLen := (tt.curve.Params().BitSize + 7) / 8
-			xPadded := make([]byte, byteLen)
-			yPadded := make([]byte, byteLen)
-			copy(xPadded[byteLen-len(xBytes):], xBytes)
-			copy(yPadded[byteLen-len(yBytes):], yBytes)
+			// Get the fixed-width X and Y coordinates as base64url.
+			xPadded, yPadded := ecPublicKeyCoords(t, &privateKey.PublicKey)
 
 			xB64 := base64.RawURLEncoding.EncodeToString(xPadded)
 			yB64 := base64.RawURLEncoding.EncodeToString(yPadded)
 
 			key, err := parseECKey(tt.crv, xB64, yB64)
 			require.NoError(t, err)
-			assert.Equal(t, privateKey.PublicKey.X, key.X)
-			assert.Equal(t, privateKey.PublicKey.Y, key.Y)
+			gotX, gotY := ecPublicKeyCoords(t, key)
+			assert.Equal(t, xPadded, gotX)
+			assert.Equal(t, yPadded, gotY)
 		})
 	}
 }
@@ -2274,7 +2279,7 @@ func TestParseECKey_InvalidX(t *testing.T) {
 func TestParseECKey_InvalidY(t *testing.T) {
 	// Valid X but invalid Y
 	privateKey := generateTestECKey(t, elliptic.P256())
-	xBytes := privateKey.PublicKey.X.Bytes()
+	xBytes, _ := ecPublicKeyCoords(t, &privateKey.PublicKey)
 	xB64 := base64.RawURLEncoding.EncodeToString(xBytes)
 
 	_, err := parseECKey("P-256", xB64, "not-valid-base64!")
@@ -2297,11 +2302,7 @@ func TestAuthenticator_RefreshJWKS_WithECKey(t *testing.T) {
 	privateKey := generateTestECKey(t, elliptic.P256())
 
 	// Encode the public key coordinates
-	byteLen := (elliptic.P256().Params().BitSize + 7) / 8
-	xPadded := make([]byte, byteLen)
-	yPadded := make([]byte, byteLen)
-	copy(xPadded[byteLen-len(privateKey.PublicKey.X.Bytes()):], privateKey.PublicKey.X.Bytes())
-	copy(yPadded[byteLen-len(privateKey.PublicKey.Y.Bytes()):], privateKey.PublicKey.Y.Bytes())
+	xPadded, yPadded := ecPublicKeyCoords(t, &privateKey.PublicKey)
 
 	jwks := map[string]any{
 		"keys": []map[string]any{
@@ -2337,6 +2338,7 @@ func TestAuthenticator_RefreshJWKS_WithECKey(t *testing.T) {
 	require.True(t, ok)
 	ecKey, ok := key.(*ecdsa.PublicKey)
 	require.True(t, ok)
-	assert.Equal(t, privateKey.PublicKey.X, ecKey.X)
-	assert.Equal(t, privateKey.PublicKey.Y, ecKey.Y)
+	gotX, gotY := ecPublicKeyCoords(t, ecKey)
+	assert.Equal(t, xPadded, gotX)
+	assert.Equal(t, yPadded, gotY)
 }
