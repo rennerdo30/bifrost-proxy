@@ -1143,9 +1143,22 @@ func (s *Server) broadcastWSEvents() {
 // selected backend. read_timeout used to be passed as the dial timeout, which
 // meant raising it to help a slow client instead lengthened backend connect
 // attempts.
+// newSelfGuard builds the proxy-loop guard from this server's own proxy
+// listeners. A target that resolves to one of them must never be dialed: the
+// listener would accept our own connection and re-proxy the same target,
+// leaking a socket pair and a pair of copy goroutines on every hop until the
+// process exhausts memory and file descriptors.
+func (s *Server) newSelfGuard() *proxy.SelfGuard {
+	return proxy.NewSelfGuard(
+		s.config.Server.HTTP.Listen,
+		s.config.Server.SOCKS5.Listen,
+	)
+}
+
 func (s *Server) httpHandlerConfig(bandwidthCfg *ratelimit.BandwidthConfig) proxy.HTTPHandlerConfig {
 	return proxy.HTTPHandlerConfig{
 		GetBackend:        s.getBackend,
+		SelfGuard:         s.newSelfGuard(),
 		DialTimeout:       s.config.Network.DialTimeout.Duration(),
 		ReadTimeout:       s.config.Server.HTTP.ReadTimeout.Duration(),
 		WriteTimeout:      s.config.Server.HTTP.WriteTimeout.Duration(),
@@ -1178,6 +1191,7 @@ func (s *Server) httpHandlerConfig(bandwidthCfg *ratelimit.BandwidthConfig) prox
 func (s *Server) socks5HandlerConfig(bandwidthCfg *ratelimit.BandwidthConfig) proxy.SOCKS5HandlerConfig {
 	return proxy.SOCKS5HandlerConfig{
 		GetBackend:           s.getBackend,
+		SelfGuard:            s.newSelfGuard(),
 		AuthenticateWithInfo: s.authenticateUser,
 		AuthRequired:         s.isAuthRequired(),
 		DialTimeout:          s.config.Network.DialTimeout.Duration(),

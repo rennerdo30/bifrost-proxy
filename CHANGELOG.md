@@ -393,6 +393,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `device.GenerateRandomMAC`, which the production paths already used
 
 ### Fixed
+- **The proxy no longer forwards a request into its own listener, which used to
+  exhaust the process.** A request whose target resolved to one of the server's
+  own proxy listen addresses was dialed like any other host: the listener
+  accepted the proxy's own connection and re-proxied the identical target, so a
+  single request amplified itself indefinitely. Every hop cost two sockets and a
+  pair of copy goroutines, and because an established tunnel clears its
+  deadlines (`enterTunnel`) nothing ever reaped them. One observed server
+  reached 12,702 self-connections, 29,599 open file descriptors and 4.3 GiB of
+  anonymous memory in 24 hours, pinning its container at the memory limit until
+  it stopped serving. The HTTP, CONNECT and SOCKS5 paths now check the target
+  against the configured `server.http.listen` and `server.socks5.listen`
+  addresses before dialing and refuse it (`502 Proxy loop detected`, or SOCKS5
+  reply `0x02`). Loopback and every local interface address are matched, so
+  wildcard listeners such as `0.0.0.0:7080` are covered, and a listener bound to
+  one specific address only guards that address. The check keys on the target
+  port first, so traffic to any other port costs no address lookup
 - **A proxied WebSocket is no longer torn down every `read_timeout` seconds.**
   After a `101 Switching Protocols` the connection becomes an opaque tunnel, so
   it must leave request/response deadline accounting behind — the `CONNECT` path

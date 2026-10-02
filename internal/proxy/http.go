@@ -50,6 +50,7 @@ type NegotiateResult struct {
 // HTTPHandler handles HTTP and HTTPS CONNECT proxy requests.
 type HTTPHandler struct {
 	getBackend        func(domain, clientIP string) backend.Backend
+	selfGuard         *SelfGuard
 	authenticate      func(ctx context.Context, username, password string) (*auth.UserInfo, error)
 	negotiateAuth     func(ctx context.Context, req *http.Request) (*NegotiateResult, error)
 	authRequired      bool
@@ -74,7 +75,10 @@ type HTTPHandler struct {
 
 // HTTPHandlerConfig configures the HTTP handler.
 type HTTPHandlerConfig struct {
-	GetBackend    func(domain, clientIP string) backend.Backend
+	GetBackend func(domain, clientIP string) backend.Backend
+	// SelfGuard refuses targets that point back at our own listeners. A nil
+	// guard disables the check.
+	SelfGuard     *SelfGuard
 	Authenticate  func(ctx context.Context, username, password string) (*auth.UserInfo, error)
 	NegotiateAuth func(ctx context.Context, req *http.Request) (*NegotiateResult, error)
 	AuthRequired  bool
@@ -141,6 +145,7 @@ func NewHTTPHandler(cfg HTTPHandlerConfig) *HTTPHandler {
 	}
 	return &HTTPHandler{
 		getBackend:        cfg.GetBackend,
+		selfGuard:         cfg.SelfGuard,
 		authenticate:      cfg.Authenticate,
 		negotiateAuth:     cfg.NegotiateAuth,
 		authRequired:      cfg.AuthRequired,
@@ -400,6 +405,16 @@ func (h *HTTPHandler) handleConnect(ctx context.Context, conn net.Conn, req *htt
 	ctx = util.WithBackend(ctx, be.Name())
 	entry.Backend = be.Name()
 
+	// Refuse a target that is one of our own listeners. Dialing it would make
+	// this proxy re-proxy the same target through itself, and every hop leaks a
+	// socket pair and copy goroutines until the process runs out of memory.
+	if h.selfGuard.IsSelf(host) {
+		h.sendResponse(conn, http.StatusBadGateway, "Proxy loop detected")
+		entry.StatusCode = http.StatusBadGateway
+		entry.Error = "proxy loop: target is one of our own listeners"
+		return fmt.Errorf("proxy loop detected for target %s", host)
+	}
+
 	// Dial the target through the backend
 	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, host, h.dialTimeout)
 	if err != nil {
@@ -505,6 +520,14 @@ func (h *HTTPHandler) handleHTTP(ctx context.Context, conn net.Conn, req *http.R
 
 	ctx = util.WithBackend(ctx, be.Name())
 	entry.Backend = be.Name()
+
+	// Refuse a target that is one of our own listeners. See the CONNECT path.
+	if h.selfGuard.IsSelf(host) {
+		h.sendHTTPError(conn, http.StatusBadGateway, "Proxy loop detected")
+		entry.StatusCode = http.StatusBadGateway
+		entry.Error = "proxy loop: target is one of our own listeners"
+		return fmt.Errorf("proxy loop detected for target %s", host)
+	}
 
 	// Dial the target through the backend
 	targetConn, err := be.DialTimeout(ctx, h.dialNetwork, host, h.dialTimeout)

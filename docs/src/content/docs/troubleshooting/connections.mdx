@@ -611,6 +611,75 @@ LimitNOFILE=65536
 
 ---
 
+## Proxy Loop (502 "Proxy loop detected")
+
+**Symptoms:** Requests return `502 Proxy loop detected` (or SOCKS5 reply `0x02`,
+"connection not allowed"), and the access log records the proxy's own
+`listen` address as the request `host`.
+
+### Cause
+
+A client asked the proxy to fetch the proxy's own listen address. The most
+common source is an application whose endpoint URL was set to the proxy's
+proxy port instead of the real service, for example an OpenAI-compatible
+`base_url` of `http://proxy-host:7080/v1` where `7080` is
+`server.http.listen`.
+
+Bifrost refuses these targets. Without that refusal the request is
+self-amplifying: the proxy dials its own listener, the listener accepts and
+re-proxies the identical target, and each hop consumes two sockets plus a pair
+of copy goroutines. An established tunnel has no deadlines, so nothing reaps
+them, and the process climbs until it runs out of memory or file descriptors.
+
+### Diagnosis
+
+Find the looping target and who is sending it:
+
+```bash
+# Which hosts are being requested most?
+grep -oE '"host":"[^"]*"' /var/log/bifrost/access.log | sort | uniq -c | sort -rn | head
+
+# Who is sending requests for our own address?
+grep -F '"host":"<proxy-ip>:7080"' /var/log/bifrost/access.log \
+  | grep -oE '"client_ip":"[^"]*"' | sort | uniq -c | sort -rn
+```
+
+If a loop has already exhausted a running server, the socket table shows it
+even when the process is too starved to answer its own metrics endpoint:
+
+```bash
+# Self-connections: local and remote are both this proxy
+ss -tnp | grep ':7080' | awk '{print $4, $5}' | head
+
+# Established count and open descriptors
+ss -tn state established | wc -l
+ls /proc/$(pgrep -f bifrost-server)/fd | wc -l
+```
+
+### Resolution
+
+1. Fix the caller: point the application at the real upstream service, not at
+   the proxy's `listen` address. Use the proxy by setting `HTTP_PROXY` /
+   `HTTPS_PROXY`, not by making it the request URL.
+2. Bound the blast radius of any future runaway on an exposed listener:
+
+   ```yaml
+   server:
+     http:
+       max_connections: 2000        # 0 = unlimited
+       tunnel_idle_timeout: "10m"   # reap parked, silent tunnels
+   ```
+
+   Leave `tunnel_idle_timeout` unset if the listener carries long-lived silent
+   protocols (SSH, IMAP IDLE, WebSockets without keepalive pings), since
+   reaping those breaks working traffic.
+
+:::note
+Bifrost only guards its own **proxy** listeners (`server.http.listen` and
+`server.socks5.listen`). Targeting the API, web UI or metrics listener does not
+loop, because those do not forward traffic.
+:::
+
 ## Diagnostic Commands Summary
 
 ```bash

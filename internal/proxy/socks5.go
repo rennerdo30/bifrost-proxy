@@ -64,6 +64,7 @@ const (
 // SOCKS5Handler handles SOCKS5 proxy requests.
 type SOCKS5Handler struct {
 	getBackend           func(domain, clientIP string) backend.Backend
+	selfGuard            *SelfGuard
 	authenticate         func(username, password string) bool
 	authenticateWithInfo func(ctx context.Context, username, password string) (*auth.UserInfo, error)
 	authRequired         bool
@@ -84,7 +85,10 @@ type SOCKS5Handler struct {
 
 // SOCKS5HandlerConfig configures the SOCKS5 handler.
 type SOCKS5HandlerConfig struct {
-	GetBackend           func(domain, clientIP string) backend.Backend
+	GetBackend func(domain, clientIP string) backend.Backend
+	// SelfGuard refuses targets that point back at our own listeners. A nil
+	// guard disables the check.
+	SelfGuard            *SelfGuard
 	Authenticate         func(username, password string) bool
 	AuthenticateWithInfo func(ctx context.Context, username, password string) (*auth.UserInfo, error)
 	AuthRequired         bool
@@ -139,6 +143,7 @@ func NewSOCKS5Handler(cfg SOCKS5HandlerConfig) *SOCKS5Handler {
 	}
 	return &SOCKS5Handler{
 		getBackend:           cfg.GetBackend,
+		selfGuard:            cfg.SelfGuard,
 		authenticate:         cfg.Authenticate,
 		authenticateWithInfo: cfg.AuthenticateWithInfo,
 		authRequired:         cfg.AuthRequired,
@@ -537,6 +542,17 @@ func (h *SOCKS5Handler) handleConnect(ctx context.Context, conn net.Conn, target
 	ctx = util.WithBackend(ctx, be.Name())
 	if entry != nil {
 		entry.Backend = be.Name()
+	}
+
+	// Refuse a target that is one of our own listeners; dialing it would loop
+	// this proxy through itself and leak a socket pair on every hop.
+	if h.selfGuard.IsSelf(target) {
+		h.sendReply(conn, socks5ReplyConnNotAllowed, nil)
+		if entry != nil {
+			entry.StatusCode = int(socks5ReplyConnNotAllowed)
+			entry.Error = "proxy loop: target is one of our own listeners"
+		}
+		return fmt.Errorf("proxy loop detected for target %s", target)
 	}
 
 	// Dial the target through the backend
