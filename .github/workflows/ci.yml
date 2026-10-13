@@ -7,7 +7,7 @@ on:
     branches: [master, main]
 
 env:
-  GO_VERSION: '1.25.5'
+  GO_VERSION: '1.26.8'
 
 jobs:
   lint:
@@ -281,7 +281,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: |
             go.sum
             desktop/go.sum
