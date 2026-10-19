@@ -10,8 +10,8 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
-    "react": "^19.3.0",
-    "react-dom": "^19.3.0"
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -24,10 +24,10 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.7",
     "globals": "^17.13.0",
-    "postcss": "^8.5.29",
+    "postcss": "^8.5.30",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.71.1",
+    "typescript-eslint": "^8.71.2",
     "vite": "^8.3.4"
   }
 }
