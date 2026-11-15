@@ -1,59 +1,30 @@
-# Standardized Dependabot configuration.
+# Dependabot configuration.
 #
-# Minor and patch updates for each ecosystem are grouped into a single weekly
-# pull request. This keeps the review queue small and — importantly — makes it
-# impossible to split version-locked pairs (react/react-dom, @mui/material and
-# @mui/icons-material, next and eslint-config-next) across separate PRs, which
-# has broken main before.
-#
-# Major updates for the application ecosystems (npm, pip, cargo, gomod, pub) are
-# intentionally NOT grouped: they arrive as individual pull requests so each one
-# gets evaluated on its own.
-#
-# Two deliberate exceptions to that rule:
-#   * The Astro documentation stack (astro, @astrojs/*, Starlight themes and
-#     plugins) is grouped across ALL update types. Those packages carry hard
-#     peer ranges on each other - @astrojs/starlight 0.41 requires astro
-#     ^7.0.2 - so when a major is split off into its own pull request neither
-#     half can be merged, while both still report as mergeable. The stack has
-#     to land in one pull request.
-#   * GitHub Actions updates are grouped across ALL update types. Action majors
-#     are mechanical and low risk, and one pull request per action is pure noise.
-#
-# /mobile is a separate npm entry because it needs `ignore` rules that must not
-# apply to the other npm directories - see the comment on that entry.
+# Every version update across all ecosystems lands in ONE pull request per
+# week (a multi-ecosystem group), so the review queue never holds more than
+# one dependency PR. A short cooldown skips releases that are only hours old.
+# Security updates are not delayed and arrive as soon as an advisory matches.
 version: 2
 
-updates:
-  - package-ecosystem: "gomod"
-    directories:
-      - "/"
-      - "/desktop"
+multi-ecosystem-groups:
+  weekly-dependencies:
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 5
     commit-message:
-      prefix: "deps(go):"
-    groups:
-      go-minor-patch:
-        applies-to: version-updates
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
+      prefix: "deps"
 
+updates:
   - package-ecosystem: "npm"
     directories:
-      - "/web/client"
-      - "/web/server"
       - "/desktop/frontend"
       - "/docs"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "deps(npm):"
-      prefix-development: "deps(npm-dev):"
+      - "/web/client"
+      - "/web/server"
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
+    cooldown:
+      default-days: 3
     ignore:
       # TypeScript majors are held back by the linter, not by our code. The
       # latest stable typescript-eslint (8.67.0) declares
@@ -65,38 +36,16 @@ updates:
       # typescript + typescript-eslint + the tsconfigs together.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
-    groups:
-      # Must stay ahead of the catch-all group below: Dependabot puts a
-      # dependency into the FIRST group whose patterns match it.
-      astro-docs:
-        applies-to: version-updates
-        patterns:
-          - "astro"
-          - "@astrojs/*"
-          - "starlight-theme-*"
-          - "*/starlight-*"
-      npm-minor-patch:
-        applies-to: version-updates
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
 
-  # The Expo mobile app. Expo SDK pins the exact versions of react, react-native
-  # and the native modules it bundles, and `expo-doctor` (run in CI) fails the
-  # build when an installed version differs from the one the SDK expects - even
-  # for a patch bump, because the SDK pins react exactly. Dependabot bumping
-  # those packages independently is therefore guaranteed to break CI, which is
-  # what repeatedly happened on master (react 19.2.0 -> 19.2.8, react-native
-  # 0.83.10 -> 0.87.0). They are ignored here and moved only by an Expo SDK
-  # upgrade via `npx expo install --fix`, which resolves the whole set together.
+  # /mobile is its own entry: Expo pins react, react-native and expo-* to the
+  # SDK release, so those move only via an Expo SDK upgrade
+  # (`npx expo install --fix`), which resolves the whole set together.
   - package-ecosystem: "npm"
     directory: "/mobile"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "deps(npm):"
-      prefix-development: "deps(npm-dev):"
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
+    cooldown:
+      default-days: 3
     ignore:
       - dependency-name: "expo"
       - dependency-name: "expo-*"
@@ -111,21 +60,33 @@ updates:
       # See the typescript note on the npm entry above.
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
-    groups:
-      mobile-minor-patch:
-        applies-to: version-updates
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "gomod"
+    directories:
+      - "/"
+      - "/desktop"
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
+    cooldown:
+      default-days: 3
+
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
+    cooldown:
+      default-days: 3
+
+  - package-ecosystem: "docker-compose"
+    directory: "/docker"
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
+    cooldown:
+      default-days: 3
 
   - package-ecosystem: "github-actions"
     directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-    open-pull-requests-limit: 3
-    commit-message:
-      prefix: "deps(actions):"
-    groups:
-      actions-all:
-        applies-to: version-updates
-        patterns: ["*"]
+    patterns: ["*"]
+    multi-ecosystem-group: "weekly-dependencies"
+    cooldown:
+      default-days: 3
