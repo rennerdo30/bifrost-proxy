@@ -1,7 +1,7 @@
 # Bifrost Client Dockerfile
 
 # Web UI build stage
-FROM node:20-alpine AS web-builder
+FROM node:26-alpine AS web-builder
 
 WORKDIR /app
 
@@ -17,7 +17,7 @@ RUN mkdir -p internal/api/client/static
 RUN cd web/client && npm run build
 
 # Go build stage
-FROM golang:1.26-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 WORKDIR /app
 
@@ -42,7 +42,7 @@ ARG COMMIT=docker
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-s -w -X github.com/rennerdo30/bifrost-proxy/internal/version.Version=${VERSION} -X github.com/rennerdo30/bifrost-proxy/internal/version.GitCommit=${COMMIT} -X github.com/rennerdo30/bifrost-proxy/internal/version.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o bin/bifrost-client ./cmd/client
 
 # Runtime stage
-FROM alpine:3.21
+FROM alpine:3.24
 
 WORKDIR /app
 

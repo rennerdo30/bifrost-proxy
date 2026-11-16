@@ -56,7 +56,7 @@ services:
       start_period: 5s
 
   prometheus:
-    image: prom/prometheus:v2.47.0
+    image: prom/prometheus:v3.16.0
     container_name: bifrost-prometheus
     restart: unless-stopped
     ports:
@@ -73,7 +73,7 @@ services:
       - bifrost-network
 
   grafana:
-    image: grafana/grafana:10.1.0
+    image: grafana/grafana:13.3.1
     container_name: bifrost-grafana
     restart: unless-stopped
     ports:
